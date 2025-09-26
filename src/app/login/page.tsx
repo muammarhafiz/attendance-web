@@ -9,10 +9,36 @@ export default function LoginPage() {
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    // If already signed in, go home
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) window.location.href = '/';
+    // 1) If session already present, go home
+    supabase.auth.getSession().then(async ({ data }) => {
+      if (data.session) {
+        window.location.replace('/');
+        return;
+      }
+      // 2) If returning from provider (?code=...), exchange for a session
+      const hasOAuthParams =
+        typeof window !== 'undefined' &&
+        (window.location.search.includes('code=') ||
+          window.location.hash.includes('access_token='));
+
+      if (hasOAuthParams) {
+        const { data: exData, error: exErr } =
+          await supabase.auth.exchangeCodeForSession(window.location.href);
+        if (!exErr && exData.session) {
+          window.location.replace('/');
+          return;
+        }
+        if (exErr) setErr(exErr.message);
+      }
     });
+
+    // 3) Also listen for auth state changes
+    const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
+      if (session) window.location.replace('/');
+    });
+    return () => {
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   const signInWithGoogle = async () => {
@@ -20,7 +46,7 @@ export default function LoginPage() {
     setErr(null);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin } // back to /
+      options: { redirectTo: window.location.origin } // send back to /
     });
     if (error) {
       setErr(error.message);
