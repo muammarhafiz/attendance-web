@@ -31,6 +31,7 @@ export default function CurrentMap({
   const [acc, setAcc] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // A child component to handle location + button
   const RefreshAndCenter = () => {
     const map = useMap();
 
@@ -42,6 +43,7 @@ export default function CurrentMap({
           setPos(np);
           setAcc(p.coords.accuracy);
           onLocationChange?.(np, p.coords.accuracy);
+          // re-center to current location
           map.setView([np.lat, np.lon], 17, { animate: true });
           setBusy(false);
         },
@@ -54,6 +56,7 @@ export default function CurrentMap({
       );
     };
 
+    // Try to get location once on mount
     useEffect(() => {
       refresh();
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -104,10 +107,10 @@ export default function CurrentMap({
         center={[workshop.lat, workshop.lon]}
         zoom={17}
         style={{ height: 360, width: '100%' }}
-        scrollWheelZoom={true}
-        zoomControl={true}
-        doubleClickZoom={true}
-        dragging={true}
+        scrollWheelZoom
+        zoomControl
+        doubleClickZoom
+        dragging
       >
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -115,13 +118,10 @@ export default function CurrentMap({
         />
         {/* Workshop pin + radius */}
         <Marker position={[workshop.lat, workshop.lon]} icon={markerIcon} />
-        <Circle
-          center={[workshop.lat, workshop.lon]}
-          radius={radiusM}
-          pathOptions={{ color: '#2563eb' }}
-        />
+        <Circle center={[workshop.lat, workshop.lon]} radius={radiusM} pathOptions={{ color: '#2563eb' }} />
         {/* User pin */}
         {pos && <Marker position={[pos.lat, pos.lon]} icon={markerIcon} />}
+        {/* Overlay controls */}
         <RefreshAndCenter />
       </MapContainer>
     </div>
