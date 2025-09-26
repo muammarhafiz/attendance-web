@@ -36,6 +36,7 @@ export default function TodayPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [err, setErr] = useState<string | null>(null);
+  const [filter, setFilter] = useState<string>(''); // staff name filter
 
   const load = async () => {
     setLoading(true);
@@ -52,7 +53,6 @@ export default function TodayPage() {
       setRows([]);
     } else {
       const list = (data ?? []) as Row[];
-      // Client-side safety filter to "today (KL)" in case RLS is broader
       setRows(list.filter(r => isSameKLDday(r.ts)));
     }
     setLoading(false);
@@ -60,17 +60,26 @@ export default function TodayPage() {
 
   useEffect(() => { load(); }, []);
 
+  const filtered = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    if (q.length === 0) return rows;
+    return rows.filter(r => {
+      const label = (r.staff_name ?? r.staff_id).toLowerCase();
+      return label.includes(q);
+    });
+  }, [rows, filter]);
+
   const table = useMemo(() => {
-    if (rows.length === 0) {
+    if (filtered.length === 0) {
       return (
         <tr>
           <td colSpan={6} style={{ padding: 12, color: '#666' }}>
-            No logs yet today.
+            {rows.length === 0 ? 'No logs yet today.' : 'No matches for the current filter.'}
           </td>
         </tr>
       );
     }
-    return rows.map((r) => (
+    return filtered.map((r) => (
       <tr key={r.id}>
         <td style={td}>{fmtKL(r.ts)}</td>
         <td style={td}>{r.staff_name ?? r.staff_id}</td>
@@ -83,54 +92,4 @@ export default function TodayPage() {
         </td>
         <td style={td}>
           {(r.lat != null && r.lon != null)
-            ? <a href={`https://maps.google.com/?q=${r.lat},${r.lon}`} target="_blank" rel="noreferrer">Open</a>
-            : '-'}
-        </td>
-      </tr>
-    ));
-  }, [rows]);
-
-  return (
-    <main style={{ padding: 16, fontFamily: 'system-ui' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 style={{ margin: 0 }}>Today’s Logs</h2>
-        <button
-          onClick={load}
-          disabled={loading}
-          style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #ccc', background: '#fff' }}
-        >
-          {loading ? 'Refreshing…' : 'Refresh'}
-        </button>
-      </div>
-
-      {err && <div style={{ marginTop: 12, color: '#b91c1c' }}>{err}</div>}
-
-      <div style={{ overflowX: 'auto', marginTop: 12 }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr>
-              <th style={th}>Time (KL)</th>
-              <th style={th}>Staff</th>
-              <th style={th}>Action</th>
-              <th style={th}>Distance (m)</th>
-              <th style={th}>Location</th>
-              <th style={th}>Map</th>
-            </tr>
-          </thead>
-          <tbody>{table}</tbody>
-        </table>
-      </div>
-    </main>
-  );
-}
-
-const th: React.CSSProperties = {
-  textAlign: 'left',
-  borderBottom: '1px solid #ddd',
-  padding: 8,
-  background: '#fafafa'
-};
-const td: React.CSSProperties = {
-  borderBottom: '1px solid #eee',
-  padding: 8
-};
+            ? <a href={`
