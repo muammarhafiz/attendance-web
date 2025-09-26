@@ -3,7 +3,11 @@ export const dynamic = 'force-dynamic';
 
 import { useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import CurrentMap from '@/components/CurrentMap';
+import NextDynamic  from 'next/dynamic';
+
+// dynamically load map so "window" is not used on server
+const CurrentMap = NextDynamic(() => import('../components/CurrentMap'), { ssr: false }); // <-- use NextDynamic
+
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,7 +18,7 @@ const WLAT = Number(process.env.NEXT_PUBLIC_WORKSHOP_LAT);
 const WLON = Number(process.env.NEXT_PUBLIC_WORKSHOP_LON);
 const RADIUS_M = Number(process.env.NEXT_PUBLIC_RADIUS_M || 120);
 
-// Haversine distance (meters)
+// Haversine distance
 function dist(aLat: number, aLon: number, bLat: number, bLon: number) {
   const toRad = (d: number) => (d * Math.PI) / 180;
   const R = 6371000;
@@ -79,7 +83,6 @@ export default function Page() {
     <main style={{ padding: 16, fontFamily: 'system-ui' }}>
       <h2>Workshop Attendance</h2>
 
-      {/* Map: centers on workshop initially; auto-zooms to your pin when GPS arrives */}
       <div style={{ margin: '12px 0' }}>
         <CurrentMap onLocationChange={(p, a) => { setPos(p); setAcc(a ?? null); }} />
       </div>
