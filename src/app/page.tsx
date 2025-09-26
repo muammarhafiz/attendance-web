@@ -8,7 +8,7 @@ import { supabase } from '../lib/supabaseClient';
 
 const CurrentMap = NextDynamic(() => import('../components/CurrentMap'), { ssr: false });
 
-// Haversine distance (meters)
+// Haversine distance
 function dist(aLat: number, aLon: number, bLat: number, bLon: number) {
   const toRad = (d: number) => (d * Math.PI) / 180;
   const R = 6371000;
@@ -19,8 +19,7 @@ function dist(aLat: number, aLon: number, bLat: number, bLon: number) {
     Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLon / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(a));
 }
-
-function errMsgFromUnknown(e: unknown): string {
+function errMsg(e: unknown) {
   if (e instanceof Error) return e.message;
   try { return JSON.stringify(e); } catch { return String(e); }
 }
@@ -36,27 +35,21 @@ export default function Page() {
   const [showLogBtn, setShowLogBtn] = useState(false);
   const [banner, setBanner] = useState<{ kind: 'info'|'ok'|'err'; text: string } | null>(null);
 
-  // Auth gate robust to OAuth return
+  // Auth gate — wait for session; don't instantly bounce to /login
   useEffect(() => {
-    let unsub: (() => void) | null = null;
-
-    const { data } = supabase.auth.onAuthStateChange((_evt, session) => {
+    const sub = supabase.auth.onAuthStateChange((_evt, session) => {
       if (session) {
         setEmail(session.user.email ?? null);
         setAuthReady(true);
-      } else {
-        // no session after event → go to login
-        window.location.href = '/login';
       }
     });
-    unsub = () => data.subscription.unsubscribe();
 
-    supabase.auth.getSession().then(({ data: sess }) => {
-      if (sess.session) {
-        setEmail(sess.session.user.email ?? null);
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) {
+        setEmail(data.session.user.email ?? null);
         setAuthReady(true);
       } else {
-        // give the OAuth callback a moment; if still nothing, go to login
+        // Give time for Supabase to parse tokens after redirect
         setTimeout(async () => {
           const again = await supabase.auth.getSession();
           if (!again.data.session) window.location.href = '/login';
@@ -64,7 +57,7 @@ export default function Page() {
       }
     });
 
-    return () => { if (unsub) unsub(); };
+    return () => sub.data.subscription.unsubscribe();
   }, []);
 
   const submit = async (action: 'Check-in' | 'Check-out') => {
@@ -92,16 +85,14 @@ export default function Page() {
       }]);
 
       if (error) {
-        setBanner({ kind:'err', text: `Error: ${error.message}` });
+        setBanner({ kind:'err', text:`Error: ${error.message}` });
         console.error('Insert error', error);
       } else {
         setBanner({ kind:'ok', text:'Saved' });
         if (d <= WORKSHOP.radiusM) setShowLogBtn(true);
       }
-    } catch (e: unknown) {
-      const msg = errMsgFromUnknown(e);
-      setBanner({ kind:'err', text:`Error: ${msg}` });
-      console.error('Insert exception', e);
+    } catch (e) {
+      setBanner({ kind:'err', text:`Error: ${errMsg(e)}` });
     } finally {
       setBusy(false);
     }
@@ -131,12 +122,10 @@ export default function Page() {
         </div>
       </div>
 
-      {/* Map */}
       <div style={{ margin: '12px 0' }}>
         <CurrentMap onLocationChange={(p, a) => { setPos(p); setAcc(a ?? null); }} />
       </div>
 
-      {/* Inputs */}
       <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 16, margin: '12px 0' }}>
         <label>Staff ID</label>
         <input id="staffId" placeholder="e.g. S001" style={{ width: '100%', padding: 12, border: '1px solid #ccc', borderRadius: 8 }} />
@@ -144,32 +133,22 @@ export default function Page() {
         <input id="staffName" placeholder="e.g. Ali" style={{ width: '100%', padding: 12, border: '1px solid #ccc', borderRadius: 8 }} />
       </div>
 
-      {/* Status box */}
       <div id="status" style={{ border: '1px solid #ddd', borderRadius: 8, padding: 16, margin: '12px 0', color: '#666' }}>
         {pos
-          ? <>
-              Workshop: <b>{WORKSHOP.lat.toFixed(6)}, {WORKSHOP.lon.toFixed(6)}</b> (r={WORKSHOP.radiusM} m)<br/>
+          ? <>Workshop: <b>{WORKSHOP.lat.toFixed(6)}, {WORKSHOP.lon.toFixed(6)}</b> (r={WORKSHOP.radiusM} m)<br/>
               Your location: <b>{pos.lat.toFixed(6)}, {pos.lon.toFixed(6)}</b><br/>
               Accuracy: {acc ? `~${Math.round(acc)} m` : 'n/a'}<br/>
-              Distance to workshop: <b>{Math.round(dist(pos.lat, pos.lon, WORKSHOP.lat, WORKSHOP.lon))}</b> m
-            </>
+              Distance to workshop: <b>{Math.round(dist(pos.lat, pos.lon, WORKSHOP.lat, WORKSHOP.lon))}</b> m</>
           : 'Waiting for location… Tap “Refresh location” on the map and allow permission.'}
       </div>
 
-      {/* Actions */}
       <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 16, margin: '12px 0' }}>
-        <button
-          onClick={() => submit('Check-in')}
-          disabled={busy}
-          style={{ width: '100%', padding: 14, border: 0, borderRadius: 8, background: '#16a34a', color: '#fff', fontSize: 16, marginTop: 6, opacity: busy ? 0.7 : 1 }}
-        >
+        <button onClick={() => submit('Check-in')}  disabled={busy}
+          style={{ width: '100%', padding: 14, border: 0, borderRadius: 8, background: '#16a34a', color: '#fff', fontSize: 16, marginTop: 6, opacity: busy ? 0.7 : 1 }}>
           {busy ? 'Saving…' : 'Check in'}
         </button>
-        <button
-          onClick={() => submit('Check-out')}
-          disabled={busy}
-          style={{ width: '100%', padding: 14, border: 0, borderRadius: 8, background: '#0ea5e9', color: '#fff', fontSize: 16, marginTop: 6, opacity: busy ? 0.7 : 1 }}
-        >
+        <button onClick={() => submit('Check-out')} disabled={busy}
+          style={{ width: '100%', padding: 14, border: 0, borderRadius: 8, background: '#0ea5e9', color: '#fff', fontSize: 16, marginTop: 6, opacity: busy ? 0.7 : 1 }}>
           {busy ? 'Saving…' : 'Check out'}
         </button>
 
@@ -179,13 +158,9 @@ export default function Page() {
           </a>
         )}
 
-        {/* Banner */}
         {banner && (
           <div style={{
-            marginTop: 10,
-            padding: '8px 10px',
-            borderRadius: 8,
-            border: '1px solid',
+            marginTop: 10, padding: '8px 10px', borderRadius: 8, border: '1px solid',
             borderColor: banner.kind === 'err' ? '#dc2626' : banner.kind === 'ok' ? '#16a34a' : '#d4d4d4',
             color: banner.kind === 'err' ? '#dc2626' : banner.kind === 'ok' ? '#16a34a' : '#4b5563',
             background: banner.kind === 'err' ? '#fef2f2' : banner.kind === 'ok' ? '#f0fdf4' : '#fff'
