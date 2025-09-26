@@ -3,9 +3,10 @@ export const dynamic = 'force-dynamic';
 
 import { useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import dynamic from 'next/dynamic';
+import NextDynamic from 'next/dynamic';
 
-const CurrentMap = dynamic(() => import('../components/CurrentMap'), { ssr: false });
+// Dynamically load map (no SSR) to avoid "window is not defined"
+const CurrentMap = NextDynamic(() => import('../components/CurrentMap'), { ssr: false });
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
