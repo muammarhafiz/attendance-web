@@ -1,12 +1,12 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 type Row = {
   id: string;
-  ts: string;          // timestamp column in your table
+  ts: string;                          // timestamp with time zone
   staff_id: string;
   staff_name: string | null;
   action: 'Check-in' | 'Check-out';
@@ -20,44 +20,75 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-// start-of-today (local)
-function startOfTodayISO() {
-  const now = new Date();
-  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return d.toISOString();
+// KL time helpers
+const KL_TZ = 'Asia/Kuala_Lumpur';
+function isSameKLDday(tsISO: string): boolean {
+  const nowKL = new Date().toLocaleDateString('en-CA', { timeZone: KL_TZ });
+  const dKL = new Date(tsISO).toLocaleDateString('en-CA', { timeZone: KL_TZ });
+  return dKL === nowKL; // YYYY-MM-DD strings
+}
+
+function fmtKL(iso: string): string {
+  return new Date(iso).toLocaleString('en-MY', { timeZone: KL_TZ, hour12: false });
 }
 
 export default function TodayPage() {
   const [rows, setRows] = useState<Row[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<boolean>(false);
   const [err, setErr] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
     setErr(null);
-    const fromISO = startOfTodayISO();
 
-    // adjust table/column names if yours differ
+    // Query attendance. If your RLS limits to today, this returns only today's rows.
     const { data, error } = await supabase
       .from('attendance')
-      .select(
-        'id, ts, staff_id, staff_name, action, lat, lon, distance_m'
-      )
-      .gte('ts', fromISO)
+      .select('id, ts, staff_id, staff_name, action, lat, lon, distance_m')
       .order('ts', { ascending: false });
 
     if (error) {
       setErr(error.message);
       setRows([]);
     } else {
-      setRows(data as Row[]);
+      const list = (data ?? []) as Row[];
+      // Client-side safety filter to "today (KL)" in case RLS is broader
+      setRows(list.filter(r => isSameKLDday(r.ts)));
     }
     setLoading(false);
   };
 
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { load(); }, []);
+
+  const table = useMemo(() => {
+    if (rows.length === 0) {
+      return (
+        <tr>
+          <td colSpan={6} style={{ padding: 12, color: '#666' }}>
+            No logs yet today.
+          </td>
+        </tr>
+      );
+    }
+    return rows.map((r) => (
+      <tr key={r.id}>
+        <td style={td}>{fmtKL(r.ts)}</td>
+        <td style={td}>{r.staff_name ?? r.staff_id}</td>
+        <td style={td}>{r.action}</td>
+        <td style={td}>{r.distance_m != null ? Math.round(r.distance_m) : '-'}</td>
+        <td style={td}>
+          {(r.lat != null && r.lon != null)
+            ? `${r.lat.toFixed(6)}, ${r.lon.toFixed(6)}`
+            : '-'}
+        </td>
+        <td style={td}>
+          {(r.lat != null && r.lon != null)
+            ? <a href={`https://maps.google.com/?q=${r.lat},${r.lon}`} target="_blank" rel="noreferrer">Open</a>
+            : '-'}
+        </td>
+      </tr>
+    ));
+  }, [rows]);
 
   return (
     <main style={{ padding: 16, fontFamily: 'system-ui' }}>
@@ -72,41 +103,34 @@ export default function TodayPage() {
         </button>
       </div>
 
-      {err && (
-        <div style={{ marginTop: 12, color: '#b91c1c' }}>
-          {err}
-        </div>
-      )}
+      {err && <div style={{ marginTop: 12, color: '#b91c1c' }}>{err}</div>}
 
-      {!loading && rows.length === 0 && !err && (
-        <p style={{ color: '#666', marginTop: 12 }}>No logs yet today.</p>
-      )}
-
-      <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
-        {rows.map((r) => (
-          <div key={r.id} style={{ border: '1px solid #ddd', borderRadius: 10, padding: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-              <strong>{r.staff_name ?? r.staff_id}</strong>
-              <span style={{
-                padding: '2px 8px',
-                borderRadius: 999,
-                background: r.action === 'Check-in' ? '#dcfce7' : '#e0f2fe',
-                color: '#111'
-              }}>
-                {r.action}
-              </span>
-            </div>
-            <div style={{ fontSize: 13, color: '#555' }}>
-              <div>Time: {new Date(r.ts).toLocaleString()}</div>
-              {r.distance_m != null && <div>Distance: {Math.round(r.distance_m)} m</div>}
-              {(r.lat != null && r.lon != null) && (
-                <div>Loc: {r.lat.toFixed(6)}, {r.lon.toFixed(6)}</div>
-              )}
-              <div style={{ marginTop: 6, fontSize: 12, color: '#777' }}>ID: {r.id}</div>
-            </div>
-          </div>
-        ))}
+      <div style={{ overflowX: 'auto', marginTop: 12 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              <th style={th}>Time (KL)</th>
+              <th style={th}>Staff</th>
+              <th style={th}>Action</th>
+              <th style={th}>Distance (m)</th>
+              <th style={th}>Location</th>
+              <th style={th}>Map</th>
+            </tr>
+          </thead>
+          <tbody>{table}</tbody>
+        </table>
       </div>
     </main>
   );
 }
+
+const th: React.CSSProperties = {
+  textAlign: 'left',
+  borderBottom: '1px solid #ddd',
+  padding: 8,
+  background: '#fafafa'
+};
+const td: React.CSSProperties = {
+  borderBottom: '1px solid #eee',
+  padding: 8
+};
