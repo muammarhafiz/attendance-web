@@ -1,18 +1,13 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { useEffect, useState } from 'react';
 import NextDynamic from 'next/dynamic';
 import { WORKSHOP } from '../config/workshop';
+import { supabase } from '../lib/supabaseClient';
 
-// Dynamically load map (no SSR) to avoid "window is not defined"
+// Map without SSR
 const CurrentMap = NextDynamic(() => import('../components/CurrentMap'), { ssr: false });
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 // Haversine distance (meters)
 function dist(aLat: number, aLon: number, bLat: number, bLon: number) {
@@ -27,20 +22,32 @@ function dist(aLat: number, aLon: number, bLat: number, bLon: number) {
 }
 
 type RpcResult = { ok?: boolean; msg?: string } | null;
-
 function errMsgFromUnknown(e: unknown): string {
   if (e instanceof Error) return e.message;
-  try {
-    return JSON.stringify(e);
-  } catch {
-    return String(e);
-  }
+  try { return JSON.stringify(e); } catch { return String(e); }
 }
 
 export default function Page() {
+  const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [pos, setPos] = useState<{ lat: number; lon: number } | null>(null);
   const [acc, setAcc] = useState<number | null>(null);
   const [showLogBtn, setShowLogBtn] = useState(false);
+
+  // Auth gate
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (!data.session) {
+        window.location.href = '/login';
+      } else {
+        setSessionEmail(data.session.user.email ?? null);
+      }
+    });
+  }, []);
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    window.location.href = '/login';
+  };
 
   const submit = async (action: 'Check-in' | 'Check-out') => {
     const staffIdInput = document.getElementById('staffId') as HTMLInputElement | null;
@@ -53,17 +60,9 @@ export default function Page() {
     const staffId = (staffIdInput?.value ?? '').trim();
     const staffName = (staffNameInput?.value ?? '').trim();
 
-    if (!msgEl || !statusEl) return; // DOM not ready (shouldn’t happen in client)
-    if (!staffId) {
-      msgEl.style.color = 'red';
-      msgEl.textContent = 'Enter Staff ID.';
-      return;
-    }
-    if (!pos) {
-      msgEl.style.color = 'red';
-      msgEl.textContent = 'No location yet. Tap "Refresh location" on the map.';
-      return;
-    }
+    if (!msgEl || !statusEl) return;
+    if (!staffId) { msgEl.style.color = 'red'; msgEl.textContent = 'Enter Staff ID.'; return; }
+    if (!pos) { msgEl.style.color = 'red'; msgEl.textContent = 'No location yet. Tap "Refresh location" on the map.'; return; }
 
     const d = Math.round(dist(pos.lat, pos.lon, WORKSHOP.lat, WORKSHOP.lon));
     statusEl.innerHTML =
@@ -75,7 +74,7 @@ export default function Page() {
     msgEl.style.color = 'black';
     msgEl.textContent = 'Submitting…';
 
-    // Try RPC first
+    // Try RPC first (if you kept it); otherwise direct insert
     let ok = false;
     let errText: string | null = null;
 
@@ -87,9 +86,8 @@ export default function Page() {
         p_staff_id: staffId,
         p_staff_name: staffName || null,
       });
-      if (error) {
-        errText = error.message;
-      } else {
+      if (error) errText = error.message;
+      else {
         const r: RpcResult = data as RpcResult;
         ok = !!(r && (r.ok === true || typeof r.msg === 'string'));
       }
@@ -97,46 +95,41 @@ export default function Page() {
       errText = errMsgFromUnknown(e);
     }
 
-    // Fallback to direct insert (compatible with your Option A RLS policy)
     if (!ok) {
       try {
-        const { error: insErr } = await supabase.from('attendance').insert([
-          {
-            action,
-            lat: pos.lat,
-            lon: pos.lon,
-            staff_id: staffId,
-            staff_name: staffName || null,
-            distance_m: d,
-          },
-        ]);
-        if (!insErr) {
-          ok = true;
-          errText = null;
-        } else {
-          errText = insErr.message;
-        }
+        const { error: insErr } = await supabase.from('attendance').insert([{
+          action,
+          lat: pos.lat,
+          lon: pos.lon,
+          staff_id: staffId,
+          staff_name: staffName || null,
+          distance_m: d,
+        }]);
+        if (!insErr) { ok = true; errText = null; }
+        else errText = insErr.message;
       } catch (e: unknown) {
         errText = errMsgFromUnknown(e);
       }
     }
 
-    if (!ok) {
-      msgEl.style.color = 'red';
-      msgEl.textContent = errText ?? 'Submit failed.';
-      return;
-    }
+    if (!ok) { msgEl.style.color = 'red'; msgEl.textContent = errText ?? 'Submit failed.'; return; }
 
     msgEl.style.color = 'green';
     msgEl.textContent = 'Saved';
-
-    // Show "View Today’s Log" only if inside radius
     if (d <= WORKSHOP.radiusM) setShowLogBtn(true);
   };
 
   return (
     <main style={{ padding: 16, fontFamily: 'system-ui' }}>
-      <h2>Workshop Attendance</h2>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: 8 }}>
+        <h2 style={{ margin: 0 }}>Workshop Attendance</h2>
+        <div style={{ fontSize: 14, color: '#555' }}>
+          {sessionEmail && <span style={{ marginRight: 8 }}>{sessionEmail}</span>}
+          <button onClick={signOut} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #ccc', background: '#fff' }}>
+            Sign out
+          </button>
+        </div>
+      </div>
 
       <div style={{ margin: '12px 0' }}>
         <CurrentMap onLocationChange={(p, a) => { setPos(p); setAcc(a ?? null); }} />
@@ -144,81 +137,24 @@ export default function Page() {
 
       <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 16, margin: '12px 0' }}>
         <label>Staff ID</label>
-        <input
-          id="staffId"
-          placeholder="e.g. S001"
-          style={{ width: '100%', padding: 12, border: '1px solid #ccc', borderRadius: 8 }}
-        />
+        <input id="staffId" placeholder="e.g. S001" style={{ width: '100%', padding: 12, border: '1px solid #ccc', borderRadius: 8 }} />
         <label style={{ marginTop: 10, display: 'block' }}>Display name (optional)</label>
-        <input
-          id="staffName"
-          placeholder="e.g. Ali"
-          style={{ width: '100%', padding: 12, border: '1px solid #ccc', borderRadius: 8 }}
-        />
+        <input id="staffName" placeholder="e.g. Ali" style={{ width: '100%', padding: 12, border: '1px solid #ccc', borderRadius: 8 }} />
       </div>
 
-      <div
-        id="status"
-        style={{
-          border: '1px solid #ddd',
-          borderRadius: 8,
-          padding: 16,
-          margin: '12px 0',
-          color: '#666',
-        }}
-      >
+      <div id="status" style={{ border: '1px solid #ddd', borderRadius: 8, padding: 16, margin: '12px 0', color: '#666' }}>
         Waiting for location…
       </div>
 
       <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 16, margin: '12px 0' }}>
-        <button
-          onClick={() => submit('Check-in')}
-          style={{
-            width: '100%',
-            padding: 14,
-            border: 0,
-            borderRadius: 8,
-            background: '#16a34a',
-            color: '#fff',
-            fontSize: 16,
-            marginTop: 6,
-          }}
-        >
-          Check in
-        </button>
-        <button
-          onClick={() => submit('Check-out')}
-          style={{
-            width: '100%',
-            padding: 14,
-            border: 0,
-            borderRadius: 8,
-            background: '#0ea5e9',
-            color: '#fff',
-            fontSize: 16,
-            marginTop: 6,
-          }}
-        >
-          Check out
-        </button>
+        <button onClick={() => submit('Check-in')}  style={{ width: '100%', padding: 14, border: 0, borderRadius: 8, background: '#16a34a', color: '#fff', fontSize: 16, marginTop: 6 }}>Check in</button>
+        <button onClick={() => submit('Check-out')} style={{ width: '100%', padding: 14, border: 0, borderRadius: 8, background: '#0ea5e9', color: '#fff', fontSize: 16, marginTop: 6 }}>Check out</button>
 
         {showLogBtn && (
-          <a
-            href="/today"
-            style={{
-              display: 'inline-block',
-              textDecoration: 'none',
-              marginTop: 12,
-              padding: '10px 14px',
-              borderRadius: 8,
-              border: '1px solid #ccc',
-              background: '#fff',
-            }}
-          >
+          <a href="/today" style={{ display: 'inline-block', textDecoration: 'none', marginTop: 12, padding: '10px 14px', borderRadius: 8, border: '1px solid #ccc', background: '#fff' }}>
             View Today’s Log
           </a>
         )}
-
         <div id="msg" style={{ marginTop: 10 }} />
       </div>
     </main>
