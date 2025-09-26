@@ -1,7 +1,8 @@
 'use client';
 import { MapContainer, TileLayer, Marker, Circle, useMap } from 'react-leaflet';
 import { Icon, type LatLngBoundsExpression } from 'leaflet';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { WORKSHOP } from '../config/workshop';
 
 const markerIcon = new Icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -16,11 +17,8 @@ const markerIcon = new Icon({
 type Pos = { lat: number; lon: number };
 
 export default function CurrentMap({
-  radiusM = Number(process.env.NEXT_PUBLIC_RADIUS_M || 120),
-  workshop = {
-    lat: Number(process.env.NEXT_PUBLIC_WORKSHOP_LAT),
-    lon: Number(process.env.NEXT_PUBLIC_WORKSHOP_LON),
-  },
+  radiusM = WORKSHOP.radiusM,
+  workshop = { lat: WORKSHOP.lat, lon: WORKSHOP.lon },
   onLocationChange,
 }: {
   radiusM?: number;
@@ -30,13 +28,12 @@ export default function CurrentMap({
   const [pos, setPos] = useState<Pos | null>(null);
   const [acc, setAcc] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const [errMsg, setErrMsg] = useState<string | null>(null);
 
-  /** Overlay: refresh + initial locate; also fits BOTH pins (workshop + user) */
   const Controls = () => {
     const map = useMap();
 
-    const fitBothPins = (me: Pos | null) => {
-      if (!me) return;
+    const fitBothPins = (me: Pos) => {
       const bounds: LatLngBoundsExpression = [
         [workshop.lat, workshop.lon],
         [me.lat, me.lon],
@@ -45,64 +42,55 @@ export default function CurrentMap({
     };
 
     const refresh = () => {
+      if (!('geolocation' in navigator)) {
+        setErrMsg('Location is not available on this device/browser.');
+        return;
+      }
       setBusy(true);
+      setErrMsg(null);
+
+      // quick fix, then precise fix
       navigator.geolocation.getCurrentPosition(
-        (p) => {
-          const me: Pos = { lat: p.coords.latitude, lon: p.coords.longitude };
-          setPos(me);
+        p => {
+          const quick = { lat: p.coords.latitude, lon: p.coords.longitude };
+          setPos(quick);
           setAcc(p.coords.accuracy);
-          onLocationChange?.(me, p.coords.accuracy);
-          fitBothPins(me);
-          setBusy(false);
+          onLocationChange?.(quick, p.coords.accuracy);
+          fitBothPins(quick);
+
+          navigator.geolocation.getCurrentPosition(
+            hp => {
+              const precise = { lat: hp.coords.latitude, lon: hp.coords.longitude };
+              setPos(precise);
+              setAcc(hp.coords.accuracy);
+              onLocationChange?.(precise, hp.coords.accuracy);
+              fitBothPins(precise);
+              setBusy(false);
+            },
+            () => setBusy(false),
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+          );
         },
-        (e) => {
-          console.error(e);
-          alert('Location error: ' + e.message);
-          setBusy(false);
-        },
-        { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+        e => { setErrMsg('Location error: ' + e.message); setBusy(false); },
+        { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
       );
     };
-
-    // First locate on mount
-    useEffect(() => {
-      refresh();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    // If workshop changes while we already have a position, re-fit both
-    useEffect(() => {
-      fitBothPins(pos);
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [pos, workshop.lat, workshop.lon]);
 
     return (
       <div style={{ position: 'absolute', zIndex: 1000, left: 8, top: 8 }}>
         <button
           onClick={refresh}
           disabled={busy}
-          style={{
-            padding: '6px 10px',
-            border: '1px solid #ccc',
-            borderRadius: 8,
-            background: '#fff',
-          }}
+          style={{ padding: '6px 10px', border: '1px solid #ccc', borderRadius: 8, background: '#fff' }}
         >
           {busy ? 'Locating…' : 'Refresh location'}
         </button>
-        <div
-          style={{
-            marginTop: 6,
-            background: '#fff',
-            padding: '4px 8px',
-            borderRadius: 6,
-            border: '1px solid #eee',
-            fontSize: 12,
-          }}
-        >
-          {pos
-            ? <>You: {pos.lat.toFixed(6)}, {pos.lon.toFixed(6)} {acc ? `(±${Math.round(acc)} m)` : ''}</>
-            : <>Waiting for location…</>}
+        <div style={{ marginTop: 6, background: '#fff', padding: '4px 8px', borderRadius: 6, border: '1px solid #eee', fontSize: 12, maxWidth: 260 }}>
+          {errMsg
+            ? <span style={{ color: '#b91c1c' }}>{errMsg}</span>
+            : pos
+              ? <>You: {pos.lat.toFixed(6)}, {pos.lon.toFixed(6)} {acc ? `(±${Math.round(acc)} m)` : ''}</>
+              : <>Waiting for location… Tap <b>Refresh location</b> and allow access.</>}
         </div>
       </div>
     );
@@ -119,18 +107,10 @@ export default function CurrentMap({
         doubleClickZoom
         dragging
       >
-        <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution="&copy; OpenStreetMap contributors"
-        />
-        {/* Workshop pin + radius */}
+        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors" />
         <Marker position={[workshop.lat, workshop.lon]} icon={markerIcon} />
         <Circle center={[workshop.lat, workshop.lon]} radius={radiusM} pathOptions={{ color: '#2563eb' }} />
-
-        {/* User pin */}
         {pos && <Marker position={[pos.lat, pos.lon]} icon={markerIcon} />}
-
-        {/* Overlay controls */}
         <Controls />
       </MapContainer>
     </div>
