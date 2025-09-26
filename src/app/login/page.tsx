@@ -9,13 +9,16 @@ export default function LoginPage() {
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    // 1) If session already present, go home
+    let unsub: (() => void) | null = null;
+
+    // If session already exists, go home
     supabase.auth.getSession().then(async ({ data }) => {
       if (data.session) {
         window.location.replace('/');
         return;
       }
-      // 2) If returning from provider (?code=...), exchange for a session
+
+      // If returning from Google (?code=...) exchange it for a session
       const hasOAuthParams =
         typeof window !== 'undefined' &&
         (window.location.search.includes('code=') ||
@@ -24,21 +27,22 @@ export default function LoginPage() {
       if (hasOAuthParams) {
         const { data: exData, error: exErr } =
           await supabase.auth.exchangeCodeForSession(window.location.href);
-        if (!exErr && exData.session) {
+        if (exErr) {
+          setErr(exErr.message);
+        } else if (exData.session) {
           window.location.replace('/');
           return;
         }
-        if (exErr) setErr(exErr.message);
       }
     });
 
-    // 3) Also listen for auth state changes
-    const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
+    // Also listen for auth state changes
+    const { data } = supabase.auth.onAuthStateChange((_evt, session) => {
       if (session) window.location.replace('/');
     });
-    return () => {
-      sub.subscription.unsubscribe();
-    };
+    unsub = () => data.subscription.unsubscribe();
+
+    return () => { if (unsub) unsub(); };
   }, []);
 
   const signInWithGoogle = async () => {
@@ -46,7 +50,7 @@ export default function LoginPage() {
     setErr(null);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin } // send back to /
+      options: { redirectTo: window.location.origin } // back to "/"
     });
     if (error) {
       setErr(error.message);
