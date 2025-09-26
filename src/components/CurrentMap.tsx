@@ -31,8 +31,24 @@ export default function CurrentMap({
   const [acc, setAcc] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // A child component to handle location + button
-  const RefreshAndCenter = () => {
+  /** Fit the map to show BOTH workshop + user pins */
+  const FitBounds = ({ wk, me }: { wk: Pos; me: Pos }) => {
+    const map = useMap();
+    useEffect(() => {
+      map.fitBounds(
+        [
+          [wk.lat, wk.lon],
+        // @ts-expect-error leaflet tuple
+          [me.lat, me.lon],
+        ],
+        { padding: [40, 40], animate: true }
+      );
+    }, [map, wk.lat, wk.lon, me.lat, me.lon]);
+    return null;
+  };
+
+  /** Overlay with Refresh button + initial locate */
+  const Controls = () => {
     const map = useMap();
 
     const refresh = () => {
@@ -43,8 +59,6 @@ export default function CurrentMap({
           setPos(np);
           setAcc(p.coords.accuracy);
           onLocationChange?.(np, p.coords.accuracy);
-          // re-center to current location
-          map.setView([np.lat, np.lon], 17, { animate: true });
           setBusy(false);
         },
         (e) => {
@@ -56,11 +70,24 @@ export default function CurrentMap({
       );
     };
 
-    // Try to get location once on mount
     useEffect(() => {
       refresh();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // When we have a position, also fit both pins
+    useEffect(() => {
+      if (pos) {
+        map.fitBounds(
+          [
+            [workshop.lat, workshop.lon],
+          // @ts-expect-error leaflet tuple
+            [pos.lat, pos.lon],
+          ],
+          { padding: [40, 40], animate: true }
+        );
+      }
+    }, [map, pos, workshop.lat, workshop.lon]);
 
     return (
       <div style={{ position: 'absolute', zIndex: 1000, left: 8, top: 8 }}>
@@ -95,14 +122,7 @@ export default function CurrentMap({
   };
 
   return (
-    <div
-      style={{
-        border: '1px solid #ddd',
-        borderRadius: 8,
-        overflow: 'hidden',
-        position: 'relative',
-      }}
-    >
+    <div style={{ border: '1px solid #ddd', borderRadius: 8, overflow: 'hidden', position: 'relative' }}>
       <MapContainer
         center={[workshop.lat, workshop.lon]}
         zoom={17}
@@ -119,10 +139,15 @@ export default function CurrentMap({
         {/* Workshop pin + radius */}
         <Marker position={[workshop.lat, workshop.lon]} icon={markerIcon} />
         <Circle center={[workshop.lat, workshop.lon]} radius={radiusM} pathOptions={{ color: '#2563eb' }} />
+
         {/* User pin */}
         {pos && <Marker position={[pos.lat, pos.lon]} icon={markerIcon} />}
+
+        {/* Auto-fit bounds when pos exists */}
+        {pos && <FitBounds wk={workshop} me={pos} />}
+
         {/* Overlay controls */}
-        <RefreshAndCenter />
+        <Controls />
       </MapContainer>
     </div>
   );
