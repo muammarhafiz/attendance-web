@@ -7,9 +7,11 @@ const markerIcon = new Icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  iconSize: [25,41], iconAnchor: [12,41], popupAnchor: [1,-34], shadowSize: [41,41]
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41],
 });
-
 
 type Pos = { lat: number; lon: number };
 
@@ -35,15 +37,15 @@ export default function CurrentMap({
     const refresh = () => {
       setBusy(true);
       navigator.geolocation.getCurrentPosition(
-        p => {
+        (p) => {
           const np = { lat: p.coords.latitude, lon: p.coords.longitude };
           setPos(np);
           setAcc(p.coords.accuracy);
           onLocationChange?.(np, p.coords.accuracy);
-          map.setView([np.lat, np.lon], 17, { animate: true }); // center on user
+          map.setView([np.lat, np.lon], 17, { animate: true });
           setBusy(false);
         },
-        e => {
+        (e) => {
           console.error(e);
           alert('Location error: ' + e.message);
           setBusy(false);
@@ -52,18 +54,35 @@ export default function CurrentMap({
       );
     };
 
-    useEffect(() => { refresh(); }, []); // get location on mount
+    useEffect(() => {
+      refresh();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     return (
       <div style={{ position: 'absolute', zIndex: 1000, left: 8, top: 8 }}>
         <button
           onClick={refresh}
           disabled={busy}
-          style={{ padding: '6px 10px', border: '1px solid #ccc', borderRadius: 8, background: '#fff' }}
+          style={{
+            padding: '6px 10px',
+            border: '1px solid #ccc',
+            borderRadius: 8,
+            background: '#fff',
+          }}
         >
           {busy ? 'Locating…' : 'Refresh location'}
         </button>
-        <div style={{ marginTop: 6, background: '#fff', padding: '4px 8px', borderRadius: 6, border: '1px solid #eee', fontSize: 12 }}>
+        <div
+          style={{
+            marginTop: 6,
+            background: '#fff',
+            padding: '4px 8px',
+            borderRadius: 6,
+            border: '1px solid #eee',
+            fontSize: 12,
+          }}
+        >
           {pos
             ? <>You: {pos.lat.toFixed(6)}, {pos.lon.toFixed(6)} {acc ? `(±${Math.round(acc)} m)` : ''}</>
             : <>Waiting for location…</>}
@@ -73,11 +92,35 @@ export default function CurrentMap({
   };
 
   return (
-    <div style={{ border: '1px solid #ddd', borderRadius: 8, overflow: 'hidden', position: 'relative' }}>
-      <MapContainer center={[workshop.lat, workshop.lon]} zoom={17} style={{ height: 360, width: '100%' }}>
-        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors" />
+    <div
+      style={{
+        border: '1px solid #ddd',
+        borderRadius: 8,
+        overflow: 'hidden',
+        position: 'relative',
+      }}
+    >
+      <MapContainer
+        center={[workshop.lat, workshop.lon]}
+        zoom={17}
+        style={{ height: 360, width: '100%' }}
+        scrollWheelZoom={true}
+        zoomControl={true}
+        doubleClickZoom={true}
+        dragging={true}
+      >
+        <TileLayer
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution="&copy; OpenStreetMap contributors"
+        />
+        {/* Workshop pin + radius */}
         <Marker position={[workshop.lat, workshop.lon]} icon={markerIcon} />
-        <Circle center={[workshop.lat, workshop.lon]} radius={radiusM} pathOptions={{ color: '#2563eb' }} />
+        <Circle
+          center={[workshop.lat, workshop.lon]}
+          radius={radiusM}
+          pathOptions={{ color: '#2563eb' }}
+        />
+        {/* User pin */}
         {pos && <Marker position={[pos.lat, pos.lon]} icon={markerIcon} />}
         <RefreshAndCenter />
       </MapContainer>

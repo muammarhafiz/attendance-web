@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import dynamic from 'next/dynamic';
+
 const CurrentMap = dynamic(() => import('@/components/CurrentMap'), { ssr: false });
 
 
