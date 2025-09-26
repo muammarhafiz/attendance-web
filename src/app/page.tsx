@@ -1,103 +1,72 @@
-import Image from "next/image";
+'use client';
+import { createClient } from '@supabase/supabase-js';
 
-export default function Home() {
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
+const WLAT = Number(process.env.NEXT_PUBLIC_WORKSHOP_LAT);
+const WLON = Number(process.env.NEXT_PUBLIC_WORKSHOP_LON);
+const RADIUS_M = Number(process.env.NEXT_PUBLIC_RADIUS_M);
+
+function dist(aLat:number,aLon:number,bLat:number,bLon:number){
+  const toRad=(d:number)=>d*Math.PI/180;
+  const R=6371000;
+  const dLat=toRad(bLat-aLat), dLon=toRad(bLon-aLon);
+  const a=Math.sin(dLat/2)**2+Math.cos(toRad(aLat))*Math.cos(toRad(bLat))*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(a));
+}
+
+export default function Home(){
+  const submit = async (action:'Check-in'|'Check-out')=>{
+    const staffId = (document.getElementById('staffId') as HTMLInputElement).value.trim();
+    const staffName = (document.getElementById('staffName') as HTMLInputElement).value.trim();
+    const msgEl = document.getElementById('msg')!;
+    if(!staffId){ msgEl.textContent='Enter Staff ID'; msgEl.style.color='red'; return; }
+
+    msgEl.textContent = 'Getting location…'; msgEl.style.color='black';
+    navigator.geolocation.getCurrentPosition(async (pos)=>{
+      const lat = pos.coords.latitude, lon = pos.coords.longitude, acc = Math.round(pos.coords.accuracy);
+      const d = Math.round(dist(lat,lon,WLAT,WLON));
+      (document.getElementById('status')!).innerHTML =
+        `Your location: <b>${lat.toFixed(6)}, ${lon.toFixed(6)}</b><br>Acc: ~${acc} m<br>Distance: <b>${d}</b> m ${d>RADIUS_M?'<span style="color:#b91c1c">(outside)</span>':''}`;
+
+      // Call the Supabase function we created in SQL
+      const { data, error } = await supabase.rpc('submit_attendance', {
+        p_action: action,
+        p_lat: lat,
+        p_lon: lon,
+        p_staff_id: staffId,
+        p_staff_name: staffName || null
+      });
+
+      if(error){ msgEl.textContent = error.message; msgEl.style.color='red'; return; }
+      msgEl.textContent = data?.msg || 'Done';
+      msgEl.style.color = data?.ok ? 'green' : 'red';
+    }, (err)=>{
+      msgEl.textContent = 'Location error: '+err.message;
+      msgEl.style.color='red';
+    }, {enableHighAccuracy:true, maximumAge:0, timeout:10000});
+  };
+
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <main style={{padding:16,fontFamily:'system-ui'}}>
+      <h2>Workshop Attendance</h2>
+      <div style={{border:'1px solid #ddd',borderRadius:8,padding:16,margin:'12px 0'}}>
+        <label>Staff ID</label>
+        <input id="staffId" placeholder="e.g. S001" style={{width:'100%',padding:12, border:'1px solid #ccc',borderRadius:8}}/>
+        <label style={{marginTop:10,display:'block'}}>Display name (optional)</label>
+        <input id="staffName" placeholder="e.g. Ali" style={{width:'100%',padding:12, border:'1px solid #ccc',borderRadius:8}}/>
+      </div>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+      <div id="status" style={{border:'1px solid #ddd',borderRadius:8,padding:16,margin:'12px 0', color:'#666'}}>Waiting for location…</div>
+
+      <div style={{border:'1px solid #ddd',borderRadius:8,padding:16,margin:'12px 0'}}>
+        <button onClick={()=>submit('Check-in')}  style={{width:'100%',padding:14,border:0,borderRadius:8,background:'#16a34a',color:'#fff',fontSize:16,marginTop:6}}>Check in</button>
+        <button onClick={()=>submit('Check-out')} style={{width:'100%',padding:14,border:0,borderRadius:8,background:'#0ea5e9',color:'#fff',fontSize:16,marginTop:6}}>Check out</button>
+        <div id="msg" style={{marginTop:10}}></div>
+      </div>
+    </main>
   );
 }
