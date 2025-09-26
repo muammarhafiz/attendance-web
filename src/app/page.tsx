@@ -3,11 +3,9 @@ export const dynamic = 'force-dynamic';
 
 import { useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import NextDynamic  from 'next/dynamic';
+import dynamic from 'next/dynamic';
 
-// dynamically load map so "window" is not used on server
-const CurrentMap = NextDynamic(() => import('../components/CurrentMap'), { ssr: false }); // <-- use NextDynamic
-
+const CurrentMap = dynamic(() => import('../components/CurrentMap'), { ssr: false });
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -18,7 +16,7 @@ const WLAT = Number(process.env.NEXT_PUBLIC_WORKSHOP_LAT);
 const WLON = Number(process.env.NEXT_PUBLIC_WORKSHOP_LON);
 const RADIUS_M = Number(process.env.NEXT_PUBLIC_RADIUS_M || 120);
 
-// Haversine distance
+// Haversine distance (meters)
 function dist(aLat: number, aLon: number, bLat: number, bLon: number) {
   const toRad = (d: number) => (d * Math.PI) / 180;
   const R = 6371000;
@@ -33,12 +31,15 @@ function dist(aLat: number, aLon: number, bLat: number, bLon: number) {
 export default function Page() {
   const [pos, setPos] = useState<{ lat: number; lon: number } | null>(null);
   const [acc, setAcc] = useState<number | null>(null);
+  const [showLogBtn, setShowLogBtn] = useState(false);
 
   const submit = async (action: 'Check-in' | 'Check-out') => {
     const staffId = (document.getElementById('staffId') as HTMLInputElement)?.value.trim();
     const staffName = (document.getElementById('staffName') as HTMLInputElement)?.value.trim();
     const msgEl = document.getElementById('msg') as HTMLDivElement;
     const statusEl = document.getElementById('status') as HTMLDivElement;
+
+    setShowLogBtn(false);
 
     if (!staffId) {
       msgEl.style.color = 'red';
@@ -75,8 +76,12 @@ export default function Page() {
       msgEl.textContent = error.message;
       return;
     }
+
     msgEl.style.color = data?.ok ? 'green' : 'red';
     msgEl.textContent = data?.msg || 'Done';
+
+    // Show "View Today’s Log" button only if inside radius AND write succeeded
+    if (data?.ok && d <= RADIUS_M) setShowLogBtn(true);
   };
 
   return (
@@ -146,6 +151,25 @@ export default function Page() {
         >
           Check out
         </button>
+
+        {/* Conditional "View Today’s Log" button */}
+        {showLogBtn && (
+          <a
+            href="/today"
+            style={{
+              display: 'inline-block',
+              textDecoration: 'none',
+              marginTop: 12,
+              padding: '10px 14px',
+              borderRadius: 8,
+              border: '1px solid #ccc',
+              background: '#fff',
+            }}
+          >
+            View Today’s Log
+          </a>
+        )}
+
         <div id="msg" style={{ marginTop: 10 }} />
       </div>
     </main>
