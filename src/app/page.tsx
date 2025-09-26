@@ -36,16 +36,35 @@ export default function Page() {
   const [showLogBtn, setShowLogBtn] = useState(false);
   const [banner, setBanner] = useState<{ kind: 'info'|'ok'|'err'; text: string } | null>(null);
 
-  // Auth gate
+  // Auth gate robust to OAuth return
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (!data.session) {
-        window.location.href = '/login';
-      } else {
-        setEmail(data.session.user.email ?? null);
+    let unsub: (() => void) | null = null;
+
+    const { data } = supabase.auth.onAuthStateChange((_evt, session) => {
+      if (session) {
+        setEmail(session.user.email ?? null);
         setAuthReady(true);
+      } else {
+        // no session after event → go to login
+        window.location.href = '/login';
       }
     });
+    unsub = () => data.subscription.unsubscribe();
+
+    supabase.auth.getSession().then(({ data: sess }) => {
+      if (sess.session) {
+        setEmail(sess.session.user.email ?? null);
+        setAuthReady(true);
+      } else {
+        // give the OAuth callback a moment; if still nothing, go to login
+        setTimeout(async () => {
+          const again = await supabase.auth.getSession();
+          if (!again.data.session) window.location.href = '/login';
+        }, 1500);
+      }
+    });
+
+    return () => { if (unsub) unsub(); };
   }, []);
 
   const submit = async (action: 'Check-in' | 'Check-out') => {
