@@ -1,7 +1,7 @@
 'use client';
 import { MapContainer, TileLayer, Marker, Circle, useMap } from 'react-leaflet';
 import { Icon, type LatLngBoundsExpression } from 'leaflet';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 const markerIcon = new Icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -31,30 +31,28 @@ export default function CurrentMap({
   const [acc, setAcc] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const RefreshAndCenter = () => {
+  /** Overlay: refresh + initial locate; also fits BOTH pins (workshop + user) */
+  const Controls = () => {
     const map = useMap();
 
-    const fitBothPins = useCallback(
-      (me: Pos | null) => {
-        if (!me) return;
-        const bounds: LatLngBoundsExpression = [
-          [workshop.lat, workshop.lon],
-          [me.lat, me.lon],
-        ];
-        map.fitBounds(bounds, { padding: [40, 40], animate: true });
-      },
-      [map, workshop.lat, workshop.lon]
-    );
+    const fitBothPins = (me: Pos | null) => {
+      if (!me) return;
+      const bounds: LatLngBoundsExpression = [
+        [workshop.lat, workshop.lon],
+        [me.lat, me.lon],
+      ];
+      map.fitBounds(bounds, { padding: [40, 40], animate: true });
+    };
 
-    const refresh = useCallback(() => {
+    const refresh = () => {
       setBusy(true);
       navigator.geolocation.getCurrentPosition(
         (p) => {
           const me: Pos = { lat: p.coords.latitude, lon: p.coords.longitude };
           setPos(me);
           setAcc(p.coords.accuracy);
-          onLocationChange?.(np, p.coords.accuracy);
-          map.setView([np.lat, np.lon], 17, { animate: true });
+          onLocationChange?.(me, p.coords.accuracy);
+          fitBothPins(me);
           setBusy(false);
         },
         (e) => {
@@ -64,13 +62,19 @@ export default function CurrentMap({
         },
         { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
       );
-    }, [fitBothPins, onLocationChange]);
+    };
 
     // First locate on mount
     useEffect(() => {
       refresh();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // If workshop changes while we already have a position, re-fit both
+    useEffect(() => {
+      fitBothPins(pos);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pos, workshop.lat, workshop.lon]);
 
     return (
       <div style={{ position: 'absolute', zIndex: 1000, left: 8, top: 8 }}>
@@ -125,7 +129,9 @@ export default function CurrentMap({
 
         {/* User pin */}
         {pos && <Marker position={[pos.lat, pos.lon]} icon={markerIcon} />}
-        <RefreshAndCenter />
+
+        {/* Overlay controls */}
+        <Controls />
       </MapContainer>
     </div>
   );
