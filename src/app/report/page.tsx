@@ -1,252 +1,180 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { Suspense, useEffect, useMemo, useState } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { supabase } from '@/lib/supabaseClient';
 
 type Row = {
-  email: string;
-  staff_name: string;
-  day: string;                 // 'YYYY-MM-DD'
-  first_in_utc: string | null; // ISO or null
-  last_out_utc: string | null; // ISO or null
+  staff_email: string;
+  staff_name: string | null;
+  day: string;             // ISO date (YYYY-MM-DD)
+  check_in: string | null; // ISO ts
+  check_out: string | null;// ISO ts
+  was_late: boolean;
   late_minutes: number;
   absent: boolean;
 };
 
-const th: React.CSSProperties = { textAlign:'left', padding:'10px', borderBottom:'1px solid #e5e5e5' };
-const td: React.CSSProperties = { padding:'10px', borderBottom:'1px solid #f0f0f0' };
-
-export default function ReportPageWrapper() {
-  return (
-    <Suspense fallback={<div style={{padding:16,fontFamily:'system-ui'}}>Loading…</div>}>
-      <ReportPageInner />
-    </Suspense>
-  );
+function toMYT(ts: string | null) {
+  if (!ts) return '-';
+  return new Date(ts).toLocaleString('en-GB', { timeZone: 'Asia/Kuala_Lumpur' });
 }
 
-function getInt(v: string | null, fallback: number) {
-  const n = v ? Number(v) : NaN;
-  return Number.isFinite(n) ? n : fallback;
-}
-function daysInMonth(year: number, month1to12: number) {
-  return new Date(year, month1to12, 0).getDate(); // month1to12 = 1..12
-}
-
-function ReportPageInner() {
-  const params = useSearchParams();
+export default function ReportPage() {
   const router = useRouter();
+  const params = useSearchParams();
 
-  // Read query: ?year=YYYY&month=MM&day=DD (day optional)
-  const now = new Date();
-  const qYear = getInt(params.get('year'), now.getFullYear());
-  const qMonth = getInt(params.get('month'), now.getMonth() + 1); // 1..12
-  const qDay = params.get('day'); // optional, '01'..'31' or null
-
-  // Build p_month (YYYY-MM-01) for the RPC month_attendance(p_month date)
-  const pMonthISO = useMemo(() => {
-    const y = qYear;
-    const m = String(qMonth).padStart(2, '0');
-    return `${y}-${m}-01`;
-  }, [qYear, qMonth]);
-
-  const ymLabel = useMemo(() => `${qYear}-${String(qMonth).padStart(2, '0')}`, [qYear, qMonth]);
-
-  const [rows, setRows] = useState<Row[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [err, setErr] = useState<string | null>(null);
+  // ---- AUTH GUARD ----
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [email, setEmail] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
-      setLoading(true);
-      setErr(null);
-      const { data, error } = await supabase.rpc('month_attendance', { p_month: pMonthISO });
-      if (error) setErr(error.message);
-      else setRows((data ?? []) as Row[]);
-      setLoading(false);
+      const { data } = await supabase.auth.getSession();
+      const userEmail = data.session?.user?.email ?? null;
+      if (!userEmail) {
+        router.replace('/login?next=/report');
+        return;
+      }
+      setEmail(userEmail);
+      setCheckingAuth(false);
     })();
-  }, [pMonthISO]);
+  }, [router]);
 
-  // Optional per-day client filter
-  const filteredByDay: Row[] = useMemo(() => {
-    if (!qDay) return rows;
-    const d = String(qDay).padStart(2, '0');
-    const target = `${qYear}-${String(qMonth).padStart(2, '0')}-${d}`;
-    return rows.filter(r => r.day === target);
-  }, [rows, qYear, qMonth, qDay]);
+  // ---- FILTER STATE (month/day/year) ----
+  const today = useMemo(() => new Date(), []);
+  const initYear = Number(params.get('y')) || today.getFullYear();
+  const initMonth = Number(params.get('m')) || (today.getMonth() + 1); // 1..12
 
-  // Group by staff for rendering
-  const byStaff = useMemo(() => {
-    const map = new Map<string, Row[]>();
-    for (const r of filteredByDay) {
-      const k = `${r.staff_name}:::${r.email}`;
-      if (!map.has(k)) map.set(k, []);
-      map.get(k)!.push(r);
-    }
-    const out = Array.from(map.entries()).map(([k, arr]) => {
-      arr.sort((a, b) => a.day.localeCompare(b.day));
-      const [name, email] = k.split(':::');
-      const absentDays = arr.filter(x => x.absent).length;
-      const lateTotal = arr.reduce((s, x) => s + (x.late_minutes || 0), 0);
-      return { name, email, rows: arr, absentDays, lateTotal };
-    });
-    out.sort((a, b) => a.name.localeCompare(b.name));
-    return out;
-  }, [filteredByDay]);
+  const [year, setYear] = useState(initYear);
+  const [month, setMonth] = useState(initMonth);
+  const [day, setDay] = useState<number | ''>(''); // optional single day filter
 
-  // Controls
-  const years = useMemo(() => {
-    const cur = now.getFullYear();
-    const list: number[] = [];
-    for (let y = cur - 5; y <= cur + 1; y++) list.push(y);
-    return list;
-  }, [now]);
+  // compute period range (start..end exclusive) in MYT
+  const { startISO, endISO, label } = useMemo(() => {
+    const start = new Date(Date.UTC(year, month - 1, 1, 16, 0, 0)); // 00:00 MYT = 16:00 UTC prev day
+    const end = new Date(Date.UTC(year, month, 1, 16, 0, 0));
+    const fmt = (d: Date) => d.toISOString();
+    return {
+      startISO: fmt(start),
+      endISO: fmt(end),
+      label: `${String(month).padStart(2, '0')}/${year}`,
+    };
+  }, [year, month]);
 
-  const totalDays = daysInMonth(qYear, qMonth);
-  const dayOptions = Array.from({ length: totalDays }, (_, i) => String(i + 1).padStart(2, '0'));
+  // ---- DATA ----
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
-  function setQuery(next: { year?: number; month?: number; day?: string | null }) {
-    const y = next.year ?? qYear;
-    const m = next.month ?? qMonth;
-    const d = next.day === undefined ? qDay : next.day; // allow null to clear
-    const sp = new URLSearchParams();
-    sp.set('year', String(y));
-    sp.set('month', String(m).padStart(2, '0'));
-    if (d) sp.set('day', d);
-    router.replace(`/report?${sp.toString()}`);
-  }
+  const fetchData = async () => {
+    setLoading(true); setErr(null);
+    // If you created SQL function month_attendance(start,end), prefer rpc:
+    // const { data, error } = await supabase.rpc('month_attendance', { p_start: startISO, p_end: endISO });
+
+    // Otherwise, read from a view/materialized view; here we select from attendance joined with staff.
+    const { data, error } = await supabase
+      .from('attendance_report_view') // <- use your real view/table name here
+      .select('staff_email, staff_name, day, check_in, check_out, was_late, late_minutes, absent')
+      .gte('day', `${year}-${String(month).padStart(2, '0')}-01`)
+      .lt('day', `${year}-${String(month + 1).padStart(2, '0')}-01`);
+    if (error) setErr(error.message);
+    else setRows((data ?? []) as Row[]);
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchData(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [year, month]);
+
+  const filtered = useMemo(() => {
+    if (day === '' || day == null) return rows;
+    const dStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return rows.filter(r => r.day === dStr);
+  }, [rows, day, month, year]);
+
+  // ---- RENDER ----
+  if (checkingAuth) return <div style={{ padding: 16 }}>Checking sign-in…</div>;
 
   return (
-    <main style={{ padding: 16, fontFamily: 'system-ui' }}>
+    <main style={{ padding: 16, fontFamily: 'system-ui', background: '#fff', color: '#111' }}>
       <h2>Attendance Report</h2>
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', margin: '8px 0 12px' }}>
+      {/* Filters */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
         <label>Year</label>
-        <select
-          value={qYear}
-          onChange={(e) => setQuery({ year: Number(e.target.value) })}
-          style={{ padding: 6, border: '1px solid #ccc', borderRadius: 6 }}
-        >
-          {years.map((y) => (
-            <option key={y} value={y}>{y}</option>
-          ))}
-        </select>
-
+        <input
+          type="number"
+          value={year}
+          onChange={(e) => setYear(Number(e.target.value))}
+          style={{ padding: 6, border: '1px solid #ccc', borderRadius: 6, width: 100 }}
+        />
         <label>Month</label>
-        <select
-          value={String(qMonth).padStart(2, '0')}
-          onChange={(e) => setQuery({ month: Number(e.target.value) })}
-          style={{ padding: 6, border: '1px solid #ccc', borderRadius: 6 }}
-        >
-          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
-            const v = String(m).padStart(2, '0');
-            return (
-              <option key={v} value={v}>{v}</option>
-            );
-          })}
-        </select>
-
+        <input
+          type="number"
+          value={month}
+          min={1}
+          max={12}
+          onChange={(e) => setMonth(Math.max(1, Math.min(12, Number(e.target.value))))}
+          style={{ padding: 6, border: '1px solid #ccc', borderRadius: 6, width: 80 }}
+        />
         <label>Day</label>
-        <select
-          value={qDay ?? ''}
-          onChange={(e) => setQuery({ day: e.target.value || null })}
-          style={{ padding: 6, border: '1px solid #ccc', borderRadius: 6 }}
-        >
-          <option value="">All days</option>
-          {dayOptions.map((d) => (
-            <option key={d} value={d}>{d}</option>
-          ))}
-        </select>
-
-        <div style={{ flex: 1 }} />
-        <button
-          onClick={() => window.print()}
-          style={{ padding: '8px 12px', border: '1px solid #ccc', borderRadius: 8 }}
-        >
-          Print / Save PDF
+        <input
+          type="number"
+          value={day}
+          placeholder="(optional)"
+          onChange={(e) => {
+            const v = e.target.value;
+            setDay(v === '' ? '' : Number(v));
+          }}
+          style={{ padding: 6, border: '1px solid #ccc', borderRadius: 6, width: 120 }}
+        />
+        <button onClick={fetchData} style={{ padding: '8px 12px', border: '1px solid #ccc', borderRadius: 8 }}>
+          Reload
         </button>
-      </div>
-
-      <div style={{ margin: '4px 0 10px', color: '#555' }}>
-        Period: <b>{ymLabel}{qDay ? `-${qDay}` : ''}</b>
+        <div style={{ marginLeft: 12, color: '#555' }}>Period: <b>{label}</b></div>
       </div>
 
       {loading && <p>Loading…</p>}
       {err && <p style={{ color: '#b91c1c' }}>{err}</p>}
 
-      {byStaff.map((st) => (
-        <section key={st.email} style={{ margin: '24px 0' }}>
-          <h3 style={{ margin: '6px 0' }}>
-            {st.name}{' '}
-            <span style={{ color: '#666', fontWeight: 400 }}>({st.email})</span>
-          </h3>
-          <div style={{ margin: '6px 0', fontSize: 14 }}>
-            <b>Absent days:</b> {st.absentDays} &nbsp;•&nbsp; <b>Late total:</b> {st.lateTotal} min
-          </div>
-
-          <div style={{ overflowX: 'auto', border: '1px solid #eee', borderRadius: 8 }}>
-            <table style={{ borderCollapse: 'collapse', width: '100%' }}>
-              <thead>
-                <tr style={{ background: '#f6f6f6' }}>
-                  <th style={th}>Date</th>
-                  <th style={th}>Check-in (KL)</th>
-                  <th style={th}>Check-out (KL)</th>
-                  <th style={th}>Late (min)</th>
-                  <th style={th}>Status</th>
+      {!loading && !err && (
+        <div style={{ overflowX: 'auto', border: '1px solid #eee', borderRadius: 8 }}>
+          <table style={{ borderCollapse: 'collapse', width: '100%', background: '#f9f9f9' }}>
+            <thead>
+              <tr style={{ background: '#f3f4f6' }}>
+                <th style={th}>Staff</th>
+                <th style={th}>Email</th>
+                <th style={th}>Day</th>
+                <th style={th}>Check-in</th>
+                <th style={th}>Check-out</th>
+                <th style={th}>Late?</th>
+                <th style={th}>Late (min)</th>
+                <th style={th}>Absent?</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((r, i) => (
+                <tr key={i} style={{ background: r.was_late ? '#ffecec' : 'transparent' }}>
+                  <td style={td}>{r.staff_name || '-'}</td>
+                  <td style={td}>{r.staff_email}</td>
+                  <td style={td}>{r.day}</td>
+                  <td style={td}>{toMYT(r.check_in)}</td>
+                  <td style={td}>{toMYT(r.check_out)}</td>
+                  <td style={td}>{r.was_late ? 'Yes' : 'No'}</td>
+                  <td style={td}>{r.late_minutes ?? 0}</td>
+                  <td style={td}>{r.absent ? 'Yes' : 'No'}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {st.rows.map((r) => {
-                  const late = r.late_minutes || 0;
-                  const lateStyle = late > 0 ? { color: '#b91c1c', fontWeight: 600 } : {};
-                  const status = r.absent ? 'Absent' : 'Present';
-                  const statusStyle = r.absent ? { color: '#b91c1c', fontWeight: 600 } : {};
-                  return (
-                    <tr key={r.day}>
-                      <td style={td}>
-                        {new Date(`${r.day}T00:00:00`).toLocaleDateString('en-GB')}
-                      </td>
-                      <td style={td}>
-                        {r.first_in_utc
-                          ? new Date(r.first_in_utc).toLocaleTimeString('en-GB', {
-                              hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kuala_Lumpur'
-                            })
-                          : '—'}
-                      </td>
-                      <td style={td}>
-                        {r.last_out_utc
-                          ? new Date(r.last_out_utc).toLocaleTimeString('en-GB', {
-                              hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kuala_Lumpur'
-                            })
-                          : '—'}
-                      </td>
-                      <td style={{ ...td, ...lateStyle }}>{late}</td>
-                      <td style={{ ...td, ...statusStyle }}>{status}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <hr style={{ marginTop: 24 }} />
-        </section>
-      ))}
-
-      <style>{`
-        @media print {
-          button, select, label { display: none; }
-          a { text-decoration: none; color: black; }
-          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          section { page-break-inside: avoid; }
-        }
-      `}</style>
+              ))}
+              {filtered.length === 0 && (
+                <tr><td colSpan={8} style={{ padding: 12, color: '#666' }}>No data.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
     </main>
   );
 }
+
+const th: React.CSSProperties = { textAlign: 'left', padding: 10, borderBottom: '1px solid #e5e5e5' };
+const td: React.CSSProperties = { padding: 10, borderBottom: '1px solid #f0f0f0' };
