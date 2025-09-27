@@ -8,15 +8,12 @@ const CurrentMap = dynamic(() => import('@/components/CurrentMap'), { ssr: false
 
 type SubmitResult = { ok?: boolean; msg?: string; distance_m?: number } | null;
 
-const WLAT = Number(process.env.NEXT_PUBLIC_WORKSHOP_LAT);
-const WLON = Number(process.env.NEXT_PUBLIC_WORKSHOP_LON);
-const RADIUS_M = Number(process.env.NEXT_PUBLIC_RADIUS_M || 120);
+type Cfg = { lat: number; lon: number; radius: number };
 
-/** Inline sign-out button */
 function SignOutButton() {
   const handleSignOut = async () => {
     await supabase.auth.signOut();
-    window.location.href = '/login'; // back to login page
+    window.location.href = '/login';
   };
   return (
     <button
@@ -35,7 +32,11 @@ export default function HomePage() {
   const [lastResult, setLastResult] = useState<SubmitResult>(null);
   const [canShowLogBtn, setCanShowLogBtn] = useState<boolean>(false);
 
-  // Redirect to /login if not signed in; also show who is signed in
+  // config from DB (single source of truth)
+  const [cfg, setCfg] = useState<Cfg | null>(null);
+  const [cfgError, setCfgError] = useState<string>('');
+
+  // Guard: must be signed in; also get email
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getSession();
@@ -47,7 +48,28 @@ export default function HomePage() {
     })();
   }, []);
 
-  // Called by the map; purely informational
+  // Load workshop config from DB (one source)
+  useEffect(() => {
+    (async () => {
+      const { data, error } = await supabase
+        .from('config')
+        .select('workshop_lat, workshop_lon, radius_m')
+        .limit(1)
+        .single();
+
+      if (error) {
+        setCfgError(error.message);
+        return;
+      }
+      if (!data?.workshop_lat || !data?.workshop_lon || !data?.radius_m) {
+        setCfgError('Workshop config missing: set workshop_lat, workshop_lon, radius_m in public.config');
+        return;
+      }
+      setCfg({ lat: Number(data.workshop_lat), lon: Number(data.workshop_lon), radius: Number(data.radius_m) });
+    })();
+  }, []);
+
+  // Called by the map; informational
   const onLocationChange = (pos: { lat: number; lon: number }, acc?: number) => {
     const accTxt = acc ? ` (±${Math.round(acc)} m)` : '';
     setStatusText(`Your location: ${pos.lat.toFixed(6)}, ${pos.lon.toFixed(6)}${accTxt}`);
@@ -65,7 +87,7 @@ export default function HomePage() {
         const acc = Math.round(p.coords.accuracy);
         setStatusText(`Your location: ${lat.toFixed(6)}, ${lon.toFixed(6)} (±${acc} m)`);
 
-        // Server-side RPC uses signed-in email + staff name mapping
+        // Server uses signed-in email + DB config
         const { data, error } = await supabase.rpc('submit_attendance_auto', {
           p_action: action,
           p_lat: lat,
@@ -117,14 +139,26 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Map */}
-      <div style={box}>
-        <CurrentMap
-          workshop={{ lat: WLAT, lon: WLON }}
-          radiusM={RADIUS_M}
-          onLocationChange={onLocationChange}
-        />
-      </div>
+      {/* Config load status */}
+      {!cfg && (
+        <div style={{ ...box, color: cfgError ? '#b91c1c' : '#666' }}>
+          {cfgError ? `Config error: ${cfgError}` : 'Loading workshop location…'}
+        </div>
+      )}
+
+      {/* Map uses DB config only */}
+      {cfg && (
+        <div style={box}>
+          <div style={{ marginBottom: 8, color: '#555' }}>
+            Workshop: <b>{cfg.lat.toFixed(6)}, {cfg.lon.toFixed(6)}</b> • Radius: <b>{cfg.radius} m</b>
+          </div>
+          <CurrentMap
+            workshop={{ lat: cfg.lat, lon: cfg.lon }}
+            radiusM={cfg.radius}
+            onLocationChange={onLocationChange}
+          />
+        </div>
+      )}
 
       {/* Status + actions */}
       <div style={box}>
@@ -133,15 +167,15 @@ export default function HomePage() {
         </div>
         <button
           onClick={() => submit('Check-in')}
-          disabled={busy}
-          style={{ ...btn, background: '#16a34a', opacity: busy ? 0.7 : 1 }}
+          disabled={busy || !cfg}
+          style={{ ...btn, background: '#16a34a', opacity: busy || !cfg ? 0.7 : 1 }}
         >
           {busy ? 'Checking in…' : 'Check in'}
         </button>
         <button
           onClick={() => submit('Check-out')}
-          disabled={busy}
-          style={{ ...btn, background: '#0ea5e9', opacity: busy ? 0.7 : 1 }}
+          disabled={busy || !cfg}
+          style={{ ...btn, background: '#0ea5e9', opacity: busy || !cfg ? 0.7 : 1 }}
         >
           {busy ? 'Checking out…' : 'Check out'}
         </button>
