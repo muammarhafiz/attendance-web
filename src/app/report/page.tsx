@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabaseClient';
 import Link from 'next/link';
 
 type Row = {
-  ts: string;            // timestamptz
+  ts: string;
   staff_name: string | null;
   staff_email: string | null;
   action: 'Check-in' | 'Check-out' | string;
@@ -18,14 +18,14 @@ type Row = {
 export default function ReportPage() {
   const now = useMemo(() => new Date(), []);
   const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth() + 1); // 1-12
+  const [month, setMonth] = useState(now.getMonth() + 1);
   const [day, setDay] = useState<number | ''>('');
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<Row[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Require sign-in (lightweight check)
+  // (optional) show who is signed in on the right of the global NavBar if you want
   const [email, setEmail] = useState<string | null>(null);
   useEffect(() => {
     const init = async () => {
@@ -40,7 +40,6 @@ export default function ReportPage() {
     setErr(null);
     setRows([]);
 
-    // IMPORTANT: parameter names MUST match the SQL function signature
     const { data, error } = await supabase.rpc('month_attendance', {
       p_year: year,
       p_month: month,
@@ -56,7 +55,7 @@ export default function ReportPage() {
     setLoading(false);
   };
 
-  useEffect(() => { reload(); /* run once on mount with defaults */ }, []); // eslint-disable-line
+  useEffect(() => { reload(); /* run once */ }, []); // eslint-disable-line
 
   const filtered = rows.filter(r => {
     if (!q.trim()) return true;
@@ -72,14 +71,6 @@ export default function ReportPage() {
 
   return (
     <main style={wrap}>
-      <nav style={{display:'flex', gap:16, alignItems:'center', marginBottom:16}}>
-        <Link href="/" style={{textDecoration:'none', fontWeight:600}}>Attendance</Link>
-        <Link href="/today">Today</Link>
-        <span style={{fontWeight:600}}>Report</span>
-        <Link href="/manager">Manager</Link>
-        <div style={{marginLeft:'auto', color:'#6b7280'}}>{email ?? 'Not signed in'}</div>
-      </nav>
-
       <h2 style={{margin:'8px 0 12px'}}>Attendance Report</h2>
 
       <div style={{display:'flex', gap:12, flexWrap:'wrap', alignItems:'center', marginBottom:12}}>
@@ -152,9 +143,7 @@ export default function ReportPage() {
                   <td style={td}>{r.action}</td>
                   <td style={td}>{r.distance_m ?? '-'}</td>
                   <td style={td}>{locText}</td>
-                  <td style={td}>
-                    {gmaps ? <a href={gmaps} target="_blank" rel="noreferrer">Open</a> : '-'}
-                  </td>
+                  <td style={td}>{gmaps ? <a href={gmaps} target="_blank" rel="noreferrer">Open</a> : '-'}</td>
                 </tr>
               );
             })}
