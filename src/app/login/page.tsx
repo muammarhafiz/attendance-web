@@ -1,11 +1,13 @@
 'use client';
 import { supabase } from '@/lib/supabaseClient';
 
+const APP_URL = 'https://attendancezp-web.vercel.app'; // <— hardcode
+
 export default function Login() {
   const signInGoogle = async () => {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin } // back to /
+      options: { redirectTo: APP_URL }, // back to "/"
     });
   };
 
@@ -14,7 +16,7 @@ export default function Login() {
     if (!email) return;
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: window.location.origin } // back to /
+      options: { emailRedirectTo: APP_URL }, // MUST match Supabase "Site URL"
     });
     alert(error ? error.message : 'Magic link sent. Check your inbox.');
   };
