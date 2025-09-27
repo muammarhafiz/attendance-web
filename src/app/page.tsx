@@ -25,8 +25,8 @@ function errMsg(e: unknown) {
 }
 
 export default function Page() {
-  const [authReady, setAuthReady] = useState(false);
-  const [email, setEmail] = useState<string | null>(null);
+  const [sessionEmail, setSessionEmail] = useState<string | null>(null);
+  const [checking, setChecking] = useState(true);
 
   const [pos, setPos] = useState<{ lat: number; lon: number } | null>(null);
   const [acc, setAcc] = useState<number | null>(null);
@@ -35,30 +35,44 @@ export default function Page() {
   const [showLogBtn, setShowLogBtn] = useState(false);
   const [banner, setBanner] = useState<{ kind: 'info'|'ok'|'err'; text: string } | null>(null);
 
-  // Auth gate — wait for session; don't instantly bounce to /login
+  // IMPORTANT: Do NOT redirect to /login. Just show whether a session exists.
   useEffect(() => {
-    const sub = supabase.auth.onAuthStateChange((_evt, session) => {
-      if (session) {
-        setEmail(session.user.email ?? null);
-        setAuthReady(true);
-      }
+    let cancelled = false;
+
+    // 1) listen for auth changes
+    const { data } = supabase.auth.onAuthStateChange((_evt, session) => {
+      if (cancelled) return;
+      setSessionEmail(session?.user?.email ?? null);
+      setChecking(false);
     });
 
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) {
-        setEmail(data.session.user.email ?? null);
-        setAuthReady(true);
-      } else {
-        // Give time for Supabase to parse tokens after redirect
-        setTimeout(async () => {
-          const again = await supabase.auth.getSession();
-          if (!again.data.session) window.location.href = '/login';
-        }, 1500);
-      }
-    });
+    // 2) one-time check + short polling (covers iOS Safari timing)
+    const poll = async () => {
+      const { data: s1 } = await supabase.auth.getSession();
+      if (!cancelled) setSessionEmail(s1.session?.user?.email ?? null);
 
-    return () => sub.data.subscription.unsubscribe();
+      // short poll up to ~2s to catch late token writes
+      let tries = 0;
+      while (!cancelled && !s1.session && tries < 4) {
+        await new Promise(r => setTimeout(r, 500));
+        const { data: sx } = await supabase.auth.getSession();
+        if (sx.session) {
+          setSessionEmail(sx.session.user?.email ?? null);
+          break;
+        }
+        tries += 1;
+      }
+      if (!cancelled) setChecking(false);
+    };
+    poll();
+
+    return () => { cancelled = true; data.subscription.unsubscribe(); };
   }, []);
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    setSessionEmail(null);
+  };
 
   const submit = async (action: 'Check-in' | 'Check-out') => {
     if (busy) return;
@@ -68,7 +82,7 @@ export default function Page() {
     const staffName = (document.getElementById('staffName') as HTMLInputElement | null)?.value.trim() ?? '';
 
     if (!staffId) { setBanner({ kind:'err', text:'Enter Staff ID.' }); return; }
-    if (!pos)     { setBanner({ kind:'err', text:'No location yet. Tap “Refresh location” on the map and allow permission.' }); return; }
+    if (!pos)     { setBanner({ kind:'err', text:'No location yet. Tap “Refresh location”.' }); return; }
 
     const d = Math.round(dist(pos.lat, pos.lon, WORKSHOP.lat, WORKSHOP.lon));
     setBanner({ kind:'info', text:'Submitting…' });
@@ -98,27 +112,26 @@ export default function Page() {
     }
   };
 
-  if (!authReady) {
-    return (
-      <main style={{ padding: 16, fontFamily: 'system-ui' }}>
-        <h2>Workshop Attendance</h2>
-        <div style={{ marginTop: 12, color:'#666' }}>Checking session…</div>
-      </main>
-    );
-  }
-
   return (
     <main style={{ padding: 16, fontFamily: 'system-ui' }}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: 8 }}>
         <h2 style={{ margin: 0 }}>Workshop Attendance</h2>
         <div style={{ fontSize: 14, color: '#555' }}>
-          {email && <span style={{ marginRight: 8 }}>{email}</span>}
-          <button
-            onClick={async () => { await supabase.auth.signOut(); window.location.href='/login'; }}
-            style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #ccc', background: '#fff' }}
-          >
-            Sign out
-          </button>
+          {checking ? (
+            <span>Checking session…</span>
+          ) : sessionEmail ? (
+            <>
+              <span style={{ marginRight: 8 }}>{sessionEmail}</span>
+              <button onClick={signOut} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #ccc', background: '#fff' }}>
+                Sign out
+              </button>
+            </>
+          ) : (
+            <>
+              <span style={{ marginRight: 8, color:'#b91c1c' }}>Not signed in</span>
+              <a href="/login" style={{ textDecoration: 'underline' }}>Go to Sign in</a>
+            </>
+          )}
         </div>
       </div>
 
