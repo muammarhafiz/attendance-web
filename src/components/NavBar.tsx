@@ -12,55 +12,60 @@ export default function NavBar() {
   const [email, setEmail] = useState<string | null>(null);
   const [checking, setChecking] = useState(true);
 
-  // Load session email once
+  // Load session email + subscribe to auth changes
   useEffect(() => {
-    let unsub = supabase.auth.onAuthStateChange((_e, session) => {
-      setEmail(session?.user?.email ?? null);
-    }).data.subscription;
+    const subscription = supabase.auth
+      .onAuthStateChange((_event, session) => {
+        setEmail(session?.user?.email ?? null);
+      })
+      .data.subscription;
 
     supabase.auth.getSession().then(({ data }) => {
       setEmail(data.session?.user?.email ?? null);
       setChecking(false);
     });
 
-    return () => { unsub?.unsubscribe(); };
+    return () => {
+      subscription?.unsubscribe();
+    };
   }, []);
 
-  const handleManagerClick = useCallback(async (e: React.MouseEvent<HTMLAnchorElement>) => {
-    e.preventDefault();
+  const handleManagerClick = useCallback(
+    async (e: React.MouseEvent<HTMLAnchorElement>) => {
+      e.preventDefault();
 
-    // Require login first
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      alert('Please sign in first.');
-      router.push('/login');
-      return;
-    }
+      // Require login first
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        alert('Please sign in first.');
+        router.push('/login');
+        return;
+      }
 
-    // Check admin
-    // Prefer the RPC is_admin() if you created it; otherwise fall back to staff table check.
-    let isAdmin = false;
-    const rpc = await supabase.rpc('is_admin');
-    if (!rpc.error && rpc.data === true) {
-      isAdmin = true;
-    } else {
-      const { data, error } = await supabase
-        .from('staff')
-        .select('is_admin')
-        .eq('email', user.email)
-        .single();
-      if (!error && data?.is_admin) isAdmin = true;
-    }
+      // Prefer RPC if present
+      let isAdmin = false;
+      const rpc = await supabase.rpc('is_admin');
+      if (!rpc.error && rpc.data === true) {
+        isAdmin = true;
+      } else {
+        // Fallback to table lookup
+        const { data, error } = await supabase
+          .from('staff')
+          .select('is_admin')
+          .eq('email', user.email)
+          .single();
+        if (!error && data?.is_admin) isAdmin = true;
+      }
 
-    if (!isAdmin) {
-      alert('Admins only.');
-      // stay on current page (or route home if you prefer):
-      // router.push('/');
-      return;
-    }
+      if (!isAdmin) {
+        alert('Admins only.');
+        return; // stay where you are
+      }
 
-    router.push('/manager');
-  }, [router]);
+      router.push('/manager');
+    },
+    [router]
+  );
 
   const signOut = async () => {
     await supabase.auth.signOut();
@@ -78,7 +83,7 @@ export default function NavBar() {
           textDecoration: 'none',
           color: active ? '#111' : '#333',
           background: active ? '#e5e7eb' : 'transparent',
-          border: '1px solid transparent'
+          border: '1px solid transparent',
         }}
       >
         {label}
@@ -88,38 +93,36 @@ export default function NavBar() {
 
   return (
     <header style={{ background: '#fff', borderBottom: '1px solid #e5e7eb' }}>
-      <nav style={{
-        maxWidth: 1100,
-        margin: '0 auto',
-        padding: '10px 16px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        fontFamily: 'system-ui',
-        color: '#111'
-      }}>
+      <nav
+        style={{
+          maxWidth: 1100,
+          margin: '0 auto',
+          padding: '10px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          fontFamily: 'system-ui',
+          color: '#111',
+        }}
+      >
         <div style={{ fontWeight: 700, marginRight: 8 }}>Attendance</div>
+
         <LinkItem href="/" label="Home" />
         <LinkItem href="/today" label="Today" />
         <LinkItem href="/report" label="Report" />
 
-        {/* Manager link visible to everyone; click is checked */}
+        {/* Manager: everyone can see; click will validate admin */}
         <a
           href="/manager"
           onClick={handleManagerClick}
-          style={{
-            padding: '8px 12px',
-            borderRadius: 8,
-            textDecoration: 'none',
-            color: '#333',
-          }}
+          style={{ padding: '8px 12px', borderRadius: 8, textDecoration: 'none', color: '#333' }}
         >
           Manager
         </a>
 
         <div style={{ flex: 1 }} />
 
-        {/* Right side: auth status */}
+        {/* Right side auth state */}
         {!checking && email && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ color: '#555' }}>{email}</span>
