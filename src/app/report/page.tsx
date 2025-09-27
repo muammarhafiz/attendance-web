@@ -5,175 +5,156 @@ import { supabase } from '@/lib/supabaseClient';
 import Link from 'next/link';
 
 type Row = {
-  day?: string | null;
-  staff_name?: string | null;
-  staff_email: string;
+  ts: string;            // timestamptz
+  staff_name: string | null;
+  staff_email: string | null;
   action: 'Check-in' | 'Check-out' | string;
-  ts: string;                // ISO time
-  distance_m?: number | null;
-  lat?: number | null;
-  lon?: number | null;
-  is_late?: boolean | null;
+  distance_m: number | null;
+  lat: number | null;
+  lon: number | null;
+  is_late: boolean | null;
 };
 
 export default function ReportPage() {
   const now = useMemo(() => new Date(), []);
   const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [month, setMonth] = useState(now.getMonth() + 1); // 1-12
   const [day, setDay] = useState<number | ''>('');
-  const [me, setMe] = useState<string | null>(null);
+  const [q, setQ] = useState('');
   const [rows, setRows] = useState<Row[]>([]);
+  const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [filter, setFilter] = useState('');
-  const [error, setError] = useState<string | null>(null);
 
+  // Require sign-in (lightweight check)
+  const [email, setEmail] = useState<string | null>(null);
   useEffect(() => {
-    const boot = async () => {
-      const { data } = await supabase.auth.getUser();
-      setMe(data.user?.email ?? null);
+    const init = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setEmail(user?.email ?? null);
     };
-    boot();
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
-      setMe(s?.user?.email ?? null);
-    });
-    return () => sub.subscription.unsubscribe();
+    init();
   }, []);
 
-  const periodLabel = useMemo(() => {
-    const mm = String(month).padStart(2, '0');
-    return day === '' ? `${mm}/${year}` : `${String(day).padStart(2, '0')}/${mm}/${year}`;
-  }, [day, month, year]);
-
-  const fmtKL = (iso: string) =>
-    new Date(iso).toLocaleString('en-GB', { timeZone: 'Asia/Kuala_Lumpur' });
-
-  const load = async () => {
-    setError(null);
+  const reload = async () => {
     setLoading(true);
+    setErr(null);
     setRows([]);
-    try {
-      const d = day === '' ? null : Number(day);
 
-      // Try style 1
-      let { data, error } = await supabase.rpc('month_attendance', {
-        year,
-        month,
-        day: d,
-      });
+    // IMPORTANT: parameter names MUST match the SQL function signature
+    const { data, error } = await supabase.rpc('month_attendance', {
+      p_year: year,
+      p_month: month,
+      p_day: day === '' ? null : day,
+    });
 
-      // If that fails, try style 2 (p_year / p_month / p_day)
-      if (error) {
-        const try2 = await supabase.rpc('month_attendance', {
-          p_year: year,
-          p_month: month,
-          p_day: d,
-        });
-        data = try2.data as any;
-        error = try2.error as any;
-      }
-
-      if (error) throw error;
-
-      const list: Row[] = Array.isArray(data) ? data : [];
-      list.sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
-      setRows(list);
-    } catch (e: any) {
-      setError(e?.message ?? String(e));
-    } finally {
+    if (error) {
+      setErr(error.message);
       setLoading(false);
+      return;
     }
+    setRows((data as Row[]) ?? []);
+    setLoading(false);
   };
 
-  useEffect(() => {
-    if (me) void load();
-  }, [me]);
+  useEffect(() => { reload(); /* run once on mount with defaults */ }, []); // eslint-disable-line
 
-  const filtered = useMemo(() => {
-    const q = filter.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter(r =>
-      (r.staff_name ?? '').toLowerCase().includes(q) ||
-      (r.staff_email ?? '').toLowerCase().includes(q)
-    );
-  }, [rows, filter]);
+  const filtered = rows.filter(r => {
+    if (!q.trim()) return true;
+    const hay = `${r.staff_name ?? ''} ${r.staff_email ?? ''}`.toLowerCase();
+    return hay.includes(q.toLowerCase());
+  });
 
-  const th: React.CSSProperties = { textAlign: 'left', padding: '10px 8px', borderBottom: '1px solid #e5e7eb' };
-  const td: React.CSSProperties = { padding: '8px', borderBottom: '1px solid #f1f5f9', verticalAlign: 'top' };
-  const lateStyle: React.CSSProperties = { color: '#b91c1c', fontWeight: 600 };
+  const wrap = { maxWidth: 1000, margin: '0 auto', padding: 16, fontFamily: 'system-ui' } as const;
+  const row = { borderBottom: '1px solid #eee' } as const;
+  const th  = { textAlign: 'left', padding: '10px 12px', borderBottom: '2px solid #e5e7eb', background: '#f8fafc' } as const;
+  const td  = { padding: '10px 12px' } as const;
+  const pill = { padding:'6px 10px', border:'1px solid #d1d5db', borderRadius:8, background:'#fff' } as const;
 
   return (
-    <main style={{ padding: 16, fontFamily: 'system-ui' }}>
-      <h2 style={{ marginBottom: 8 }}>Attendance Report</h2>
+    <main style={wrap}>
+      <nav style={{display:'flex', gap:16, alignItems:'center', marginBottom:16}}>
+        <Link href="/" style={{textDecoration:'none', fontWeight:600}}>Attendance</Link>
+        <Link href="/today">Today</Link>
+        <span style={{fontWeight:600}}>Report</span>
+        <Link href="/manager">Manager</Link>
+        <div style={{marginLeft:'auto', color:'#6b7280'}}>{email ?? 'Not signed in'}</div>
+      </nav>
 
-      {!me && (
-        <div style={{ margin: '12px 0', padding: 12, border: '1px solid #fde68a', background: '#fffbeb', borderRadius: 8 }}>
-          You must be signed in to view reports. <Link href="/login" style={{ textDecoration: 'underline' }}>Go to sign in</Link>.
-        </div>
-      )}
+      <h2 style={{margin:'8px 0 12px'}}>Attendance Report</h2>
 
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', margin: '8px 0 12px' }}>
+      <div style={{display:'flex', gap:12, flexWrap:'wrap', alignItems:'center', marginBottom:12}}>
         <div>
-          <div style={{ fontSize: 12, color: '#6b7280' }}>Year</div>
-          <input type="number" value={year} onChange={e => setYear(Number(e.target.value || now.getFullYear()))}
-                 style={{ padding: 8, border: '1px solid #d1d5db', borderRadius: 8, width: 100 }} />
-        </div>
-        <div>
-          <div style={{ fontSize: 12, color: '#6b7280' }}>Month</div>
-          <input type="number" value={month} onChange={e => setMonth(Number(e.target.value || (now.getMonth() + 1)))}
-                 style={{ padding: 8, border: '1px solid #d1d5db', borderRadius: 8, width: 80 }} />
+          <div style={{fontSize:12, color:'#6b7280'}}>Year</div>
+          <input type="number" value={year}
+            onChange={e=>setYear(parseInt(e.target.value||'0')||now.getFullYear())}
+            style={{padding:10, border:'1px solid #d1d5db', borderRadius:8, width:100}}/>
         </div>
         <div>
-          <div style={{ fontSize: 12, color: '#6b7280' }}>Day (optional)</div>
-          <input type="number" value={day} placeholder="(optional)"
-                 onChange={e => setDay(e.target.value === '' ? '' : Number(e.target.value))}
-                 style={{ padding: 8, border: '1px solid #d1d5db', borderRadius: 8, width: 110 }} />
+          <div style={{fontSize:12, color:'#6b7280'}}>Month</div>
+          <input type="number" value={month}
+            onChange={e=>setMonth(Math.max(1, Math.min(12, parseInt(e.target.value||'0')||month)))}
+            style={{padding:10, border:'1px solid #d1d5db', borderRadius:8, width:80}}/>
+        </div>
+        <div>
+          <div style={{fontSize:12, color:'#6b7280'}}>Day (optional)</div>
+          <input placeholder="optional"
+            value={day}
+            onChange={e=>{
+              const v = e.target.value.trim();
+              if (v === '') setDay('');
+              else setDay(Math.max(1, Math.min(31, parseInt(v)||1)));
+            }}
+            style={{padding:10, border:'1px solid #d1d5db', borderRadius:8, width:110}}/>
         </div>
 
-        <button onClick={load} disabled={loading || !me}
-                style={{ padding: '10px 14px', border: 0, borderRadius: 8, background: '#0ea5e9', color: '#fff' }}>
-          {loading ? 'Loading…' : 'Reload'}
-        </button>
+        <button onClick={reload} disabled={loading} style={pill}>{loading ? 'Loading…' : 'Reload'}</button>
 
-        <div style={{ marginLeft: 'auto', color: '#6b7280' }}>Period: <b>{periodLabel}</b></div>
+        <div style={{marginLeft:8, color:'#6b7280'}}>Period: <b>{String(month).padStart(2,'0')}/{year}</b>{day!=='' ? `, Day ${day}`:''}</div>
       </div>
 
-      <div style={{ marginBottom: 8 }}>
-        <input placeholder="Filter by staff name/email…" value={filter} onChange={e => setFilter(e.target.value)}
-               style={{ padding: 10, border: '1px solid #d1d5db', borderRadius: 8, width: '100%', maxWidth: 360 }} />
-      </div>
+      <input placeholder="Filter by staff name/email…" value={q} onChange={e=>setQ(e.target.value)}
+        style={{width:'100%', padding:12, border:'1px solid #d1d5db', borderRadius:8, marginBottom:8}}/>
 
-      {error && <div style={{ color: '#b91c1c', margin: '8px 0' }}>{error}</div>}
+      {err && <div style={{color:'#b91c1c', margin:'8px 0'}}>Failed to load report: {err}</div>}
 
-      <div style={{ overflowX: 'auto', border: '1px solid #e5e7eb', borderRadius: 8 }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
-          <thead style={{ background: '#f8fafc' }}>
+      <div style={{overflowX:'auto', border:'1px solid #e5e7eb', borderRadius:8}}>
+        <table style={{width:'100%', borderCollapse:'separate', borderSpacing:0}}>
+          <thead>
             <tr>
               <th style={th}>Date/Time (KL)</th>
               <th style={th}>Staff</th>
               <th style={th}>Email</th>
               <th style={th}>Action</th>
               <th style={th}>Distance (m)</th>
-              <th style={th}>Location</th>
+              <th style={th}>Loc</th>
               <th style={th}>Map</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 ? (
-              <tr><td style={td} colSpan={7}>No rows.</td></tr>
-            ) : filtered.map((r, i) => {
-              const loc = (r.lat != null && r.lon != null) ? `${r.lat.toFixed(6)}, ${r.lon.toFixed(6)}` : '-';
-              const mapHref = (r.lat != null && r.lon != null) ? `https://www.google.com/maps?q=${r.lat},${r.lon}` : null;
+            {filtered.length === 0 && (
+              <tr><td colSpan={7} style={{...td, color:'#6b7280'}}>No rows.</td></tr>
+            )}
+            {filtered.map((r, i) => {
+              const d = new Date(r.ts);
+              const kl = new Intl.DateTimeFormat('en-MY', {
+                dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Kuala_Lumpur'
+              }).format(d);
+              const locText = (r.lat!=null && r.lon!=null) ? `${r.lat.toFixed(6)}, ${r.lon.toFixed(6)}` : '-';
+              const gmaps = (r.lat!=null && r.lon!=null)
+                ? `https://www.google.com/maps?q=${r.lat},${r.lon}`
+                : null;
+              const danger = r.is_late && r.action === 'Check-in';
               return (
-                <tr key={`${r.ts}-${r.staff_email}-${i}`}>
-                  <td style={td}>{fmtKL(r.ts)}</td>
-                  <td style={td}>{r.staff_name || '—'}</td>
-                  <td style={td}>{r.staff_email}</td>
-                  <td style={{ ...td, ...(r.is_late ? { color: '#b91c1c', fontWeight: 600 } : {}) }}>
-                    {r.action}{r.is_late ? ' (late)' : ''}
+                <tr key={i} style={{...row, background: danger ? '#fff1f2' : undefined}}>
+                  <td style={td}>{kl}</td>
+                  <td style={td}>{r.staff_name ?? '-'}</td>
+                  <td style={td}>{r.staff_email ?? '-'}</td>
+                  <td style={td}>{r.action}</td>
+                  <td style={td}>{r.distance_m ?? '-'}</td>
+                  <td style={td}>{locText}</td>
+                  <td style={td}>
+                    {gmaps ? <a href={gmaps} target="_blank" rel="noreferrer">Open</a> : '-'}
                   </td>
-                  <td style={td}>{r.distance_m != null ? Math.round(r.distance_m) : '-'}</td>
-                  <td style={td}>{loc}</td>
-                  <td style={td}>{mapHref ? <a href={mapHref} target="_blank" rel="noreferrer">Open</a> : '—'}</td>
                 </tr>
               );
             })}
