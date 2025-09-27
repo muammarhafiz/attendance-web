@@ -2,7 +2,7 @@
 export const dynamic = 'force-dynamic';
 
 import { Suspense, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
@@ -23,7 +23,7 @@ type Row = {
 const th: React.CSSProperties = { textAlign:'left', padding:'10px', borderBottom:'1px solid #e5e5e5' };
 const td: React.CSSProperties = { padding:'10px', borderBottom:'1px solid #f0f0f0' };
 
-/** --- Wrapper adds Suspense around the inner component that calls useSearchParams --- */
+/** Wrapper adds Suspense around the inner component that calls useSearchParams */
 export default function ReportPageWrapper() {
   return (
     <Suspense fallback={<div style={{padding:16,fontFamily:'system-ui'}}>Loading…</div>}>
@@ -32,41 +32,60 @@ export default function ReportPageWrapper() {
   );
 }
 
-function parseMonthParam(params: ReturnType<typeof useSearchParams>): Date {
-  const m = params.get('month'); // expected: YYYY-MM
-  if (m && /^\d{4}-(0[1-9]|1[0-2])$/.test(m)) {
-    return new Date(`${m}-01T00:00:00`);
-  }
-  return new Date(); // default = current month
+function getInt(v: string | null, fallback: number) {
+  const n = v ? Number(v) : NaN;
+  return Number.isFinite(n) ? n : fallback;
+}
+function daysInMonth(year: number, month1to12: number) {
+  return new Date(year, month1to12, 0).getDate(); // month1to12=1..12
 }
 
 function ReportPageInner() {
   const params = useSearchParams();
+  const router = useRouter();
+
+  // Read query: ?year=YYYY&month=MM&day=DD (day optional)
+  const now = new Date();
+  const qYear = getInt(params.get('year'), now.getFullYear());
+  const qMonth = getInt(params.get('month'), now.getMonth() + 1); // 1..12
+  const qDay = params.get('day'); // optional, '01'..'31' or null
+
+  // Build the date to pass into RPC (any day in that month is fine)
+  const monthStartISO = useMemo(() => {
+    const y = qYear;
+    const m = String(qMonth).padStart(2,'0');
+    return `${y}-${m}-01`;
+  }, [qYear, qMonth]);
+
+  const ymLabel = useMemo(() => `${qYear}-${String(qMonth).padStart(2,'0')}`, [qYear, qMonth]);
+
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-
-  const monthStart = useMemo(() => parseMonthParam(params), [params]);
-  const ym = useMemo(
-    () => `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, '0')}`,
-    [monthStart]
-  );
 
   useEffect(() => {
     (async () => {
       setLoading(true);
       setErr(null);
-      const iso = monthStart.toISOString().slice(0, 10); // YYYY-MM-DD
-      const { data, error } = await supabase.rpc('month_attendance', { p_month: iso });
+      const { data, error } = await supabase.rpc('month_attendance', { p_month: monthStartISO });
       if (error) setErr(error.message);
       else setRows((data ?? []) as Row[]);
       setLoading(false);
     })();
-  }, [monthStart]);
+  }, [monthStartISO]);
 
+  // Optional per-day filter (client-side)
+  const filteredByDay = useMemo(() => {
+    if (!qDay) return rows;
+    const d = String(qDay).padStart(2,'0');
+    const prefix = `${qYear}-${String(qMonth).padStart(2,'0')}-${d}`;
+    return rows.filter(r => r.day === prefix);
+  }, [rows, qYear, qMonth, qDay]);
+
+  // Group by staff
   const byStaff = useMemo(() => {
     const map = new Map<string, Row[]>();
-    for (const r of rows) {
+    for (const r of filteredByDay) {
       const k = `${r.staff_name}:::${r.email}`;
       if (!map.has(k)) map.set(k, []);
       map.get(k)!.push(r);
@@ -81,18 +100,78 @@ function ReportPageInner() {
     }
     out.sort((a, b) => a.name.localeCompare(b.name));
     return out;
-  }, [rows]);
+  }, [filteredByDay]);
+
+  // Controls: year/month/day (updates URL query, triggers reload)
+  const years = useMemo(() => {
+    const cur = now.getFullYear();
+    const list: number[] = [];
+    for (let y = cur - 5; y <= cur + 1; y++) list.push(y);
+    return list;
+  }, [now]);
+
+  const totalDays = daysInMonth(qYear, qMonth);
+  const dayOptions = Array.from({length: totalDays}, (_,i)=>String(i+1).padStart(2,'0'));
+
+  function setQuery(next: {year?: number, month?: number, day?: string | null}) {
+    const y = next.year ?? qYear;
+    const m = next.month ?? qMonth;
+    const d = next.day === undefined ? qDay : next.day; // allow null to clear
+    const sp = new URLSearchParams();
+    sp.set('year', String(y));
+    sp.set('month', String(m).padStart(2,'0'));
+    if (d) sp.set('day', d);
+    router.replace(`/report?${sp.toString()}`);
+  }
 
   return (
     <main style={{ padding: 16, fontFamily: 'system-ui' }}>
-      <h2>Attendance Report – {ym}</h2>
-      <div style={{ margin: '8px 0' }}>
+      <h2>Attendance Report</h2>
+
+      {/* Controls */}
+      <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', margin:'8px 0 12px'}}>
+        <label>Year</label>
+        <select
+          value={qYear}
+          onChange={(e)=>setQuery({year: Number(e.target.value)})}
+          style={{padding:6, border:'1px solid #ccc', borderRadius:6}}
+        >
+          {years.map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+
+        <label>Month</label>
+        <select
+          value={String(qMonth).padStart(2,'0')}
+          onChange={(e)=>setQuery({month: Number(e.target.value)})}
+          style={{padding:6, border:'1px solid #ccc', borderRadius:6}}
+        >
+          {Array.from({length:12},(_,i)=>i+1).map(m => {
+            const v = String(m).padStart(2,'0');
+            return <option key={v} value={v}>{v}</option>;
+          })}
+        </select>
+
+        <label>Day</label>
+        <select
+          value={qDay ?? ''}
+          onChange={(e)=> setQuery({day: e.target.value || null})}
+          style={{padding:6, border:'1px solid #ccc', borderRadius:6}}
+        >
+          <option value="">All days</option>
+          {dayOptions.map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
+
+        <div style={{flex:1}} />
         <button
-          onClick={() => window.print()}
-          style={{ padding: '8px 12px', border: '1px solid #ccc', borderRadius: 8 }}
+          onClick={()=>window.print()}
+          style={{ padding:'8px 12px', border:'1px solid #ccc', borderRadius:8 }}
         >
           Print / Save PDF
         </button>
+      </div>
+
+      <div style={{margin:'4px 0 10px', color:'#555'}}>
+        Period: <b>{ymLabel}{qDay ? `-${qDay}` : ''}</b>
       </div>
 
       {loading && <p>Loading…</p>}
@@ -155,7 +234,7 @@ function ReportPageInner() {
 
       <style>{`
         @media print {
-          button { display: none; }
+          button, select, label { display: none; }
           a { text-decoration: none; color: black; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           section { page-break-inside: avoid; }
