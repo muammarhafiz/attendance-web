@@ -5,30 +5,32 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 export default function AuthCallbackPage() {
-  const [status, setStatus] = useState('Signing you in...');
+  const [status, setStatus] = useState<string>('Signing you in...');
 
   useEffect(() => {
     (async () => {
       try {
-        const { data, error } = await supabase.auth.exchangeCodeForSession(window.location.href);
+        const { data, error } = await supabase.auth.exchangeCodeForSession(
+          window.location.href
+        );
         if (error) {
           setStatus(`Error: ${error.message}`);
           return;
         }
-        if (data.session) {
-          setStatus('Success! Redirecting...');
-          // Clean up the URL (remove code & hash)
+        if (data?.session) {
+          setStatus('Success! Redirecting…');
+          // Clean query/hash then go home
           const url = new URL(window.location.href);
           url.search = '';
           url.hash = '';
           window.history.replaceState({}, '', url.toString());
-          // Redirect home
           window.location.replace('/');
         } else {
           setStatus('No session returned.');
         }
-      } catch (e: any) {
-        setStatus(`Exception: ${e.message}`);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setStatus(`Exception: ${msg}`);
       }
     })();
   }, []);
