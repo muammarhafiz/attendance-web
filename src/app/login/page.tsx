@@ -1,51 +1,31 @@
 'use client';
-export const dynamic = 'force-dynamic';
+import { supabase } from '@/lib/supabaseClient';
 
-import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabaseClient';
-
-export default function LoginPage() {
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  // If already logged in, bounce to home
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) window.location.replace('/');
-    });
-
-    const { data } = supabase.auth.onAuthStateChange((_evt, session) => {
-      if (session) window.location.replace('/');
-    });
-    return () => data.subscription.unsubscribe();
-  }, []);
-
-  const signInWithGoogle = async () => {
-    setBusy(true);
-    setErr(null);
-    const { error } = await supabase.auth.signInWithOAuth({
+export default function Login() {
+  const signInGoogle = async () => {
+    await supabase.auth.signInWithOAuth({
       provider: 'google',
-      // Supabase manages callback → after login it will redirect back to your site root
-      options: { redirectTo: window.location.origin },
+      options: { redirectTo: window.location.origin } // back to /
     });
-    if (error) {
-      setErr(error.message);
-      setBusy(false);
-    }
+  };
+
+  const signInMagic = async () => {
+    const email = prompt('Email to send magic link to?');
+    if (!email) return;
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: window.location.origin } // back to /
+    });
+    alert(error ? error.message : 'Magic link sent. Check your inbox.');
   };
 
   return (
-    <main style={{ padding: 24, fontFamily: 'system-ui' }}>
+    <main style={{padding:16,fontFamily:'system-ui'}}>
       <h2>Sign in</h2>
       <p>Only allow-listed staff can access.</p>
-      {err && <div style={{ color: '#b91c1c', marginBottom: 8 }}>{err}</div>}
-      <button
-        onClick={signInWithGoogle}
-        disabled={busy}
-        style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid #ccc', background: '#fff' }}
-      >
-        {busy ? 'Redirecting…' : 'Continue with Google'}
-      </button>
+      <button onClick={signInGoogle} style={{padding:10,border:'1px solid #ccc',borderRadius:8}}>Continue with Google</button>
+      <div style={{height:10}} />
+      <button onClick={signInMagic} style={{padding:10,border:'1px solid #ccc',borderRadius:8}}>Send magic link to my email</button>
     </main>
   );
 }
