@@ -12,7 +12,6 @@ export default function TodayPage() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (!data.session) {
-        // not logged in → redirect
         router.replace('/login?next=/today');
       } else {
         setEmail(data.session.user.email ?? null);
@@ -41,12 +40,12 @@ export default function TodayPage() {
     return <div style={{ padding: 20 }}>Redirecting to login…</div>;
   }
 
-  // 🟢 Place your existing Today logs UI here
+  // Your existing Today logs UI goes here
   return (
     <div style={{ padding: 20 }}>
-      <h2>Today's Logs</h2>
+      <h2>Today&apos;s Logs</h2>
       <p>Signed in as {email}</p>
-      {/* Your table + filters here */}
+      {/* … table + filters … */}
     </div>
   );
 }
