@@ -1,7 +1,7 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 
@@ -23,6 +23,15 @@ type Row = {
 const th: React.CSSProperties = { textAlign:'left', padding:'10px', borderBottom:'1px solid #e5e5e5' };
 const td: React.CSSProperties = { padding:'10px', borderBottom:'1px solid #f0f0f0' };
 
+/** --- Wrapper adds Suspense around the inner component that calls useSearchParams --- */
+export default function ReportPageWrapper() {
+  return (
+    <Suspense fallback={<div style={{padding:16,fontFamily:'system-ui'}}>Loading…</div>}>
+      <ReportPageInner />
+    </Suspense>
+  );
+}
+
 function parseMonthParam(params: ReturnType<typeof useSearchParams>): Date {
   const m = params.get('month'); // expected: YYYY-MM
   if (m && /^\d{4}-(0[1-9]|1[0-2])$/.test(m)) {
@@ -31,7 +40,7 @@ function parseMonthParam(params: ReturnType<typeof useSearchParams>): Date {
   return new Date(); // default = current month
 }
 
-export default function ReportPage() {
+function ReportPageInner() {
   const params = useSearchParams();
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,7 +79,6 @@ export default function ReportPage() {
       const lateTotal = arr.reduce((s, x) => s + (x.late_minutes || 0), 0);
       out.push({ name, email, rows: arr, absentDays, lateTotal });
     }
-    // sort staff alphabetically
     out.sort((a, b) => a.name.localeCompare(b.name));
     return out;
   }, [rows]);
