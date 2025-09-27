@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabaseClient';
 
 type Row = {
   id: number;
-  timestamp: string;        // timestamptz
+  timestamp: string;
   staff_name: string | null;
   staff_email: string | null;
   action: 'Check-in' | 'Check-out';
@@ -31,6 +31,7 @@ export default function TodayPage() {
       setMeEmail(data.session.user.email ?? '');
       await reload();
     })();
+    // no deps: run once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -38,9 +39,9 @@ export default function TodayPage() {
     setLoading(true);
     setErr('');
     try {
-      // local midnight -> ISO -> use as lower bound
       const start = new Date();
       start.setHours(0, 0, 0, 0);
+
       const { data, error } = await supabase
         .from('attendance')
         .select('id,timestamp,staff_name,staff_email,action,distance_m,lat,lon')
@@ -48,9 +49,10 @@ export default function TodayPage() {
         .order('timestamp', { ascending: true });
 
       if (error) throw error;
-      setRows((data || []) as Row[]);
-    } catch (e: any) {
-      setErr(e.message || String(e));
+      setRows((data ?? []) as Row[]);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErr(msg);
     } finally {
       setLoading(false);
     }
@@ -99,42 +101,43 @@ export default function TodayPage() {
       <div style={{ overflowX: 'auto', marginTop: 12 }}>
         <table style={{ borderCollapse: 'collapse', width: '100%' }}>
           <thead>
-          <tr>
-            <th style={thtd}>Time (KL)</th>
-            <th style={thtd}>Staff</th>
-            <th style={thtd}>Action</th>
-            <th style={thtd}>Distance (m)</th>
-            <th style={thtd}>Location</th>
-            <th style={thtd}>Map</th>
-          </tr>
+            <tr>
+              <th style={thtd}>Time (KL)</th>
+              <th style={thtd}>Staff</th>
+              <th style={thtd}>Action</th>
+              <th style={thtd}>Distance (m)</th>
+              <th style={thtd}>Location</th>
+              <th style={thtd}>Map</th>
+            </tr>
           </thead>
           <tbody>
-          {filtered.length === 0 ? (
-            <tr><td style={{ ...thtd, color: '#666' }} colSpan={6}>No logs yet today.</td></tr>
-          ) : filtered.map(r => (
-            <tr key={r.id}>
-              <td style={thtd}>{fmtKL(r.timestamp)}</td>
-              <td style={thtd}>
-                {r.staff_name || '(no name)'}
-                <div style={{ color: '#666', fontSize: 12 }}>{r.staff_email}</div>
-              </td>
-              <td style={thtd}>{r.action}</td>
-              <td style={thtd}>{r.distance_m ?? '—'}</td>
-              <td style={thtd}>
-                {r.lat != null && r.lon != null ? `${r.lat.toFixed(6)}, ${r.lon.toFixed(6)}` : '—'}
-              </td>
-              <td style={thtd}>
-                {r.lat != null && r.lon != null ? (
-                  <a
-                    href={`https://www.google.com/maps?q=${r.lat},${r.lon}`}
-                    target="_blank" rel="noreferrer"
-                  >
-                    Open
-                  </a>
-                ) : '—'}
-              </td>
-            </tr>
-          ))}
+            {filtered.length === 0 ? (
+              <tr><td style={{ ...thtd, color: '#666' }} colSpan={6}>No logs yet today.</td></tr>
+            ) : filtered.map(r => (
+              <tr key={r.id}>
+                <td style={thtd}>{fmtKL(r.timestamp)}</td>
+                <td style={thtd}>
+                  {r.staff_name || '(no name)'}
+                  <div style={{ color: '#666', fontSize: 12 }}>{r.staff_email}</div>
+                </td>
+                <td style={thtd}>{r.action}</td>
+                <td style={thtd}>{r.distance_m ?? '—'}</td>
+                <td style={thtd}>
+                  {r.lat != null && r.lon != null ? `${r.lat.toFixed(6)}, ${r.lon.toFixed(6)}` : '—'}
+                </td>
+                <td style={thtd}>
+                  {r.lat != null && r.lon != null ? (
+                    <a
+                      href={`https://www.google.com/maps?q=${r.lat},${r.lon}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open
+                    </a>
+                  ) : '—'}
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
