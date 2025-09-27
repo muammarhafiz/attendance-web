@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
 interface Staff {
@@ -16,10 +17,33 @@ export default function ManagerPage() {
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
-    fetchStaff();
+    checkAdmin();
   }, []);
+
+  async function checkAdmin() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('staff')
+      .select('is_admin')
+      .eq('email', user.email)
+      .single();
+
+    if (error || !data?.is_admin) {
+      alert('Access denied. Admins only.');
+      router.push('/');
+      return;
+    }
+
+    fetchStaff();
+  }
 
   async function fetchStaff() {
     setLoading(true);
@@ -27,19 +51,14 @@ export default function ManagerPage() {
       .from('staff')
       .select('email, name, is_admin, created_at')
       .order('created_at', { ascending: false });
-    if (error) console.error(error);
-    else setStaff(data || []);
+    if (!error && data) setStaff(data);
     setLoading(false);
   }
 
   async function addStaff() {
     if (!newEmail) return alert('Email required');
     const { error } = await supabase.from('staff').insert([
-      {
-        email: newEmail,
-        name: newName || null,
-        is_admin: isAdmin,
-      },
+      { email: newEmail, name: newName || null, is_admin: isAdmin },
     ]);
     if (error) alert(error.message);
     else {
@@ -67,7 +86,7 @@ export default function ManagerPage() {
   }
 
   return (
-    <main style={{ padding: 20, fontFamily: 'system-ui' }}>
+    <main style={{ padding: 20, fontFamily: 'system-ui', backgroundColor: '#fff', color: '#000' }}>
       <h1>Manager</h1>
 
       <section style={{ marginBottom: 20 }}>
@@ -102,24 +121,33 @@ export default function ManagerPage() {
         {loading ? (
           <p>Loading...</p>
         ) : (
-          <table border={1} cellPadding={6}>
+          <table
+            style={{
+              borderCollapse: 'collapse',
+              width: '100%',
+              backgroundColor: '#f9f9f9',
+              color: '#000',
+            }}
+          >
             <thead>
               <tr>
-                <th>Email</th>
-                <th>Name</th>
-                <th>Admin</th>
-                <th>Created</th>
-                <th>Actions</th>
+                <th style={{ border: '1px solid #333', padding: 6 }}>Email</th>
+                <th style={{ border: '1px solid #333', padding: 6 }}>Name</th>
+                <th style={{ border: '1px solid #333', padding: 6 }}>Admin</th>
+                <th style={{ border: '1px solid #333', padding: 6 }}>Created</th>
+                <th style={{ border: '1px solid #333', padding: 6 }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {staff.map((s) => (
                 <tr key={s.email}>
-                  <td>{s.email}</td>
-                  <td>{s.name || '-'}</td>
-                  <td>{s.is_admin ? 'Yes' : 'No'}</td>
-                  <td>{new Date(s.created_at).toLocaleString()}</td>
-                  <td>
+                  <td style={{ border: '1px solid #333', padding: 6 }}>{s.email}</td>
+                  <td style={{ border: '1px solid #333', padding: 6 }}>{s.name || '-'}</td>
+                  <td style={{ border: '1px solid #333', padding: 6 }}>{s.is_admin ? 'Yes' : 'No'}</td>
+                  <td style={{ border: '1px solid #333', padding: 6 }}>
+                    {new Date(s.created_at).toLocaleString()}
+                  </td>
+                  <td style={{ border: '1px solid #333', padding: 6 }}>
                     <button onClick={() => toggleAdmin(s.email, s.is_admin)}>
                       {s.is_admin ? 'Revoke Admin' : 'Make Admin'}
                     </button>{' '}
