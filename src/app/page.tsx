@@ -12,6 +12,22 @@ const WLAT = Number(process.env.NEXT_PUBLIC_WORKSHOP_LAT);
 const WLON = Number(process.env.NEXT_PUBLIC_WORKSHOP_LON);
 const RADIUS_M = Number(process.env.NEXT_PUBLIC_RADIUS_M || 120);
 
+/** Inline sign-out button */
+function SignOutButton() {
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    window.location.href = '/login'; // back to login page
+  };
+  return (
+    <button
+      onClick={handleSignOut}
+      style={{ padding: 8, border: '1px solid #ccc', borderRadius: 6, background: '#fff' }}
+    >
+      Sign Out
+    </button>
+  );
+}
+
 export default function HomePage() {
   const [email, setEmail] = useState<string>('');
   const [statusText, setStatusText] = useState<string>('Waiting for location…');
@@ -19,14 +35,19 @@ export default function HomePage() {
   const [lastResult, setLastResult] = useState<SubmitResult>(null);
   const [canShowLogBtn, setCanShowLogBtn] = useState<boolean>(false);
 
-  // show who is signed in
+  // Redirect to /login if not signed in; also show who is signed in
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setEmail(data.user?.email ?? '');
-    });
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!data.session) {
+        window.location.href = '/login';
+        return;
+      }
+      setEmail(data.session.user.email ?? '');
+    })();
   }, []);
 
-  // Called by the map on refresh; purely informational
+  // Called by the map; purely informational
   const onLocationChange = (pos: { lat: number; lon: number }, acc?: number) => {
     const accTxt = acc ? ` (±${Math.round(acc)} m)` : '';
     setStatusText(`Your location: ${pos.lat.toFixed(6)}, ${pos.lon.toFixed(6)}${accTxt}`);
@@ -44,7 +65,7 @@ export default function HomePage() {
         const acc = Math.round(p.coords.accuracy);
         setStatusText(`Your location: ${lat.toFixed(6)}, ${lon.toFixed(6)} (±${acc} m)`);
 
-        // Server-side: uses your signed-in email + staff name mapping
+        // Server-side RPC uses signed-in email + staff name mapping
         const { data, error } = await supabase.rpc('submit_attendance_auto', {
           p_action: action,
           p_lat: lat,
@@ -69,6 +90,7 @@ export default function HomePage() {
     );
   };
 
+  const shell: React.CSSProperties = { padding: 16, fontFamily: 'system-ui', maxWidth: 640, margin: '0 auto' };
   const box: React.CSSProperties = { border: '1px solid #ddd', borderRadius: 8, padding: 16, margin: '12px 0' };
   const btn: React.CSSProperties = {
     width: '100%',
@@ -82,8 +104,11 @@ export default function HomePage() {
   };
 
   return (
-    <main style={{ padding: 16, fontFamily: 'system-ui', maxWidth: 640, margin: '0 auto' }}>
-      <h2>Workshop Attendance</h2>
+    <main style={shell}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <h2 style={{ margin: 0 }}>Workshop Attendance</h2>
+        <SignOutButton />
+      </div>
 
       {/* Signed-in banner */}
       <div style={box}>
@@ -134,6 +159,7 @@ export default function HomePage() {
                 borderRadius: 8,
                 border: '1px solid #ddd',
                 textDecoration: 'none',
+                background: '#fff',
               }}
             >
               View Today Log
