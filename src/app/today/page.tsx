@@ -1,135 +1,143 @@
 'use client';
-export const dynamic = 'force-dynamic';
 
 import { useEffect, useMemo, useState } from 'react';
-import { supabase } from '../../lib/supabaseClient';
+import { supabase } from '@/lib/supabaseClient';
 
 type Row = {
-  id: string;
-  ts: string;
-  staff_id: string;
+  id: number;
+  timestamp: string;        // timestamptz
   staff_name: string | null;
+  staff_email: string | null;
   action: 'Check-in' | 'Check-out';
+  distance_m: number | null;
   lat: number | null;
   lon: number | null;
-  distance_m: number | null;
 };
 
-const KL_TZ = 'Asia/Kuala_Lumpur';
-function isSameKLDay(tsISO: string): boolean {
-  const nowKL = new Date().toLocaleDateString('en-CA', { timeZone: KL_TZ });
-  const dKL = new Date(tsISO).toLocaleDateString('en-CA', { timeZone: KL_TZ });
-  return dKL === nowKL;
-}
-function fmtKL(iso: string): string {
-  return new Date(iso).toLocaleString('en-MY', { timeZone: KL_TZ, hour12: false });
-}
-
 export default function TodayPage() {
-  const [email, setEmail] = useState<string | null>(null);
+  const [meEmail, setMeEmail] = useState<string>('');
   const [rows, setRows] = useState<Row[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [filter, setFilter] = useState<string>('');
+  const [q, setQ] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string>('');
 
-  // Auth gate
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (!data.session) window.location.href = '/login';
-      else setEmail(data.session.user.email ?? null);
-    });
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!data.session) {
+        window.location.href = '/login';
+        return;
+      }
+      setMeEmail(data.session.user.email ?? '');
+      await reload();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const load = async () => {
+  const reload = async () => {
     setLoading(true);
-    setErr(null);
-    const { data, error } = await supabase
-      .from('attendance')
-      .select('id, ts, staff_id, staff_name, action, lat, lon, distance_m')
-      .order('ts', { ascending: false });
+    setErr('');
+    try {
+      // local midnight -> ISO -> use as lower bound
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      const { data, error } = await supabase
+        .from('attendance')
+        .select('id,timestamp,staff_name,staff_email,action,distance_m,lat,lon')
+        .gte('timestamp', start.toISOString())
+        .order('timestamp', { ascending: true });
 
-    if (error) { setErr(error.message); setRows([]); }
-    else {
-      const list = (data ?? []) as Row[];
-      setRows(list.filter(r => isSameKLDay(r.ts)));
+      if (error) throw error;
+      setRows((data || []) as Row[]);
+    } catch (e: any) {
+      setErr(e.message || String(e));
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  useEffect(() => { load(); }, []);
-
   const filtered = useMemo(() => {
-    const q = filter.trim().toLowerCase();
-    if (q.length === 0) return rows;
-    return rows.filter(r => {
-      const label = (r.staff_name ?? r.staff_id).toLowerCase();
-      return label.includes(q);
-    });
-  }, [rows, filter]);
+    const needle = q.trim().toLowerCase();
+    if (!needle) return rows;
+    return rows.filter(r =>
+      (r.staff_name ?? '').toLowerCase().includes(needle) ||
+      (r.staff_email ?? '').toLowerCase().includes(needle)
+    );
+  }, [rows, q]);
 
-  const table = useMemo(() => {
-    if (filtered.length === 0) {
-      return (
-        <tr>
-          <td colSpan={6} style={{ padding: 12, color: '#666' }}>
-            {rows.length === 0 ? 'No logs yet today.' : 'No matches for the current filter.'}
-          </td>
-        </tr>
-      );
-    }
-    return filtered.map((r) => (
-      <tr key={r.id}>
-        <td style={td}>{fmtKL(r.ts)}</td>
-        <td style={td}>{r.staff_name ?? r.staff_id}</td>
-        <td style={td}>{r.action}</td>
-        <td style={td}>{r.distance_m != null ? Math.round(r.distance_m) : '-'}</td>
-        <td style={td}>
-          {(r.lat != null && r.lon != null) ? `${r.lat.toFixed(6)}, ${r.lon.toFixed(6)}` : '-'}
-        </td>
-        <td style={td}>
-          {(r.lat != null && r.lon != null)
-            ? <a href={`https://maps.google.com/?q=${r.lat},${r.lon}`} target="_blank" rel="noreferrer">Open</a>
-            : '-'}
-        </td>
-      </tr>
-    ));
-  }, [filtered, rows.length]);
+  const fmtKL = (iso: string) =>
+    new Date(iso).toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur', hour12: false });
 
-  const signOut = async () => { await supabase.auth.signOut(); window.location.href = '/login'; };
+  const wrap = { padding: 16, fontFamily: 'system-ui', maxWidth: 960, margin: '0 auto' } as const;
+  const btn = { padding: '8px 12px', border: '1px solid #ddd', borderRadius: 8, background: '#fff' } as const;
+  const input = { padding: 10, border: '1px solid #ddd', borderRadius: 8, minWidth: 240 } as const;
+  const thtd = { padding: '10px 8px', borderBottom: '1px solid #eee', textAlign: 'left' } as const;
 
   return (
-    <main style={{ padding: 16, fontFamily: 'system-ui' }}>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap: 12, flexWrap: 'wrap' }}>
-        <h2 style={{ margin: 0 }}>Today’s Logs</h2>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {email && <span style={{ fontSize: 13, color: '#555' }}>{email}</span>}
-          <button onClick={() => setFilter('')} disabled={filter.length === 0} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #ccc', background: '#fff' }}>Clear</button>
-          <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter by staff name…" style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #ccc', minWidth: 220 }} />
-          <button onClick={load} disabled={loading} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #ccc', background: '#fff' }}>{loading ? 'Refreshing…' : 'Refresh'}</button>
-          <button onClick={signOut} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #ccc', background: '#fff' }}>Sign out</button>
-        </div>
+    <main style={wrap}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <h2 style={{ margin: 0, flex: '1 0 auto' }}>Today&apos;s Logs</h2>
+        <div style={{ color: '#555' }}>{meEmail || '—'}</div>
+        <button style={btn} onClick={() => setQ('')}>Clear</button>
+        <input
+          placeholder="Filter by staff name…"
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          style={input}
+        />
+        <button style={btn} onClick={reload} disabled={loading}>{loading ? 'Loading…' : 'Refresh'}</button>
+        <button
+          style={btn}
+          onClick={async () => { await supabase.auth.signOut(); window.location.href = '/login'; }}
+        >
+          Sign out
+        </button>
       </div>
 
-      {err && <div style={{ marginTop: 12, color: '#b91c1c' }}>{err}</div>}
+      {err && <div style={{ color: '#b91c1c', marginTop: 8 }}>{err}</div>}
 
       <div style={{ overflowX: 'auto', marginTop: 12 }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <table style={{ borderCollapse: 'collapse', width: '100%' }}>
           <thead>
-            <tr>
-              <th style={th}>Time (KL)</th>
-              <th style={th}>Staff</th>
-              <th style={th}>Action</th>
-              <th style={th}>Distance (m)</th>
-              <th style={th}>Location</th>
-              <th style={th}>Map</th>
-            </tr>
+          <tr>
+            <th style={thtd}>Time (KL)</th>
+            <th style={thtd}>Staff</th>
+            <th style={thtd}>Action</th>
+            <th style={thtd}>Distance (m)</th>
+            <th style={thtd}>Location</th>
+            <th style={thtd}>Map</th>
+          </tr>
           </thead>
-          <tbody>{table}</tbody>
+          <tbody>
+          {filtered.length === 0 ? (
+            <tr><td style={{ ...thtd, color: '#666' }} colSpan={6}>No logs yet today.</td></tr>
+          ) : filtered.map(r => (
+            <tr key={r.id}>
+              <td style={thtd}>{fmtKL(r.timestamp)}</td>
+              <td style={thtd}>
+                {r.staff_name || '(no name)'}
+                <div style={{ color: '#666', fontSize: 12 }}>{r.staff_email}</div>
+              </td>
+              <td style={thtd}>{r.action}</td>
+              <td style={thtd}>{r.distance_m ?? '—'}</td>
+              <td style={thtd}>
+                {r.lat != null && r.lon != null ? `${r.lat.toFixed(6)}, ${r.lon.toFixed(6)}` : '—'}
+              </td>
+              <td style={thtd}>
+                {r.lat != null && r.lon != null ? (
+                  <a
+                    href={`https://www.google.com/maps?q=${r.lat},${r.lon}`}
+                    target="_blank" rel="noreferrer"
+                  >
+                    Open
+                  </a>
+                ) : '—'}
+              </td>
+            </tr>
+          ))}
+          </tbody>
         </table>
       </div>
     </main>
   );
 }
-
-const th: React.CSSProperties = { textAlign: 'left', borderBottom: '1px solid #ddd', padding: 8, background: '#fafafa' };
-const td: React.CSSProperties = { borderBottom: '1px solid #eee', padding: 8 };
