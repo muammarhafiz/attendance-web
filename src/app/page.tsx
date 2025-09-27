@@ -7,7 +7,6 @@ import { supabase } from '@/lib/supabaseClient';
 const CurrentMap = dynamic(() => import('@/components/CurrentMap'), { ssr: false });
 
 type SubmitResult = { ok?: boolean; msg?: string; distance_m?: number } | null;
-
 type Cfg = { lat: number; lon: number; radius: number };
 
 function SignOutButton() {
@@ -32,11 +31,15 @@ export default function HomePage() {
   const [lastResult, setLastResult] = useState<SubmitResult>(null);
   const [canShowLogBtn, setCanShowLogBtn] = useState<boolean>(false);
 
-  // config from DB (single source of truth)
+  // config from DB
   const [cfg, setCfg] = useState<Cfg | null>(null);
   const [cfgError, setCfgError] = useState<string>('');
 
-  // Guard: must be signed in; also get email
+  // checkout eligibility
+  const [canCheckout, setCanCheckout] = useState<boolean>(false);
+  const [eligNote, setEligNote] = useState<string>('You must check in today before you can check out.');
+
+  // session + email
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getSession();
@@ -48,7 +51,7 @@ export default function HomePage() {
     })();
   }, []);
 
-  // Load workshop config from DB (one source)
+  // load workshop config from DB
   useEffect(() => {
     (async () => {
       const { data, error } = await supabase
@@ -69,12 +72,62 @@ export default function HomePage() {
     })();
   }, []);
 
-  // Called by the map; informational
+  // helper: compute "canCheckout" for today
+  const refreshEligibility = async () => {
+    // KL midnight
+    const now = new Date();
+    const kl = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Kuala_Lumpur',
+      year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(now);
+    const y = kl.find(p => p.type === 'year')!.value;
+    const m = kl.find(p => p.type === 'month')!.value;
+    const d = kl.find(p => p.type === 'day')!.value;
+    const startISO = new Date(`${y}-${m}-${d}T00:00:00+08:00`).toISOString();
+
+    const { data, error } = await supabase
+      .from('attendance')
+      .select('action, ts')
+      .gte('ts', startISO)
+      .order('ts', { ascending: true });
+
+    if (error) {
+      setCanCheckout(false);
+      setEligNote('Eligibility check failed: ' + error.message);
+      return;
+    }
+
+    if (!data || data.length === 0) {
+      setCanCheckout(false);
+      setEligNote('You must check in today before you can check out.');
+      return;
+    }
+
+    const hasCheckInToday = data.some(r => r.action === 'Check-in');
+    const last = data[data.length - 1];
+    const lastIsCheckout = last?.action === 'Check-out';
+
+    const eligible = hasCheckInToday && !lastIsCheckout;
+    setCanCheckout(eligible);
+    setEligNote(
+      eligible ? 'You can check out now.' :
+      hasCheckInToday ? 'Already checked out today.' :
+      'You must check in today before you can check out.'
+    );
+  };
+
+  // initial eligibility load
+  useEffect(() => {
+    refreshEligibility();
+  }, []);
+
+  // map callback (informational only)
   const onLocationChange = (pos: { lat: number; lon: number }, acc?: number) => {
     const accTxt = acc ? ` (±${Math.round(acc)} m)` : '';
     setStatusText(`Your location: ${pos.lat.toFixed(6)}, ${pos.lon.toFixed(6)}${accTxt}`);
   };
 
+  // submit using the new RPC that enforces sequence + radius + one check-in per day
   const submit = async (action: 'Check-in' | 'Check-out') => {
     setBusy(true);
     setLastResult(null);
@@ -87,11 +140,12 @@ export default function HomePage() {
         const acc = Math.round(p.coords.accuracy);
         setStatusText(`Your location: ${lat.toFixed(6)}, ${lon.toFixed(6)} (±${acc} m)`);
 
-        // Server uses signed-in email + DB config
-        const { data, error } = await supabase.rpc('submit_attendance_auto', {
+        const { data, error } = await supabase.rpc('submit_attendance', {
           p_action: action,
           p_lat: lat,
           p_lon: lon,
+          // optional name (server falls back to email prefix)
+          p_staff_name: null
         });
 
         if (error) {
@@ -101,6 +155,8 @@ export default function HomePage() {
           const res = (data as SubmitResult) ?? { ok: false, msg: 'No response' };
           setLastResult(res);
           setCanShowLogBtn(!!res?.ok);
+          // re-check eligibility after every action
+          await refreshEligibility();
         }
         setBusy(false);
       },
@@ -174,11 +230,15 @@ export default function HomePage() {
         </button>
         <button
           onClick={() => submit('Check-out')}
-          disabled={busy || !cfg}
-          style={{ ...btn, background: '#0ea5e9', opacity: busy || !cfg ? 0.7 : 1 }}
+          disabled={busy || !cfg || !canCheckout}
+          style={{ ...btn, background: '#0ea5e9', opacity: (busy || !cfg || !canCheckout) ? 0.6 : 1 }}
+          title={canCheckout ? 'You can check out now' : eligNote}
         >
           {busy ? 'Checking out…' : 'Check out'}
         </button>
+        <div style={{ marginTop: 8, color: '#6b7280', fontSize: 12 }}>
+          {eligNote}
+        </div>
         <div id="msg" style={{ marginTop: 10, color: lastResult?.ok ? '#16a34a' : '#b91c1c' }}>
           {lastResult?.msg}
         </div>
