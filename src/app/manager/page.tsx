@@ -1,219 +1,136 @@
 'use client';
-export const dynamic = 'force-dynamic';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-type Staff = {
-  id: number;
+interface Staff {
   email: string;
-  name: string;
+  name: string | null;
   is_admin: boolean;
   created_at: string;
-};
-
-const th: React.CSSProperties = { textAlign: 'left', padding: '10px', borderBottom: '1px solid #e5e5e5' };
-const td: React.CSSProperties = { padding: '10px', borderBottom: '1px solid #f0f0f0', verticalAlign: 'top' };
+}
 
 export default function ManagerPage() {
-  const router = useRouter();
+  const [staff, setStaff] = useState<Staff[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newEmail, setNewEmail] = useState('');
+  const [newName, setNewName] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
 
-  // session + auth
-  const [sessionChecked, setSessionChecked] = useState(false);
-  const [authedEmail, setAuthedEmail] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
-
-  // data state
-  const [rows, setRows] = useState<Staff[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [err, setErr] = useState<string | null>(null);
-
-  // form state
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-
-  // login guard
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (!data.session) {
-        router.replace('/login?next=/manager');
-      } else {
-        setAuthedEmail(data.session.user.email ?? null);
-      }
-      setSessionChecked(true);
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
-      if (!session) router.replace('/login?next=/manager');
-      else setAuthedEmail(session.user.email ?? null);
-    });
-    return () => sub.subscription.unsubscribe();
-  }, [router]);
-
-  // admin check (RPC ignores RLS; function returns boolean)
-  const checkAdmin = useCallback(async (): Promise<boolean> => {
-    const { data, error } = await supabase.rpc('is_admin');
-    if (error) throw new Error(error.message);
-    return Boolean(data);
+    fetchStaff();
   }, []);
 
-  const fetchStaff = useCallback(async () => {
+  async function fetchStaff() {
     setLoading(true);
-    setErr(null);
     const { data, error } = await supabase
       .from('staff')
-      .select('id, email, name, is_admin, created_at')
+      .select('email, name, is_admin, created_at')
       .order('created_at', { ascending: false });
-    if (error) setErr(error.message);
-    else setRows((data ?? []) as Staff[]);
+    if (error) console.error(error);
+    else setStaff(data || []);
     setLoading(false);
-  }, []);
+  }
 
-  useEffect(() => {
-    (async () => {
-      if (!sessionChecked || !authedEmail) return;
-      try {
-        const ok = await checkAdmin();
-        setIsAdmin(ok);
-        if (!ok) {
-          router.replace('/'); // not admin
-          return;
-        }
-        await fetchStaff();
-      } catch (e) {
-        setErr(e instanceof Error ? e.message : String(e));
-      }
-    })();
-  }, [sessionChecked, authedEmail, checkAdmin, fetchStaff, router]);
-
-  // actions
-  const addStaff = async () => {
-    const n = name.trim();
-    const e = email.trim().toLowerCase();
-    if (!n || !e) { alert('Name and email are required'); return; }
-    const { error } = await supabase.from('staff').insert({ name: n, email: e, is_admin: false });
-    if (error) { alert(error.message); return; }
-    setName(''); setEmail('');
-    await fetchStaff();
-  };
-
-  const removeStaff = async (id: number, sEmail: string) => {
-    if (authedEmail && authedEmail === sEmail) {
-      alert('You cannot remove yourself.');
-      return;
+  async function addStaff() {
+    if (!newEmail) return alert('Email required');
+    const { error } = await supabase.from('staff').insert([
+      {
+        email: newEmail,
+        name: newName || null,
+        is_admin: isAdmin,
+      },
+    ]);
+    if (error) alert(error.message);
+    else {
+      setNewEmail('');
+      setNewName('');
+      setIsAdmin(false);
+      fetchStaff();
     }
-    if (!confirm('Remove this staff?')) return;
-    const { error } = await supabase.from('staff').delete().eq('id', id);
-    if (error) { alert(error.message); return; }
-    await fetchStaff();
-  };
+  }
 
-  const toggleAdmin = async (id: number, makeAdmin: boolean, sEmail: string) => {
-    if (authedEmail && authedEmail === sEmail && !makeAdmin) {
-      alert('You cannot remove your own admin role.');
-      return;
-    }
-    const { error } = await supabase.from('staff').update({ is_admin: makeAdmin }).eq('id', id);
-    if (error) { alert(error.message); return; }
-    await fetchStaff();
-  };
+  async function removeStaff(email: string) {
+    if (!confirm(`Remove ${email}?`)) return;
+    const { error } = await supabase.from('staff').delete().eq('email', email);
+    if (error) alert(error.message);
+    else fetchStaff();
+  }
 
-  const myRow = useMemo(() => rows.find(r => r.email === authedEmail) ?? null, [rows, authedEmail]);
-
-  if (!sessionChecked) return <div style={{ padding: 16 }}>Checking login…</div>;
-  if (isAdmin === false) return <div style={{ padding: 16 }}>Redirecting…</div>;
-  if (isAdmin === null) return <div style={{ padding: 16 }}>Authorizing…</div>;
+  async function toggleAdmin(email: string, current: boolean) {
+    const { error } = await supabase
+      .from('staff')
+      .update({ is_admin: !current })
+      .eq('email', email);
+    if (error) alert(error.message);
+    else fetchStaff();
+  }
 
   return (
-    <main style={{ padding: 16, fontFamily: 'system-ui' }}>
-      <h2>Manager</h2>
-      <div style={{ marginBottom: 8, color: '#555' }}>
-        Signed in as <b>{authedEmail}</b> {myRow?.is_admin ? '(admin)' : ''}
-      </div>
+    <main style={{ padding: 20, fontFamily: 'system-ui' }}>
+      <h1>Manager</h1>
 
-      {/* Add staff */}
-      <div style={{ border: '1px solid #e5e5e5', borderRadius: 8, padding: 12, margin: '12px 0' }}>
-        <h3 style={{ marginTop: 0 }}>Add staff</h3>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <section style={{ marginBottom: 20 }}>
+        <h2>Add Staff</h2>
+        <input
+          placeholder="Email"
+          value={newEmail}
+          onChange={(e) => setNewEmail(e.target.value)}
+          style={{ marginRight: 8 }}
+        />
+        <input
+          placeholder="Name"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          style={{ marginRight: 8 }}
+        />
+        <label>
           <input
-            placeholder="Full name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            style={{ padding: 8, border: '1px solid #ccc', borderRadius: 8, minWidth: 240 }}
-          />
-          <input
-            placeholder="Email (Google sign-in email)"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            style={{ padding: 8, border: '1px solid #ccc', borderRadius: 8, minWidth: 260 }}
-          />
-          <button onClick={addStaff} style={{ padding: '8px 12px', border: '1px solid #ccc', borderRadius: 8 }}>
-            Add
-          </button>
-        </div>
-      </div>
-
-      {/* Staff table */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <h3 style={{ margin: 0 }}>Staff list</h3>
-        <div style={{ flex: 1 }} />
-        <button onClick={fetchStaff} style={{ padding: '8px 12px', border: '1px solid #ccc', borderRadius: 8 }}>
-          Reload
+            type="checkbox"
+            checked={isAdmin}
+            onChange={(e) => setIsAdmin(e.target.checked)}
+          />{' '}
+          Admin
+        </label>
+        <button onClick={addStaff} style={{ marginLeft: 8 }}>
+          Add
         </button>
-      </div>
+      </section>
 
-      {loading && <p>Loading…</p>}
-      {err && <p style={{ color: '#b91c1c' }}>{err}</p>}
-
-      {!loading && !err && rows.length === 0 && (
-        <div style={{ marginTop: 16, color: '#666' }}>No staff yet.</div>
-      )}
-
-      {rows.length > 0 && (
-        <div style={{ overflowX: 'auto', border: '1px solid #eee', borderRadius: 8, marginTop: 10 }}>
-          <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+      <section>
+        <h2>Staff List</h2>
+        {loading ? (
+          <p>Loading...</p>
+        ) : (
+          <table border={1} cellPadding={6}>
             <thead>
-              <tr style={{ background: '#f6f6f6' }}>
-                <th style={th}>Name</th>
-                <th style={th}>Email</th>
-                <th style={th}>Role</th>
-                <th style={th}>Created</th>
-                <th style={th}>Actions</th>
+              <tr>
+                <th>Email</th>
+                <th>Name</th>
+                <th>Admin</th>
+                <th>Created</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((s) => (
-                <tr key={s.id}>
-                  <td style={td}>{s.name}</td>
-                  <td style={td}>{s.email}</td>
-                  <td style={td}>{s.is_admin ? 'Admin' : 'Staff'}</td>
-                  <td style={td}>
-                    {new Date(s.created_at).toLocaleString('en-GB', {
-                      timeZone: 'Asia/Kuala_Lumpur',
-                      year: 'numeric', month: '2-digit', day: '2-digit',
-                      hour: '2-digit', minute: '2-digit'
-                    })}
-                  </td>
-                  <td style={td}>
-                    <button
-                      onClick={() => toggleAdmin(s.id, !s.is_admin, s.email)}
-                      style={{ padding: '6px 10px', border: '1px solid #ccc', borderRadius: 6, marginRight: 8 }}
-                    >
-                      {s.is_admin ? 'Remove admin' : 'Make admin'}
-                    </button>
-                    <button
-                      onClick={() => removeStaff(s.id, s.email)}
-                      style={{ padding: '6px 10px', border: '1px solid #ccc', borderRadius: 6 }}
-                    >
-                      Remove
-                    </button>
+              {staff.map((s) => (
+                <tr key={s.email}>
+                  <td>{s.email}</td>
+                  <td>{s.name || '-'}</td>
+                  <td>{s.is_admin ? 'Yes' : 'No'}</td>
+                  <td>{new Date(s.created_at).toLocaleString()}</td>
+                  <td>
+                    <button onClick={() => toggleAdmin(s.email, s.is_admin)}>
+                      {s.is_admin ? 'Revoke Admin' : 'Make Admin'}
+                    </button>{' '}
+                    <button onClick={() => removeStaff(s.email)}>Remove</button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
-      )}
+        )}
+      </section>
     </main>
   );
 }
