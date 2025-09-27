@@ -4,56 +4,52 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
+/** Handles Google OAuth + Magic Links robustly */
 export default function AuthCallbackPage() {
-  const [status, setStatus] = useState<string>('Signing you in…');
+  const [status, setStatus] = useState('Signing you in…');
 
   useEffect(() => {
     (async () => {
       try {
-        // 1) If a session already exists, just go home.
+        // Already signed in?
         const s0 = await supabase.auth.getSession();
-        if (s0.data.session) {
-          redirectHome();
-          return;
+        if (s0.data.session) return goHome();
+
+        const url = new URL(window.location.href);
+        const tokenHash = url.searchParams.get('token_hash');
+        const type = url.searchParams.get('type');
+
+        // Magic link flow
+        if (tokenHash && type) {
+          const { data, error } = await supabase.auth.verifyOtp({
+            type: type as any,
+            token_hash: tokenHash,
+          });
+          if (data?.session) return goHome();
+          if (error) return setStatus('Error (magic link): ' + error.message);
         }
 
-        // 2) Try to exchange the code/hash for a session (covers OAuth + magic link)
-        const { data, error } = await supabase.auth.exchangeCodeForSession(window.location.href);
+        // OAuth / PKCE flow
+        const ex = await supabase.auth.exchangeCodeForSession(window.location.href);
+        if (ex.data?.session) return goHome();
 
-        if (data?.session) {
-          redirectHome();
-          return;
-        }
-
-        // 3) Sometimes providers attach ?error=… even though the session was set via a previous redirect.
-        // Double-check again after a short tick.
+        // Some browsers set the session despite ?error=… on URL
         const s1 = await supabase.auth.getSession();
-        if (s1.data.session) {
-          redirectHome();
-          return;
-        }
+        if (s1.data.session) return goHome();
 
-        // 4) If we’re here, we truly don’t have a session.
-        setStatus(`Error: ${error?.message || 'No session returned.'}`);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        setStatus(`Exception: ${msg}`);
+        setStatus('Sign-in failed: ' + (ex.error?.message || 'no session returned'));
+      } catch (e) {
+        setStatus('Exception: ' + (e instanceof Error ? e.message : String(e)));
       }
     })();
 
-    function redirectHome() {
-      // Clean query/hash then go home
-      const url = new URL(window.location.href);
-      url.search = '';
-      url.hash = '';
-      window.history.replaceState({}, '', url.toString());
+    function goHome() {
+      const clean = new URL(window.location.href);
+      clean.search = ''; clean.hash = '';
+      window.history.replaceState({}, '', clean.toString());
       window.location.replace('/');
     }
   }, []);
 
-  return (
-    <main style={{ padding: 24, fontFamily: 'system-ui' }}>
-      <h2>{status}</h2>
-    </main>
-  );
+  return <main style={{padding:24,fontFamily:'system-ui'}}><h2>{status}</h2></main>;
 }
