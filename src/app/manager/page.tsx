@@ -177,7 +177,7 @@ export default function ManagerPage() {
                 <th style={th}>Name</th>
                 <th style={th}>Email</th>
                 <th style={th}>Role</th>
-                <th style={th}}>Created</th>
+                <th style={th}>Created</th>
                 <th style={th}>Actions</th>
               </tr>
             </thead>
