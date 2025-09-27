@@ -1,187 +1,46 @@
-'use client';
-export const dynamic = 'force-dynamic';
+// Auth handling: explicitly exchange OAuth params on the home page,
+// then read the session. No redirects here.
+useEffect(() => {
+  let cancelled = false;
 
-import { useEffect, useState } from 'react';
-import NextDynamic from 'next/dynamic';
-import { WORKSHOP } from '../config/workshop';
-import { supabase } from '../lib/supabaseClient';
+  const hasOAuthParams =
+    typeof window !== 'undefined' &&
+    (window.location.search.includes('code=') ||
+     window.location.hash.includes('access_token='));
 
-const CurrentMap = NextDynamic(() => import('../components/CurrentMap'), { ssr: false });
-
-// Haversine distance
-function dist(aLat: number, aLon: number, bLat: number, bLon: number) {
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const R = 6371000;
-  const dLat = toRad(bLat - aLat);
-  const dLon = toRad(bLon - aLon);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLon / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(a));
-}
-function errMsg(e: unknown) {
-  if (e instanceof Error) return e.message;
-  try { return JSON.stringify(e); } catch { return String(e); }
-}
-
-export default function Page() {
-  const [sessionEmail, setSessionEmail] = useState<string | null>(null);
-  const [checking, setChecking] = useState(true);
-
-  const [pos, setPos] = useState<{ lat: number; lon: number } | null>(null);
-  const [acc, setAcc] = useState<number | null>(null);
-
-  const [busy, setBusy] = useState(false);
-  const [showLogBtn, setShowLogBtn] = useState(false);
-  const [banner, setBanner] = useState<{ kind: 'info'|'ok'|'err'; text: string } | null>(null);
-
-  // IMPORTANT: Do NOT redirect to /login. Just show whether a session exists.
-  useEffect(() => {
-    let cancelled = false;
-
-    // 1) listen for auth changes
-    const { data } = supabase.auth.onAuthStateChange((_evt, session) => {
-      if (cancelled) return;
-      setSessionEmail(session?.user?.email ?? null);
-      setChecking(false);
-    });
-
-    // 2) one-time check + short polling (covers iOS Safari timing)
-    const poll = async () => {
-      const { data: s1 } = await supabase.auth.getSession();
-      if (!cancelled) setSessionEmail(s1.session?.user?.email ?? null);
-
-      // short poll up to ~2s to catch late token writes
-      let tries = 0;
-      while (!cancelled && !s1.session && tries < 4) {
-        await new Promise(r => setTimeout(r, 500));
-        const { data: sx } = await supabase.auth.getSession();
-        if (sx.session) {
-          setSessionEmail(sx.session.user?.email ?? null);
-          break;
-        }
-        tries += 1;
-      }
-      if (!cancelled) setChecking(false);
-    };
-    poll();
-
-    return () => { cancelled = true; data.subscription.unsubscribe(); };
-  }, []);
-
-  const signOut = async () => {
-    await supabase.auth.signOut();
-    setSessionEmail(null);
-  };
-
-  const submit = async (action: 'Check-in' | 'Check-out') => {
-    if (busy) return;
-    setShowLogBtn(false);
-
-    const staffId = (document.getElementById('staffId') as HTMLInputElement | null)?.value.trim() ?? '';
-    const staffName = (document.getElementById('staffName') as HTMLInputElement | null)?.value.trim() ?? '';
-
-    if (!staffId) { setBanner({ kind:'err', text:'Enter Staff ID.' }); return; }
-    if (!pos)     { setBanner({ kind:'err', text:'No location yet. Tap “Refresh location”.' }); return; }
-
-    const d = Math.round(dist(pos.lat, pos.lon, WORKSHOP.lat, WORKSHOP.lon));
-    setBanner({ kind:'info', text:'Submitting…' });
-    setBusy(true);
-
+  const init = async () => {
     try {
-      const { error } = await supabase.from('attendance').insert([{
-        action,
-        lat: pos.lat,
-        lon: pos.lon,
-        staff_id: staffId,
-        staff_name: staffName || null,
-        distance_m: d,
-      }]);
-
-      if (error) {
-        setBanner({ kind:'err', text:`Error: ${error.message}` });
-        console.error('Insert error', error);
-      } else {
-        setBanner({ kind:'ok', text:'Saved' });
-        if (d <= WORKSHOP.radiusM) setShowLogBtn(true);
+      // 1) If we were redirected here with params, exchange them for a session
+      if (hasOAuthParams) {
+        await supabase.auth.exchangeCodeForSession(window.location.href).catch(() => {
+          // ignore — we’ll still try to read a session below
+        });
+        // Clean the URL (remove ?code=... or #access_token=...)
+        try {
+          const url = new URL(window.location.href);
+          url.search = '';
+          url.hash = '';
+          window.history.replaceState({}, '', url.toString());
+        } catch {}
       }
-    } catch (e) {
-      setBanner({ kind:'err', text:`Error: ${errMsg(e)}` });
-    } finally {
-      setBusy(false);
+
+      // 2) Read current session
+      const { data } = await supabase.auth.getSession();
+      if (!cancelled) {
+        setSessionEmail(data.session?.user?.email ?? null);
+        setChecking(false);
+      }
+    } catch {
+      if (!cancelled) setChecking(false);
     }
   };
 
-  return (
-    <main style={{ padding: 16, fontFamily: 'system-ui' }}>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: 8 }}>
-        <h2 style={{ margin: 0 }}>Workshop Attendance</h2>
-        <div style={{ fontSize: 14, color: '#555' }}>
-          {checking ? (
-            <span>Checking session…</span>
-          ) : sessionEmail ? (
-            <>
-              <span style={{ marginRight: 8 }}>{sessionEmail}</span>
-              <button onClick={signOut} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #ccc', background: '#fff' }}>
-                Sign out
-              </button>
-            </>
-          ) : (
-            <>
-              <span style={{ marginRight: 8, color:'#b91c1c' }}>Not signed in</span>
-              <a href="/login" style={{ textDecoration: 'underline' }}>Go to Sign in</a>
-            </>
-          )}
-        </div>
-      </div>
+  // Also subscribe to auth changes
+  const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
+    if (!cancelled) setSessionEmail(session?.user?.email ?? null);
+  });
 
-      <div style={{ margin: '12px 0' }}>
-        <CurrentMap onLocationChange={(p, a) => { setPos(p); setAcc(a ?? null); }} />
-      </div>
+  init();
 
-      <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 16, margin: '12px 0' }}>
-        <label>Staff ID</label>
-        <input id="staffId" placeholder="e.g. S001" style={{ width: '100%', padding: 12, border: '1px solid #ccc', borderRadius: 8 }} />
-        <label style={{ marginTop: 10, display: 'block' }}>Display name (optional)</label>
-        <input id="staffName" placeholder="e.g. Ali" style={{ width: '100%', padding: 12, border: '1px solid #ccc', borderRadius: 8 }} />
-      </div>
-
-      <div id="status" style={{ border: '1px solid #ddd', borderRadius: 8, padding: 16, margin: '12px 0', color: '#666' }}>
-        {pos
-          ? <>Workshop: <b>{WORKSHOP.lat.toFixed(6)}, {WORKSHOP.lon.toFixed(6)}</b> (r={WORKSHOP.radiusM} m)<br/>
-              Your location: <b>{pos.lat.toFixed(6)}, {pos.lon.toFixed(6)}</b><br/>
-              Accuracy: {acc ? `~${Math.round(acc)} m` : 'n/a'}<br/>
-              Distance to workshop: <b>{Math.round(dist(pos.lat, pos.lon, WORKSHOP.lat, WORKSHOP.lon))}</b> m</>
-          : 'Waiting for location… Tap “Refresh location” on the map and allow permission.'}
-      </div>
-
-      <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 16, margin: '12px 0' }}>
-        <button onClick={() => submit('Check-in')}  disabled={busy}
-          style={{ width: '100%', padding: 14, border: 0, borderRadius: 8, background: '#16a34a', color: '#fff', fontSize: 16, marginTop: 6, opacity: busy ? 0.7 : 1 }}>
-          {busy ? 'Saving…' : 'Check in'}
-        </button>
-        <button onClick={() => submit('Check-out')} disabled={busy}
-          style={{ width: '100%', padding: 14, border: 0, borderRadius: 8, background: '#0ea5e9', color: '#fff', fontSize: 16, marginTop: 6, opacity: busy ? 0.7 : 1 }}>
-          {busy ? 'Saving…' : 'Check out'}
-        </button>
-
-        {showLogBtn && (
-          <a href="/today" style={{ display: 'inline-block', textDecoration: 'none', marginTop: 12, padding: '10px 14px', borderRadius: 8, border: '1px solid #ccc', background: '#fff' }}>
-            View Today’s Log
-          </a>
-        )}
-
-        {banner && (
-          <div style={{
-            marginTop: 10, padding: '8px 10px', borderRadius: 8, border: '1px solid',
-            borderColor: banner.kind === 'err' ? '#dc2626' : banner.kind === 'ok' ? '#16a34a' : '#d4d4d4',
-            color: banner.kind === 'err' ? '#dc2626' : banner.kind === 'ok' ? '#16a34a' : '#4b5563',
-            background: banner.kind === 'err' ? '#fef2f2' : banner.kind === 'ok' ? '#f0fdf4' : '#fff'
-          }}>
-            {banner.text}
-          </div>
-        )}
-      </div>
-    </main>
-  );
-}
+  return () => { cancelled = true; sub.subscription.unsubscribe(); };
+}, []);
