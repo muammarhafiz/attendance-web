@@ -67,8 +67,15 @@ export default function AuthCallbackPage() {
   }, []);
 
   return (
-    <main style={{ padding: 24, fontFamily: 'system-ui' }}>
-      <h2>{status}</h2>
-    </main>
-  );
+  <main style={{ padding: 24, fontFamily: 'system-ui' }}>
+    <h2>{status}</h2>
+    <pre style={{whiteSpace:'pre-wrap', fontSize: 12, marginTop: 12, background:'#f7f7f7', padding:12, borderRadius:8}}>
+{typeof window !== 'undefined' ? JSON.stringify({
+  href: window.location.href,
+  search: window.location.search,
+  hash: window.location.hash
+}, null, 2) : '(server)'}
+    </pre>
+  </main>
+);
 }
