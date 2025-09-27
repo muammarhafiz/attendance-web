@@ -8,9 +8,9 @@ export default function Login() {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: CALLBACK_URL,   // come back to our domain
-        flowType: 'pkce',           // explicit PKCE
-        queryParams: { prompt: 'consent' } // avoids cached sessions confusing Safari
+        redirectTo: CALLBACK_URL,                 // return to our callback page
+        // flowType: 'pkce',                      // <-- remove; not supported in this SDK version
+        queryParams: { prompt: 'consent' }        // optional: forces fresh consent to avoid stale sessions
       }
     });
   };
