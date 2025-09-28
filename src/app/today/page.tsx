@@ -1,181 +1,146 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-type LogRow = {
-  ts: string;
+type AttRow = {
+  id: string;
   staff_name: string | null;
-  staff_email: string | null;
-  action: 'Check-in' | 'Check-out' | string;
-  minutes_late: number | null;
-};
-
-type DayRow = {
-  dayISO: string;                 // YYYY-MM-DD (KL)
-  staff_name: string;
   staff_email: string;
-  checkinTs?: string;             // ISO string
-  checkoutTs?: string;            // ISO string
-  minutes_late: number;           // for check-in (0 if none)
+  action: 'in' | 'out';
+  ts: string;          // timestamptz -> ISO string
+  day: string;         // date (YYYY-MM-DD)
+  distance_m: number | null;
+  lat: number | null;
+  lon: number | null;
 };
 
-function toKLDateISO(ts: string) {
-  // Format ts to YYYY-MM-DD in Asia/Kuala_Lumpur
-  const d = new Date(ts);
-  const fmt = new Intl.DateTimeFormat('en-CA', { // en-CA yields YYYY-MM-DD
-    timeZone: 'Asia/Kuala_Lumpur',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-  });
-  const parts = fmt.formatToParts(d);
-  const y = parts.find(p => p.type === 'year')?.value ?? '0000';
-  const m = parts.find(p => p.type === 'month')?.value ?? '01';
-  const day = parts.find(p => p.type === 'day')?.value ?? '01';
-  return `${y}-${m}-${day}`;
-}
+type PerStaff = {
+  name: string;
+  email: string;
+  checkIn?: Date;
+  checkOut?: Date;
+  lateMin?: number;
+};
 
-function fmtKLTime(ts?: string) {
-  if (!ts) return '-';
-  const d = new Date(ts);
-  return new Intl.DateTimeFormat('en-MY', {
-    timeZone: 'Asia/Kuala_Lumpur',
-    hour: '2-digit', minute: '2-digit'
-  }).format(d);
-}
+const fmtKL = (d?: Date) =>
+  d ? new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kuala_Lumpur' }).format(d) : '—';
 
-export default function TodayPage() {
-  const now = useMemo(() => new Date(), []);
-  const [rows, setRows] = useState<LogRow[]>([]);
-  const [daily, setDaily] = useState<DayRow[]>([]);
+const LATE_CUTOFF_H = 9;
+const LATE_CUTOFF_M = 30;
+
+export default function Today() {
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [rows, setRows] = useState<AttRow[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
-  // Derive today's KL year/month/day
-  const { y, m, d } = useMemo(() => {
-    const kl = new Date(
-      new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kuala_Lumpur' })
-        .format(now)
-    );
-    // Above trick loses exact yyyy-mm-dd; instead compute via formatter:
-    const fmt = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Kuala_Lumpur',
-      year: 'numeric', month: '2-digit', day: '2-digit'
-    });
-    const parts = fmt.formatToParts(now);
-    const yy = Number(parts.find(p => p.type === 'year')?.value ?? '1970');
-    const mm = Number(parts.find(p => p.type === 'month')?.value ?? '1');
-    const dd = Number(parts.find(p => p.type === 'day')?.value ?? '1');
-    return { y: yy, m: mm, d: dd };
-  }, [now]);
+  const todayISO = useMemo(() => {
+    // Use KL date to match your DB “day” (which is date without tz).
+    const now = new Date();
+    const klDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur', year: 'numeric', month: '2-digit', day: '2-digit' })
+      .format(now); // YYYY-MM-DD
+    return klDateStr;
+  }, []);
 
-  const reload = useCallback(async () => {
+  const load = useCallback(async () => {
     setLoading(true);
-    setErr(null);
-    setRows([]);
-    setDaily([]);
-
-    // Use your existing RPC but for *today* only
-    const { data, error } = await supabase.rpc('month_attendance', {
-      p_year: y,
-      p_month: m,
-      p_day: d
-    });
+    setError(null);
+    const { data, error } = await supabase
+      .from('attendance')
+      .select('id, staff_name, staff_email, action, ts, day, distance_m, lat, lon')
+      .eq('day', todayISO)
+      .order('ts', { ascending: true });
 
     if (error) {
-      setErr(error.message);
-      setLoading(false);
-      return;
+      setError(error.message);
+      setRows([]);
+    } else {
+      setRows((data ?? []) as AttRow[]);
     }
-
-    const logs = (data as LogRow[]) ?? [];
-
-    // Aggregate to 1 row per (day, staff_email)
-    const map = new Map<string, DayRow>();
-    for (const r of logs) {
-      const staffEmail = r.staff_email ?? '';
-      const staffName = r.staff_name ?? staffEmail ?? '';
-      if (!staffEmail) continue; // skip unexpected nulls
-
-      const dayISO = toKLDateISO(r.ts);
-      const key = `${dayISO}|${staffEmail}`;
-
-      let g = map.get(key);
-      if (!g) {
-        g = {
-          dayISO,
-          staff_name: staffName,
-          staff_email: staffEmail,
-          minutes_late: 0
-        };
-        map.set(key, g);
-      }
-
-      if (r.action === 'Check-in') {
-        // earliest check-in for the day
-        if (!g.checkinTs || new Date(r.ts) < new Date(g.checkinTs)) {
-          g.checkinTs = r.ts;
-          g.minutes_late = Math.max(0, r.minutes_late ?? 0);
-        }
-      } else if (r.action === 'Check-out') {
-        // latest check-out for the day
-        if (!g.checkoutTs || new Date(r.ts) > new Date(g.checkoutTs)) {
-          g.checkoutTs = r.ts;
-        }
-      }
-    }
-
-    const list = Array.from(map.values())
-      .sort((a, b) => a.staff_name.localeCompare(b.staff_name));
-
-    setRows(logs);
-    setDaily(list);
     setLoading(false);
-  }, [y, m, d]);
+  }, [todayISO]);
 
-  useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  const wrap = { maxWidth: 980, margin: '0 auto', padding: 16, fontFamily: 'system-ui' } as const;
-  const th  = { textAlign: 'left', padding: '10px 12px', borderBottom: '2px solid #e5e7eb', background: '#f8fafc' } as const;
-  const td  = { padding: '10px 12px', borderBottom: '1px solid #eee' } as const;
-  const pill = { padding:'6px 10px', border:'1px solid #d1d5db', borderRadius:8, background:'#fff' } as const;
+  // Group to one row per staff for today
+  const perStaff: PerStaff[] = useMemo(() => {
+    const map = new Map<string, PerStaff>();
+    for (const r of rows) {
+      const key = r.staff_email;
+      const rec = map.get(key) ?? {
+        name: r.staff_name ?? r.staff_email.split('@')[0],
+        email: r.staff_email,
+      };
+      const ts = new Date(r.ts);
+      if (r.action === 'in') {
+        // first check-in
+        if (!rec.checkIn || ts < rec.checkIn) rec.checkIn = ts;
+      } else if (r.action === 'out') {
+        // last check-out
+        if (!rec.checkOut || ts > rec.checkOut) rec.checkOut = ts;
+      }
+      map.set(key, rec);
+    }
+    // compute late minutes from KL 09:30
+    for (const rec of map.values()) {
+      if (rec.checkIn) {
+        const d = rec.checkIn;
+        // Build a KL "09:30" for that same calendar day
+        const y = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur', year: 'numeric' }).format(d);
+        const m = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur', month: '2-digit' }).format(d);
+        const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur', day: '2-digit' }).format(d);
+        const cutoffStr = `${y}-${m}-${day}T${String(LATE_CUTOFF_H).padStart(2,'0')}:${String(LATE_CUTOFF_M).padStart(2,'0')}:00`;
+        const cutoff = new Date(cutoffStr + '+08:00'); // KL offset
+        const diffMin = Math.max(0, Math.round((d.getTime() - cutoff.getTime()) / 60000));
+        rec.lateMin = diffMin || undefined;
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [rows]);
 
   return (
-    <main style={wrap}>
-      <h2 style={{margin:'6px 0 12px'}}>Today</h2>
-
-      <div style={{display:'flex', gap:8, alignItems:'center', margin:'8px 0 12px'}}>
-        <button onClick={()=>void reload()} disabled={loading} style={pill}>
-          {loading ? 'Loading…' : 'Reload'}
-        </button>
-        <div style={{color:'#6b7280'}}>KL Date: <b>{String(d).padStart(2,'0')}/{String(m).padStart(2,'0')}/{y}</b></div>
+    <main style={{ padding: 16, fontFamily: 'system-ui' }}>
+      <h2>Today</h2>
+      <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
+        {loading ? <span>Loading…</span> : <button onClick={load}>Reload</button>}
+        <span>KL Date: {todayISO}</span>
       </div>
 
-      {err && <div style={{color:'#b91c1c', marginBottom:8}}>Failed to load: {err}</div>}
+      {error && <div style={{ color: 'crimson', marginBottom: 8 }}>{error}</div>}
 
-      <div style={{overflowX:'auto', border:'1px solid #e5e7eb', borderRadius:8}}>
-        <table style={{width:'100%', borderCollapse:'separate', borderSpacing:0}}>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
-              <th style={th}>Date (KL)</th>
-              <th style={th}>Staff</th>
-              <th style={th}>Check-in</th>
-              <th style={th}>Check-out</th>
-              <th style={th}>Late (min)</th>
+              <th style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #ddd' }}>Date (KL)</th>
+              <th style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #ddd' }}>Staff</th>
+              <th style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #ddd' }}>Check-in</th>
+              <th style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #ddd' }}>Check-out</th>
+              <th style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #ddd' }}>Late (min)</th>
             </tr>
           </thead>
           <tbody>
-            {daily.length === 0 && (
-              <tr><td colSpan={5} style={{...td, color:'#6b7280'}}>No rows.</td></tr>
-            )}
-            {daily.map((r, i) => (
-              <tr key={i} style={{ background: r.minutes_late > 0 ? '#fff1f2' : undefined }}>
-                <td style={td}>{r.dayISO}</td>
-                <td style={td}>{r.staff_name}</td>
-                <td style={td}>{fmtKLTime(r.checkinTs)}</td>
-                <td style={td}>{fmtKLTime(r.checkoutTs)}</td>
-                <td style={td}>{r.minutes_late}</td>
+            {perStaff.length === 0 && (
+              <tr>
+                <td colSpan={5} style={{ padding: 12, color: '#555' }}>No rows.</td>
               </tr>
-            ))}
+            )}
+            {perStaff.map((r) => {
+              const lateStyle = r.lateMin && r.lateMin > 0 ? { color: '#a00', fontWeight: 600 } : undefined;
+              return (
+                <tr key={r.email}>
+                  <td style={{ padding: 8, borderBottom: '1px solid #eee' }}>{todayISO}</td>
+                  <td style={{ padding: 8, borderBottom: '1px solid #eee' }}>{r.name}</td>
+                  <td style={{ padding: 8, borderBottom: '1px solid #eee' }}>{fmtKL(r.checkIn)}</td>
+                  <td style={{ padding: 8, borderBottom: '1px solid #eee' }}>{fmtKL(r.checkOut)}</td>
+                  <td style={{ padding: 8, borderBottom: '1px solid #eee', ...lateStyle }}>
+                    {r.lateMin ?? '—'}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
