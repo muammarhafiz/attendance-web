@@ -8,11 +8,16 @@ type LogRow = {
   staff_name: string | null;
   staff_email: string | null;
   action: 'Check-in' | 'Check-out' | string;
-  distance_m: number | null;
-  lat: number | null;
-  lon: number | null;
-  is_late: boolean | null;
   minutes_late: number | null;
+};
+
+type DayRow = {
+  dayISO: string;                 // YYYY-MM-DD (KL)
+  staff_name: string;
+  staff_email: string;
+  checkinTs?: string;
+  checkoutTs?: string;
+  minutes_late: number;
 };
 
 type SummaryRow = {
@@ -27,9 +32,30 @@ type SummaryRow = {
 type Staff = { email: string; name: string | null; is_admin: boolean };
 type DayStatus = 'ABSENT' | 'MC' | 'OFFDAY';
 
+function toKLDateISO(ts: string) {
+  const d = new Date(ts);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kuala_Lumpur',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(d);
+  const y = parts.find(p => p.type === 'year')?.value ?? '0000';
+  const m = parts.find(p => p.type === 'month')?.value ?? '01';
+  const day = parts.find(p => p.type === 'day')?.value ?? '01';
+  return `${y}-${m}-${day}`;
+}
+
+function fmtKLTime(ts?: string) {
+  if (!ts) return '-';
+  const d = new Date(ts);
+  return new Intl.DateTimeFormat('en-MY', {
+    timeZone: 'Asia/Kuala_Lumpur',
+    hour: '2-digit', minute: '2-digit'
+  }).format(d);
+}
+
 export default function ReportPage() {
   const now = useMemo(() => new Date(), []);
-  const [tab, setTab] = useState<'logs' | 'summary'>('logs');
+  const [tab, setTab] = useState<'logs'|'summary'>('logs');
 
   // period controls
   const [year, setYear] = useState(now.getFullYear());
@@ -41,7 +67,8 @@ export default function ReportPage() {
   const [staffList, setStaffList] = useState<Staff[]>([]);
 
   // logs state
-  const [rows, setRows] = useState<LogRow[]>([]);
+  const [rawRows, setRawRows] = useState<LogRow[]>([]);
+  const [daily, setDaily] = useState<DayRow[]>([]);
   const [q, setQ] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -64,7 +91,6 @@ export default function ReportPage() {
       const { data: { user } } = await supabase.auth.getUser();
       const email = user?.email ?? null;
 
-      // is admin?
       if (email) {
         const { data: adm } = await supabase
           .from('staff')
@@ -74,7 +100,6 @@ export default function ReportPage() {
         setIsAdmin(Boolean(adm?.is_admin));
       }
 
-      // staff list
       const { data: st, error } = await supabase
         .from('staff')
         .select('email,name,is_admin')
@@ -93,7 +118,8 @@ export default function ReportPage() {
   const reloadLogs = useCallback(async () => {
     setLoading(true);
     setErr(null);
-    setRows([]);
+    setRawRows([]);
+    setDaily([]);
 
     const { data, error } = await supabase.rpc('month_attendance', {
       p_year: year,
@@ -106,7 +132,47 @@ export default function ReportPage() {
       setLoading(false);
       return;
     }
-    setRows((data as LogRow[]) ?? []);
+
+    const logs = (data as LogRow[]) ?? [];
+
+    // Aggregate to 1 row per (day, staff_email)
+    const map = new Map<string, DayRow>();
+    for (const r of logs) {
+      const staffEmail = r.staff_email ?? '';
+      const staffName = r.staff_name ?? staffEmail ?? '';
+      if (!staffEmail) continue;
+
+      const dayISO = toKLDateISO(r.ts);
+      const key = `${dayISO}|${staffEmail}`;
+
+      let g = map.get(key);
+      if (!g) {
+        g = {
+          dayISO,
+          staff_name: staffName,
+          staff_email: staffEmail,
+          minutes_late: 0
+        };
+        map.set(key, g);
+      }
+
+      if (r.action === 'Check-in') {
+        if (!g.checkinTs || new Date(r.ts) < new Date(g.checkinTs)) {
+          g.checkinTs = r.ts;
+          g.minutes_late = Math.max(0, r.minutes_late ?? 0);
+        }
+      } else if (r.action === 'Check-out') {
+        if (!g.checkoutTs || new Date(r.ts) > new Date(g.checkoutTs)) {
+          g.checkoutTs = r.ts;
+        }
+      }
+    }
+
+    const list = Array.from(map.values())
+      .sort((a, b) => a.dayISO.localeCompare(b.dayISO) || a.staff_name.localeCompare(b.staff_name));
+
+    setRawRows(logs);
+    setDaily(list);
     setLoading(false);
   }, [year, month, day]);
 
@@ -134,9 +200,9 @@ export default function ReportPage() {
     void reloadSummary();
   }, [reloadLogs, reloadSummary]);
 
-  const filtered = rows.filter(r => {
+  const filtered = daily.filter(r => {
     if (!q.trim()) return true;
-    const hay = `${r.staff_name ?? ''} ${r.staff_email ?? ''}`.toLowerCase();
+    const hay = `${r.staff_name}`.toLowerCase();
     return hay.includes(q.toLowerCase());
   });
 
@@ -160,9 +226,9 @@ export default function ReportPage() {
 
   // styles
   const wrap = { maxWidth: 1100, margin: '0 auto', padding: 16, fontFamily: 'system-ui' } as const;
-  const row = { borderBottom: '1px solid #eee' } as const;
-  const th  = { textAlign: 'left', padding: '10px 12px', borderBottom: '2px solid #e5e7eb', background: '#f8fafc' } as const;
-  const td  = { padding: '10px 12px', verticalAlign: 'top' } as const;
+  const row  = { borderBottom: '1px solid #eee' } as const;
+  const th   = { textAlign: 'left', padding: '10px 12px', borderBottom: '2px solid #e5e7eb', background: '#f8fafc' } as const;
+  const td   = { padding: '10px 12px', verticalAlign: 'top' } as const;
   const pill = { padding:'6px 10px', border:'1px solid #d1d5db', borderRadius:8, background:'#fff' } as const;
 
   const onStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -227,7 +293,7 @@ export default function ReportPage() {
         <>
           <input
             className="no-print"
-            placeholder="Filter by staff name/email…"
+            placeholder="Filter by staff name…"
             value={q}
             onChange={e=>setQ(e.target.value)}
             style={{width:'100%', padding:12, border:'1px solid #d1d5db', borderRadius:8, marginBottom:8}}
@@ -239,46 +305,31 @@ export default function ReportPage() {
             <table style={{width:'100%', borderCollapse:'separate', borderSpacing:0}}>
               <thead>
                 <tr>
-                  <th style={th}>Date/Time (KL)</th>
+                  <th style={th}>Date (KL)</th>
                   <th style={th}>Staff</th>
-                  <th style={th}>Email</th>
-                  <th style={th}>Action</th>
-                  <th style={th}>Distance (m)</th>
+                  <th style={th}>Check-in</th>
+                  <th style={th}>Check-out</th>
                   <th style={th}>Late (min)</th>
-                  <th style={th}>Loc</th>
-                  <th style={th}>Map</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 && (
-                  <tr><td colSpan={8} style={{...td, color:'#6b7280'}}>No rows.</td></tr>
+                  <tr><td colSpan={5} style={{...td, color:'#6b7280'}}>No rows.</td></tr>
                 )}
-                {filtered.map((r, i) => {
-                  const d = new Date(r.ts);
-                  const kl = new Intl.DateTimeFormat('en-MY', {
-                    dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Kuala_Lumpur'
-                  }).format(d);
-                  const mins = (r.action === 'Check-in' ? (r.minutes_late ?? 0) : 0);
-                  const locText = (r.lat!=null && r.lon!=null) ? `${r.lat.toFixed(6)}, ${r.lon.toFixed(6)}` : '-';
-                  const gmaps = (r.lat!=null && r.lon!=null) ? `https://www.google.com/maps?q=${r.lat},${r.lon}` : null;
-                  return (
-                    <tr key={i} style={{...row, background: mins > 0 ? '#fff1f2' : undefined}}>
-                      <td style={td}>{kl}</td>
-                      <td style={td}>{r.staff_name ?? '-'}</td>
-                      <td style={td}>{r.staff_email ?? '-'}</td>
-                      <td style={td}>{r.action}</td>
-                      <td style={td}>{r.distance_m ?? '-'}</td>
-                      <td style={td}>{mins}</td>
-                      <td style={td}>{locText}</td>
-                      <td style={td}>{gmaps ? <a href={gmaps} target="_blank" rel="noreferrer">Open</a> : '-'}</td>
-                    </tr>
-                  );
-                })}
+                {filtered.map((r, i) => (
+                  <tr key={i} style={{...row, background: r.minutes_late > 0 ? '#fff1f2' : undefined}}>
+                    <td style={td}>{r.dayISO}</td>
+                    <td style={td}>{r.staff_name}</td>
+                    <td style={td}>{fmtKLTime(r.checkinTs)}</td>
+                    <td style={td}>{fmtKLTime(r.checkoutTs)}</td>
+                    <td style={td}>{r.minutes_late}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
 
-          {/* Admin panel to set Absent/MC/Offday */}
+          {/* Admin panel for Absent/MC/Offday */}
           <div className="no-print" style={{border:'1px solid #e5e7eb', borderRadius:8, padding:12, background:'#fcfcfc'}}>
             <div style={{fontWeight:600, marginBottom:8}}>Admin: Set day status (Absent / MC / Offday)</div>
             {!isAdmin && <div style={{color:'#b91c1c'}}>You are not an admin.</div>}
@@ -303,7 +354,7 @@ export default function ReportPage() {
 
               <select
                 value={selStatus}
-                onChange={onStatusChange}
+                onChange={(e) => setSelStatus(e.target.value as DayStatus)}
                 style={{padding:10, border:'1px solid #d1d5db', borderRadius:8}}
               >
                 <option value="ABSENT">ABSENT</option>
