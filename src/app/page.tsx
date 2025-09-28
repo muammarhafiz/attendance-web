@@ -1,271 +1,251 @@
 'use client';
-import ClockKL from '@/components/ClockKL';
-import { useEffect, useState } from 'react';
+export const dynamic = 'force-dynamic';
+
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabaseClient';
+// If you already have a NavBar, keep this import.
+// If not, you can delete the next line.
+import NavBar from '@/components/NavBar';
 
-const CurrentMap = dynamic(() => import('@/components/CurrentMap'), { ssr: false });
+// Load Leaflet map only on the client
+const CurrentMap = dynamic(() => import('../components/CurrentMap'), { ssr: false });
 
-type SubmitResult = { ok?: boolean; msg?: string; distance_m?: number } | null;
-type Cfg = { lat: number; lon: number; radius: number };
+type Pos = { lat: number; lon: number };
+type ConfigRow = { workshop_lat: number; workshop_lon: number; radius_m: number };
 
-function SignOutButton() {
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    window.location.href = '/login';
-  };
-  return (
-    <button
-      onClick={handleSignOut}
-      style={{ padding: 8, border: '1px solid #ccc', borderRadius: 6, background: '#fff' }}
-    >
-      Sign Out
-    </button>
-  );
+function toKLString(d: Date) {
+  return d.toLocaleString('en-GB', { timeZone: 'Asia/Kuala_Lumpur', hour12: true });
+}
+
+function haversineMeters(a: Pos, b: Pos) {
+  const R = 6371e3;
+  const toRad = (x: number) => (x * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lon - a.lon);
+  const la1 = toRad(a.lat);
+  const la2 = toRad(b.lat);
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(la1) * Math.cos(la2) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
 }
 
 export default function HomePage() {
-  const [email, setEmail] = useState<string>('');
-  const [statusText, setStatusText] = useState<string>('Waiting for location…');
-  const [busy, setBusy] = useState<boolean>(false);
-  const [lastResult, setLastResult] = useState<SubmitResult>(null);
-  const [canShowLogBtn, setCanShowLogBtn] = useState<boolean>(false);
-
-  // config from DB
-  const [cfg, setCfg] = useState<Cfg | null>(null);
-  const [cfgError, setCfgError] = useState<string>('');
-
-  // checkout eligibility
-  const [canCheckout, setCanCheckout] = useState<boolean>(false);
-  const [eligNote, setEligNote] = useState<string>('You must check in today before you can check out.');
-
-  // session + email
+  // Live clock (KL)
+  const [time, setTime] = useState<string>(() => toKLString(new Date()));
   useEffect(() => {
-    (async () => {
-      const { data } = await supabase.auth.getSession();
-      if (!data.session) {
-        window.location.href = '/login';
-        return;
-      }
-      setEmail(data.session.user.email ?? '');
-    })();
+    const t = setInterval(() => setTime(toKLString(new Date())), 1000);
+    return () => clearInterval(t);
   }, []);
 
-  // load workshop config from DB
+  // Auth
+  const [email, setEmail] = useState<string | null>(null);
   useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!mounted) return;
+      setEmail(user?.email ?? null);
+    })();
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, sess) => {
+      setEmail(sess?.user?.email ?? null);
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  // Config (workshop location + radius)
+  const [cfg, setCfg] = useState<ConfigRow | null>(null);
+  const [cfgErr, setCfgErr] = useState<string | null>(null);
+  useEffect(() => {
+    let mounted = true;
     (async () => {
       const { data, error } = await supabase
         .from('config')
         .select('workshop_lat, workshop_lon, radius_m')
         .limit(1)
-        .single();
-
-      if (error) {
-        setCfgError(error.message);
-        return;
-      }
-      if (!data?.workshop_lat || !data?.workshop_lon || !data?.radius_m) {
-        setCfgError('Workshop config missing: set workshop_lat, workshop_lon, radius_m in public.config');
-        return;
-      }
-      setCfg({ lat: Number(data.workshop_lat), lon: Number(data.workshop_lon), radius: Number(data.radius_m) });
+        .maybeSingle();
+      if (!mounted) return;
+      if (error) setCfgErr(error.message);
+      else if (data) setCfg(data as ConfigRow);
     })();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  // helper: compute "canCheckout" for today
-  const refreshEligibility = async () => {
-    // KL midnight
-    const now = new Date();
-    const kl = new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Asia/Kuala_Lumpur',
-      year: 'numeric', month: '2-digit', day: '2-digit'
-    }).formatToParts(now);
-    const y = kl.find(p => p.type === 'year')!.value;
-    const m = kl.find(p => p.type === 'month')!.value;
-    const d = kl.find(p => p.type === 'day')!.value;
-    const startISO = new Date(`${y}-${m}-${d}T00:00:00+08:00`).toISOString();
+  // User location fed from the map
+  const [pos, setPos] = useState<Pos | null>(null);
+  const [acc, setAcc] = useState<number | null>(null);
+  const onLoc = useCallback((p: Pos, a?: number) => {
+    setPos(p);
+    if (typeof a === 'number') setAcc(a);
+  }, []);
 
-    const { data, error } = await supabase
-      .from('attendance')
-      .select('action, ts')
-      .gte('ts', startISO)
-      .order('ts', { ascending: true });
+  const wk: Pos | null = useMemo(() => {
+    if (!cfg) return null;
+    return { lat: cfg.workshop_lat, lon: cfg.workshop_lon };
+  }, [cfg]);
+
+  const distM = useMemo(() => {
+    if (!wk || !pos) return null;
+    return Math.round(haversineMeters(pos, wk));
+  }, [wk, pos]);
+
+  const inside = useMemo(() => {
+    if (distM == null || !cfg) return false;
+    return distM <= cfg.radius_m;
+  }, [distM, cfg]);
+
+  // Check-in / out
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const doAction = async (action: 'Check-in' | 'Check-out') => {
+    if (!email) return setMsg('Please sign in first.');
+    if (!cfg || !wk) return setMsg('Workshop location not ready.');
+    if (!pos) return setMsg('Waiting for location…');
+    if (!inside && action === 'Check-in') {
+      return setMsg('You are outside the allowed radius.');
+    }
+
+    setBusy(true);
+    setMsg(null);
+    const now = new Date();
+    const nameGuess = email.split('@')[0]; // simple display name from email
+
+    const { error } = await supabase.from('attendance').insert({
+      staff_name: nameGuess,
+      staff_email: email,
+      action,
+      ts: now.toISOString(),
+      lat: pos.lat,
+      lon: pos.lon,
+      distance_m: distM ?? null,
+    });
 
     if (error) {
-      setCanCheckout(false);
-      setEligNote('Eligibility check failed: ' + error.message);
-      return;
+      // Show friendlier text for unique constraint we added (one check-in per day)
+      if (error.message.includes('attendance_one_checkin_per_day')) {
+        setMsg('You already checked in today.');
+      } else {
+        setMsg(error.message);
+      }
+    } else {
+      setMsg(action === 'Check-in' ? 'Checked in!' : 'Checked out!');
     }
-
-    if (!data || data.length === 0) {
-      setCanCheckout(false);
-      setEligNote('You must check in today before you can check out.');
-      return;
-    }
-
-    const hasCheckInToday = data.some(r => r.action === 'Check-in');
-    const last = data[data.length - 1];
-    const lastIsCheckout = last?.action === 'Check-out';
-
-    const eligible = hasCheckInToday && !lastIsCheckout;
-    setCanCheckout(eligible);
-    setEligNote(
-      eligible ? 'You can check out now.' :
-      hasCheckInToday ? 'Already checked out today.' :
-      'You must check in today before you can check out.'
-    );
+    setBusy(false);
   };
 
-  // initial eligibility load
-  useEffect(() => {
-    refreshEligibility();
-  }, []);
-
-  // map callback (informational only)
-  const onLocationChange = (pos: { lat: number; lon: number }, acc?: number) => {
-    const accTxt = acc ? ` (±${Math.round(acc)} m)` : '';
-    setStatusText(`Your location: ${pos.lat.toFixed(6)}, ${pos.lon.toFixed(6)}${accTxt}`);
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    setEmail(null);
   };
 
-  // submit using the new RPC that enforces sequence + radius + one check-in per day
-  const submit = async (action: 'Check-in' | 'Check-out') => {
-    setBusy(true);
-    setLastResult(null);
-    setStatusText('Getting location…');
+  return (
+    <main style={{ fontFamily: 'system-ui', paddingBottom: 32 }}>
+      {/* Optional nav bar (remove if you don’t have this component) */}
+      {NavBar ? <NavBar /> : null}
 
-    navigator.geolocation.getCurrentPosition(
-      async (p) => {
-        const lat = p.coords.latitude;
-        const lon = p.coords.longitude;
-        const acc = Math.round(p.coords.accuracy);
-        setStatusText(`Your location: ${lat.toFixed(6)}, ${lon.toFixed(6)} (±${acc} m)`);
+      {/* Header row with title, CLOCK (here), and Sign Out */}
+      <div style={{
+        display: 'flex',
+        gap: 12,
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginTop: 8,
+        marginBottom: 8
+      }}>
+        <h2 style={{ margin: 0 }}>Workshop Attendance</h2>
 
-        const { data, error } = await supabase.rpc('submit_attendance', {
-          p_action: action,
-          p_lat: lat,
-          p_lon: lon,
-          // optional name (server falls back to email prefix)
-          p_staff_name: null
-        });
+        {/* >>> Live clock in the circled area <<< */}
+        <div
+          aria-label="Kuala Lumpur time"
+          style={{ fontWeight: 600, marginRight: 'auto', marginLeft: 12 }}
+        >
+          {time}
+        </div>
 
-        if (error) {
-          setLastResult({ ok: false, msg: error.message });
-          setCanShowLogBtn(false);
-        } else {
-          const res = (data as SubmitResult) ?? { ok: false, msg: 'No response' };
-          setLastResult(res);
-          setCanShowLogBtn(!!res?.ok);
-          // re-check eligibility after every action
-          await refreshEligibility();
+        <button
+          onClick={signOut}
+          style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: 8, background: '#fff' }}
+        >
+          Sign Out
+        </button>
+      </div>
+
+      {/* Signed in banner */}
+      <div style={{ marginBottom: 12 }}>
+        {email
+          ? <div style={{ padding: 10, border: '1px solid #e5e7eb', borderRadius: 8, background: '#f8fafc' }}>
+              Signed in as <strong>{email}</strong>
+            </div>
+          : <div style={{ padding: 10, border: '1px solid #fde68a', borderRadius: 8, background: '#fffbeb' }}>
+              Not signed in. Please go to <a href="/login">/login</a>.
+            </div>
         }
-        setBusy(false);
-      },
-      (err) => {
-        setLastResult({ ok: false, msg: `Location error: ${err.message}` });
-        setBusy(false);
-      },
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
-    );
-  };
-
-  const shell: React.CSSProperties = { padding: 16, fontFamily: 'system-ui', maxWidth: 640, margin: '0 auto' };
-  const box: React.CSSProperties = { border: '1px solid #ddd', borderRadius: 8, padding: 16, margin: '12px 0' };
-  const btn: React.CSSProperties = {
-    width: '100%',
-    padding: 14,
-    border: 0,
-    borderRadius: 8,
-    color: '#fff',
-    fontSize: 16,
-    marginTop: 6,
-    cursor: 'pointer',
-  };
-
-  return (<main style={{padding:16,fontFamily:'system-ui'}}>
-  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-    <h2 style={{margin:0}}>Workshop Attendance</h2>
-    <ClockKL />
-  </div>
-
-  {/* ...rest of your existing page... */}
-</main>
-    
-
-        <SignOutButton />
       </div>
 
-      {/* Signed-in banner */}
-      <div style={box}>
-        <div style={{ color: '#555' }}>
-          Signed in as <b>{email || '(not signed in)'}</b>
-        </div>
+      {/* Workshop info */}
+      <div style={{ marginBottom: 8, fontSize: 16 }}>
+        Workshop:{' '}
+        {wk
+          ? <strong>{wk.lat.toFixed(6)}, {wk.lon.toFixed(6)}</strong>
+          : <em>loading…</em>}
+        {' '} • Radius:{' '}
+        <strong>{cfg?.radius_m ?? '…'} m</strong>
       </div>
 
-      {/* Config load status */}
-      {!cfg && (
-        <div style={{ ...box, color: cfgError ? '#b91c1c' : '#666' }}>
-          {cfgError ? `Config error: ${cfgError}` : 'Loading workshop location…'}
-        </div>
-      )}
+      {/* Map */}
+      <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden', marginBottom: 16 }}>
+        {wk
+          ? <CurrentMap
+              radiusM={cfg?.radius_m ?? 120}
+              workshop={{ lat: wk.lat, lon: wk.lon }}
+              onLocationChange={onLoc}
+            />
+          : <div style={{ padding: 16 }}>Loading map…</div>
+        }
+      </div>
 
-      {/* Map uses DB config only */}
-      {cfg && (
-        <div style={box}>
-          <div style={{ marginBottom: 8, color: '#555' }}>
-            Workshop: <b>{cfg.lat.toFixed(6)}, {cfg.lon.toFixed(6)}</b> • Radius: <b>{cfg.radius} m</b>
-          </div>
-          <CurrentMap
-            workshop={{ lat: cfg.lat, lon: cfg.lon }}
-            radiusM={cfg.radius}
-            onLocationChange={onLocationChange}
-          />
-        </div>
-      )}
-
-      {/* Status + actions */}
-      <div style={box}>
-        <div id="status" style={{ color: '#666', marginBottom: 8 }}>
-          {statusText}
-        </div>
-        <button
-          onClick={() => submit('Check-in')}
-          disabled={busy || !cfg}
-          style={{ ...btn, background: '#16a34a', opacity: busy || !cfg ? 0.7 : 1 }}
-        >
-          {busy ? 'Checking in…' : 'Check in'}
-        </button>
-        <button
-          onClick={() => submit('Check-out')}
-          disabled={busy || !cfg || !canCheckout}
-          style={{ ...btn, background: '#0ea5e9', opacity: (busy || !cfg || !canCheckout) ? 0.6 : 1 }}
-          title={canCheckout ? 'You can check out now' : eligNote}
-        >
-          {busy ? 'Checking out…' : 'Check out'}
-        </button>
-        <div style={{ marginTop: 8, color: '#6b7280', fontSize: 12 }}>
-          {eligNote}
-        </div>
-        <div id="msg" style={{ marginTop: 10, color: lastResult?.ok ? '#16a34a' : '#b91c1c' }}>
-          {lastResult?.msg}
+      {/* Location status + actions */}
+      <div style={{ padding: 16, border: '1px solid #e5e7eb', borderRadius: 12 }}>
+        <div style={{ marginBottom: 8 }}>
+          {pos
+            ? <>Your location: <strong>{pos.lat.toFixed(6)}, {pos.lon.toFixed(6)}</strong>{acc ? <> (±{Math.round(acc)} m)</> : null}</>
+            : <>Waiting for location…</>
+          }
+          {distM != null && cfg
+            ? <div style={{ marginTop: 6 }}>
+                Distance to workshop: <strong>{distM} m</strong>{' '}
+                {inside ? <span style={{ color: '#16a34a' }}>✓ inside radius</span> : <span style={{ color: '#b91c1c' }}>✗ outside radius</span>}
+              </div>
+            : null}
         </div>
 
-        {canShowLogBtn && (
-          <div style={{ marginTop: 10 }}>
-            <a
-              href="/today"
-              style={{
-                display: 'inline-block',
-                padding: '10px 12px',
-                borderRadius: 8,
-                border: '1px solid #ddd',
-                textDecoration: 'none',
-                background: '#fff',
-              }}
-            >
-              View Today Log
-            </a>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button
+            disabled={!email || !pos || !inside || busy}
+            onClick={() => doAction('Check-in')}
+            style={{ padding: '12px 16px', borderRadius: 8, border: '1px solid #16a34a', background: '#16a34a', color: '#fff', fontWeight: 600 }}
+          >
+            Check in
+          </button>
+          <button
+            disabled={!email || !pos || busy}
+            onClick={() => doAction('Check-out')}
+            style={{ padding: '12px 16px', borderRadius: 8, border: '1px solid #0ea5e9', background: '#0ea5e9', color: '#fff', fontWeight: 600 }}
+          >
+            Check out
+          </button>
+        </div>
+
+        {msg && (
+          <div style={{ marginTop: 10, color: msg.toLowerCase().includes('error') ? '#b91c1c' : '#374151' }}>
+            {msg}
           </div>
         )}
+        {cfgErr && <div style={{ marginTop: 8, color: '#b91c1c' }}>{cfgErr}</div>}
       </div>
     </main>
   );
