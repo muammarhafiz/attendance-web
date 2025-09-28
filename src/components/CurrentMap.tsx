@@ -1,4 +1,6 @@
 'use client';
+
+import 'leaflet/dist/leaflet.css'; // ✅ REQUIRED for Leaflet to render
 import { MapContainer, TileLayer, Marker, Circle, useMap } from 'react-leaflet';
 import { Icon, type LatLngBoundsExpression } from 'leaflet';
 import { useState } from 'react';
@@ -101,13 +103,16 @@ export default function CurrentMap({
       <MapContainer
         center={[workshop.lat, workshop.lon]}
         zoom={17}
-        style={{ height: 360, width: '100%' }}
+        style={{ height: 360, width: '100%', minHeight: 320 }} // small mobile safety
         scrollWheelZoom
         zoomControl
         doubleClickZoom
         dragging
       >
-        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors" />
+        <TileLayer
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution="&copy; OpenStreetMap contributors"
+        />
         <Marker position={[workshop.lat, workshop.lon]} icon={markerIcon} />
         <Circle center={[workshop.lat, workshop.lon]} radius={radiusM} pathOptions={{ color: '#2563eb' }} />
         {pos && <Marker position={[pos.lat, pos.lon]} icon={markerIcon} />}
