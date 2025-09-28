@@ -6,7 +6,6 @@ import NextDynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabaseClient';
 import NavBar from '@/components/NavBar';
 
-// Load Leaflet map only on the client
 const CurrentMap = NextDynamic(() => import('../components/CurrentMap'), { ssr: false });
 
 type Pos = { lat: number; lon: number };
@@ -40,10 +39,8 @@ export default function HomePage() {
   // Auth
   const [email, setEmail] = useState<string | null>(null);
   useEffect(() => {
-    let mounted = true;
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!mounted) return;
       setEmail(user?.email ?? null);
     })();
     const { data: sub } = supabase.auth.onAuthStateChange((_e, sess) => {
@@ -56,20 +53,15 @@ export default function HomePage() {
   const [cfg, setCfg] = useState<ConfigRow | null>(null);
   const [cfgErr, setCfgErr] = useState<string | null>(null);
   useEffect(() => {
-    let mounted = true;
     (async () => {
       const { data, error } = await supabase
         .from('config')
         .select('workshop_lat, workshop_lon, radius_m')
         .limit(1)
         .maybeSingle();
-      if (!mounted) return;
       if (error) setCfgErr(error.message);
       else if (data) setCfg(data as ConfigRow);
     })();
-    return () => {
-      mounted = false;
-    };
   }, []);
 
   // Location from the map
