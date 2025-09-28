@@ -7,66 +7,21 @@ import Link from 'next/link';
 type Row = {
   staff_name: string;
   staff_email: string;
-  day: string;          // ISO date (yyyy-mm-dd)
+  day: string;                  // yyyy-mm-dd
   check_in_kl: string | null;
   check_out_kl: string | null;
   late_min: number | null;
-  override: 'OFFDAY' | 'MC' | null; // comes from day_status.status
+  override: 'OFFDAY' | 'MC' | null;
 };
 
-const box: React.CSSProperties = {
-  maxWidth: 980,
-  margin: '16px auto',
-  padding: 16,
-};
-
-const input: React.CSSProperties = {
-  padding: '10px 12px',
-  border: '1px solid #ddd',
-  borderRadius: 8,
-  outline: 'none',
-  width: 120,
-};
-
-const bigInput: React.CSSProperties = {
-  ...input,
-  width: 260,
-};
-
-const btn: React.CSSProperties = {
-  padding: '10px 14px',
-  border: '1px solid #ddd',
-  borderRadius: 8,
-  cursor: 'pointer',
-  background: '#f7f7f7',
-};
-
-const h3: React.CSSProperties = {
-  margin: '6px 0 12px',
-  fontWeight: 600,
-};
-
-const tableWrap: React.CSSProperties = {
-  overflowX: 'auto',
-  border: '1px solid #eee',
-  borderRadius: 10,
-};
-
-const th: React.CSSProperties = {
-  textAlign: 'left',
-  padding: '10px 12px',
-  fontWeight: 600,
-  background: '#f5fafc',
-  whiteSpace: 'nowrap',
-  borderBottom: '1px solid #eee',
-};
-
-const td: React.CSSProperties = {
-  padding: '10px 12px',
-  borderBottom: '1px solid #f1f1f1',
-  whiteSpace: 'nowrap',
-};
-
+const box: React.CSSProperties = { maxWidth: 980, margin: '16px auto', padding: 16 };
+const input: React.CSSProperties = { padding: '10px 12px', border: '1px solid #ddd', borderRadius: 8, outline: 'none', width: 120 };
+const bigInput: React.CSSProperties = { ...input, width: 260 };
+const btn: React.CSSProperties = { padding: '10px 14px', border: '1px solid #ddd', borderRadius: 8, cursor: 'pointer', background: '#f7f7f7' };
+const h3: React.CSSProperties = { margin: '6px 0 12px', fontWeight: 600 };
+const tableWrap: React.CSSProperties = { overflowX: 'auto', border: '1px solid #eee', borderRadius: 10 };
+const th: React.CSSProperties = { textAlign: 'left', padding: '10px 12px', fontWeight: 600, background: '#f5fafc', whiteSpace: 'nowrap', borderBottom: '1px solid #eee' };
+const td: React.CSSProperties = { padding: '10px 12px', borderBottom: '1px solid #f1f1f1', whiteSpace: 'nowrap' };
 const redCell: React.CSSProperties = { color: '#b42318', fontWeight: 600 };
 const greenPill: React.CSSProperties = { padding: '2px 8px', borderRadius: 999, background: '#e8f5e9', color: '#1b5e20', fontSize: 12 };
 const grayPill: React.CSSProperties = { padding: '2px 8px', borderRadius: 999, background: '#f0f0f0', color: '#333', fontSize: 12 };
@@ -74,51 +29,40 @@ const grayPill: React.CSSProperties = { padding: '2px 8px', borderRadius: 999, b
 export default function ReportPage() {
   const now = new Date();
   const [year, setYear] = useState<number>(now.getFullYear());
-  const [month, setMonth] = useState<number>(now.getMonth() + 1); // 1-12
-  const [day, setDay] = useState<number | ''>(''); // optional day filter
-  const [filter, setFilter] = useState<string>('');
+  const [month, setMonth] = useState<number>(now.getMonth() + 1);
+  const [day, setDay] = useState<number | ''>(''); // optional
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [meEmail, setMeEmail] = useState<string | null>(null);
 
-  // get current user for navbar sign-out etc (and to block unauth access)
+  // NEW: staff selection (defaults to none)
+  const [selectedKey, setSelectedKey] = useState<string>(''); // '' = show nothing, 'ALL' = all staff, otherwise an email key
+
+  // session guard
   useEffect(() => {
     const getSession = async () => {
       const { data } = await supabase.auth.getSession();
       setMeEmail(data.session?.user?.email ?? null);
     };
     getSession();
-    const { data: unsub } = supabase.auth.onAuthStateChange(() => getSession());
-    return () => { unsub.subscription.unsubscribe(); };
+    const { data: sub } = supabase.auth.onAuthStateChange(() => getSession());
+    return () => { sub.subscription.unsubscribe(); };
   }, []);
 
   const reload = useCallback(async () => {
     setLoading(true);
     try {
       const p_day = day === '' ? null : Number(day);
-
       const { data, error } = await supabase.rpc('month_attendance', {
         p_year: Number(year),
         p_month: Number(month),
         p_day,
       });
-
       if (error) throw error;
 
-      // ensure proper typing
-      const casted: Row[] = (data as unknown as Row[])?.map(r => ({
-        staff_name: r.staff_name,
-        staff_email: r.staff_email,
-        day: r.day,
-        check_in_kl: r.check_in_kl,
-        check_out_kl: r.check_out_kl,
-        late_min: r.late_min,
-        override: (r.override as Row['override']) ?? null,
-      })) ?? [];
-
+      const casted: Row[] = (data as Row[]) ?? [];
       setRows(casted);
     } catch (e) {
-      console.error('Failed to load report', e);
       alert(`Failed to load report: ${(e as Error).message}`);
       setRows([]);
     } finally {
@@ -126,37 +70,28 @@ export default function ReportPage() {
     }
   }, [year, month, day]);
 
-  useEffect(() => {
-    // auto load for current month on first paint
-    reload();
-  }, [reload]);
+  useEffect(() => { reload(); }, [reload]);
 
-  const filtered = useMemo(() => {
-    const q = filter.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter(r =>
-      r.staff_name.toLowerCase().includes(q) ||
-      r.staff_email.toLowerCase().includes(q)
-    );
-  }, [rows, filter]);
+  // group rows by staff (email key)
+  type Group = { key: string; name: string; email: string; rows: Row[] };
+  const groups: Group[] = useMemo(() => {
+    const m = new Map<string, Group>();
+    for (const r of rows) {
+      const key = r.staff_email; // use email as stable key
+      if (!m.has(key)) m.set(key, { key, name: r.staff_name, email: r.staff_email, rows: [] });
+      m.get(key)!.rows.push(r);
+    }
+    for (const g of m.values()) g.rows.sort((a, b) => a.day.localeCompare(b.day));
+    // sort staff by name
+    return Array.from(m.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [rows]);
 
-  // Group by staff
-  const byStaff = useMemo(() => {
-    const m = new Map<string, Row[]>();
-    for (const r of filtered) {
-      const key = `${r.staff_name}|||${r.staff_email}`;
-      if (!m.has(key)) m.set(key, []);
-      m.get(key)!.push(r);
-    }
-    // sort inside each group by date asc
-    for (const [, arr] of m) {
-      arr.sort((a, b) => a.day.localeCompare(b.day));
-    }
-    return Array.from(m.entries()).map(([k, v]) => {
-      const [name, email] = k.split('|||');
-      return { name, email, rows: v };
-    });
-  }, [filtered]);
+  // which groups to show based on dropdown
+  const visibleGroups: Group[] = useMemo(() => {
+    if (selectedKey === '' ) return [];           // show none by default
+    if (selectedKey === 'ALL') return groups;     // show all
+    return groups.filter(g => g.key === selectedKey);
+  }, [groups, selectedKey]);
 
   if (!meEmail) {
     return (
@@ -173,23 +108,11 @@ export default function ReportPage() {
       <div style={{display:'flex', gap:12, flexWrap:'wrap', marginTop:12, alignItems:'center'}}>
         <div>
           <div style={{fontSize:12, color:'#777'}}>Year</div>
-          <input
-            type="number"
-            value={year}
-            onChange={e => setYear(Number(e.target.value))}
-            style={input}
-          />
+          <input type="number" value={year} onChange={e => setYear(Number(e.target.value))} style={input} />
         </div>
         <div>
           <div style={{fontSize:12, color:'#777'}}>Month</div>
-          <input
-            type="number"
-            min={1}
-            max={12}
-            value={month}
-            onChange={e => setMonth(Number(e.target.value))}
-            style={input}
-          />
+          <input type="number" min={1} max={12} value={month} onChange={e => setMonth(Number(e.target.value))} style={input} />
         </div>
         <div>
           <div style={{fontSize:12, color:'#777'}}>Day (optional)</div>
@@ -198,10 +121,7 @@ export default function ReportPage() {
             min={1}
             max={31}
             value={day}
-            onChange={e => {
-              const v = e.target.value;
-              setDay(v === '' ? '' : Number(v));
-            }}
+            onChange={e => setDay(e.target.value === '' ? '' : Number(e.target.value))}
             placeholder="(optional)"
             style={input}
           />
@@ -209,37 +129,40 @@ export default function ReportPage() {
         <button onClick={reload} style={btn} disabled={loading}>
           {loading ? 'Loading…' : 'Reload'}
         </button>
-        <div style={{fontSize:14, color:'#666'}}>
-          Period: <b>{String(month).padStart(2,'0')}/{year}</b>
-          {day !== '' ? `, Day ${day}` : ''}
+
+        {/* NEW: staff dropdown */}
+        <div>
+          <div style={{fontSize:12, color:'#777'}}>Staff</div>
+          <select
+            value={selectedKey}
+            onChange={e => setSelectedKey(e.target.value)}
+            style={{ ...bigInput, width: 280 }}
+          >
+            <option value="">— Choose staff to view —</option>
+            <option value="ALL">All staff</option>
+            {groups.map(g => (
+              <option key={g.key} value={g.key}>{g.name} ({g.email})</option>
+            ))}
+          </select>
         </div>
       </div>
 
-      <div style={{marginTop:12}}>
-        <input
-          value={filter}
-          onChange={e => setFilter(e.target.value)}
-          placeholder="Filter by staff name/email…"
-          style={bigInput}
-        />
+      <div style={{marginTop:10, fontSize:14, color:'#666'}}>
+        Period: <b>{String(month).padStart(2,'0')}/{year}</b>
+        {day !== '' ? `, Day ${day}` : ''}
       </div>
 
       <div style={{marginTop:18}}>
-        {byStaff.length === 0 && (
-          <div style={{color:'#b42318'}}>No rows.</div>
+        {visibleGroups.length === 0 && (
+          <div style={{color:'#666'}}>Pick a staff from the dropdown above.</div>
         )}
 
-        {byStaff.map(group => {
-          // totals for this staff (late minutes sum, absences count)
+        {visibleGroups.map(group => {
           const lateTotal = group.rows.reduce((acc, r) => acc + (r.late_min ?? 0), 0);
-          const absentDays = group.rows.reduce((acc, r) => {
-            // Absent only if no check-in and no override
-            const absent = !r.check_in_kl && !r.override;
-            return acc + (absent ? 1 : 0);
-          }, 0);
+          const absentDays = group.rows.reduce((acc, r) => acc + ((!r.check_in_kl && !r.override) ? 1 : 0), 0);
 
           return (
-            <div key={group.email} style={{marginTop:24}}>
+            <div key={group.key} style={{marginTop:24}}>
               <div style={h3}>
                 {group.name} <span style={{color:'#888'}}>({group.email})</span>
               </div>
@@ -264,18 +187,14 @@ export default function ReportPage() {
                       const statusEl = r.override
                         ? <span style={grayPill}>{r.override}</span>
                         : (absent ? <span style={redCell}>Absent</span> : <span style={greenPill}>Present</span>);
-
-                      const lateEl =
-                        r.override ? '—' : (r.late_min && r.late_min > 0 ? r.late_min : '—');
+                      const lateEl = r.override ? '—' : (r.late_min && r.late_min > 0 ? r.late_min : '—');
 
                       return (
-                        <tr key={`${group.email}-${r.day}`}>
+                        <tr key={`${group.key}-${r.day}`}>
                           <td style={td}>{r.day}</td>
                           <td style={td}>{r.check_in_kl ?? '—'}</td>
                           <td style={td}>{r.check_out_kl ?? '—'}</td>
-                          <td style={{...td, ...(r.late_min && r.late_min > 0 ? redCell : {})}}>
-                            {lateEl}
-                          </td>
+                          <td style={{...td, ...(r.late_min && r.late_min > 0 ? redCell : {})}}>{lateEl}</td>
                           <td style={td}>{statusEl}</td>
                         </tr>
                       );
