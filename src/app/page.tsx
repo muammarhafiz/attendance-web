@@ -2,14 +2,12 @@
 export const dynamic = 'force-dynamic';
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import dynamic from 'next/dynamic';
+import NextDynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabaseClient';
-// If you already have a NavBar, keep this import.
-// If not, you can delete the next line.
 import NavBar from '@/components/NavBar';
 
 // Load Leaflet map only on the client
-const CurrentMap = dynamic(() => import('../components/CurrentMap'), { ssr: false });
+const CurrentMap = NextDynamic(() => import('../components/CurrentMap'), { ssr: false });
 
 type Pos = { lat: number; lon: number };
 type ConfigRow = { workshop_lat: number; workshop_lon: number; radius_m: number };
@@ -32,7 +30,7 @@ function haversineMeters(a: Pos, b: Pos) {
 }
 
 export default function HomePage() {
-  // Live clock (KL)
+  // Live KL clock
   const [time, setTime] = useState<string>(() => toKLString(new Date()));
   useEffect(() => {
     const t = setInterval(() => setTime(toKLString(new Date())), 1000);
@@ -74,7 +72,7 @@ export default function HomePage() {
     };
   }, []);
 
-  // User location fed from the map
+  // Location from the map
   const [pos, setPos] = useState<Pos | null>(null);
   const [acc, setAcc] = useState<number | null>(null);
   const onLoc = useCallback((p: Pos, a?: number) => {
@@ -112,7 +110,7 @@ export default function HomePage() {
     setBusy(true);
     setMsg(null);
     const now = new Date();
-    const nameGuess = email.split('@')[0]; // simple display name from email
+    const nameGuess = email.split('@')[0];
 
     const { error } = await supabase.from('attendance').insert({
       staff_name: nameGuess,
@@ -125,7 +123,6 @@ export default function HomePage() {
     });
 
     if (error) {
-      // Show friendlier text for unique constraint we added (one check-in per day)
       if (error.message.includes('attendance_one_checkin_per_day')) {
         setMsg('You already checked in today.');
       } else {
@@ -144,10 +141,10 @@ export default function HomePage() {
 
   return (
     <main style={{ fontFamily: 'system-ui', paddingBottom: 32 }}>
-      {/* Optional nav bar (remove if you don’t have this component) */}
+      {/* NavBar if present */}
       {NavBar ? <NavBar /> : null}
 
-      {/* Header row with title, CLOCK (here), and Sign Out */}
+      {/* Header with title, clock, sign out */}
       <div style={{
         display: 'flex',
         gap: 12,
@@ -157,15 +154,12 @@ export default function HomePage() {
         marginBottom: 8
       }}>
         <h2 style={{ margin: 0 }}>Workshop Attendance</h2>
-
-        {/* >>> Live clock in the circled area <<< */}
         <div
           aria-label="Kuala Lumpur time"
           style={{ fontWeight: 600, marginRight: 'auto', marginLeft: 12 }}
         >
           {time}
         </div>
-
         <button
           onClick={signOut}
           style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: 8, background: '#fff' }}
@@ -208,7 +202,7 @@ export default function HomePage() {
         }
       </div>
 
-      {/* Location status + actions */}
+      {/* Location + actions */}
       <div style={{ padding: 16, border: '1px solid #e5e7eb', borderRadius: 12 }}>
         <div style={{ marginBottom: 8 }}>
           {pos
