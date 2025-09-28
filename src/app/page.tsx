@@ -4,7 +4,6 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import NextDynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabaseClient';
-import NavBar from '@/components/NavBar';
 
 const CurrentMap = NextDynamic(() => import('../components/CurrentMap'), { ssr: false });
 
@@ -29,14 +28,14 @@ function haversineMeters(a: Pos, b: Pos) {
 }
 
 export default function HomePage() {
-  // Live KL clock
+  // live KL clock
   const [time, setTime] = useState<string>(() => toKLString(new Date()));
   useEffect(() => {
     const t = setInterval(() => setTime(toKLString(new Date())), 1000);
     return () => clearInterval(t);
   }, []);
 
-  // Auth
+  // auth
   const [email, setEmail] = useState<string | null>(null);
   useEffect(() => {
     (async () => {
@@ -49,7 +48,7 @@ export default function HomePage() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  // Config (workshop location + radius)
+  // config (workshop)
   const [cfg, setCfg] = useState<ConfigRow | null>(null);
   const [cfgErr, setCfgErr] = useState<string | null>(null);
   useEffect(() => {
@@ -64,7 +63,7 @@ export default function HomePage() {
     })();
   }, []);
 
-  // Location from the map
+  // map location
   const [pos, setPos] = useState<Pos | null>(null);
   const [acc, setAcc] = useState<number | null>(null);
   const onLoc = useCallback((p: Pos, a?: number) => {
@@ -87,7 +86,7 @@ export default function HomePage() {
     return distM <= cfg.radius_m;
   }, [distM, cfg]);
 
-  // Check-in / out
+  // actions
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -133,10 +132,7 @@ export default function HomePage() {
 
   return (
     <main style={{ fontFamily: 'system-ui', paddingBottom: 32 }}>
-      {/* NavBar if present */}
-      {NavBar ? <NavBar /> : null}
-
-      {/* Header with title, clock, sign out */}
+      {/* Header row (title • clock • sign out) */}
       <div style={{
         display: 'flex',
         gap: 12,
@@ -146,10 +142,7 @@ export default function HomePage() {
         marginBottom: 8
       }}>
         <h2 style={{ margin: 0 }}>Workshop Attendance</h2>
-        <div
-          aria-label="Kuala Lumpur time"
-          style={{ fontWeight: 600, marginRight: 'auto', marginLeft: 12 }}
-        >
+        <div aria-label="Kuala Lumpur time" style={{ fontWeight: 600, marginRight: 'auto', marginLeft: 12 }}>
           {time}
         </div>
         <button
@@ -160,7 +153,7 @@ export default function HomePage() {
         </button>
       </div>
 
-      {/* Signed in banner */}
+      {/* signed-in status */}
       <div style={{ marginBottom: 12 }}>
         {email
           ? <div style={{ padding: 10, border: '1px solid #e5e7eb', borderRadius: 8, background: '#f8fafc' }}>
@@ -172,17 +165,14 @@ export default function HomePage() {
         }
       </div>
 
-      {/* Workshop info */}
+      {/* workshop info */}
       <div style={{ marginBottom: 8, fontSize: 16 }}>
         Workshop:{' '}
-        {wk
-          ? <strong>{wk.lat.toFixed(6)}, {wk.lon.toFixed(6)}</strong>
-          : <em>loading…</em>}
-        {' '} • Radius:{' '}
-        <strong>{cfg?.radius_m ?? '…'} m</strong>
+        {wk ? <strong>{wk.lat.toFixed(6)}, {wk.lon.toFixed(6)}</strong> : <em>loading…</em>}
+        {' '} • Radius: <strong>{cfg?.radius_m ?? '…'} m</strong>
       </div>
 
-      {/* Map */}
+      {/* map */}
       <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden', marginBottom: 16 }}>
         {wk
           ? <CurrentMap
@@ -194,7 +184,7 @@ export default function HomePage() {
         }
       </div>
 
-      {/* Location + actions */}
+      {/* location + actions */}
       <div style={{ padding: 16, border: '1px solid #e5e7eb', borderRadius: 12 }}>
         <div style={{ marginBottom: 8 }}>
           {pos
@@ -226,11 +216,7 @@ export default function HomePage() {
           </button>
         </div>
 
-        {msg && (
-          <div style={{ marginTop: 10, color: msg.toLowerCase().includes('error') ? '#b91c1c' : '#374151' }}>
-            {msg}
-          </div>
-        )}
+        {msg && <div style={{ marginTop: 10 }}>{msg}</div>}
         {cfgErr && <div style={{ marginTop: 8, color: '#b91c1c' }}>{cfgErr}</div>}
       </div>
     </main>
