@@ -6,10 +6,10 @@ import { supabase } from '@/lib/supabaseClient';
 
 type Staff = { name: string; email: string; is_admin: boolean };
 type Status = 'ABSENT' | 'MC' | 'OFFDAY' | '';
+
 type Row = {
-  id: string;
   staff_email: string;
-  day: string; // YYYY-MM-DD
+  day: string;          // YYYY-MM-DD
   status: Exclude<Status, ''>;
   note: string | null;
 };
@@ -74,16 +74,13 @@ export default function OffdayPage() {
         return;
       }
 
-      // default to self just to have something selected
       setSelectedEmail(email);
     })();
 
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, [router]);
 
-  // Loader wrapped in useCallback so it’s stable for useEffect deps
+  // Month loader (no `id` column)
   const loadMonth = useCallback(async () => {
     if (!isAdmin) return;
     setLoading(true);
@@ -96,7 +93,7 @@ export default function OffdayPage() {
 
     const { data, error } = await supabase
       .from('day_status')
-      .select('id, staff_email, day, status, note')
+      .select('staff_email, day, status, note') // <-- no id
       .gte('day', start)
       .lt('day', end)
       .order('day', { ascending: true });
@@ -106,9 +103,7 @@ export default function OffdayPage() {
     setLoading(false);
   }, [isAdmin, month, year]);
 
-  useEffect(() => {
-    loadMonth();
-  }, [loadMonth]);
+  useEffect(() => { loadMonth(); }, [loadMonth]);
 
   const staffMap = useMemo(() => new Map(staff.map(s => [s.email, s])), [staff]);
 
@@ -212,7 +207,7 @@ export default function OffdayPage() {
       {err && <p style={{ color: '#b00020' }}>{err}</p>}
       {loading && <p>Loading…</p>}
 
-      {/* List existing overrides for the month */}
+      {/* List existing overrides for the month (no id; use composite key) */}
       <div style={{ overflowX: 'auto', marginTop: 8 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
@@ -231,7 +226,7 @@ export default function OffdayPage() {
             {rows.map(r => {
               const s = staffMap.get(r.staff_email);
               return (
-                <tr key={r.id}>
+                <tr key={`${r.staff_email}-${r.day}`}>
                   <td style={{ padding: 8 }}>{r.day}</td>
                   <td style={{ padding: 8 }}>{s?.name ?? '—'}</td>
                   <td style={{ padding: 8 }}>{r.staff_email}</td>
