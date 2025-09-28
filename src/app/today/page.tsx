@@ -1,215 +1,184 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
-type Row = {
-  id: number;
-  day: string;                 // YYYY-MM-DD (generated in DB for KL day)
-  ts: string;                  // ISO timestamptz (UTC in DB)
+type LogRow = {
+  ts: string;
   staff_name: string | null;
-  staff_email: string;
-  action: 'Check-in' | 'Check-out';
-  distance_m: number | null;
-  lat: number | null;
-  lon: number | null;
+  staff_email: string | null;
+  action: 'Check-in' | 'Check-out' | string;
+  minutes_late: number | null;
 };
 
-const th: React.CSSProperties = { textAlign: 'left', padding: '10px', borderBottom: '1px solid #e5e5e5' };
-const td: React.CSSProperties = { padding: '10px', borderBottom: '1px solid #f0f0f0', verticalAlign: 'top' };
+type DayRow = {
+  dayISO: string;                 // YYYY-MM-DD (KL)
+  staff_name: string;
+  staff_email: string;
+  checkinTs?: string;             // ISO string
+  checkoutTs?: string;            // ISO string
+  minutes_late: number;           // for check-in (0 if none)
+};
+
+function toKLDateISO(ts: string) {
+  // Format ts to YYYY-MM-DD in Asia/Kuala_Lumpur
+  const d = new Date(ts);
+  const fmt = new Intl.DateTimeFormat('en-CA', { // en-CA yields YYYY-MM-DD
+    timeZone: 'Asia/Kuala_Lumpur',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  const parts = fmt.formatToParts(d);
+  const y = parts.find(p => p.type === 'year')?.value ?? '0000';
+  const m = parts.find(p => p.type === 'month')?.value ?? '01';
+  const day = parts.find(p => p.type === 'day')?.value ?? '01';
+  return `${y}-${m}-${day}`;
+}
+
+function fmtKLTime(ts?: string) {
+  if (!ts) return '-';
+  const d = new Date(ts);
+  return new Intl.DateTimeFormat('en-MY', {
+    timeZone: 'Asia/Kuala_Lumpur',
+    hour: '2-digit', minute: '2-digit'
+  }).format(d);
+}
 
 export default function TodayPage() {
-  const router = useRouter();
+  const now = useMemo(() => new Date(), []);
+  const [rows, setRows] = useState<LogRow[]>([]);
+  const [daily, setDaily] = useState<DayRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
-  // ---- Auth/session
-  const [sessionChecked, setSessionChecked] = useState(false);
-  const [email, setEmail] = useState<string | null>(null);
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (!data.session) {
-        router.replace('/login?next=/today');
-      } else {
-        setEmail(data.session.user.email ?? null);
-      }
-      setSessionChecked(true);
-    });
-
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
-      if (!session) router.replace('/login?next=/today');
-      else setEmail(session.user.email ?? null);
-    });
-    return () => sub.subscription.unsubscribe();
-  }, [router]);
-
-  // ---- Today string in KL
-  const todayStr = useMemo(() => {
-    const now = new Date();
+  // Derive today's KL year/month/day
+  const { y, m, d } = useMemo(() => {
+    const kl = new Date(
+      new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kuala_Lumpur' })
+        .format(now)
+    );
+    // Above trick loses exact yyyy-mm-dd; instead compute via formatter:
     const fmt = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Asia/Kuala_Lumpur',
-      year: 'numeric', month: '2-digit', day: '2-digit',
+      year: 'numeric', month: '2-digit', day: '2-digit'
     });
-    return fmt.format(now); // YYYY-MM-DD
-  }, []);
+    const parts = fmt.formatToParts(now);
+    const yy = Number(parts.find(p => p.type === 'year')?.value ?? '1970');
+    const mm = Number(parts.find(p => p.type === 'month')?.value ?? '1');
+    const dd = Number(parts.find(p => p.type === 'day')?.value ?? '1');
+    return { y: yy, m: mm, d: dd };
+  }, [now]);
 
-  // ---- Data state
-  const [rows, setRows] = useState<Row[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [err, setErr] = useState<string | null>(null);
-  const [q, setQ] = useState('');
-
-  // ---- Fetcher (useCallback to satisfy ESLint)
-  const fetchToday = useCallback(async () => {
+  const reload = useCallback(async () => {
     setLoading(true);
     setErr(null);
+    setRows([]);
+    setDaily([]);
 
-    const { data, error } = await supabase
-      .from('attendance')
-      .select('id, day, ts, staff_name, staff_email, action, distance_m, lat, lon')
-      .eq('day', todayStr)
-      .order('ts', { ascending: true });
+    // Use your existing RPC but for *today* only
+    const { data, error } = await supabase.rpc('month_attendance', {
+      p_year: y,
+      p_month: m,
+      p_day: d
+    });
 
-    if (error) setErr(error.message);
-    else setRows((data ?? []) as Row[]);
+    if (error) {
+      setErr(error.message);
+      setLoading(false);
+      return;
+    }
 
+    const logs = (data as LogRow[]) ?? [];
+
+    // Aggregate to 1 row per (day, staff_email)
+    const map = new Map<string, DayRow>();
+    for (const r of logs) {
+      const staffEmail = r.staff_email ?? '';
+      const staffName = r.staff_name ?? staffEmail ?? '';
+      if (!staffEmail) continue; // skip unexpected nulls
+
+      const dayISO = toKLDateISO(r.ts);
+      const key = `${dayISO}|${staffEmail}`;
+
+      let g = map.get(key);
+      if (!g) {
+        g = {
+          dayISO,
+          staff_name: staffName,
+          staff_email: staffEmail,
+          minutes_late: 0
+        };
+        map.set(key, g);
+      }
+
+      if (r.action === 'Check-in') {
+        // earliest check-in for the day
+        if (!g.checkinTs || new Date(r.ts) < new Date(g.checkinTs)) {
+          g.checkinTs = r.ts;
+          g.minutes_late = Math.max(0, r.minutes_late ?? 0);
+        }
+      } else if (r.action === 'Check-out') {
+        // latest check-out for the day
+        if (!g.checkoutTs || new Date(r.ts) > new Date(g.checkoutTs)) {
+          g.checkoutTs = r.ts;
+        }
+      }
+    }
+
+    const list = Array.from(map.values())
+      .sort((a, b) => a.staff_name.localeCompare(b.staff_name));
+
+    setRows(logs);
+    setDaily(list);
     setLoading(false);
-  }, [todayStr]);
+  }, [y, m, d]);
 
-  // ---- Initial load after session OK
-  useEffect(() => {
-    if (!sessionChecked || !email) return;
-    fetchToday();
-  }, [sessionChecked, email, fetchToday]);
+  useEffect(() => { void reload(); }, [reload]);
 
-  // ---- Filtering
-  const filtered = useMemo(() => {
-    const k = q.trim().toLowerCase();
-    if (!k) return rows;
-    return rows.filter(r =>
-      (r.staff_name ?? '').toLowerCase().includes(k) ||
-      r.staff_email.toLowerCase().includes(k)
-    );
-  }, [rows, q]);
-
-  // ---- Late rule: after 09:30 KL for Check-in
-  function isLate(r: Row): boolean {
-    if (r.action !== 'Check-in' || !r.ts) return false;
-    const t = new Date(r.ts);
-    const parts = new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Asia/Kuala_Lumpur',
-      hour: '2-digit', minute: '2-digit', hour12: false,
-    }).formatToParts(t);
-    const hh = Number(parts.find(p => p.type === 'hour')?.value ?? '0');
-    const mm = Number(parts.find(p => p.type === 'minute')?.value ?? '0');
-    return (hh > 9) || (hh === 9 && mm > 30);
-  }
-
-  if (!sessionChecked) return <div style={{ padding: 16 }}>Checking login…</div>;
-  if (!email) return <div style={{ padding: 16 }}>Redirecting to login…</div>;
+  const wrap = { maxWidth: 980, margin: '0 auto', padding: 16, fontFamily: 'system-ui' } as const;
+  const th  = { textAlign: 'left', padding: '10px 12px', borderBottom: '2px solid #e5e7eb', background: '#f8fafc' } as const;
+  const td  = { padding: '10px 12px', borderBottom: '1px solid #eee' } as const;
+  const pill = { padding:'6px 10px', border:'1px solid #d1d5db', borderRadius:8, background:'#fff' } as const;
 
   return (
-    <main style={{ padding: 16, fontFamily: 'system-ui' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <h2 style={{ margin: 0 }}>Today&apos;s Logs</h2>
-        <div style={{ color: '#666' }}>({todayStr})</div>
-        <div style={{ flex: 1 }} />
-        <input
-          placeholder="Filter by name or email"
-          value={q}
-          onChange={e => setQ(e.target.value)}
-          style={{ padding: 8, border: '1px solid #ccc', borderRadius: 8, minWidth: 240 }}
-        />
-        <button
-          onClick={fetchToday}
-          style={{ padding: '8px 12px', border: '1px solid #ccc', borderRadius: 8 }}
-        >
-          Reload
+    <main style={wrap}>
+      <h2 style={{margin:'6px 0 12px'}}>Today</h2>
+
+      <div style={{display:'flex', gap:8, alignItems:'center', margin:'8px 0 12px'}}>
+        <button onClick={()=>void reload()} disabled={loading} style={pill}>
+          {loading ? 'Loading…' : 'Reload'}
         </button>
-        <button
-          onClick={() => {
-            const now = new Date();
-            const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-            window.open(`/report?year=${now.getFullYear()}&month=${String(now.getMonth() + 1).padStart(2, '0')}`, '_blank');
-          }}
-          style={{ padding: '8px 12px', border: '1px solid #ccc', borderRadius: 8 }}
-        >
-          Month report (PDF)
-        </button>
+        <div style={{color:'#6b7280'}}>KL Date: <b>{String(d).padStart(2,'0')}/{String(m).padStart(2,'0')}/{y}</b></div>
       </div>
 
-      <div style={{ margin: '10px 0', color: '#555' }}>
-        Signed in as <b>{email}</b>
-      </div>
+      {err && <div style={{color:'#b91c1c', marginBottom:8}}>Failed to load: {err}</div>}
 
-      {loading && <p>Loading…</p>}
-      {err && <p style={{ color: '#b91c1c' }}>{err}</p>}
-
-      {!loading && !err && filtered.length === 0 && (
-        <div style={{ marginTop: 16, color: '#666' }}>
-          No records for today. If you just checked in, hit <b>Reload</b>.
-        </div>
-      )}
-
-      {filtered.length > 0 && (
-        <div style={{ overflowX: 'auto', border: '1px solid #eee', borderRadius: 8, marginTop: 10 }}>
-          <table style={{ borderCollapse: 'collapse', width: '100%' }}>
-            <thead>
-              <tr style={{ background: '#f6f6f6' }}>
-                <th style={th}>Time (KL)</th>
-                <th style={th}>Action</th>
-                <th style={th}>Staff</th>
-                <th style={th}>Email</th>
-                <th style={th}>Distance (m)</th>
-                <th style={th}>Map</th>
+      <div style={{overflowX:'auto', border:'1px solid #e5e7eb', borderRadius:8}}>
+        <table style={{width:'100%', borderCollapse:'separate', borderSpacing:0}}>
+          <thead>
+            <tr>
+              <th style={th}>Date (KL)</th>
+              <th style={th}>Staff</th>
+              <th style={th}>Check-in</th>
+              <th style={th}>Check-out</th>
+              <th style={th}>Late (min)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {daily.length === 0 && (
+              <tr><td colSpan={5} style={{...td, color:'#6b7280'}}>No rows.</td></tr>
+            )}
+            {daily.map((r, i) => (
+              <tr key={i} style={{ background: r.minutes_late > 0 ? '#fff1f2' : undefined }}>
+                <td style={td}>{r.dayISO}</td>
+                <td style={td}>{r.staff_name}</td>
+                <td style={td}>{fmtKLTime(r.checkinTs)}</td>
+                <td style={td}>{fmtKLTime(r.checkoutTs)}</td>
+                <td style={td}>{r.minutes_late}</td>
               </tr>
-            </thead>
-            <tbody>
-              {filtered.map((r) => {
-                const t = r.ts
-                  ? new Date(r.ts).toLocaleTimeString('en-GB', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      timeZone: 'Asia/Kuala_Lumpur',
-                    })
-                  : '—';
-
-                const late = isLate(r);
-                const actStyle =
-                  r.action === 'Check-in'
-                    ? { color: late ? '#b91c1c' : '#16a34a', fontWeight: 600 }
-                    : { color: '#0ea5e9', fontWeight: 600 };
-
-                return (
-                  <tr key={r.id}>
-                    <td style={td}>{t}</td>
-                    <td style={{ ...td, ...actStyle }}>
-                      {r.action}
-                      {late && r.action === 'Check-in' ? ' (Late)' : ''}
-                    </td>
-                    <td style={td}>{r.staff_name || '—'}</td>
-                    <td style={td}>{r.staff_email}</td>
-                    <td style={td}>{r.distance_m ?? '—'}</td>
-                    <td style={td}>
-                      {r.lat != null && r.lon != null ? (
-                        <a
-                          href={`https://www.google.com/maps?q=${r.lat},${r.lon}`}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Open map
-                        </a>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+            ))}
+          </tbody>
+        </table>
+      </div>
     </main>
   );
 }
