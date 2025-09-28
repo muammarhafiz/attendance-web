@@ -5,9 +5,9 @@ import { supabase } from '@/lib/supabaseClient';
 
 // ---------- Types ----------
 type AttRow = {
-  ts: string | null;                 // ISO timestamp (UTC) or null
-  day: number | null;                // 1..31 (if known)
-  action?: string;                   // 'Check-in' | 'Check-out' (case-insensitive)
+  ts: string | null;
+  day: number | null;
+  action?: string;
   staff_name: string | null;
   staff_email: string;
   distance_m: number | null;
@@ -16,7 +16,7 @@ type AttRow = {
 };
 
 type DayLine = {
-  day: number;                       // 1..31
+  day: number;
   checkIn: Date | null;
   checkOut: Date | null;
   lateMin: number | null;
@@ -31,38 +31,50 @@ type StaffTable = {
   lateTotalMin: number;
 };
 
-// ---------- Helpers ----------
+// ---------- Constants / helpers ----------
 const KL_TZ = 'Asia/Kuala_Lumpur';
 const WORK_START_MIN = 9 * 60 + 30; // 09:30
 
-function toKLDate(d: Date): Date {
-  // Render same instant but show clock as KL for formatting
-  const s = d.toLocaleString('en-GB', { timeZone: KL_TZ });
-  return new Date(s);
-}
+const fmtKL = new Intl.DateTimeFormat('en-GB', {
+  timeZone: KL_TZ,
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
 function fmtTimeKL(d: Date | null): string {
-  if (!d) return '—';
-  return d.toLocaleTimeString('en-GB', { timeZone: KL_TZ, hour: '2-digit', minute: '2-digit' });
+  try {
+    if (!d || Number.isNaN(d.getTime())) return '—';
+    return fmtKL.format(d);
+  } catch {
+    return '—';
+  }
 }
+
 function daysInMonth(year: number, month1to12: number) {
   return new Date(year, month1to12, 0).getDate();
 }
-function ymdUTC(year: number, mon1to12: number, day: number) {
-  return new Date(Date.UTC(year, mon1to12 - 1, day));
+
+function safeDateFromISO(iso: string | null): Date | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return null;
+  return new Date(t);
 }
 
 // ---------- Component ----------
 export default function ReportPage() {
-  const nowKL = useMemo(() => toKLDate(new Date()), []);
-  const [year, setYear] = useState<number>(nowKL.getFullYear());
-  const [month, setMonth] = useState<number>(nowKL.getMonth() + 1); // 1..12
-  const [day, setDay] = useState<number | ''>('');                   // optional day filter for RPC (kept for future)
+  // Use local time to choose the period; no string parsing
+  const now = useMemo(() => new Date(), []);
+  const [year, setYear] = useState<number>(now.getFullYear());
+  const [month, setMonth] = useState<number>(now.getMonth() + 1); // 1..12
+  const [day, setDay] = useState<number | ''>(''); // kept for RPC compatibility
+
   const [rows, setRows] = useState<AttRow[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const [filterText, setFilterText] = useState<string>('');          // free text filter
-  const [selectedEmail, setSelectedEmail] = useState<string>('');    // "" = all staff
+  const [filterText, setFilterText] = useState<string>('');       // free text filter
+  const [selectedEmail, setSelectedEmail] = useState<string>(''); // "" = all staff
 
   const periodStartISO = useMemo(
     () => new Date(Date.UTC(year, month - 1, 1)).toISOString(),
@@ -73,19 +85,18 @@ export default function ReportPage() {
     [year, month]
   );
 
-  // fetch month data: try RPC month_attendance(), fallback to raw attendance
   const fetchMonth = useCallback(async () => {
     setLoading(true);
     setErrorMsg(null);
     try {
-      // Try RPC
+      // Try RPC first
       const { data: rpcData, error: rpcErr } = await supabase.rpc('month_attendance', {
         p_year: year,
         p_month: month,
         p_day: day === '' ? null : Number(day),
       });
 
-      if (!rpcErr && rpcData) {
+      if (!rpcErr && Array.isArray(rpcData)) {
         const normalized: AttRow[] = (rpcData as unknown[]).map((r0) => {
           const r = r0 as Record<string, unknown>;
           const ts =
@@ -157,12 +168,12 @@ export default function ReportPage() {
     fetchMonth();
   }, [fetchMonth]);
 
-  // Build staff list (name fallback to email local-part)
+  // Build staff list (email -> display name)
   const staffIndex = useMemo(() => {
-    const m = new Map<string, string>(); // email -> name
+    const m = new Map<string, string>();
     rows.forEach((r) => {
       const nm = (r.staff_name ?? '').trim() || r.staff_email.split('@')[0];
-      if (!m.has(r.staff_email)) m.set(r.staff_email, nm);
+      if (r.staff_email && !m.has(r.staff_email)) m.set(r.staff_email, nm);
     });
     return m;
   }, [rows]);
@@ -175,58 +186,58 @@ export default function ReportPage() {
     [staffIndex]
   );
 
-  // Build tables for selected/all staff
+  // Build tables
   const tables: StaffTable[] = useMemo(() => {
     const maxDay = daysInMonth(year, month);
-    const todayKL = toKLDate(new Date());
-    const todayY = todayKL.getFullYear();
-    const todayM = todayKL.getMonth() + 1;
-    const todayD = todayKL.getDate();
+    const today = new Date();
+    const todayY = today.getFullYear();
+    const todayM = today.getMonth() + 1;
+    const todayD = today.getDate();
 
-    const staffPairs =
+    const pairs =
       selectedEmail && staffIndex.has(selectedEmail)
         ? [[selectedEmail, staffIndex.get(selectedEmail)!] as const]
         : Array.from(staffIndex.entries());
 
     const q = filterText.trim().toLowerCase();
 
-    return staffPairs
+    return pairs
       .filter(([email, name]) => {
         if (!q) return true;
         return email.toLowerCase().includes(q) || name.toLowerCase().includes(q);
       })
       .map(([email, name]) => {
-        const my = rows.filter((r) => r.staff_email === email);
+        const mine = rows.filter((r) => r.staff_email === email);
 
         const days: DayLine[] = [];
         let absent = 0;
         let lateTotal = 0;
 
         for (let d = 1; d <= maxDay; d++) {
-          const items = my.filter((r) => (r.day ?? 0) === d || (r.ts ? new Date(r.ts).getUTCDate() === d : false));
-          // earliest check-in, latest check-out
+          const items = mine.filter((r) => {
+            const dd = r.day ?? (r.ts ? new Date(r.ts).getUTCDate() : null);
+            return dd === d;
+          });
+
           const inItem = items
             .filter((r) => (r.action ?? '').toLowerCase().includes('in'))
             .sort((a, b) => (a.ts && b.ts ? a.ts.localeCompare(b.ts) : 0))[0];
+
           const outItem = items
             .filter((r) => (r.action ?? '').toLowerCase().includes('out'))
             .sort((a, b) => (a.ts && b.ts ? b.ts.localeCompare(a.ts) : 0))[0];
 
-          const checkIn = inItem?.ts ? new Date(inItem.ts) : null;
-          const checkOut = outItem?.ts ? new Date(outItem.ts) : null;
+          const checkIn = safeDateFromISO(inItem?.ts ?? null);
+          const checkOut = safeDateFromISO(outItem?.ts ?? null);
 
-          // late minutes (prefer stored value; else compute from checkIn)
           let lateMin: number | null = null;
           if (inItem?.late_minutes != null) {
             lateMin = Math.max(0, Math.round(inItem.late_minutes));
           } else if (checkIn) {
-            const h = checkIn.getUTCHours();
-            const m = checkIn.getUTCMinutes();
-            const minSinceMidnight = h * 60 + m;
+            const minSinceMidnight = checkIn.getUTCHours() * 60 + checkIn.getUTCMinutes();
             lateMin = Math.max(0, minSinceMidnight - WORK_START_MIN);
           }
 
-          // Status
           let status: DayLine['status'] = '—';
           const isFuture =
             year > todayY ||
@@ -242,13 +253,7 @@ export default function ReportPage() {
             absent += 1;
           }
 
-          days.push({
-            day: d,
-            checkIn,
-            checkOut,
-            lateMin,
-            status,
-          });
+          days.push({ day: d, checkIn, checkOut, lateMin, status });
         }
 
         return {
@@ -263,7 +268,7 @@ export default function ReportPage() {
   }, [rows, staffIndex, selectedEmail, filterText, year, month]);
 
   const onPrint = useCallback(() => {
-    window.print();
+    if (typeof window !== 'undefined' && 'print' in window) window.print();
   }, []);
 
   return (
@@ -292,6 +297,13 @@ export default function ReportPage() {
             style={{ marginLeft: 6, width: 70, padding: 8, border: '1px solid #ddd', borderRadius: 6 }}
           />
         </label>
+        {/* kept for compatibility; hidden visually */}
+        <input
+          type="hidden"
+          value={day === '' ? '' : String(day)}
+          onChange={() => void 0}
+        />
+
         <button onClick={fetchMonth} disabled={loading}
           style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: 8, background: loading ? '#f3f4f6' : '#fff' }}>
           {loading ? 'Loading…' : 'Reload'}
