@@ -1,10 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
 import dynamic from "next/dynamic";
+import { createClient } from "@supabase/supabase-js";
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc";
+import timezone from "dayjs/plugin/timezone";
 
-const Map = dynamic(() => import("../../components/Map"), { ssr: false });
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
+// ✅ Corrected path here
+const Map = dynamic(() => import("../components/Map"), { ssr: false });
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -12,70 +19,26 @@ const supabase = createClient(
 );
 
 export default function HomePage() {
-  const [workshop, setWorkshop] = useState<{ lat: number; lon: number; radius: number } | null>(null);
-  const [position, setPosition] = useState<{ lat: number; lon: number; acc: number } | null>(null);
-  const [status, setStatus] = useState<string>("Waiting for location...");
-
-  // Running clock
-  const [clock, setClock] = useState<string>("");
+  const [now, setNow] = useState<string>("");
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      const now = new Date();
-      setClock(now.toLocaleString());
+    const timer = setInterval(() => {
+      setNow(dayjs().tz("Asia/Kuala_Lumpur").format("DD/MM/YYYY, h:mm:ss a"));
     }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    // Get workshop data (hardcoded for now)
-    setWorkshop({ lat: 2.687278, lon: 101.889442, radius: 120 });
-  }, []);
-
-  useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.watchPosition(
-        (pos) => {
-          setPosition({
-            lat: pos.coords.latitude,
-            lon: pos.coords.longitude,
-            acc: pos.coords.accuracy,
-          });
-        },
-        () => setStatus("Unable to retrieve location"),
-        { enableHighAccuracy: true }
-      );
-    } else {
-      setStatus("Geolocation not supported");
-    }
+    return () => clearInterval(timer);
   }, []);
 
   return (
-    <div className="p-4 space-y-4">
-      <h2 className="text-xl font-bold">Workshop Attendance</h2>
-      <div className="text-gray-600">{clock}</div>
-
-      {workshop && (
-        <div>
-          <p>
-            Workshop: <b>{workshop.lat}, {workshop.lon}</b> • Radius:{" "}
-            <b>{workshop.radius} m</b>
-          </p>
-        </div>
-      )}
-
-      <Map workshop={workshop} position={position} />
-
-      <p>{status}</p>
-
-      <div className="flex space-x-2">
-        <button className="bg-green-500 text-white px-4 py-2 rounded">
-          Check in
-        </button>
-        <button className="bg-blue-500 text-white px-4 py-2 rounded">
-          Check out
-        </button>
+    <div className="p-4">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-lg font-bold">
+          Workshop Attendance <br />
+          <span className="text-sm font-normal">{now}</span>
+        </h2>
       </div>
+
+      {/* Map section */}
+      <Map />
     </div>
   );
 }
