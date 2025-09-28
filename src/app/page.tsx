@@ -185,6 +185,16 @@ export default function HomePage() {
     <main style={shell}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         <h2 style={{ margin: 0 }}>Workshop Attendance</h2>
+
+<main style={{padding:16,fontFamily:'system-ui'}}>
+  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+    <h2 style={{margin:0}}>Workshop Attendance</h2>
+    <ClockKL />
+  </div>
+
+  {/* ...rest of your existing page... */}
+</main>
+
         <SignOutButton />
       </div>
 
