@@ -25,18 +25,18 @@ type SummaryRow = {
 };
 
 type Staff = { email: string; name: string | null; is_admin: boolean };
+type DayStatus = 'ABSENT' | 'MC' | 'OFFDAY';
 
 export default function ReportPage() {
   const now = useMemo(() => new Date(), []);
-  const [tab, setTab] = useState<'logs'|'summary'>('logs');
+  const [tab, setTab] = useState<'logs' | 'summary'>('logs');
 
   // period controls
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [day, setDay] = useState<number | ''>('');
 
-  // auth + staff/admin
-  const [me, setMe] = useState<string | null>(null);
+  // admin/staff
   const [isAdmin, setIsAdmin] = useState(false);
   const [staffList, setStaffList] = useState<Staff[]>([]);
 
@@ -54,16 +54,15 @@ export default function ReportPage() {
   // admin panel state
   const [selEmail, setSelEmail] = useState('');
   const [selDate, setSelDate] = useState<string>(''); // yyyy-mm-dd
-  const [selStatus, setSelStatus] = useState<'ABSENT'|'MC'|'OFFDAY'|'">'|'ABSENT'>('ABSENT');
+  const [selStatus, setSelStatus] = useState<DayStatus>('ABSENT');
   const [selNote, setSelNote] = useState('');
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
-  // init auth + admin/staff list
+  // init admin + staff list
   useEffect(() => {
     const boot = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       const email = user?.email ?? null;
-      setMe(email);
 
       // is admin?
       if (email) {
@@ -75,18 +74,18 @@ export default function ReportPage() {
         setIsAdmin(Boolean(adm?.is_admin));
       }
 
-      // staff list (for admin dropdown)
+      // staff list
       const { data: st, error } = await supabase
         .from('staff')
         .select('email,name,is_admin')
         .order('name', { ascending: true });
       if (!error && st) setStaffList(st as Staff[]);
     };
-    boot();
+    void boot();
 
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
       const email = s?.user?.email ?? null;
-      setMe(email);
+      if (!email) setIsAdmin(false);
     });
     return () => sub.subscription.unsubscribe();
   }, []);
@@ -131,7 +130,6 @@ export default function ReportPage() {
   }, [year, month]);
 
   useEffect(() => {
-    // initial load
     void reloadLogs();
     void reloadSummary();
   }, [reloadLogs, reloadSummary]);
@@ -157,7 +155,6 @@ export default function ReportPage() {
     if (error) { setSaveMsg(error.message); return; }
     setSaveMsg('Saved');
     setSelNote('');
-    // refresh summary after change
     void reloadSummary();
   };
 
@@ -167,6 +164,11 @@ export default function ReportPage() {
   const th  = { textAlign: 'left', padding: '10px 12px', borderBottom: '2px solid #e5e7eb', background: '#f8fafc' } as const;
   const td  = { padding: '10px 12px', verticalAlign: 'top' } as const;
   const pill = { padding:'6px 10px', border:'1px solid #d1d5db', borderRadius:8, background:'#fff' } as const;
+
+  const onStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const v = e.target.value as DayStatus;
+    setSelStatus(v);
+  };
 
   return (
     <main style={wrap}>
@@ -281,26 +283,40 @@ export default function ReportPage() {
             <div style={{fontWeight:600, marginBottom:8}}>Admin: Set day status (Absent / MC / Offday)</div>
             {!isAdmin && <div style={{color:'#b91c1c'}}>You are not an admin.</div>}
             <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center'}}>
-              <select value={selEmail} onChange={e=>setSelEmail(e.target.value)}
-                      style={{padding:10, border:'1px solid #d1d5db', borderRadius:8, minWidth:240}}>
+              <select
+                value={selEmail}
+                onChange={(e) => setSelEmail(e.target.value)}
+                style={{padding:10, border:'1px solid #d1d5db', borderRadius:8, minWidth:240}}
+              >
                 <option value="">Select staff…</option>
                 {staffList.map(s => (
                   <option key={s.email} value={s.email}>{s.name ?? s.email} — {s.email}</option>
                 ))}
               </select>
 
-              <input type="date" value={selDate} onChange={e=>setSelDate(e.target.value)}
-                     style={{padding:10, border:'1px solid #d1d5db', borderRadius:8}}/>
+              <input
+                type="date"
+                value={selDate}
+                onChange={(e) => setSelDate(e.target.value)}
+                style={{padding:10, border:'1px solid #d1d5db', borderRadius:8}}
+              />
 
-              <select value={selStatus} onChange={e=>setSelStatus(e.target.value as any)}
-                      style={{padding:10, border:'1px solid #d1d5db', borderRadius:8}}>
+              <select
+                value={selStatus}
+                onChange={onStatusChange}
+                style={{padding:10, border:'1px solid #d1d5db', borderRadius:8}}
+              >
                 <option value="ABSENT">ABSENT</option>
                 <option value="MC">MC</option>
                 <option value="OFFDAY">OFFDAY</option>
               </select>
 
-              <input placeholder="note (optional)" value={selNote} onChange={e=>setSelNote(e.target.value)}
-                     style={{padding:10, border:'1px solid #d1d5db', borderRadius:8, minWidth:240}}/>
+              <input
+                placeholder="note (optional)"
+                value={selNote}
+                onChange={(e) => setSelNote(e.target.value)}
+                style={{padding:10, border:'1px solid #d1d5db', borderRadius:8, minWidth:240}}
+              />
 
               <button onClick={saveStatus} disabled={!isAdmin} style={pill}>Save</button>
               {saveMsg && <span style={{marginLeft:8, color: saveMsg==='Saved' ? '#16a34a' : '#b91c1c'}}>{saveMsg}</span>}
