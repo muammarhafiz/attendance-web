@@ -3,144 +3,91 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-type AttRow = {
-  id: string;
-  staff_name: string | null;
+type DayRow = {
+  staff_name: string;
   staff_email: string;
-  action: 'in' | 'out';
-  ts: string;          // timestamptz -> ISO string
-  day: string;         // date (YYYY-MM-DD)
-  distance_m: number | null;
-  lat: number | null;
-  lon: number | null;
+  check_in_kl: string | null;
+  check_out_kl: string | null;
+  late_min: number | null;
 };
 
-type PerStaff = {
-  name: string;
-  email: string;
-  checkIn?: Date;
-  checkOut?: Date;
-  lateMin?: number;
-};
+function klTodayISO(): string {
+  // YYYY-MM-DD for Asia/Kuala_Lumpur
+  const klNow = new Date(
+    new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' })
+  );
+  const y = klNow.getFullYear();
+  const m = String(klNow.getMonth() + 1).padStart(2, '0');
+  const d = String(klNow.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
 
-const fmtKL = (d?: Date) =>
-  d ? new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kuala_Lumpur' }).format(d) : '—';
+export default function TodayPage() {
+  const [dateISO, setDateISO] = useState<string>(klTodayISO());
+  const [rows, setRows] = useState<DayRow[] | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [errorText, setErrorText] = useState<string>('');
 
-const LATE_CUTOFF_H = 9;
-const LATE_CUTOFF_M = 30;
-
-export default function Today() {
-  const [loading, setLoading] = useState(false);
-  const [rows, setRows] = useState<AttRow[]>([]);
-  const [error, setError] = useState<string | null>(null);
-
-  const todayISO = useMemo(() => {
-    // Use KL date to match your DB “day” (which is date without tz).
-    const now = new Date();
-    const klDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur', year: 'numeric', month: '2-digit', day: '2-digit' })
-      .format(now); // YYYY-MM-DD
-    return klDateStr;
-  }, []);
-
-  const load = useCallback(async () => {
+  const reload = useCallback(async () => {
     setLoading(true);
-    setError(null);
+    setErrorText('');
     const { data, error } = await supabase
-      .from('attendance')
-      .select('id, staff_name, staff_email, action, ts, day, distance_m, lat, lon')
-      .eq('day', todayISO)
-      .order('ts', { ascending: true });
-
+      .rpc('day_attendance_v2', { p_date: dateISO });
     if (error) {
-      setError(error.message);
+      setErrorText(error.message);
       setRows([]);
     } else {
-      setRows((data ?? []) as AttRow[]);
+      setRows((data as DayRow[]) ?? []);
     }
     setLoading(false);
-  }, [todayISO]);
+  }, [dateISO]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { reload(); }, [reload]);
 
-  // Group to one row per staff for today
-  const perStaff: PerStaff[] = useMemo(() => {
-    const map = new Map<string, PerStaff>();
-    for (const r of rows) {
-      const key = r.staff_email;
-      const rec = map.get(key) ?? {
-        name: r.staff_name ?? r.staff_email.split('@')[0],
-        email: r.staff_email,
-      };
-      const ts = new Date(r.ts);
-      if (r.action === 'in') {
-        // first check-in
-        if (!rec.checkIn || ts < rec.checkIn) rec.checkIn = ts;
-      } else if (r.action === 'out') {
-        // last check-out
-        if (!rec.checkOut || ts > rec.checkOut) rec.checkOut = ts;
-      }
-      map.set(key, rec);
-    }
-    // compute late minutes from KL 09:30
-    for (const rec of map.values()) {
-      if (rec.checkIn) {
-        const d = rec.checkIn;
-        // Build a KL "09:30" for that same calendar day
-        const y = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur', year: 'numeric' }).format(d);
-        const m = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur', month: '2-digit' }).format(d);
-        const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur', day: '2-digit' }).format(d);
-        const cutoffStr = `${y}-${m}-${day}T${String(LATE_CUTOFF_H).padStart(2,'0')}:${String(LATE_CUTOFF_M).padStart(2,'0')}:00`;
-        const cutoff = new Date(cutoffStr + '+08:00'); // KL offset
-        const diffMin = Math.max(0, Math.round((d.getTime() - cutoff.getTime()) / 60000));
-        rec.lateMin = diffMin || undefined;
-      }
-    }
-    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [rows]);
+  const hasData = useMemo(() => (rows?.length ?? 0) > 0, [rows]);
 
   return (
     <main style={{ padding: 16, fontFamily: 'system-ui' }}>
       <h2>Today</h2>
-      <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
-        {loading ? <span>Loading…</span> : <button onClick={load}>Reload</button>}
-        <span>KL Date: {todayISO}</span>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+        <button onClick={reload} style={{ padding: '8px 12px' }}>
+          Reload
+        </button>
+        <span>KL Date: {dateISO}</span>
       </div>
 
-      {error && <div style={{ color: 'crimson', marginBottom: 8 }}>{error}</div>}
+      {errorText && (
+        <p style={{ color: '#b00020', marginBottom: 12 }}>{errorText}</p>
+      )}
 
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
-            <tr>
-              <th style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #ddd' }}>Date (KL)</th>
-              <th style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #ddd' }}>Staff</th>
-              <th style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #ddd' }}>Check-in</th>
-              <th style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #ddd' }}>Check-out</th>
-              <th style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #ddd' }}>Late (min)</th>
+            <tr style={{ background: '#f5f7fb' }}>
+              <th style={{ textAlign: 'left', padding: 8 }}>Date (KL)</th>
+              <th style={{ textAlign: 'left', padding: 8 }}>Staff</th>
+              <th style={{ textAlign: 'left', padding: 8 }}>Check-in</th>
+              <th style={{ textAlign: 'left', padding: 8 }}>Check-out</th>
+              <th style={{ textAlign: 'left', padding: 8 }}>Late (min)</th>
             </tr>
           </thead>
           <tbody>
-            {perStaff.length === 0 && (
+            {!hasData && (
               <tr>
-                <td colSpan={5} style={{ padding: 12, color: '#555' }}>No rows.</td>
+                <td colSpan={5} style={{ padding: 12, color: '#555' }}>
+                  {loading ? 'Loading…' : 'No rows.'}
+                </td>
               </tr>
             )}
-            {perStaff.map((r) => {
-              const lateStyle = r.lateMin && r.lateMin > 0 ? { color: '#a00', fontWeight: 600 } : undefined;
-              return (
-                <tr key={r.email}>
-                  <td style={{ padding: 8, borderBottom: '1px solid #eee' }}>{todayISO}</td>
-                  <td style={{ padding: 8, borderBottom: '1px solid #eee' }}>{r.name}</td>
-                  <td style={{ padding: 8, borderBottom: '1px solid #eee' }}>{fmtKL(r.checkIn)}</td>
-                  <td style={{ padding: 8, borderBottom: '1px solid #eee' }}>{fmtKL(r.checkOut)}</td>
-                  <td style={{ padding: 8, borderBottom: '1px solid #eee', ...lateStyle }}>
-                    {r.lateMin ?? '—'}
-                  </td>
-                </tr>
-              );
-            })}
+            {(rows ?? []).map((r) => (
+              <tr key={`${r.staff_email}`}>
+                <td style={{ padding: 8 }}>{dateISO}</td>
+                <td style={{ padding: 8 }}>{r.staff_name}</td>
+                <td style={{ padding: 8 }}>{r.check_in_kl ?? '—'}</td>
+                <td style={{ padding: 8 }}>{r.check_out_kl ?? '—'}</td>
+                <td style={{ padding: 8 }}>{r.late_min ?? '—'}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
