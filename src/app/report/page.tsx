@@ -127,7 +127,8 @@ export default function ReportPage() {
   // filter staff by name/email
   const staffEntries = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    const arr = Array.from(byStaff.entries()).map(([emailKey, v]) => ({ email: emailKey, ...v }));
+    // ✅ put spread first, then set the email (only once)
+const arr = Array.from(byStaff.entries()).map(([emailKey, v]) => ({ ...v, email: emailKey }));
     if (!q) return arr;
     return arr.filter(x =>
       x.email.toLowerCase().includes(q) ||
