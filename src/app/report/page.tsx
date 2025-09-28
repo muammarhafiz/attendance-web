@@ -3,415 +3,244 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-// ---------- Types ----------
 type AttRow = {
-  ts: string | null;
-  day: number | null;
-  action?: string;
+  id: string;
   staff_name: string | null;
   staff_email: string;
-  distance_m: number | null;
-  is_late: boolean | null;
-  late_minutes: number | null;
+  action: 'in' | 'out';
+  ts: string;
+  day: string; // YYYY-MM-DD
 };
 
-type DayLine = {
-  day: number;
-  checkIn: Date | null;
-  checkOut: Date | null;
-  lateMin: number | null;
-  status: 'Present' | 'Late' | 'Absent' | '—';
+type DayRow = {
+  date: string;        // YYYY-MM-DD
+  checkIn?: Date;
+  checkOut?: Date;
+  lateMin?: number;
 };
 
-type StaffTable = {
+type StaffMonth = {
   email: string;
   name: string;
-  days: DayLine[];
-  absentCount: number;
-  lateTotalMin: number;
+  days: DayRow[];
 };
 
-// ---------- Constants / helpers ----------
-const KL_TZ = 'Asia/Kuala_Lumpur';
-const WORK_START_MIN = 9 * 60 + 30; // 09:30
+const fmtKLTime = (d?: Date) =>
+  d ? new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kuala_Lumpur' }).format(d) : '—';
 
-const fmtKL = new Intl.DateTimeFormat('en-GB', {
-  timeZone: KL_TZ,
-  hour: '2-digit',
-  minute: '2-digit',
-});
+const fmtDate = (isoDate: string) =>
+  new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    .format(new Date(isoDate + 'T00:00:00+08:00'));
 
-function fmtTimeKL(d: Date | null): string {
-  try {
-    if (!d || Number.isNaN(d.getTime())) return '—';
-    return fmtKL.format(d);
-  } catch {
-    return '—';
+const monthDays = (y: number, m: number) => {
+  const days: string[] = [];
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate(); // m is 1-12
+  for (let d = 1; d <= last; d++) {
+    const dd = String(d).padStart(2, '0');
+    const mm = String(m).padStart(2, '0');
+    days.push(`${y}-${mm}-${dd}`);
   }
-}
+  return days;
+};
 
-function daysInMonth(year: number, month1to12: number) {
-  return new Date(year, month1to12, 0).getDate();
-}
+const cutoffLateMinutes = (d: Date) => {
+  const y = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur', year: 'numeric' }).format(d);
+  const m = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur', month: '2-digit' }).format(d);
+  const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur', day: '2-digit' }).format(d);
+  const cutoff = new Date(`${y}-${m}-${day}T09:30:00+08:00`);
+  return Math.max(0, Math.round((d.getTime() - cutoff.getTime()) / 60000));
+};
 
-function safeDateFromISO(iso: string | null): Date | null {
-  if (!iso) return null;
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return null;
-  return new Date(t);
-}
+export default function Report() {
+  const now = new Date();
+  const [year, setYear] = useState<number>(Number(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur', year: 'numeric' }).format(now)));
+  const [month, setMonth] = useState<number>(Number(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur', month: '2-digit' }).format(now)));
+  const [day, setDay] = useState<number | ''>('');
 
-// ---------- Component ----------
-export default function ReportPage() {
-  // Use local time to choose the period; no string parsing
-  const now = useMemo(() => new Date(), []);
-  const [year, setYear] = useState<number>(now.getFullYear());
-  const [month, setMonth] = useState<number>(now.getMonth() + 1); // 1..12
-  const [day, setDay] = useState<number | ''>(''); // kept for RPC compatibility
-
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<AttRow[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [filter, setFilter] = useState<string>('');
 
-  const [filterText, setFilterText] = useState<string>('');       // free text filter
-  const [selectedEmail, setSelectedEmail] = useState<string>(''); // "" = all staff
-
-  const periodStartISO = useMemo(
-    () => new Date(Date.UTC(year, month - 1, 1)).toISOString(),
-    [year, month]
-  );
-  const periodEndISO = useMemo(
-    () => new Date(Date.UTC(year, month, 1)).toISOString(),
-    [year, month]
-  );
-
-  const fetchMonth = useCallback(async () => {
+  const reload = useCallback(async () => {
     setLoading(true);
-    setErrorMsg(null);
-    try {
-      // Try RPC first
-      const { data: rpcData, error: rpcErr } = await supabase.rpc('month_attendance', {
-        p_year: year,
-        p_month: month,
-        p_day: day === '' ? null : Number(day),
-      });
+    setError(null);
 
-      if (!rpcErr && Array.isArray(rpcData)) {
-        const normalized: AttRow[] = (rpcData as unknown[]).map((r0) => {
-          const r = r0 as Record<string, unknown>;
-          const ts =
-            (r['ts'] as string | null) ??
-            (r['timestamp'] as string | null) ??
-            (r['t'] as string | null) ??
-            null;
+    const from = `${year}-${String(month).padStart(2, '0')}-01`;
+    const to = day
+      ? `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+      : `${year}-${String(month).padStart(2, '0')}-31`;
 
-          const lateMin =
-            (r['late_minutes'] as number | null) ??
-            (r['late_min'] as number | null) ??
-            null;
+    const q = supabase
+      .from('attendance')
+      .select('id, staff_name, staff_email, action, ts, day')
+      .gte('day', from)
+      .lte('day', to)
+      .order('day', { ascending: true })
+      .order('ts', { ascending: true });
 
-          return {
-            ts,
-            day: (r['day'] as number | null) ?? (ts ? new Date(ts).getUTCDate() : null),
-            action: (r['action'] as string | undefined) ?? undefined,
-            staff_name:
-              ((r['staff_name'] as string | null) ??
-                (r['staff'] as string | null)) ?? null,
-            staff_email: (r['staff_email'] as string) ?? (r['email'] as string) ?? '',
-            distance_m:
-              (r['distance_m'] as number | null) ??
-              (r['distance'] as number | null) ??
-              null,
-            is_late: (r['is_late'] as boolean | null) ?? (lateMin != null ? lateMin > 0 : null),
-            late_minutes: lateMin,
-          };
-        });
-        setRows(normalized);
-      } else {
-        // Fallback to direct table
-        const { data, error } = await supabase
-          .from('attendance')
-          .select('ts, action, staff_name, staff_email, distance_m, late_minutes')
-          .gte('ts', periodStartISO)
-          .lt('ts', periodEndISO)
-          .order('ts', { ascending: true });
+    const { data, error } = await q;
 
-        if (error) throw error;
-
-        const safe = Array.isArray(data) ? (data as unknown[]) : [];
-        const normalized: AttRow[] = safe.map((row0) => {
-          const row = row0 as Record<string, unknown>;
-          const ts = (row['ts'] as string | null) ?? null;
-          const late = (row['late_minutes'] as number | null) ?? null;
-          return {
-            ts,
-            day: ts ? new Date(ts).getUTCDate() : null,
-            action: (row['action'] as string | undefined) ?? undefined,
-            staff_name: (row['staff_name'] as string | null) ?? null,
-            staff_email: (row['staff_email'] as string) ?? '',
-            distance_m: (row['distance_m'] as number | null) ?? null,
-            is_late: late != null ? late > 0 : null,
-            late_minutes: late,
-          };
-        });
-        setRows(normalized);
-      }
-    } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : 'Failed to load');
+    if (error) {
+      setError(error.message);
       setRows([]);
-    } finally {
-      setLoading(false);
+    } else {
+      setRows((data ?? []) as AttRow[]);
     }
-  }, [year, month, day, periodStartISO, periodEndISO]);
+    setLoading(false);
+  }, [year, month, day]);
 
   useEffect(() => {
-    fetchMonth();
-  }, [fetchMonth]);
+    reload();
+  }, [reload]);
 
-  // Build staff list (email -> display name)
-  const staffIndex = useMemo(() => {
-    const m = new Map<string, string>();
-    rows.forEach((r) => {
-      const nm = (r.staff_name ?? '').trim() || r.staff_email.split('@')[0];
-      if (r.staff_email && !m.has(r.staff_email)) m.set(r.staff_email, nm);
-    });
-    return m;
-  }, [rows]);
+  // Build per-staff month tables
+  const perStaffMonth: StaffMonth[] = useMemo(() => {
+    const byStaff = new Map<string, StaffMonth>();
+    const days = monthDays(year, month);
+
+    // Seed
+    for (const r of rows) {
+      const key = r.staff_email;
+      if (!byStaff.has(key)) {
+        byStaff.set(key, {
+          email: key,
+          name: r.staff_name ?? key.split('@')[0],
+          days: days.map((d) => ({ date: d })),
+        });
+      }
+    }
+
+    // Fill data
+    for (const r of rows) {
+      const s = byStaff.get(r.staff_email);
+      if (!s) continue;
+      const idx = s.days.findIndex((d) => d.date === r.day);
+      if (idx < 0) continue;
+      const d = new Date(r.ts);
+      const cell = s.days[idx];
+      if (r.action === 'in') {
+        if (!cell.checkIn || d < cell.checkIn) cell.checkIn = d;
+      } else if (r.action === 'out') {
+        if (!cell.checkOut || d > cell.checkOut) cell.checkOut = d;
+      }
+    }
+
+    // Compute late minutes
+    for (const s of byStaff.values()) {
+      for (const dayRow of s.days) {
+        if (dayRow.checkIn) {
+          const mins = cutoffLateMinutes(dayRow.checkIn);
+          if (mins > 0) dayRow.lateMin = mins;
+        }
+      }
+    }
+
+    // Filter by staff name/email if needed
+    let arr = Array.from(byStaff.values()).sort((a, b) => a.name.localeCompare(b.name));
+    const q = filter.trim().toLowerCase();
+    if (q) {
+      arr = arr.filter(
+        (s) => s.name.toLowerCase().includes(q) || s.email.toLowerCase().includes(q),
+      );
+    }
+    return arr;
+  }, [rows, year, month, filter]);
 
   const staffOptions = useMemo(
     () =>
-      Array.from(staffIndex.entries())
-        .map(([email, name]) => ({ email, name }))
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [staffIndex]
+      Array.from(new Map(perStaffMonth.map((s) => [s.email, s])).values()).map((s) => ({
+        email: s.email,
+        name: s.name,
+      })),
+    [perStaffMonth],
   );
 
-  // Build tables
-  const tables: StaffTable[] = useMemo(() => {
-    const maxDay = daysInMonth(year, month);
-    const today = new Date();
-    const todayY = today.getFullYear();
-    const todayM = today.getMonth() + 1;
-    const todayD = today.getDate();
+  const [selectedEmail, setSelectedEmail] = useState<string>('');
 
-    const pairs =
-      selectedEmail && staffIndex.has(selectedEmail)
-        ? [[selectedEmail, staffIndex.get(selectedEmail)!] as const]
-        : Array.from(staffIndex.entries());
+  useEffect(() => {
+    if (staffOptions.length && !staffOptions.find((x) => x.email === selectedEmail)) {
+      setSelectedEmail(staffOptions[0].email);
+    }
+  }, [staffOptions, selectedEmail]);
 
-    const q = filterText.trim().toLowerCase();
-
-    return pairs
-      .filter(([email, name]) => {
-        if (!q) return true;
-        return email.toLowerCase().includes(q) || name.toLowerCase().includes(q);
-      })
-      .map(([email, name]) => {
-        const mine = rows.filter((r) => r.staff_email === email);
-
-        const days: DayLine[] = [];
-        let absent = 0;
-        let lateTotal = 0;
-
-        for (let d = 1; d <= maxDay; d++) {
-          const items = mine.filter((r) => {
-            const dd = r.day ?? (r.ts ? new Date(r.ts).getUTCDate() : null);
-            return dd === d;
-          });
-
-          const inItem = items
-            .filter((r) => (r.action ?? '').toLowerCase().includes('in'))
-            .sort((a, b) => (a.ts && b.ts ? a.ts.localeCompare(b.ts) : 0))[0];
-
-          const outItem = items
-            .filter((r) => (r.action ?? '').toLowerCase().includes('out'))
-            .sort((a, b) => (a.ts && b.ts ? b.ts.localeCompare(a.ts) : 0))[0];
-
-          const checkIn = safeDateFromISO(inItem?.ts ?? null);
-          const checkOut = safeDateFromISO(outItem?.ts ?? null);
-
-          let lateMin: number | null = null;
-          if (inItem?.late_minutes != null) {
-            lateMin = Math.max(0, Math.round(inItem.late_minutes));
-          } else if (checkIn) {
-            const minSinceMidnight = checkIn.getUTCHours() * 60 + checkIn.getUTCMinutes();
-            lateMin = Math.max(0, minSinceMidnight - WORK_START_MIN);
-          }
-
-          let status: DayLine['status'] = '—';
-          const isFuture =
-            year > todayY ||
-            (year === todayY && month > todayM) ||
-            (year === todayY && month === todayM && d > todayD);
-
-          if (checkIn) {
-            const isLate = (lateMin ?? 0) > 0;
-            status = isLate ? 'Late' : 'Present';
-            if (isLate) lateTotal += lateMin ?? 0;
-          } else if (!isFuture) {
-            status = 'Absent';
-            absent += 1;
-          }
-
-          days.push({ day: d, checkIn, checkOut, lateMin, status });
-        }
-
-        return {
-          email,
-          name,
-          days,
-          absentCount: absent,
-          lateTotalMin: lateTotal,
-        };
-      })
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [rows, staffIndex, selectedEmail, filterText, year, month]);
-
-  const onPrint = useCallback(() => {
-    if (typeof window !== 'undefined' && 'print' in window) window.print();
-  }, []);
+  const visible = perStaffMonth.filter((s) => !selectedEmail || s.email === selectedEmail);
 
   return (
     <main style={{ padding: 16, fontFamily: 'system-ui' }}>
-      <h2 style={{ marginBottom: 12 }}>Attendance Report</h2>
+      <h2>Attendance Report</h2>
 
-      {/* Controls */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-        <label>
-          Year
-          <input
-            type="number"
-            value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
-            style={{ marginLeft: 6, width: 90, padding: 8, border: '1px solid #ddd', borderRadius: 6 }}
-          />
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+        <label>Year&nbsp;
+          <input type="number" value={year} onChange={(e) => setYear(parseInt(e.target.value || '0', 10))} style={{ width: 90 }} />
         </label>
-        <label>
-          Month
+        <label>Month&nbsp;
+          <input type="number" min={1} max={12} value={month} onChange={(e) => setMonth(parseInt(e.target.value || '0', 10))} style={{ width: 70 }} />
+        </label>
+        <label>Day (optional)&nbsp;
           <input
             type="number"
-            value={month}
             min={1}
-            max={12}
-            onChange={(e) => setMonth(Number(e.target.value))}
-            style={{ marginLeft: 6, width: 70, padding: 8, border: '1px solid #ddd', borderRadius: 6 }}
+            max={31}
+            value={day}
+            onChange={(e) => setDay(e.target.value ? parseInt(e.target.value, 10) : '')}
+            style={{ width: 90 }}
           />
         </label>
-        {/* kept for compatibility; hidden visually */}
-        <input
-          type="hidden"
-          value={day === '' ? '' : String(day)}
-          onChange={() => void 0}
-        />
-
-        <button onClick={fetchMonth} disabled={loading}
-          style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: 8, background: loading ? '#f3f4f6' : '#fff' }}>
-          {loading ? 'Loading…' : 'Reload'}
-        </button>
-
-        {/* Staff dropdown */}
-        <label style={{ marginLeft: 8 }}>
-          Staff
-          <select
-            value={selectedEmail}
-            onChange={(e) => setSelectedEmail(e.target.value)}
-            style={{ marginLeft: 6, padding: 8, minWidth: 220, border: '1px solid #ddd', borderRadius: 6 }}
-          >
-            <option value="">All staff</option>
-            {staffOptions.map((s) => (
-              <option key={s.email} value={s.email}>
-                {s.name} ({s.email})
-              </option>
-            ))}
-          </select>
-        </label>
-
-        {/* Free-text filter */}
-        <input
-          placeholder="Filter by name or email…"
-          value={filterText}
-          onChange={(e) => setFilterText(e.target.value)}
-          style={{ padding: 8, minWidth: 240, border: '1px solid #ddd', borderRadius: 6 }}
-        />
-
-        <span style={{ marginLeft: 'auto' }}>
-          Period: <b>{String(month).padStart(2, '0')}/{year}</b>
-        </span>
-
-        <button onClick={onPrint}
-          style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: 8 }}>
-          Print
-        </button>
+        <button onClick={reload} disabled={loading}>{loading ? 'Loading…' : 'Reload'}</button>
+        <span style={{ marginLeft: 8 }}>Period: {String(month).padStart(2, '0')}/{year}{day ? `, Day ${day}` : ''}</span>
       </div>
 
-      {errorMsg && <div style={{ color: '#b91c1c', marginTop: 10 }}>Failed to load: {errorMsg}</div>}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+        <input
+          placeholder="Filter by staff name/email…"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          style={{ flex: 1, minWidth: 220, padding: 8 }}
+        />
+        <select value={selectedEmail} onChange={(e) => setSelectedEmail(e.target.value)} style={{ padding: 8 }}>
+          {staffOptions.map((s) => (
+            <option key={s.email} value={s.email}>{s.name} — {s.email}</option>
+          ))}
+        </select>
+      </div>
 
-      {/* Tables */}
-      <div style={{ marginTop: 16, display: 'grid', gap: 24 }}>
-        {tables.length === 0 && !loading && (
-          <div style={{ border: '1px solid #e5e7eb', padding: 16, borderRadius: 8, background: '#fafafa' }}>
-            No rows for this period.
-          </div>
-        )}
+      {error && <div style={{ color: 'crimson', marginBottom: 8 }}>Failed to load report: {error}</div>}
 
-        {tables.map((t) => (
-          <section key={t.email} style={{ border: '1px solid #e5e7eb', borderRadius: 8, overflow: 'hidden' }}>
-            <div style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
-              padding: '12px 16px', borderBottom: '1px solid #e5e7eb', background: '#f8fafc'
-            }}>
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 16 }}>{t.name}</div>
-                <div style={{ color: '#666' }}>{t.email}</div>
-              </div>
-              <div style={{ display: 'flex', gap: 16 }}>
-                <div>Absent: <b>{t.absentCount}</b></div>
-                <div>Late total: <b>{t.lateTotalMin} min</b></div>
-              </div>
-            </div>
-
+      {visible.map((s) => (
+        <section key={s.email} style={{ marginBottom: 24 }}>
+          <h3 style={{ margin: '12px 0 8px' }}>{s.name} <span style={{ color: '#666', fontWeight: 400 }}>({s.email})</span></h3>
+          <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ background: '#f9fafb' }}>
-                  {['Date', 'Check-in', 'Check-out', 'Late (min)', 'Status'].map((h) => (
-                    <th key={h} style={th}>{h}</th>
-                  ))}
+                <tr>
+                  <th style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #ddd' }}>Date</th>
+                  <th style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #ddd' }}>Check-in</th>
+                  <th style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #ddd' }}>Check-out</th>
+                  <th style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #ddd' }}>Late (min)</th>
                 </tr>
               </thead>
               <tbody>
-                {t.days.map((d) => {
-                  const isLate = (d.lateMin ?? 0) > 0;
-                  const isAbsent = d.status === 'Absent';
+                {s.days.map((d) => {
+                  const lateStyle = d.lateMin && d.lateMin > 0 ? { color: '#a00', fontWeight: 600, background: '#fff3f2' } : undefined;
                   return (
-                    <tr key={d.day} style={{ background: isLate ? '#fff4f2' : undefined }}>
-                      <td style={td}>{String(d.day).padStart(2, '0')}/{String(month).padStart(2, '0')}/{year}</td>
-                      <td style={td}>{fmtTimeKL(d.checkIn)}</td>
-                      <td style={td}>{fmtTimeKL(d.checkOut)}</td>
-                      <td style={td}>{d.lateMin ?? '—'}</td>
-                      <td style={{ ...td, color: isAbsent ? '#b91c1c' : isLate ? '#b45309' : '#065f46' }}>
-                        {d.status}
-                      </td>
+                    <tr key={d.date} style={lateStyle}>
+                      <td style={{ padding: 8, borderBottom: '1px solid #eee' }}>{fmtDate(d.date)}</td>
+                      <td style={{ padding: 8, borderBottom: '1px solid #eee' }}>{fmtKLTime(d.checkIn)}</td>
+                      <td style={{ padding: 8, borderBottom: '1px solid #eee' }}>{fmtKLTime(d.checkOut)}</td>
+                      <td style={{ padding: 8, borderBottom: '1px solid #eee' }}>{d.lateMin ?? '—'}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
-          </section>
-        ))}
-      </div>
+          </div>
+        </section>
+      ))}
+
+      {!loading && !error && visible.length === 0 && (
+        <div style={{ color: '#555' }}>No data for the selected period.</div>
+      )}
     </main>
   );
 }
-
-const th: React.CSSProperties = {
-  textAlign: 'left',
-  padding: '10px 12px',
-  borderBottom: '1px solid #e5e7eb',
-  fontWeight: 600,
-  fontSize: 14,
-};
-const td: React.CSSProperties = {
-  padding: '10px 12px',
-  borderBottom: '1px solid #eef2f7',
-  fontSize: 14,
-};
