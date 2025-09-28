@@ -1,149 +1,43 @@
 'use client';
-
 import Link from 'next/link';
-import { useRouter, usePathname } from 'next/navigation';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 export default function NavBar() {
-  const router = useRouter();
-  const pathname = usePathname();
-
   const [email, setEmail] = useState<string | null>(null);
-  const [checking, setChecking] = useState(true);
 
-  // Load session email + subscribe to auth changes
   useEffect(() => {
-    const subscription = supabase.auth
-      .onAuthStateChange((_event, session) => {
-        setEmail(session?.user?.email ?? null);
-      })
-      .data.subscription;
-
-    supabase.auth.getSession().then(({ data }) => {
-      setEmail(data.session?.user?.email ?? null);
-      setChecking(false);
-    });
-
-    return () => {
-      subscription?.unsubscribe();
-    };
+    let unsub: (()=>void) | null = null;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setEmail(session?.user?.email ?? null);
+      unsub = supabase.auth.onAuthStateChange((_e, s) => {
+        setEmail(s?.user?.email ?? null);
+      }).data?.subscription?.unsubscribe ?? null;
+    })();
+    return () => { if (unsub) unsub(); };
   }, []);
 
-  const handleManagerClick = useCallback(
-    async (e: React.MouseEvent<HTMLAnchorElement>) => {
-      e.preventDefault();
-
-      // Require login first
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        alert('Please sign in first.');
-        router.push('/login');
-        return;
-      }
-
-      // Prefer RPC if present
-      let isAdmin = false;
-      const rpc = await supabase.rpc('is_admin');
-      if (!rpc.error && rpc.data === true) {
-        isAdmin = true;
-      } else {
-        // Fallback to table lookup
-        const { data, error } = await supabase
-          .from('staff')
-          .select('is_admin')
-          .eq('email', user.email)
-          .single();
-        if (!error && data?.is_admin) isAdmin = true;
-      }
-
-      if (!isAdmin) {
-        alert('Admins only.');
-        return; // stay where you are
-      }
-
-      router.push('/manager');
-    },
-    [router]
-  );
-
-  const signOut = async () => {
-    await supabase.auth.signOut();
-    router.push('/login');
+  const bar: React.CSSProperties = {
+    display:'flex', alignItems:'center', gap:16, padding:'10px 16px',
+    borderBottom:'1px solid #e5e7eb', position:'sticky', top:0, background:'#fff', zIndex:10
   };
-
-  const LinkItem = ({ href, label }: { href: string; label: string }) => {
-    const active = pathname === href;
-    return (
-      <Link
-        href={href}
-        style={{
-          padding: '8px 12px',
-          borderRadius: 8,
-          textDecoration: 'none',
-          color: active ? '#111' : '#333',
-          background: active ? '#e5e7eb' : 'transparent',
-          border: '1px solid transparent',
-        }}
-      >
-        {label}
-      </Link>
-    );
-  };
+  const link: React.CSSProperties = { textDecoration:'none', color:'#111', fontWeight:600 };
+  const right: React.CSSProperties = { marginLeft:'auto', display:'flex', gap:12, alignItems:'center' };
+  const pill: React.CSSProperties = { padding:'6px 10px', border:'1px solid #d0d5dd', borderRadius:999 };
 
   return (
-    <header style={{ background: '#fff', borderBottom: '1px solid #e5e7eb' }}>
-      <nav
-        style={{
-          maxWidth: 1100,
-          margin: '0 auto',
-          padding: '10px 16px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          fontFamily: 'system-ui',
-          color: '#111',
-        }}
-      >
-        <div style={{ fontWeight: 700, marginRight: 8 }}>Attendance</div>
-
-        <LinkItem href="/" label="Home" />
-        <LinkItem href="/today" label="Today" />
-        <LinkItem href="/report" label="Report" />
-
-        {/* Manager: everyone can see; click will validate admin */}
-        <a
-          href="/manager"
-          onClick={handleManagerClick}
-          style={{ padding: '8px 12px', borderRadius: 8, textDecoration: 'none', color: '#333' }}
-        >
-          Manager
-        </a>
-
-        <div style={{ flex: 1 }} />
-
-        {/* Right side auth state */}
-        {!checking && email && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ color: '#555' }}>{email}</span>
-            <button
-              onClick={signOut}
-              style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 8, background: '#fff' }}
-            >
-              Sign out
-            </button>
-          </div>
-        )}
-
-        {!checking && !email && (
-          <Link
-            href="/login"
-            style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 8, textDecoration: 'none', color: '#111' }}
-          >
-            Sign in
-          </Link>
-        )}
-      </nav>
-    </header>
+    <nav style={bar}>
+      <Link href="/" style={link}>Attendance</Link>
+      <Link href="/" style={link}>Home</Link>
+      <Link href="/today" style={link}>Today</Link>
+      <Link href="/report" style={link}>Report</Link>
+      <Link href="/offday" style={link}>Offday/MC</Link>
+      <Link href="/manager" style={link}>Manager</Link>
+      <div style={right}>
+        {email ? <span style={pill}>{email}</span> : <Link href="/login" style={link}>Sign in</Link>}
+      </div>
+    </nav>
   );
 }
+
