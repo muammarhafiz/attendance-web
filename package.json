@@ -1,5 +1,5 @@
 {
-  "engines": { "node": "22.x" }
+  "engines": { "node": "22.x" },
   
   "name": "attendance-web",
   "version": "0.1.0",
