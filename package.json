@@ -17,7 +17,8 @@
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-leaflet": "^5.0.0",
-    "dayjs": "^1.11.13"
+    "dayjs": "^1.11.13",
+    "clsx": "^2.1.1"
     
   },
   "devDependencies": {
