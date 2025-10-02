@@ -1,7 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+
+type Staff = {
+  email: string;
+  name: string;
+};
 
 type AttendanceRow = {
   staff_name: string;
@@ -11,9 +16,12 @@ type AttendanceRow = {
   late_min: number | null;
 };
 
-type StaffRow = {
-  email: string;
-  name: string;
+type MergedRow = {
+  staff_email: string;
+  staff_name: string;
+  check_in_kl: string | null;
+  check_out_kl: string | null;
+  late_min: number | null;
 };
 
 function klTodayISO(): string {
@@ -29,7 +37,7 @@ function klTodayISO(): string {
 
 export default function TodayPage() {
   const [dateISO] = useState<string>(klTodayISO());
-  const [rows, setRows] = useState<AttendanceRow[] | null>(null);
+  const [rows, setRows] = useState<MergedRow[] | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [errorText, setErrorText] = useState<string>('');
 
@@ -37,40 +45,40 @@ export default function TodayPage() {
     setLoading(true);
     setErrorText('');
 
-    // 1) Fetch all staff (name + email)
-    const { data: staff, error: staffErr } = await supabase
-      .from('staff')
-      .select('email,name')
-      .order('name', { ascending: true });
+    // Fetch staff list (public.get_staff_public) and today's attendance in parallel
+    const [staffRes, attRes] = await Promise.all([
+      supabase.rpc('get_staff_public'),
+      supabase.rpc('day_attendance_v2', { p_date: dateISO }),
+    ]);
 
-    if (staffErr) {
-      setErrorText(`Staff load error: ${staffErr.message}`);
+    // Handle staff fetch errors
+    if (staffRes.error) {
+      setErrorText(`Staff load error: ${staffRes.error.message}`);
       setRows([]);
       setLoading(false);
       return;
     }
 
-    // 2) Fetch today's computed attendance rows (keeps your existing logic)
-    const { data: att, error: attErr } = await supabase
-      .rpc('day_attendance_v2', { p_date: dateISO });
-
-    if (attErr) {
-      setErrorText(`Attendance load error: ${attErr.message}`);
+    // Handle attendance fetch errors
+    if (attRes.error) {
+      setErrorText(`Attendance load error: ${attRes.error.message}`);
       setRows([]);
       setLoading(false);
       return;
     }
 
-    const attendance = (att as AttendanceRow[]) ?? [];
-    const staffList = (staff as StaffRow[]) ?? [];
+    const staff: Staff[] = (staffRes.data as Staff[]) ?? [];
+    const attendance: AttendanceRow[] = (attRes.data as AttendanceRow[]) ?? [];
 
-    // 3) Index attendance by email for quick merge
+    // Create a quick lookup by email from attendance
     const byEmail = new Map<string, AttendanceRow>();
-    for (const r of attendance) byEmail.set(r.staff_email, r);
+    for (const r of attendance) {
+      byEmail.set(r.staff_email.toLowerCase(), r);
+    }
 
-    // 4) Merge: one row per staff, fill blanks with "—"
-    const merged: AttendanceRow[] = staffList.map((s) => {
-      const found = byEmail.get(s.email);
+    // Merge to ensure every staff shows up
+    const merged: MergedRow[] = staff.map((s) => {
+      const found = byEmail.get(s.email.toLowerCase());
       return {
         staff_email: s.email,
         staff_name: s.name,
@@ -79,6 +87,11 @@ export default function TodayPage() {
         late_min: found?.late_min ?? null,
       };
     });
+
+    // Sort by staff_name (case-insensitive)
+    merged.sort((a, b) =>
+      a.staff_name.localeCompare(b.staff_name, undefined, { sensitivity: 'base' })
+    );
 
     setRows(merged);
     setLoading(false);
