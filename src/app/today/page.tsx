@@ -9,14 +9,13 @@ type DayRow = {
   check_in_kl: string | null;
   check_out_kl: string | null;
   late_min: number | null;
-  status?: string | null; // <- MC / Offday / etc (from day_status)
+  status?: string | null; // MC / Offday / etc
 };
 
 type StaffRow = { email: string; name: string | null };
 type StatusRow = { staff_email: string; status: string | null };
 
 function klTodayISO(): string {
-  // YYYY-MM-DD for Asia/Kuala_Lumpur
   const klNow = new Date(
     new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' })
   );
@@ -38,17 +37,17 @@ export default function TodayPage() {
     setErrorText('');
     setNotice('');
 
-    // 1) Today's attendance (existing RPC)
+    // 1) today’s attendance
     const { data: attData, error: attError } = await supabase
       .rpc('day_attendance_v2', { p_date: dateISO });
 
-    // 2) All staff (needs sign-in per RLS)
+    // 2) all staff (requires sign-in)
     const { data: staffData, error: staffError } = await supabase
       .from('staff')
       .select('email,name')
       .order('name', { ascending: true });
 
-    // 3) Today statuses (MC/Offday/etc). If table name/cols differ, tell me and I’ll tweak.
+    // 3) today statuses (MC/Offday/etc)
     const { data: statData, error: statError } = await supabase
       .from('day_status')
       .select('staff_email,status')
@@ -63,12 +62,11 @@ export default function TodayPage() {
 
     const dayRows = (attData as DayRow[]) ?? [];
 
-    // If staff is blocked by RLS (not signed in), fall back to only attendance rows.
+    // fallback if staff blocked by RLS
     if (staffError || !staffData || staffData.length === 0) {
       if (staffError) {
         setNotice('Showing only checked-in staff. Sign in to view all staff & statuses.');
       }
-      // Even in fallback, try to attach statuses where we can
       const statusMap = new Map<string, string | null>();
       if (!statError && statData) {
         for (const s of statData as StatusRow[]) statusMap.set(s.staff_email.toLowerCase(), s.status);
@@ -82,7 +80,7 @@ export default function TodayPage() {
       return;
     }
 
-    // Build maps for merging
+    // build maps for merge
     const byEmail = new Map<string, DayRow>();
     for (const r of dayRows) byEmail.set(r.staff_email.toLowerCase(), r);
 
@@ -91,7 +89,7 @@ export default function TodayPage() {
       for (const s of statData as StatusRow[]) statusMap.set(s.staff_email.toLowerCase(), s.status);
     }
 
-    // Merge: left-join staff with attendance, then attach status
+    // left-join staff with attendance, then attach status
     const merged: DayRow[] = (staffData as StaffRow[]).map((s) => {
       const key = s.email.toLowerCase();
       const hit = byEmail.get(key);
@@ -154,6 +152,9 @@ export default function TodayPage() {
             )}
             {(rows ?? []).map((r) => {
               const showStatus = r.status && r.status.trim() !== '';
+              const late = typeof r.late_min === 'number' ? r.late_min : null;
+              const lateIsPositive = !showStatus && late !== null && late > 0;
+
               return (
                 <tr key={r.staff_email}>
                   <td style={{ padding: 8 }}>{dateISO}</td>
@@ -167,8 +168,14 @@ export default function TodayPage() {
                   <td style={{ padding: 8, color: showStatus ? '#9CA3AF' : 'inherit' }}>
                     {showStatus ? '—' : (r.check_out_kl ?? '—')}
                   </td>
-                  <td style={{ padding: 8, color: showStatus ? '#9CA3AF' : 'inherit' }}>
-                    {showStatus ? '—' : (r.late_min ?? '—')}
+                  <td
+                    style={{
+                      padding: 8,
+                      color: showStatus ? '#9CA3AF' : (lateIsPositive ? '#dc2626' : 'inherit'),
+                      fontWeight: lateIsPositive ? 700 as 700 : 400 as 400,
+                    }}
+                  >
+                    {showStatus ? '—' : (late ?? '—')}
                   </td>
                 </tr>
               );
