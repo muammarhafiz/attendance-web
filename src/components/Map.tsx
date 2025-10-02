@@ -5,20 +5,12 @@ import { MapContainer, TileLayer, Marker, Circle, useMap } from 'react-leaflet';
 import { Icon, type LatLngBoundsExpression } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-import { createClient } from '@supabase/supabase-js';
-import { WORKSHOP as FALLBACK } from '../config/workshop'; // fallback if DB read fails
+import { supabase } from '@/lib/supabaseClient'; // ✅ use the app's singleton client
+import { WORKSHOP as FALLBACK } from '../config/workshop';
 
-// --- Supabase (client) ---
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
-// --- Types ---
 type Pos = { lat: number; lon: number };
 type WorkshopCfg = { lat: number; lon: number; radiusM: number };
 
-// --- Leaflet icon ---
 const markerIcon = new Icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
@@ -30,51 +22,48 @@ const markerIcon = new Icon({
 });
 
 export default function Map({
-  // allow props to override (not required)
   initialWorkshop,
   onLocationChange,
 }: {
   initialWorkshop?: WorkshopCfg;
   onLocationChange?: (pos: Pos, acc?: number) => void;
 }) {
-  // workshop config (from DB with fallback)
   const [workshop, setWorkshop] = useState<WorkshopCfg>(
     initialWorkshop ?? { lat: FALLBACK.lat, lon: FALLBACK.lon, radiusM: FALLBACK.radiusM }
   );
 
-  // user position / UI state
   const [pos, setPos] = useState<Pos | null>(null);
   const [acc, setAcc] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [errMsg, setErrMsg] = useState<string | null>(null);
 
-  // --- Load workshop config from DB (config table) ---
+  // --- Load workshop config from DB (row id = 1) ---
   useEffect(() => {
     let cancelled = false;
 
-    async function load() {
-      // Expecting a single row with columns: workshop_lat, workshop_lon, radius_m
+    (async () => {
       const { data, error } = await supabase
         .from('config')
         .select('workshop_lat, workshop_lon, radius_m')
-        .limit(1)
-        .maybeSingle();
+        .eq('id', 1)          // ✅ read the single config row
+        .single();
 
-      if (!cancelled && data && !error) {
-        const cfg: WorkshopCfg = {
-          lat: Number(data.workshop_lat) || FALLBACK.lat,
-          lon: Number(data.workshop_lon) || FALLBACK.lon,
-          radiusM: Number(data.radius_m) || FALLBACK.radiusM,
-        };
-        setWorkshop(cfg);
+      if (!cancelled) {
+        if (!error && data) {
+          setWorkshop({
+            lat: Number(data.workshop_lat) || FALLBACK.lat,
+            lon: Number(data.workshop_lon) || FALLBACK.lon,
+            radiusM: Number(data.radius_m) || FALLBACK.radiusM,
+          });
+        } else {
+          // keep fallback so page still works
+          // Optional debug:
+          console.warn('Using FALLBACK workshop config:', error?.message);
+        }
       }
-      // If it fails, we silently keep FALLBACK so page still works.
-    }
+    })();
 
-    load();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
   const Controls = () => {
@@ -96,7 +85,6 @@ export default function Map({
       setBusy(true);
       setErrMsg(null);
 
-      // Quick fix, then precise fix for better accuracy
       navigator.geolocation.getCurrentPosition(
         p => {
           const quick = { lat: p.coords.latitude, lon: p.coords.longitude };
@@ -158,13 +146,9 @@ export default function Map({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           attribution="&copy; OpenStreetMap contributors"
         />
-        {/* Workshop center + radius */}
         <Marker position={[workshop.lat, workshop.lon]} icon={markerIcon} />
         <Circle center={[workshop.lat, workshop.lon]} radius={workshop.radiusM} pathOptions={{ color: '#2563eb' }} />
-
-        {/* Your current location */}
         {pos && <Marker position={[pos.lat, pos.lon]} icon={markerIcon} />}
-
         <Controls />
       </MapContainer>
     </div>
