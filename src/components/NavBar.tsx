@@ -30,7 +30,7 @@ export default function NavBar() {
           <Link href="/offday" className="text-sm font-semibold text-gray-700 hover:text-gray-900">Offday/MC</Link>
         </div>
 
-        {/* Single auth button area */}
+        {/* Auth button */}
         <div className="flex items-center gap-3">
           {email ? (
             <>
@@ -44,7 +44,7 @@ export default function NavBar() {
             </>
           ) : (
             <Link
-              href="/auth"
+              href="/login"   // ✅ Point to the actual login route
               className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
             >
               Sign in
