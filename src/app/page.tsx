@@ -1,41 +1,34 @@
 'use client';
 
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
-import PageShell from '@/components/PageShell';
-import { Card, CardBody } from '@/components/ui/Card';
-import { WORKSHOP } from '@/config/workshop';
+import PageShell from '../components/PageShell';
+import { Card, CardBody } from '../components/ui/Card';
+import { supabase } from '@/lib/supabaseClient';
+import { WORKSHOP as FALLBACK } from '@/config/workshop';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
-// Use the map component that supports onLocationChange
-const Map = dynamic(() => import('@/components/CurrentMap'), { ssr: false });
+// IMPORTANT: this Map component accepts props (workshop, radiusM)
+const Map = dynamic(() => import('../components/Map'), { ssr: false });
 
-type Pos = { lat: number; lon: number };
-
-function haversineMeters(a: Pos, b: Pos) {
-  const R = 6371000; // meters
-  const dLat = (b.lat - a.lat) * Math.PI / 180;
-  const dLon = (b.lon - a.lon) * Math.PI / 180;
-  const la1 = a.lat * Math.PI / 180;
-  const la2 = b.lat * Math.PI / 180;
-
-  const s =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(la1) * Math.cos(la2) * Math.sin(dLon / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(s));
-}
+type WorkshopCfg = { lat: number; lon: number; radiusM: number };
 
 export default function HomePage() {
   const [now, setNow] = useState<string>('');
-  const [me, setMe] = useState<Pos | null>(null);
-  const [acc, setAcc] = useState<number | null>(null);
+  const [src, setSrc] = useState<'fallback' | 'db' | 'error'>('fallback');
+  const [cfg, setCfg] = useState<WorkshopCfg>({
+    lat: FALLBACK.lat,
+    lon: FALLBACK.lon,
+    radiusM: FALLBACK.radiusM,
+  });
+  const [err, setErr] = useState<string>('');
 
-  // update clock every second (KL time)
+  // ticking clock
   useEffect(() => {
     const t = setInterval(() => {
       setNow(dayjs().tz('Asia/Kuala_Lumpur').format('DD/MM/YYYY, h:mm:ss a'));
@@ -43,90 +36,70 @@ export default function HomePage() {
     return () => clearInterval(t);
   }, []);
 
-  // distance to workshop (meters)
-  const distance = useMemo(() => {
-    if (!me) return null;
-    return Math.round(
-      haversineMeters(me, { lat: WORKSHOP.lat, lon: WORKSHOP.lon })
-    );
-  }, [me]);
+  // load workshop config from DB (public.config, id = 1)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('config')
+        .select('workshop_lat, workshop_lon, radius_m')
+        .eq('id', 1)
+        .single();
 
-  const inside = useMemo(() => {
-    if (distance == null) return false;
-    return distance <= WORKSHOP.radiusM;
-  }, [distance]);
+      if (cancelled) return;
 
-  const onLoc = useCallback((pos: Pos, a?: number) => {
-    setMe(pos);
-    if (typeof a === 'number') setAcc(a);
+      if (error) {
+        setSrc('error');
+        setErr(error.message);
+        return;
+      }
+      if (!data) {
+        setSrc('error');
+        setErr('No config row with id=1');
+        return;
+      }
+
+      const lat = Number(data.workshop_lat);
+      const lon = Number(data.workshop_lon);
+      const radiusM = Number(data.radius_m);
+
+      if (!Number.isFinite(lat) || !Number.isFinite(lon) || !Number.isFinite(radiusM)) {
+        setSrc('error');
+        setErr('Invalid numbers in config row');
+        return;
+      }
+
+      setCfg({ lat, lon, radiusM });
+      setSrc('db');
+    })();
+
+    return () => { cancelled = true; };
   }, []);
-
-  const onCheckIn = () => {
-    if (!inside) return;
-    alert('Check-in pressed (preview). We will wire this to Supabase next.');
-  };
-
-  const onCheckOut = () => {
-    if (!inside) return;
-    alert('Check-out pressed (preview). We will wire this to Supabase next.');
-  };
 
   return (
     <PageShell title="Workshop Attendance" subtitle={now}>
+      {/* Visible banner so you can confirm the source & values */}
+      <div
+        style={{
+          marginBottom: 8,
+          padding: '8px 12px',
+          borderRadius: 8,
+          border: '1px solid #e5e7eb',
+          background:
+            src === 'db' ? '#ecfeff' : src === 'fallback' ? '#fff7ed' : '#fee2e2',
+          fontSize: 13,
+          fontFamily: 'system-ui',
+        }}
+      >
+        {src.toUpperCase()} • lat={cfg.lat.toFixed(6)} lon={cfg.lon.toFixed(6)} r={cfg.radiusM}m
+        {src === 'error' && <div style={{ color: '#b91c1c', marginTop: 4 }}>DB read failed: {err}</div>}
+      </div>
+
       <Card>
         <CardBody className="p-0">
-          {/* Map */}
-          <div className="w-full">
-            <Map
-              radiusM={WORKSHOP.radiusM}
-              workshop={{ lat: WORKSHOP.lat, lon: WORKSHOP.lon }}
-              onLocationChange={onLoc}
-            />
-          </div>
-
-          {/* Info + action panel */}
-          <div className="p-4">
-            <div className="rounded-lg border border-gray-200 bg-white p-4">
-              <p className="mb-2">
-                <strong>Your location:</strong>{' '}
-                {me
-                  ? `${me.lat.toFixed(6)}, ${me.lon.toFixed(6)}${
-                      acc ? ` (±${Math.round(acc)} m)` : ''
-                    }`
-                  : 'Waiting for location…'}
-              </p>
-
-              <p className="mb-4">
-                <strong>Distance to workshop:</strong>{' '}
-                {distance == null ? '—' : `${distance} m`}{' '}
-                {distance == null ? '' : inside ? (
-                  <span className="text-green-600">✓ inside radius</span>
-                ) : (
-                  <span className="text-red-600">✗ outside radius</span>
-                )}
-              </p>
-
-              <div className="flex gap-3">
-                <button
-                  className={`rounded-md px-4 py-2 text-white ${
-                    inside ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-300'
-                  }`}
-                  disabled={!inside}
-                  onClick={onCheckIn}
-                >
-                  Check in
-                </button>
-                <button
-                  className={`rounded-md px-4 py-2 text-white ${
-                    inside ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-300'
-                  }`}
-                  disabled={!inside}
-                  onClick={onCheckOut}
-                >
-                  Check out
-                </button>
-              </div>
-            </div>
+          <div className="h-[360px] w-full">
+            {/* pass DB (or fallback) values into the Map */}
+            <Map workshop={{ lat: cfg.lat, lon: cfg.lon }} radiusM={cfg.radiusM} />
           </div>
         </CardBody>
       </Card>
