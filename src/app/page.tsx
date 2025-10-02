@@ -13,8 +13,15 @@ import { WORKSHOP as FALLBACK } from '@/config/workshop';
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
-// IMPORTANT: this Map component accepts props (workshop, radiusM)
-const Map = dynamic(() => import('../components/Map'), { ssr: false });
+// Tell TS what props the Map component accepts
+type MapProps = {
+  radiusM?: number;
+  workshop?: { lat: number; lon: number };
+  onLocationChange?: (pos: { lat: number; lon: number }, acc?: number) => void;
+};
+
+// Dynamic import with proper typing (needed for Leaflet: ssr=false)
+const Map = dynamic<MapProps>(() => import('../components/Map'), { ssr: false });
 
 type WorkshopCfg = { lat: number; lon: number; radiusM: number };
 
@@ -78,7 +85,7 @@ export default function HomePage() {
 
   return (
     <PageShell title="Workshop Attendance" subtitle={now}>
-      {/* Visible banner so you can confirm the source & values */}
+      {/* source banner */}
       <div
         style={{
           marginBottom: 8,
