@@ -11,6 +11,8 @@ type DayRow = {
   late_min: number | null;
 };
 
+type StaffRow = { email: string; name: string | null };
+
 function klTodayISO(): string {
   // YYYY-MM-DD for Asia/Kuala_Lumpur
   const klNow = new Date(
@@ -23,22 +25,61 @@ function klTodayISO(): string {
 }
 
 export default function TodayPage() {
-  const [dateISO, setDateISO] = useState<string>(klTodayISO());
+  const [dateISO/* , setDateISO */] = useState<string>(klTodayISO());
   const [rows, setRows] = useState<DayRow[] | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [errorText, setErrorText] = useState<string>('');
+  const [notice, setNotice] = useState<string>('');
 
   const reload = useCallback(async () => {
     setLoading(true);
     setErrorText('');
-    const { data, error } = await supabase
+    setNotice('');
+
+    // 1) Get today's attendance rows (what you had before)
+    const { data: attData, error: attError } = await supabase
       .rpc('day_attendance_v2', { p_date: dateISO });
-    if (error) {
-      setErrorText(error.message);
+
+    // 2) Get all staff (requires sign-in per your RLS)
+    const { data: staffData, error: staffError } = await supabase
+      .from('staff')
+      .select('email,name')
+      .order('name', { ascending: true });
+
+    if (attError) {
+      setErrorText(attError.message);
       setRows([]);
-    } else {
-      setRows((data as DayRow[]) ?? []);
+      setLoading(false);
+      return;
     }
+
+    const dayRows = (attData as DayRow[]) ?? [];
+    // If we couldn't read staff (likely not signed in), fall back to just attendance rows.
+    if (staffError || !staffData || staffData.length === 0) {
+      if (staffError) {
+        setNotice('Showing only checked-in staff. Sign in to view all staff.');
+      }
+      setRows(dayRows);
+      setLoading(false);
+      return;
+    }
+
+    // Merge: left-join staff with today's attendance by email
+    const byEmail = new Map<string, DayRow>();
+    for (const r of dayRows) byEmail.set(r.staff_email.toLowerCase(), r);
+
+    const merged: DayRow[] = (staffData as StaffRow[]).map((s) => {
+      const hit = byEmail.get(s.email.toLowerCase());
+      return {
+        staff_name: s.name ?? s.email.split('@')[0],
+        staff_email: s.email,
+        check_in_kl: hit?.check_in_kl ?? null,
+        check_out_kl: hit?.check_out_kl ?? null,
+        late_min: hit?.late_min ?? null,
+      };
+    });
+
+    setRows(merged);
     setLoading(false);
   }, [dateISO]);
 
@@ -56,6 +97,11 @@ export default function TodayPage() {
         <span>KL Date: {dateISO}</span>
       </div>
 
+      {notice && (
+        <p style={{ color: '#374151', background:'#f3f4f6', padding:'8px 10px', borderRadius:8, marginBottom:12 }}>
+          {notice}
+        </p>
+      )}
       {errorText && (
         <p style={{ color: '#b00020', marginBottom: 12 }}>{errorText}</p>
       )}
@@ -80,7 +126,7 @@ export default function TodayPage() {
               </tr>
             )}
             {(rows ?? []).map((r) => (
-              <tr key={`${r.staff_email}`}>
+              <tr key={r.staff_email}>
                 <td style={{ padding: 8 }}>{dateISO}</td>
                 <td style={{ padding: 8 }}>{r.staff_name}</td>
                 <td style={{ padding: 8 }}>{r.check_in_kl ?? '—'}</td>
