@@ -16,10 +16,18 @@ function distanceMeters(a: { lat: number; lon: number }, b: { lat: number; lon: 
   const lat2 = toRad(b.lat);
   const sin1 = Math.sin(dLat / 2);
   const sin2 = Math.sin(dLon / 2);
-  const h =
-    sin1 * sin1 +
-    Math.cos(lat1) * Math.cos(lat2) * sin2 * sin2;
+  const h = sin1 * sin1 + Math.cos(lat1) * Math.cos(lat2) * sin2 * sin2;
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+function getErrorMessage(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === 'string') return e;
+  try {
+    return JSON.stringify(e);
+  } catch {
+    return 'Unknown error';
+  }
 }
 
 type Pos = { lat: number; lon: number };
@@ -42,14 +50,10 @@ export default function HomePage() {
       const user = data.session?.user ?? null;
       if (!mounted) return;
       setSessionEmail(user?.email ?? null);
-      // try a friendly name from metadata; otherwise derive from email
       const metaName =
         (user?.user_metadata?.full_name as string | undefined) ||
         (user?.user_metadata?.name as string | undefined);
-      setSessionName(
-        metaName ??
-          (user?.email ? user.email.replace(/@.*/, '') : null)
-      );
+      setSessionName(metaName ?? (user?.email ? user.email.replace(/@.*/, '') : null));
     };
 
     load();
@@ -85,7 +89,7 @@ export default function HomePage() {
     setMsg(null);
     try {
       const staff_name = sessionName ?? sessionEmail.replace(/@.*/, '');
-      const day = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC is fine; your DB sets day from server or take this)
+      const day = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
       const { error } = await supabase.from('attendance').insert({
         staff_email: sessionEmail,
@@ -95,13 +99,12 @@ export default function HomePage() {
         lon: pos.lon,
         distance_m: dist ?? null,
         day,
-        // ts defaults to now() in DB
       });
 
-      if (error) throw error;
+      if (error) throw new Error(error.message);
       setMsg(`${action} recorded.`);
-    } catch (e: any) {
-      setMsg(`Error: ${e?.message ?? 'Unable to save.'}`);
+    } catch (e: unknown) {
+      setMsg(`Error: ${getErrorMessage(e)}`);
     } finally {
       setBusy(false);
     }
@@ -111,14 +114,16 @@ export default function HomePage() {
     <main style={{ padding: 16 }}>
       {/* Banner when not signed in */}
       {!sessionEmail && (
-        <div style={{
-          background: '#fff7cc',
-          border: '1px solid #f2e39a',
-          color: '#6b5900',
-          padding: '10px 12px',
-          borderRadius: 8,
-          marginBottom: 12
-        }}>
+        <div
+          style={{
+            background: '#fff7cc',
+            border: '1px solid #f2e39a',
+            color: '#6b5900',
+            padding: '10px 12px',
+            borderRadius: 8,
+            marginBottom: 12,
+          }}
+        >
           Not signed in. Please go to <b>/login</b>.
         </div>
       )}
@@ -146,27 +151,24 @@ export default function HomePage() {
           border: '1px solid #e5e7eb',
           borderRadius: 12,
           padding: 16,
-          background: '#fff'
+          background: '#fff',
         }}
       >
         <div style={{ marginBottom: 12, lineHeight: 1.6 }}>
           {pos ? (
             <>
               <div>
-                <b>Your location:</b>{' '}
-                {pos.lat.toFixed(6)}, {pos.lon.toFixed(6)}{' '}
+                <b>Your location:</b> {pos.lat.toFixed(6)}, {pos.lon.toFixed(6)}{' '}
                 {acc ? <span>(±{Math.round(acc)} m)</span> : null}
               </div>
               <div>
-                <b>Distance to workshop:</b>{' '}
-                {dist != null ? `${dist} m` : '—'}{' '}
-                {dist != null && (
-                  inside ? (
+                <b>Distance to workshop:</b> {dist != null ? `${dist} m` : '—'}{' '}
+                {dist != null &&
+                  (inside ? (
                     <span style={{ color: '#059669' }}>✓ inside radius</span>
                   ) : (
                     <span style={{ color: '#dc2626' }}>✗ outside radius</span>
-                  )
-                )}
+                  ))}
               </div>
             </>
           ) : (
@@ -184,13 +186,13 @@ export default function HomePage() {
               border: '1px solid #047857',
               background: disabled || !inside ? '#9ca3af' : '#10b981',
               color: 'white',
-              cursor: disabled || !inside ? 'not-allowed' : 'pointer'
+              cursor: disabled || !inside ? 'not-allowed' : 'pointer',
             }}
           >
             Check in
           </button>
 
-          <button
+        <button
             onClick={() => handleCheck('Check-out')}
             disabled={disabled}
             style={{
@@ -199,7 +201,7 @@ export default function HomePage() {
               border: '1px solid #1d4ed8',
               background: disabled ? '#9ca3af' : '#3b82f6',
               color: 'white',
-              cursor: disabled ? 'not-allowed' : 'pointer'
+              cursor: disabled ? 'not-allowed' : 'pointer',
             }}
           >
             Check out
