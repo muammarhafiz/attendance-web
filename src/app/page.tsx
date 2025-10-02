@@ -15,8 +15,8 @@ dayjs.extend(timezone);
 // Map component (client-only)
 const Map = dynamic(() => import('../components/CurrentMap'), { ssr: false });
 
-// ---------- helpers ----------
 type WorkshopCfg = { lat: number; lon: number; radiusM: number };
+type Pos = { lat: number; lon: number; acc?: number };
 
 function haversineMeters(a: { lat: number; lon: number }, b: { lat: number; lon: number }) {
   const R = 6371000; // meters
@@ -31,16 +31,12 @@ function haversineMeters(a: { lat: number; lon: number }, b: { lat: number; lon:
   return Math.round(R * c);
 }
 
-function fmtLatLon(n: number) {
-  return n.toFixed(6);
-}
-
 const KL = 'Asia/Kuala_Lumpur';
 
-// ---------- page ----------
 export default function HomePage() {
   const [now, setNow] = useState<string>('');
   const [cfg, setCfg] = useState<WorkshopCfg | null>(null);
+  const [me, setMe] = useState<Pos | null>(null); // <-- live location from Map
 
   // live clock
   useEffect(() => {
@@ -74,7 +70,7 @@ export default function HomePage() {
 
   return (
     <PageShell title="Workshop Attendance" subtitle={now}>
-      {/* Small, pale debug strip so you can see DB values came through */}
+      {/* Debug strip so you can see DB values came through */}
       <div
         style={{
           background: '#ecf5ff',
@@ -98,21 +94,23 @@ export default function HomePage() {
               <Map
                 workshop={{ lat: cfg.lat, lon: cfg.lon }}
                 radiusM={cfg.radiusM}
-                onLocationChange={() => { /* handled by panel below */ }}
+                onLocationChange={(pos, acc) => setMe({ ...pos, acc })}
               />
             )}
           </div>
         </CardBody>
       </Card>
 
-      <CheckPanel cfg={cfg} />
+      <CheckPanel cfg={cfg} me={me} />
     </PageShell>
   );
 }
 
-// ---------- bottom panel with buttons ----------
-function CheckPanel({ cfg }: { cfg: WorkshopCfg | null }) {
-  const [me, setMe] = useState<{ lat: number; lon: number; acc?: number } | null>(null);
+function fmtLatLon(n: number) {
+  return n.toFixed(6);
+}
+
+function CheckPanel({ cfg, me }: { cfg: WorkshopCfg | null; me: Pos | null }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string>('');
   const [email, setEmail] = useState<string | null>(null);
@@ -136,19 +134,6 @@ function CheckPanel({ cfg }: { cfg: WorkshopCfg | null }) {
     })();
   }, []);
 
-  // pick up location updates emitted by the map
-  useEffect(() => {
-    // simple event bus via window for minimal wiring
-    function handler(e: any) {
-      if (e?.detail?.type === 'location') {
-        setMe({ lat: e.detail.lat, lon: e.detail.lon, acc: e.detail.acc });
-      }
-    }
-    window.addEventListener('attendance-location', handler as EventListener);
-    return () =>
-      window.removeEventListener('attendance-location', handler as EventListener);
-  }, []);
-
   const distance = useMemo(() => {
     if (!cfg || !me) return null;
     return haversineMeters(me, { lat: cfg.lat, lon: cfg.lon });
@@ -162,7 +147,6 @@ function CheckPanel({ cfg }: { cfg: WorkshopCfg | null }) {
   async function ensureSignedIn() {
     const { data } = await supabase.auth.getSession();
     if (!data.session) {
-      // redirect to auth flow
       window.location.href = '/auth';
       return false;
     }
@@ -185,15 +169,11 @@ function CheckPanel({ cfg }: { cfg: WorkshopCfg | null }) {
         return;
       }
 
-      // Write to attendance_today (matches your existing successful schema)
+      // Insert to attendance_today (matches your table)
       const { error } = await supabase.from('attendance_today').insert({
         staff_email: email,
         staff_name: name,
-        ts: new Date().toISOString(), // server will store timestamptz
-        // ts_kl can be derived in DB if you set a trigger; otherwise omit
-        // add a small marker column if you like (optional):
-        // action: kind,
-        // lat: me?.lat, lon: me?.lon
+        ts: new Date().toISOString(),
       });
 
       if (error) {
@@ -258,7 +238,7 @@ function CheckPanel({ cfg }: { cfg: WorkshopCfg | null }) {
           Check in
         </button>
 
-        <button
+      <button
           disabled={!inside || busy}
           onClick={() => doCheck('out')}
           style={{
