@@ -16,14 +16,6 @@ type StaffRow = {
   name: string;
 };
 
-type MergedRow = {
-  staff_email: string;
-  staff_name: string;
-  check_in_kl: string | null;
-  check_out_kl: string | null;
-  late_min: number | null;
-};
-
 function klTodayISO(): string {
   // YYYY-MM-DD for Asia/Kuala_Lumpur
   const klNow = new Date(
@@ -37,7 +29,7 @@ function klTodayISO(): string {
 
 export default function TodayPage() {
   const [dateISO] = useState<string>(klTodayISO());
-  const [rows, setRows] = useState<MergedRow[] | null>(null);
+  const [rows, setRows] = useState<AttendanceRow[] | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [errorText, setErrorText] = useState<string>('');
 
@@ -45,74 +37,56 @@ export default function TodayPage() {
     setLoading(true);
     setErrorText('');
 
-    // 1) Get full staff list
-    const staffPromise = supabase
+    // 1) Fetch all staff (name + email)
+    const { data: staff, error: staffErr } = await supabase
       .from('staff')
       .select('email,name')
       .order('name', { ascending: true });
 
-    // 2) Get today's attendance via your RPC
-    const attendancePromise = supabase
+    if (staffErr) {
+      setErrorText(`Staff load error: ${staffErr.message}`);
+      setRows([]);
+      setLoading(false);
+      return;
+    }
+
+    // 2) Fetch today's computed attendance rows (keeps your existing logic)
+    const { data: att, error: attErr } = await supabase
       .rpc('day_attendance_v2', { p_date: dateISO });
 
-    const [staffRes, attendanceRes] = await Promise.all([staffPromise, attendancePromise]);
-
-    // Handle errors
-    if (staffRes.error) {
-      setErrorText(`Staff fetch error: ${staffRes.error.message}`);
-      setRows([]);
-      setLoading(false);
-      return;
-    }
-    if (attendanceRes.error) {
-      setErrorText(`Attendance fetch error: ${attendanceRes.error.message}`);
+    if (attErr) {
+      setErrorText(`Attendance load error: ${attErr.message}`);
       setRows([]);
       setLoading(false);
       return;
     }
 
-    const staff: StaffRow[] = (staffRes.data ?? []) as StaffRow[];
-    const attendance: AttendanceRow[] = (attendanceRes.data ?? []) as AttendanceRow[];
+    const attendance = (att as AttendanceRow[]) ?? [];
+    const staffList = (staff as StaffRow[]) ?? [];
 
-    // Build a lookup from attendance by email
-    const byEmail: Record<string, AttendanceRow> = {};
-    for (const a of attendance) {
-      if (a.staff_email) byEmail[a.staff_email] = a;
-    }
+    // 3) Index attendance by email for quick merge
+    const byEmail = new Map<string, AttendanceRow>();
+    for (const r of attendance) byEmail.set(r.staff_email, r);
 
-    // Merge: ensure every staff member appears exactly once
-    const merged: MergedRow[] = staff.map((s) => {
-      const a = byEmail[s.email];
+    // 4) Merge: one row per staff, fill blanks with "—"
+    const merged: AttendanceRow[] = staffList.map((s) => {
+      const found = byEmail.get(s.email);
       return {
         staff_email: s.email,
         staff_name: s.name,
-        check_in_kl: a?.check_in_kl ?? null,
-        check_out_kl: a?.check_out_kl ?? null,
-        late_min: a?.late_min ?? null,
+        check_in_kl: found?.check_in_kl ?? null,
+        check_out_kl: found?.check_out_kl ?? null,
+        late_min: found?.late_min ?? null,
       };
     });
-
-    // Add any attendance rows whose email isn't in staff (unlikely, but safe)
-    for (const a of attendance) {
-      if (!staff.find((s) => s.email === a.staff_email)) {
-        merged.push({
-          staff_email: a.staff_email,
-          staff_name: a.staff_name,
-          check_in_kl: a.check_in_kl,
-          check_out_kl: a.check_out_kl,
-          late_min: a.late_min,
-        });
-      }
-    }
-
-    // Optional: keep it nicely sorted by staff_name
-    merged.sort((x, y) => x.staff_name.localeCompare(y.staff_name));
 
     setRows(merged);
     setLoading(false);
   }, [dateISO]);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    reload();
+  }, [reload]);
 
   const hasData = useMemo(() => (rows?.length ?? 0) > 0, [rows]);
 
