@@ -3,9 +3,22 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-type DayRow = {
+type AttendanceRow = {
   staff_name: string;
   staff_email: string;
+  check_in_kl: string | null;
+  check_out_kl: string | null;
+  late_min: number | null;
+};
+
+type StaffRow = {
+  email: string;
+  name: string;
+};
+
+type MergedRow = {
+  staff_email: string;
+  staff_name: string;
   check_in_kl: string | null;
   check_out_kl: string | null;
   late_min: number | null;
@@ -23,22 +36,79 @@ function klTodayISO(): string {
 }
 
 export default function TodayPage() {
-  const [dateISO, setDateISO] = useState<string>(klTodayISO());
-  const [rows, setRows] = useState<DayRow[] | null>(null);
+  const [dateISO] = useState<string>(klTodayISO());
+  const [rows, setRows] = useState<MergedRow[] | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [errorText, setErrorText] = useState<string>('');
 
   const reload = useCallback(async () => {
     setLoading(true);
     setErrorText('');
-    const { data, error } = await supabase
+
+    // 1) Get full staff list
+    const staffPromise = supabase
+      .from('staff')
+      .select('email,name')
+      .order('name', { ascending: true });
+
+    // 2) Get today's attendance via your RPC
+    const attendancePromise = supabase
       .rpc('day_attendance_v2', { p_date: dateISO });
-    if (error) {
-      setErrorText(error.message);
+
+    const [staffRes, attendanceRes] = await Promise.all([staffPromise, attendancePromise]);
+
+    // Handle errors
+    if (staffRes.error) {
+      setErrorText(`Staff fetch error: ${staffRes.error.message}`);
       setRows([]);
-    } else {
-      setRows((data as DayRow[]) ?? []);
+      setLoading(false);
+      return;
     }
+    if (attendanceRes.error) {
+      setErrorText(`Attendance fetch error: ${attendanceRes.error.message}`);
+      setRows([]);
+      setLoading(false);
+      return;
+    }
+
+    const staff: StaffRow[] = (staffRes.data ?? []) as StaffRow[];
+    const attendance: AttendanceRow[] = (attendanceRes.data ?? []) as AttendanceRow[];
+
+    // Build a lookup from attendance by email
+    const byEmail: Record<string, AttendanceRow> = {};
+    for (const a of attendance) {
+      if (a.staff_email) byEmail[a.staff_email] = a;
+    }
+
+    // Merge: ensure every staff member appears exactly once
+    const merged: MergedRow[] = staff.map((s) => {
+      const a = byEmail[s.email];
+      return {
+        staff_email: s.email,
+        staff_name: s.name,
+        check_in_kl: a?.check_in_kl ?? null,
+        check_out_kl: a?.check_out_kl ?? null,
+        late_min: a?.late_min ?? null,
+      };
+    });
+
+    // Add any attendance rows whose email isn't in staff (unlikely, but safe)
+    for (const a of attendance) {
+      if (!staff.find((s) => s.email === a.staff_email)) {
+        merged.push({
+          staff_email: a.staff_email,
+          staff_name: a.staff_name,
+          check_in_kl: a.check_in_kl,
+          check_out_kl: a.check_out_kl,
+          late_min: a.late_min,
+        });
+      }
+    }
+
+    // Optional: keep it nicely sorted by staff_name
+    merged.sort((x, y) => x.staff_name.localeCompare(y.staff_name));
+
+    setRows(merged);
     setLoading(false);
   }, [dateISO]);
 
@@ -80,7 +150,7 @@ export default function TodayPage() {
               </tr>
             )}
             {(rows ?? []).map((r) => (
-              <tr key={`${r.staff_email}`}>
+              <tr key={r.staff_email}>
                 <td style={{ padding: 8 }}>{dateISO}</td>
                 <td style={{ padding: 8 }}>{r.staff_name}</td>
                 <td style={{ padding: 8 }}>{r.check_in_kl ?? '—'}</td>
