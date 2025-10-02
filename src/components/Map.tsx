@@ -40,7 +40,7 @@ export default function Map() {
     radiusM: FALLBACK.radiusM,
   });
 
-  // load workshop from DB (id=1)
+  // load workshop from DB (row id = 1)
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -55,11 +55,13 @@ export default function Map() {
       if (error) {
         setSource('error');
         setErrorText(error.message);
+        console.log('[Map] DB error', error);
         return;
       }
       if (!data) {
         setSource('error');
         setErrorText('No row with id=1 in config');
+        console.log('[Map] No config row id=1');
         return;
       }
 
@@ -70,11 +72,13 @@ export default function Map() {
       if (!Number.isFinite(lat) || !Number.isFinite(lon) || !Number.isFinite(radius)) {
         setSource('error');
         setErrorText('Invalid numbers from config table');
+        console.log('[Map] Invalid numbers', data);
         return;
       }
 
       setWorkshop({ lat, lon, radiusM: radius });
       setSource('db');
+      console.log('[Map] Loaded from DB', { lat, lon, radius });
     })();
     return () => { cancelled = true; };
   }, []);
@@ -85,10 +89,10 @@ export default function Map() {
   const [busy, setBusy] = useState(false);
   const [geoErr, setGeoErr] = useState<string>('');
 
-  const debug = useMemo(
+  const bannerText = useMemo(
     () =>
-      `${source.toUpperCase()} • lat=${workshop.lat.toFixed(6)} lon=${workshop.lon.toFixed(6)} r=${workshop.radiusM}m`,
-    [source, workshop],
+      `${source.toUpperCase()} • lat=${workshop.lat.toFixed(6)} lon=${workshop.lon.toFixed(6)} r=${workshop.radiusM}m`
+    , [source, workshop]
   );
 
   const refresh = () => {
@@ -124,60 +128,60 @@ export default function Map() {
   };
 
   return (
-    <div style={{ border: '1px solid #ddd', borderRadius: 8, overflow: 'hidden', position: 'relative' }}>
-      <MapContainer
-        center={[workshop.lat, workshop.lon]} // initial center
-        zoom={17}
-        style={{ height: 360, width: '100%', minHeight: 320 }}
-        scrollWheelZoom
-        zoomControl
-        doubleClickZoom
-        dragging
-      >
-        <Recenter lat={workshop.lat} lon={workshop.lon} />
-        <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution="&copy; OpenStreetMap contributors"
-        />
-        <Marker position={[workshop.lat, workshop.lon]} icon={markerIcon} />
-        <Circle center={[workshop.lat, workshop.lon]} radius={workshop.radiusM} pathOptions={{ color: '#2563eb' }} />
-
-        {/* controls */}
-        <div style={{ position: 'absolute', zIndex: 1000, left: 8, top: 8 }}>
-          <button
-            onClick={refresh}
-            disabled={busy}
-            style={{ padding: '6px 10px', border: '1px solid #ccc', borderRadius: 8, background: '#fff' }}
-          >
-            {busy ? 'Locating…' : 'Refresh location'}
-          </button>
-          <div style={{ marginTop: 6, background: '#fff', padding: '4px 8px', borderRadius: 6, border: '1px solid #eee', fontSize: 12, maxWidth: 260 }}>
-            {geoErr
-              ? <span style={{ color: '#b91c1c' }}>{geoErr}</span>
-              : pos
-                ? <>You: {pos.lat.toFixed(6)}, {pos.lon.toFixed(6)} {acc ? `(±${Math.round(acc)} m)` : ''}</>
-                : <>Waiting for location… Tap <b>Refresh location</b> and allow access.</>}
-          </div>
-        </div>
-      </MapContainer>
-
-      {/* debug badge: shows EXACT source & values being used */}
+    <div>
+      {/* BIG VISIBLE BANNER so we know which values are being used */}
       <div
         style={{
-          position: 'absolute',
-          right: 8,
-          bottom: 8,
-          background: 'rgba(255,255,255,0.95)',
-          border: '1px solid #e5e7eb',
+          marginBottom: 8,
+          padding: '8px 12px',
           borderRadius: 8,
-          padding: '6px 10px',
-          fontSize: 12,
+          border: '1px solid #e5e7eb',
+          background: source === 'db' ? '#ecfeff' : source === 'fallback' ? '#fff7ed' : '#fee2e2',
+          fontSize: 13,
+          fontFamily: 'system-ui',
         }}
       >
-        {debug}
-        {source === 'error' && (
-          <div style={{ color: '#b91c1c', marginTop: 4 }}>DB read failed: {errorText}</div>
-        )}
+        {bannerText}
+        {source === 'error' && <div style={{ color: '#b91c1c', marginTop: 4 }}>DB read failed: {errorText}</div>}
+      </div>
+
+      <div style={{ border: '1px solid #ddd', borderRadius: 8, overflow: 'hidden', position: 'relative' }}>
+        <MapContainer
+          center={[workshop.lat, workshop.lon]} // initial center
+          zoom={17}
+          style={{ height: 360, width: '100%', minHeight: 320 }}
+          scrollWheelZoom
+          zoomControl
+          doubleClickZoom
+          dragging
+        >
+          <Recenter lat={workshop.lat} lon={workshop.lon} />
+
+          <TileLayer
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution="&copy; OpenStreetMap contributors"
+          />
+          <Marker position={[workshop.lat, workshop.lon]} icon={markerIcon} />
+          <Circle center={[workshop.lat, workshop.lon]} radius={workshop.radiusM} pathOptions={{ color: '#2563eb' }} />
+
+          {/* controls block (top-left) */}
+          <div style={{ position: 'absolute', zIndex: 1000, left: 8, top: 8 }}>
+            <button
+              onClick={refresh}
+              disabled={busy}
+              style={{ padding: '6px 10px', border: '1px solid #ccc', borderRadius: 8, background: '#fff' }}
+            >
+              {busy ? 'Locating…' : 'Refresh location'}
+            </button>
+            <div style={{ marginTop: 6, background: '#fff', padding: '4px 8px', borderRadius: 6, border: '1px solid #eee', fontSize: 12, maxWidth: 260 }}>
+              {geoErr
+                ? <span style={{ color: '#b91c1c' }}>{geoErr}</span>
+                : pos
+                  ? <>You: {pos.lat.toFixed(6)}, {pos.lon.toFixed(6)} {acc ? `(±${Math.round(acc)} m)` : ''}</>
+                  : <>Waiting for location… Tap <b>Refresh location</b> and allow access.</>}
+            </div>
+          </div>
+        </MapContainer>
       </div>
     </div>
   );
