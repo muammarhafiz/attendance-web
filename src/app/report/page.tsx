@@ -28,23 +28,20 @@ const grayPill: React.CSSProperties = { padding: '2px 8px', borderRadius: 999, b
 
 export default function ReportPage() {
   const now = new Date();
-// near your other useState calls
-const [meEmail, setMeEmail] = useState<string | null>(null);
-const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [year, setYear] = useState<number>(now.getFullYear());
   const [month, setMonth] = useState<number>(now.getMonth() + 1);
   const [day, setDay] = useState<number | ''>(''); // optional
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
 
-  // 🔐 who am I + admin flag
+  // who am I + admin flag (SINGLE declaration)
   const [meEmail, setMeEmail] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
 
   // staff selection
   const [selectedKey, setSelectedKey] = useState<string>(''); // '' = show nothing, 'ALL' = all staff
 
-  // 👉 THIS effect is the admin check that must succeed
+  // session + admin check via SECDEF RPC
   useEffect(() => {
     const getSession = async () => {
       const { data } = await supabase.auth.getSession();
@@ -52,7 +49,6 @@ const [isAdmin, setIsAdmin] = useState<boolean>(false);
       setMeEmail(email);
 
       if (email) {
-        // Call security-definer function that bypasses RLS
         const { data: adminFlag, error } = await supabase.rpc('is_admin', {});
         setIsAdmin(!error && adminFlag === true);
       } else {
@@ -93,22 +89,23 @@ const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const groups: Group[] = useMemo(() => {
     const m = new Map<string, Group>();
     for (const r of rows) {
-      const key = r.staff_email;
+      const key = r.staff_email; // use email as stable key
       if (!m.has(key)) m.set(key, { key, name: r.staff_name, email: r.staff_email, rows: [] });
       m.get(key)!.rows.push(r);
     }
     for (const g of m.values()) g.rows.sort((a, b) => a.day.localeCompare(b.day));
+    // sort staff by name
     return Array.from(m.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [rows]);
 
   // which groups to show based on dropdown
   const visibleGroups: Group[] = useMemo(() => {
-    if (selectedKey === '' ) return [];
-    if (selectedKey === 'ALL') return groups;
+    if (selectedKey === '' ) return [];           // show none by default
+    if (selectedKey === 'ALL') return groups;     // show all
     return groups.filter(g => g.key === selectedKey);
   }, [groups, selectedKey]);
 
-  // simple handler for now (we’ll replace with modal after you see it)
+  // placeholder edit handler (we’ll swap to modal after you see it)
   const onEdit = (row: Row) => {
     alert(`Edit clicked for ${row.staff_name} — ${row.day}`);
   };
@@ -124,12 +121,8 @@ const [isAdmin, setIsAdmin] = useState<boolean>(false);
   return (
     <div style={box}>
       <h2 style={{margin: 0}}>Attendance Report</h2>
-{/* DEBUG (remove later) */}
-<div style={{fontSize:12, color:'#666', marginTop:6}}>
-  session: <b>{meEmail ?? '(none)'}</b> · isAdmin: <b>{String(isAdmin)}</b>
-</div>
 
-      {/* 👇 DEBUG BANNER — shows what the app thinks. Remove later. */}
+      {/* DEBUG (remove later) */}
       <div style={{fontSize:12, color:'#666', marginTop:6}}>
         session: <b>{meEmail ?? '(none)'}</b> · isAdmin: <b>{String(isAdmin)}</b>
       </div>
