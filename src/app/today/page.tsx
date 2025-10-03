@@ -26,7 +26,7 @@ function klTodayISO(): string {
 }
 
 export default function TodayPage() {
-  const [dateISO/* , setDateISO */] = useState<string>(klTodayISO());
+  const [dateISO] = useState<string>(klTodayISO());
   const [rows, setRows] = useState<DayRow[] | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [errorText, setErrorText] = useState<string>('');
@@ -172,7 +172,7 @@ export default function TodayPage() {
                     style={{
                       padding: 8,
                       color: showStatus ? '#9CA3AF' : (lateIsPositive ? '#dc2626' : 'inherit'),
-                      fontWeight: lateIsPositive ? 700 as 700 : 400 as 400,
+                      fontWeight: lateIsPositive ? 700 : 400,
                     }}
                   >
                     {showStatus ? '—' : (late ?? '—')}
