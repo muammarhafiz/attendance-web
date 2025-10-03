@@ -7,22 +7,22 @@ import timezone from 'dayjs/plugin/timezone';
 import PageShell from '../components/PageShell';
 import { Card, CardBody } from '../components/ui/Card';
 import { supabase } from '@/lib/supabaseClient';
+
+// ⚠️ IMPORTANT: use the map component that accepts props
+// (we pass {workshop, radiusM}). Your "CurrentMap.tsx" does.
 import CurrentMap from '../components/CurrentMap';
-import { WORKSHOP } from '../config/workshop';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
 type Cfg = { lat: number; lon: number; radiusM: number };
-type Source = 'db' | 'code';
 
 export default function HomePage() {
   const [now, setNow] = useState<string>('');
   const [cfg, setCfg] = useState<Cfg | null>(null);
-  const [src, setSrc] = useState<Source>('code'); // default until DB load finishes
   const [error, setError] = useState<string>('');
 
-  // live clock (KL)
+  // clock
   useEffect(() => {
     const t = setInterval(() => {
       setNow(dayjs().tz('Asia/Kuala_Lumpur').format('DD/MM/YYYY, h:mm:ss a'));
@@ -30,14 +30,10 @@ export default function HomePage() {
     return () => clearInterval(t);
   }, []);
 
-  // fetch workshop config (DB -> fallback to code)
+  // fetch workshop config from Supabase (no caching, client-side)
   useEffect(() => {
     (async () => {
       setError('');
-      // optimistic: prefill with code values so the map can render immediately
-      setCfg({ lat: WORKSHOP.lat, lon: WORKSHOP.lon, radiusM: WORKSHOP.radiusM });
-      setSrc('code');
-
       const { data, error } = await supabase
         .from('config')
         .select('workshop_lat, workshop_lon, radius_m')
@@ -46,73 +42,57 @@ export default function HomePage() {
         .maybeSingle();
 
       if (error) {
-        // keep code fallback, but show the reason
         setError(error.message);
         return;
       }
-
-      if (data && data.workshop_lat != null && data.workshop_lon != null && data.radius_m != null) {
+      if (data) {
         setCfg({
           lat: Number(data.workshop_lat),
           lon: Number(data.workshop_lon),
           radiusM: Number(data.radius_m),
         });
-        setSrc('db');
       } else {
-        // no row or incomplete row -> stick with code fallback, but tell user
-        setError('No complete config row found; using code fallback.');
+        setError('No row found in config table.');
       }
     })();
   }, []);
 
   return (
     <PageShell title="Workshop Attendance" subtitle={now}>
-      {/* Debug strip shows EXACT source and values the map uses */}
-      <div
-        style={{
-          background: src === 'db' ? '#ecfeff' : '#fef9c3',
-          border: '1px solid',
-          borderColor: src === 'db' ? '#bae6fd' : '#fde68a',
-          color: '#0c4a6e',
-          fontSize: 13,
-          padding: '6px 10px',
-          borderRadius: 8,
-          marginBottom: 12,
-        }}
-      >
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <span>
-            <b>Source:</b> {src === 'db' ? 'DB (config table)' : 'Code (config/workshop.ts)'}
-          </span>
-          {cfg && (
-            <span>
-              <b>lat</b>: {cfg.lat} · <b>lon</b>: {cfg.lon} · <b>radius</b>: {cfg.radiusM}m
-            </span>
-          )}
-          {error && <span style={{ color: '#b91c1c' }}>Note: {error}</span>}
-        </div>
+      {/* Debug strip shows exactly what the page is using */}
+      <div style={{
+        background:'#ecfeff',
+        border:'1px solid #bae6fd',
+        color:'#0c4a6e',
+        fontSize:13,
+        padding:'6px 10px',
+        borderRadius:8,
+        marginBottom:12
+      }}>
+        {cfg
+          ? <>DB → lat:<b>{cfg.lat}</b> lon:<b>{cfg.lon}</b> · r:<b>{cfg.radiusM}m</b></>
+          : error
+            ? <>Config load error: <b>{error}</b></>
+            : <>Loading workshop config…</>
+        }
       </div>
 
       <Card>
         <CardBody className="p-0">
           <div className="h-[360px] w-full">
+            {/* Only render map once config is loaded */}
             {cfg ? (
               <CurrentMap
                 workshop={{ lat: cfg.lat, lon: cfg.lon }}
                 radiusM={cfg.radiusM}
+                // onLocationChange is optional; keep behaviour the same
               />
             ) : (
-              <div
-                style={{
-                  height: 360,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#6b7280',
-                  fontSize: 14,
-                }}
-              >
-                Loading map…
+              <div style={{
+                height:360, display:'flex', alignItems:'center', justifyContent:'center',
+                color:'#6b7280', fontSize:14
+              }}>
+                {error ? 'Error loading config' : 'Loading map…'}
               </div>
             )}
           </div>
