@@ -25,15 +25,33 @@ function klTodayISO(): string {
   return `${y}-${m}-${d}`;
 }
 
-// Parse "HH:MM" from check_in_kl and compare to 09:30 (KL).
-// We assume check_in_kl is already stored/formatted in KL (it’s named *_kl).
-function isAfter930(checkInKL: string | null): boolean {
-  if (!checkInKL) return false;
-  const m = checkInKL.match(/(\d{2}):(\d{2})/); // grabs HH:MM from "YYYY-MM-DD HH:MM:SS" or "HH:MM"
-  if (!m) return false;
+/** Robustly parse HH:MM from a variety of strings (e.g., "11:27", "2025-10-03 11:27:05", "11:27 am"). */
+function extractHHMM(s: string | null): { hh: number; mm: number } | null {
+  if (!s) return null;
+  const m = s.match(/(\d{1,2}):(\d{2})/); // first HH:MM found
+  if (!m) return null;
   const hh = parseInt(m[1], 10);
   const mm = parseInt(m[2], 10);
-  return (hh * 60 + mm) > (9 * 60 + 30); // > 09:30
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+  return { hh, mm };
+}
+
+/** True if check-in time is strictly after 09:30 (KL local). */
+function isAfter930(checkInKL: string | null): boolean {
+  const t = extractHHMM(checkInKL);
+  if (!t) return false;
+  const minutes = t.hh * 60 + t.mm;
+  return minutes > (9 * 60 + 30);
+}
+
+/** Returns true if *now* (KL) is >= 10:30. */
+function computePast1030(): boolean {
+  const now = new Date(
+    new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' })
+  );
+  const cutoff = new Date(now);
+  cutoff.setHours(10, 30, 0, 0);
+  return now.getTime() >= cutoff.getTime();
 }
 
 export default function TodayPage() {
@@ -42,6 +60,17 @@ export default function TodayPage() {
   const [loading, setLoading] = useState<boolean>(false);
   const [errorText, setErrorText] = useState<string>('');
   const [notice, setNotice] = useState<string>('');
+  // Tick every 30s so "Absent after 10:30" flips automatically if the page stays open
+  const [, setNowTick] = useState<number>(0);
+  const [past1030, setPast1030] = useState<boolean>(computePast1030());
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setPast1030(computePast1030());
+      setNowTick((n) => n + 1);
+    }, 30000);
+    return () => clearInterval(id);
+  }, []);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -80,7 +109,9 @@ export default function TodayPage() {
       }
       const statusMap = new Map<string, string | null>();
       if (!statError && statData) {
-        for (const s of statData as StatusRow[]) statusMap.set(s.staff_email.toLowerCase(), s.status);
+        for (const s of statData as StatusRow[]) {
+          statusMap.set(s.staff_email.toLowerCase(), s.status);
+        }
       }
       const mergedFallback = dayRows.map(r => ({
         ...r,
@@ -97,7 +128,9 @@ export default function TodayPage() {
 
     const statusMap = new Map<string, string | null>();
     if (!statError && statData) {
-      for (const s of statData as StatusRow[]) statusMap.set(s.staff_email.toLowerCase(), s.status);
+      for (const s of statData as StatusRow[]) {
+        statusMap.set(s.staff_email.toLowerCase(), s.status);
+      }
     }
 
     // left-join staff with attendance, then attach status
@@ -121,16 +154,6 @@ export default function TodayPage() {
   useEffect(() => { reload(); }, [reload]);
 
   const hasData = useMemo(() => (rows?.length ?? 0) > 0, [rows]);
-
-  // Compute "past 10:30 AM" in KL time (for auto Absent)
-  const past1030 = (() => {
-    const now = new Date(
-      new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' })
-    );
-    const cutoff = new Date(now);
-    cutoff.setHours(10, 30, 0, 0);
-    return now.getTime() >= cutoff.getTime();
-  })();
 
   return (
     <main style={{ padding: 16, fontFamily: 'system-ui' }}>
@@ -172,26 +195,27 @@ export default function TodayPage() {
               </tr>
             )}
             {(rows ?? []).map((r) => {
-              const showStatus = r.status && r.status.trim() !== '';
-              const after930 = isAfter930(r.check_in_kl); // NEW red rule for check-in
-              const late = typeof r.late_min === 'number' ? r.late_min : null;
-              const lateIsPositive = !showStatus && late !== null && late > 0;
+              const hasAdminStatus = r.status && r.status.trim() !== '';
+              const after930 = isAfter930(r.check_in_kl);
+              const autoAbsent = !hasAdminStatus && past1030 && !r.check_in_kl;
 
-              // Auto Absent after 10:30 if no admin status and no check-in
-              const autoAbsent = !showStatus && past1030 && !r.check_in_kl;
-              const blockTimes = showStatus || autoAbsent;
+              // Grey out times when admin status exists or we auto-mark Absent
+              const blockTimes = hasAdminStatus || autoAbsent;
+
+              // Keep your original Late(min) red/bold rule (if you still use late_min)
+              const isLateMin = typeof r.late_min === 'number' && r.late_min > 0;
 
               return (
                 <tr key={r.staff_email}>
                   <td style={{ padding: 8 }}>{dateISO}</td>
                   <td style={{ padding: 8 }}>{r.staff_name}</td>
 
-                  {/* Status: admin status > auto Absent > — */}
+                  {/* Status column: admin status > auto Absent > em dash */}
                   <td style={{ padding: 8, fontWeight: 600 }}>
-                    {showStatus ? r.status : (autoAbsent ? 'Absent' : '—')}
+                    {hasAdminStatus ? r.status : (autoAbsent ? 'Absent' : '—')}
                   </td>
 
-                  {/* Check-in: red if after 09:30, unless blocked by status/absent */}
+                  {/* Check-in: red if after 09:30, unless blocked */}
                   <td
                     style={{
                       padding: 8,
@@ -206,15 +230,15 @@ export default function TodayPage() {
                     {blockTimes ? '—' : (r.check_out_kl ?? '—')}
                   </td>
 
-                  {/* Late(min) — keep original behavior (red & bold when late) */}
+                  {/* Late(min): unchanged logic; still goes red/bold when >0, unless blocked */}
                   <td
                     style={{
                       padding: 8,
-                      color: blockTimes ? '#9CA3AF' : (lateIsPositive ? '#dc2626' : 'inherit'),
-                      fontWeight: lateIsPositive ? 700 : 400,
+                      color: blockTimes ? '#9CA3AF' : (isLateMin ? '#dc2626' : 'inherit'),
+                      fontWeight: isLateMin ? 700 : 400,
                     }}
                   >
-                    {blockTimes ? '—' : (late ?? '—')}
+                    {blockTimes ? '—' : (typeof r.late_min === 'number' ? r.late_min : '—')}
                   </td>
                 </tr>
               );
