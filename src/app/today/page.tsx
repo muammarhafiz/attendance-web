@@ -25,10 +25,10 @@ function klTodayISO(): string {
   return `${y}-${m}-${d}`;
 }
 
-/** Robustly parse HH:MM from a variety of strings (e.g., "11:27", "2025-10-03 11:27:05", "11:27 am"). */
+/** Robustly parse HH:MM from strings like "11:27", "2025-10-03 11:27:05", "11:27 am". */
 function extractHHMM(s: string | null): { hh: number; mm: number } | null {
   if (!s) return null;
-  const m = s.match(/(\d{1,2}):(\d{2})/); // first HH:MM found
+  const m = s.match(/(\d{1,2}):(\d{2})/);
   if (!m) return null;
   const hh = parseInt(m[1], 10);
   const mm = parseInt(m[2], 10);
@@ -36,7 +36,7 @@ function extractHHMM(s: string | null): { hh: number; mm: number } | null {
   return { hh, mm };
 }
 
-/** True if check-in time is strictly after 09:30 (KL local). */
+/** True if check-in time is strictly after 09:30 (KL). */
 function isAfter930(checkInKL: string | null): boolean {
   const t = extractHHMM(checkInKL);
   if (!t) return false;
@@ -60,10 +60,10 @@ export default function TodayPage() {
   const [loading, setLoading] = useState<boolean>(false);
   const [errorText, setErrorText] = useState<string>('');
   const [notice, setNotice] = useState<string>('');
+
   // Tick every 30s so "Absent after 10:30" flips automatically if the page stays open
   const [, setNowTick] = useState<number>(0);
   const [past1030, setPast1030] = useState<boolean>(computePast1030());
-
   useEffect(() => {
     const id = setInterval(() => {
       setPast1030(computePast1030());
@@ -202,7 +202,7 @@ export default function TodayPage() {
               // Grey out times when admin status exists or we auto-mark Absent
               const blockTimes = hasAdminStatus || autoAbsent;
 
-              // Keep your original Late(min) red/bold rule (if you still use late_min)
+              // Late(min) display rule (unchanged from your original)
               const isLateMin = typeof r.late_min === 'number' && r.late_min > 0;
 
               return (
@@ -210,7 +210,7 @@ export default function TodayPage() {
                   <td style={{ padding: 8 }}>{dateISO}</td>
                   <td style={{ padding: 8 }}>{r.staff_name}</td>
 
-                  {/* Status column: admin status > auto Absent > em dash */}
+                  {/* Status: admin status > auto Absent > em dash */}
                   <td style={{ padding: 8, fontWeight: 600 }}>
                     {hasAdminStatus ? r.status : (autoAbsent ? 'Absent' : '—')}
                   </td>
@@ -230,7 +230,7 @@ export default function TodayPage() {
                     {blockTimes ? '—' : (r.check_out_kl ?? '—')}
                   </td>
 
-                  {/* Late(min): unchanged logic; still goes red/bold when >0, unless blocked */}
+                  {/* Late(min): red & bold when >0, unless blocked */}
                   <td
                     style={{
                       padding: 8,
