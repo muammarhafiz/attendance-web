@@ -90,15 +90,8 @@ export default function ReportPage() {
     setMeEmail(email);
 
     if (email) {
-      // call SECDEF function
-      const { data: adminFlag, error: adminErr } = await supabase.rpc('is_admin');
-      if (!adminErr && typeof adminFlag === 'boolean') {
-        setIsAdmin(adminFlag);
-      } else {
-        // fallback: assume not admin if RPC fails
-        setIsAdmin(false);
-        console.warn('Admin check failed:', adminErr?.message);
-      }
+      const { data: adminFlag, error } = await supabase.rpc('is_admin', {});
+      setIsAdmin(!error && adminFlag === true);
     } else {
       setIsAdmin(false);
     }
@@ -208,6 +201,10 @@ export default function ReportPage() {
   return (
     <div style={box}>
       <h2 style={{margin: 0}}>Attendance Report</h2>
+
+<div style={{fontSize:12, color:'#666', marginTop:6}}>
+      session: <b>{meEmail ?? '(none)'}</b> · isAdmin: <b>{String(isAdmin)}</b>
+    </div>
 
       <div style={{display:'flex', gap:12, flexWrap:'wrap', marginTop:12, alignItems:'center'}}>
         <div>
