@@ -84,28 +84,30 @@ export default function ReportPage() {
 
   // session guard + admin check
   useEffect(() => {
-    const getSession = async () => {
-      const { data } = await supabase.auth.getSession();
-      const email = data.session?.user?.email ?? null;
-      setMeEmail(email);
+  const getSession = async () => {
+    const { data } = await supabase.auth.getSession();
+    const email = data.session?.user?.email ?? null;
+    setMeEmail(email);
 
-      // check admin via public.staff
-      if (email) {
-        const { data: st, error } = await supabase
-          .from('staff')
-          .select('is_admin')
-          .eq('email', email)
-          .single();
-        if (!error && st) setIsAdmin(!!st.is_admin);
-        else setIsAdmin(false);
+    if (email) {
+      // call SECDEF function
+      const { data: adminFlag, error: adminErr } = await supabase.rpc('is_admin');
+      if (!adminErr && typeof adminFlag === 'boolean') {
+        setIsAdmin(adminFlag);
       } else {
+        // fallback: assume not admin if RPC fails
         setIsAdmin(false);
+        console.warn('Admin check failed:', adminErr?.message);
       }
-    };
-    getSession();
-    const { data: sub } = supabase.auth.onAuthStateChange(() => getSession());
-    return () => { sub.subscription.unsubscribe(); };
-  }, []);
+    } else {
+      setIsAdmin(false);
+    }
+  };
+
+  getSession();
+  const { data: sub } = supabase.auth.onAuthStateChange(() => getSession());
+  return () => { sub.subscription.unsubscribe(); };
+}, []);
 
   // compute period range for fetching overrides
   const firstDayISO = useMemo(() => {
