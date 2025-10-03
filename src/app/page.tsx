@@ -116,43 +116,42 @@ export default function HomePage() {
   }, []);
 
   async function handleCheck(kind: 'in' | 'out') {
-    try {
-      setSaving(true);
-      setMsg('');
+  try {
+    setSaving(true);
+    setMsg('');
 
-      const { data: sess } = await supabase.auth.getSession();
-      const email = sess.session?.user?.email ?? '';
-      if (!email) {
-        setMsg('Please sign in first.');
-        return;
-      }
-
-      const action = kind === 'in' ? 'Check-in' : 'Check-out';
-      const day = toKLDateISO();
-
-      const { error } = await supabase.from('attendance').insert({
-        action,                            // required (NOT NULL)
-        ts: new Date().toISOString(),      // server time
-        lat: me?.lat ?? null,
-        lon: me?.lon ?? null,
-        distance_m: distanceM ?? null,     // integer is fine; supabase will coerce number
-        day,
-        staff_email: email,
-        staff_name: email.split('@')[0],
-        note: null
-      });
-
-      if (error) {
-        setMsg('Error: ' + error.message);
-        return;
-      }
-      setMsg(action + ' recorded.');
-    } catch (e) {
-      setMsg('Error: ' + (e instanceof Error ? e.message : String(e)));
-    } finally {
-      setSaving(false);
+    const { data: sess } = await supabase.auth.getSession();
+    const email = sess.session?.user?.email ?? '';
+    if (!email) {
+      setMsg('Please sign in first.');
+      return;
     }
+
+    const action = kind === 'in' ? 'Check-in' : 'Check-out';
+
+    const { error } = await supabase.from('attendance').insert({
+      action,                              // required
+      ts: new Date().toISOString(),        // server time
+      lat: me?.lat ?? null,
+      lon: me?.lon ?? null,
+      distance_m: distanceM ?? null,       // integer or numeric ok
+      // ❌ day: toKLDateISO(),  <-- remove this line
+      staff_email: email,
+      staff_name: email.split('@')[0],
+      note: null
+    });
+
+    if (error) {
+      setMsg('Error: ' + error.message);
+      return;
+    }
+    setMsg(action + ' recorded.');
+  } catch (e) {
+    setMsg('Error: ' + (e instanceof Error ? e.message : String(e)));
+  } finally {
+    setSaving(false);
   }
+}
 
   /* --------------------------------- render --------------------------------- */
 
