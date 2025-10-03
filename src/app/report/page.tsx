@@ -120,7 +120,7 @@ export default function ReportPage() {
 
   return (
     <div style={box}>
-      <h2 style={{margin: 0}}>Attendance Report</h2>
+      <h2 style={{margin: 0}}>Attendance Repor</h2>
 
       {/* DEBUG (remove later) */}
       <div style={{fontSize:12, color:'#666', marginTop:6}}>
