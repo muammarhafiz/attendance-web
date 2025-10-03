@@ -15,9 +15,8 @@ type DayRow = {
 type StaffRow = { email: string; name: string | null };
 type StatusRow = { staff_email: string; status: string | null };
 
-// --- Helpers (KL time) ---
-function klNowDate(): Date {
-  // makes a Date object representing current time in KL
+// --- KL helpers (pure, local) ---
+function klNowDate() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' }));
 }
 function klTodayISO(): string {
@@ -30,8 +29,8 @@ function klTodayISO(): string {
 function isPast1030KL(): boolean {
   const now = klNowDate();
   const cutoff = new Date(now);
-  cutoff.setHours(10, 30, 0, 0); // 10:30 AM KL
-  return now.getTime() >= cutoff.getTime();
+  cutoff.setHours(10, 30, 0, 0);
+  return now >= cutoff;
 }
 
 export default function TodayPage() {
@@ -119,7 +118,6 @@ export default function TodayPage() {
   useEffect(() => { reload(); }, [reload]);
 
   const hasData = useMemo(() => (rows?.length ?? 0) > 0, [rows]);
-
   const past1030 = isPast1030KL();
 
   return (
@@ -164,27 +162,26 @@ export default function TodayPage() {
             {(rows ?? []).map((r) => {
               const adminStatus = r.status && r.status.trim() !== '' ? r.status!.trim() : null;
               const noCheckIn = !r.check_in_kl;
-              const autoAbsent = !adminStatus && past1030 && noCheckIn; // after 10:30, no check-in -> Absent
+              const autoAbsent = !adminStatus && past1030 && noCheckIn;
+
               const displayStatus = adminStatus ?? (autoAbsent ? 'Absent' : '—');
 
               const late = typeof r.late_min === 'number' ? r.late_min : null;
               const lateIsPositive = !adminStatus && late !== null && late > 0;
-
-              // Grey out time cells when an admin status exists or auto Absent triggers
               const isStatusBlocking = !!adminStatus || autoAbsent;
 
               return (
                 <tr key={r.staff_email}>
                   <td style={{ padding: 8 }}>{dateISO}</td>
                   <td style={{ padding: 8 }}>{r.staff_name}</td>
-                  <td style={{ padding: 8, fontWeight: 700 }}>
+                  <td style={{ padding: 8, fontWeight: 600 }}>
                     {displayStatus}
                   </td>
                   <td
                     style={{
                       padding: 8,
                       color: isStatusBlocking ? '#9CA3AF' : (lateIsPositive ? '#dc2626' : 'inherit'),
-                      fontWeight: lateIsPositive ? 700 : 400,
+                      fontWeight: 400, // keep original weight (no layout shift)
                     }}
                   >
                     {isStatusBlocking ? '—' : (r.check_in_kl ?? '—')}
@@ -196,7 +193,7 @@ export default function TodayPage() {
                     style={{
                       padding: 8,
                       color: isStatusBlocking ? '#9CA3AF' : (lateIsPositive ? '#dc2626' : 'inherit'),
-                      fontWeight: lateIsPositive ? 700 : 400,
+                      fontWeight: lateIsPositive ? 700 : 400, // your original “Late (min)” emphasis
                     }}
                   >
                     {isStatusBlocking ? '—' : (late ?? '—')}
