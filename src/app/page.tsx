@@ -10,7 +10,6 @@ import { Card, CardBody } from '../components/ui/Card';
 // Dynamically import your Leaflet map (no SSR)
 const Map = dynamic(() => import('../components/Map'), { ssr: false });
 
-type Coords = { lat: number; lon: number };
 type ConfigRow = { key: string; value: string };
 type SessionEmail = string | null;
 
@@ -62,15 +61,18 @@ export default function HomePage() {
     setCfgErr('');
     // read all config, then pick the keys we care about
     const { data, error } = await supabase
-      .from<ConfigRow>('config')
-      .select('key, value');
+      .from('config')
+      .select('key, value')
+      .returns<ConfigRow[]>();
     if (error) {
       setCfgErr(error.message);
       return; // keep fallback
     }
 
+    const rows = data ?? [];
+
     const getNum = (k: string, def: number): number => {
-      const found = (data ?? []).find((r) => r.key === k)?.value;
+      const found = rows.find((r) => r.key === k)?.value;
       const n = found ? Number(found) : NaN;
       return Number.isFinite(n) ? n : def;
     };
@@ -80,8 +82,8 @@ export default function HomePage() {
     const radiusM = getNum('radius_m', CODE_FALLBACK.radiusM);
 
     const usedDB =
-      (data ?? []).some((r) => r.key === 'workshop_lat') &&
-      (data ?? []).some((r) => r.key === 'workshop_lon');
+      rows.some((r) => r.key === 'workshop_lat') &&
+      rows.some((r) => r.key === 'workshop_lon');
 
     setCfg({
       lat,
@@ -140,7 +142,7 @@ export default function HomePage() {
           ts: new Date().toISOString(),
           lat: me.lat,
           lon: me.lon,
-          action: kind, // if your table doesn’t have `action`, remove this line
+          action: kind, // remove this line if your table doesn't have `action`
         });
       if (error) {
         setActionMsg('Insert failed: ' + error.message);
@@ -174,7 +176,9 @@ export default function HomePage() {
       <div className="mt-3 flex items-center justify-between text-sm text-gray-600">
         <div>
           <span className="font-medium">Workshop:</span>{' '}
-          <span>{cfg.lat.toFixed(6)}, {cfg.lon.toFixed(6)} (radius {cfg.radiusM} m)</span>{' '}
+          <span>
+            {cfg.lat.toFixed(6)}, {cfg.lon.toFixed(6)} (radius {cfg.radiusM} m)
+          </span>{' '}
           <span className="ml-2 rounded bg-gray-100 px-2 py-0.5">{cfg.source}</span>
           {cfgErr ? <span className="ml-2 text-red-600">[config error: {cfgErr}]</span> : null}
         </div>
