@@ -151,35 +151,52 @@ export default function TodayPage() {
               </tr>
             )}
             {(rows ?? []).map((r) => {
-              const showStatus = r.status && r.status.trim() !== '';
-              const late = typeof r.late_min === 'number' ? r.late_min : null;
-              const lateIsPositive = !showStatus && late !== null && late > 0;
+  const showStatus = r.status && r.status.trim() !== '';
+  const late = typeof r.late_min === 'number' ? r.late_min : null;
+  const lateIsPositive = !showStatus && late !== null && late > 0;
 
-              return (
-                <tr key={r.staff_email}>
-                  <td style={{ padding: 8 }}>{dateISO}</td>
-                  <td style={{ padding: 8 }}>{r.staff_name}</td>
-                  <td style={{ padding: 8, fontWeight: 600 }}>
-                    {showStatus ? r.status : '—'}
-                  </td>
-                  <td style={{ padding: 8, color: showStatus ? '#9CA3AF' : 'inherit' }}>
-                    {showStatus ? '—' : (r.check_in_kl ?? '—')}
-                  </td>
-                  <td style={{ padding: 8, color: showStatus ? '#9CA3AF' : 'inherit' }}>
-                    {showStatus ? '—' : (r.check_out_kl ?? '—')}
-                  </td>
-                  <td
-                    style={{
-                      padding: 8,
-                      color: showStatus ? '#9CA3AF' : (lateIsPositive ? '#dc2626' : 'inherit'),
-                      fontWeight: lateIsPositive ? 700 : 400,
-                    }}
-                  >
-                    {showStatus ? '—' : (late ?? '—')}
-                  </td>
-                </tr>
-              );
-            })}
+  // NEW: auto Absent after 10:30 KL if no admin status and no check-in
+  const autoAbsent = !showStatus && past1030 && !r.check_in_kl;
+  const blockTimes = showStatus || autoAbsent; // grey out times when status/absent applies
+
+  return (
+    <tr key={r.staff_email}>
+      <td style={{ padding: 8 }}>{dateISO}</td>
+      <td style={{ padding: 8 }}>{r.staff_name}</td>
+
+      {/* NEW: show 'Absent' when autoAbsent triggers (else keep original) */}
+      <td style={{ padding: 8, fontWeight: 600 }}>
+        {showStatus ? r.status : (autoAbsent ? 'Absent' : '—')}
+      </td>
+
+      {/* NEW: make Check-in red when late (unless times are blocked) */}
+      <td
+        style={{
+          padding: 8,
+          color: blockTimes ? '#9CA3AF' : (lateIsPositive ? '#dc2626' : 'inherit'),
+          fontWeight: 400, // keep original weight
+        }}
+      >
+        {blockTimes ? '—' : (r.check_in_kl ?? '—')}
+      </td>
+
+      <td style={{ padding: 8, color: blockTimes ? '#9CA3AF' : 'inherit' }}>
+        {blockTimes ? '—' : (r.check_out_kl ?? '—')}
+      </td>
+
+      {/* unchanged behavior for Late(min), but respects blockTimes */}
+      <td
+        style={{
+          padding: 8,
+          color: blockTimes ? '#9CA3AF' : (lateIsPositive ? '#dc2626' : 'inherit'),
+          fontWeight: lateIsPositive ? 700 : 400,
+        }}
+      >
+        {blockTimes ? '—' : (late ?? '—')}
+      </td>
+    </tr>
+  );
+})}
           </tbody>
         </table>
       </div>
