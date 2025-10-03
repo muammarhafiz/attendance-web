@@ -6,14 +6,12 @@ import { supabase } from '@/lib/supabaseClient';
 type DayRow = {
   staff_name: string;
   staff_email: string;
-  check_in_kl: string | null;
-  check_out_kl: string | null;
-  late_min: number | null;
-  status?: string | null; // MC / Offday / etc
+  check_in_kl: string | null;    // "HH:MM" from view
+  check_out_kl: string | null;   // "HH:MM" from view
+  late_min: number | null;       // from view
+  status?: string | null;        // MC/Offday/etc from day_status (via view)
+  auto_absent?: boolean;         // from view
 };
-
-type StaffRow = { email: string; name: string | null };
-type StatusRow = { staff_email: string; status: string | null };
 
 function klTodayISO(): string {
   const klNow = new Date(
@@ -25,33 +23,15 @@ function klTodayISO(): string {
   return `${y}-${m}-${d}`;
 }
 
-/** Robustly parse HH:MM from strings like "11:27", "2025-10-03 11:27:05", "11:27 am". */
-function extractHHMM(s: string | null): { hh: number; mm: number } | null {
-  if (!s) return null;
-  const m = s.match(/(\d{1,2}):(\d{2})/);
-  if (!m) return null;
+/** Parse "HH:MM" safely and compare to 09:30. */
+function isAfter930(checkInKL: string | null): boolean {
+  if (!checkInKL) return false;
+  const m = checkInKL.match(/(\d{1,2}):(\d{2})/);
+  if (!m) return false;
   const hh = parseInt(m[1], 10);
   const mm = parseInt(m[2], 10);
-  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
-  return { hh, mm };
-}
-
-/** True if check-in time is strictly after 09:30 (KL). */
-function isAfter930(checkInKL: string | null): boolean {
-  const t = extractHHMM(checkInKL);
-  if (!t) return false;
-  const minutes = t.hh * 60 + t.mm;
-  return minutes > (9 * 60 + 30);
-}
-
-/** Returns true if *now* (KL) is >= 10:30. */
-function computePast1030(): boolean {
-  const now = new Date(
-    new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' })
-  );
-  const cutoff = new Date(now);
-  cutoff.setHours(10, 30, 0, 0);
-  return now.getTime() >= cutoff.getTime();
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return false;
+  return (hh * 60 + mm) > (9 * 60 + 30);
 }
 
 export default function TodayPage() {
@@ -61,95 +41,26 @@ export default function TodayPage() {
   const [errorText, setErrorText] = useState<string>('');
   const [notice, setNotice] = useState<string>('');
 
-  // Tick every 30s so "Absent after 10:30" flips automatically if the page stays open
-  const [, setNowTick] = useState<number>(0);
-  const [past1030, setPast1030] = useState<boolean>(computePast1030());
-  useEffect(() => {
-    const id = setInterval(() => {
-      setPast1030(computePast1030());
-      setNowTick((n) => n + 1);
-    }, 30000);
-    return () => clearInterval(id);
-  }, []);
-
   const reload = useCallback(async () => {
     setLoading(true);
     setErrorText('');
     setNotice('');
 
-    // 1) today’s attendance
-    const { data: attData, error: attError } = await supabase
-      .rpc('day_attendance_v2', { p_date: dateISO });
+    // Read the pre-shaped data from the view
+    const { data, error } = await supabase
+      .from('today_ui_v1')
+      .select('staff_name, staff_email, check_in_kl, check_out_kl, late_min, status, auto_absent');
 
-    // 2) all staff (requires sign-in)
-    const { data: staffData, error: staffError } = await supabase
-      .from('staff')
-      .select('email,name')
-      .order('name', { ascending: true });
-
-    // 3) today statuses (MC/Offday/etc)
-    const { data: statData, error: statError } = await supabase
-      .from('day_status')
-      .select('staff_email,status')
-      .eq('day', dateISO);
-
-    if (attError) {
-      setErrorText(attError.message);
+    if (error) {
+      setErrorText(error.message);
       setRows([]);
       setLoading(false);
       return;
     }
 
-    const dayRows = (attData as DayRow[]) ?? [];
-
-    // fallback if staff blocked by RLS
-    if (staffError || !staffData || staffData.length === 0) {
-      if (staffError) {
-        setNotice('Showing only checked-in staff. Sign in to view all staff & statuses.');
-      }
-      const statusMap = new Map<string, string | null>();
-      if (!statError && statData) {
-        for (const s of statData as StatusRow[]) {
-          statusMap.set(s.staff_email.toLowerCase(), s.status);
-        }
-      }
-      const mergedFallback = dayRows.map(r => ({
-        ...r,
-        status: statusMap.get(r.staff_email.toLowerCase()) ?? null,
-      }));
-      setRows(mergedFallback);
-      setLoading(false);
-      return;
-    }
-
-    // build maps for merge
-    const byEmail = new Map<string, DayRow>();
-    for (const r of dayRows) byEmail.set(r.staff_email.toLowerCase(), r);
-
-    const statusMap = new Map<string, string | null>();
-    if (!statError && statData) {
-      for (const s of statData as StatusRow[]) {
-        statusMap.set(s.staff_email.toLowerCase(), s.status);
-      }
-    }
-
-    // left-join staff with attendance, then attach status
-    const merged: DayRow[] = (staffData as StaffRow[]).map((s) => {
-      const key = s.email.toLowerCase();
-      const hit = byEmail.get(key);
-      return {
-        staff_name: s.name ?? s.email.split('@')[0],
-        staff_email: s.email,
-        check_in_kl: hit?.check_in_kl ?? null,
-        check_out_kl: hit?.check_out_kl ?? null,
-        late_min: hit?.late_min ?? null,
-        status: statusMap.get(key) ?? null,
-      };
-    });
-
-    setRows(merged);
+    setRows((data as DayRow[]) ?? []);
     setLoading(false);
-  }, [dateISO]);
+  }, []);
 
   useEffect(() => { reload(); }, [reload]);
 
@@ -197,12 +108,11 @@ export default function TodayPage() {
             {(rows ?? []).map((r) => {
               const hasAdminStatus = r.status && r.status.trim() !== '';
               const after930 = isAfter930(r.check_in_kl);
-              const autoAbsent = !hasAdminStatus && past1030 && !r.check_in_kl;
+              const autoAbsent = !hasAdminStatus && !!r.auto_absent;
 
-              // Grey out times when admin status exists or we auto-mark Absent
+              // Grey out times when admin status exists or auto-absent applies
               const blockTimes = hasAdminStatus || autoAbsent;
 
-              // Late(min) display rule (unchanged from your original)
               const isLateMin = typeof r.late_min === 'number' && r.late_min > 0;
 
               return (
