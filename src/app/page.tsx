@@ -1,55 +1,56 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
-import Link from 'next/link';
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
 import { supabase } from '@/lib/supabaseClient';
-import PageShell from '../components/PageShell';
-import { Card, CardBody } from '../components/ui/Card';
+import PageShell from '@/components/PageShell';
+import { Card, CardBody } from '@/components/ui/Card';
 
-// Dynamically import your Leaflet map (no SSR)
-const Map = dynamic(() => import('../components/Map'), { ssr: false });
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
-type ConfigRow = { key: string; value: string };
-type SessionEmail = string | null;
+// Load the Leaflet map client-side
+const CurrentMap = dynamic(() => import('@/components/CurrentMap'), { ssr: false });
 
+/** Fallback (used only if DB `config` row is missing) */
 const CODE_FALLBACK = {
-  lat: 3.115646, // fallback latitude (edit if you want a different default)
-  lon: 101.655377, // fallback longitude
-  radiusM: 80, // fallback radius in meters
+  lat: 2.952535, // Putrajaya plant (example)
+  lon: 101.731364,
+  radiusM: 120,
+} as const;
+
+type Cfg = {
+  lat: number;
+  lon: number;
+  radiusM: number;
+  source: 'DB' | 'CODE';
 };
 
+type Pos = { lat: number; lon: number };
+
+function haversineMeters(a: Pos, b: Pos): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lon - a.lon);
+  const la1 = toRad(a.lat);
+  const la2 = toRad(b.lat);
+  const x =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(la1) * Math.cos(la2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+  return Math.round(R * c);
+}
+
 export default function HomePage() {
-  // live time (simple)
-  const [nowStr, setNowStr] = useState<string>('');
-  useEffect(() => {
-    const id = setInterval(() => {
-      const now = new Date(
-        new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' })
-      );
-      const dd = String(now.getDate()).padStart(2, '0');
-      const mm = String(now.getMonth() + 1).padStart(2, '0');
-      const yyyy = now.getFullYear();
-      const hh = String(now.getHours()).padStart(2, '0');
-      const min = String(now.getMinutes()).padStart(2, '0');
-      const ss = String(now.getSeconds()).padStart(2, '0');
-      setNowStr(`${dd}/${mm}/${yyyy}, ${hh}:${min}:${ss}`);
-    }, 1000);
-    return () => clearInterval(id);
-  }, []);
+  // Clock
+  const [now, setNow] = useState<string>('');
 
-  // auth email
-  const [email, setEmail] = useState<SessionEmail>(null);
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null));
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
-      setEmail(session?.user?.email ?? null);
-    });
-    return () => sub.subscription.unsubscribe();
-  }, []);
-
-  // config from DB (workshop_lat/lon/radius_m)
-  const [cfg, setCfg] = useState<{ lat: number; lon: number; radiusM: number; source: 'DB' | 'CODE' }>({
+  // Config (workshop)
+  const [cfg, setCfg] = useState<Cfg>({
     lat: CODE_FALLBACK.lat,
     lon: CODE_FALLBACK.lon,
     radiusM: CODE_FALLBACK.radiusM,
@@ -57,179 +58,191 @@ export default function HomePage() {
   });
   const [cfgErr, setCfgErr] = useState<string>('');
 
+  // Location from the map component
+  const [pos, setPos] = useState<Pos | null>(null);
+  const [acc, setAcc] = useState<number | null>(null);
+
+  // Check-in/out UI
+  const [busy, setBusy] = useState<boolean>(false);
+  const [msg, setMsg] = useState<string>('');
+
+  // --- live clock ---
+  useEffect(() => {
+    const t = setInterval(() => {
+      setNow(dayjs().tz('Asia/Kuala_Lumpur').format('DD/MM/YYYY, h:mm:ss a'));
+    }, 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  // --- read config from DB (single row) ---
   const loadConfig = useCallback(async () => {
     setCfgErr('');
-    // read all config, then pick the keys we care about
     const { data, error } = await supabase
       .from('config')
-      .select('key, value')
-      .returns<ConfigRow[]>();
+      .select('workshop_lat, workshop_lon, radius_m')
+      .single();
+
     if (error) {
       setCfgErr(error.message);
-      return; // keep fallback
+      // keep CODE fallback already in state
+      return;
     }
 
-    const rows = data ?? [];
-
-    const getNum = (k: string, def: number): number => {
-      const found = rows.find((r) => r.key === k)?.value;
-      const n = found ? Number(found) : NaN;
-      return Number.isFinite(n) ? n : def;
-    };
-
-    const lat = getNum('workshop_lat', CODE_FALLBACK.lat);
-    const lon = getNum('workshop_lon', CODE_FALLBACK.lon);
-    const radiusM = getNum('radius_m', CODE_FALLBACK.radiusM);
-
-    const usedDB =
-      rows.some((r) => r.key === 'workshop_lat') &&
-      rows.some((r) => r.key === 'workshop_lon');
-
-    setCfg({
-      lat,
-      lon,
-      radiusM,
-      source: usedDB ? 'DB' : 'CODE',
-    });
+    if (data) {
+      setCfg({
+        lat: data.workshop_lat ?? CODE_FALLBACK.lat,
+        lon: data.workshop_lon ?? CODE_FALLBACK.lon,
+        radiusM: data.radius_m ?? CODE_FALLBACK.radiusM,
+        source: 'DB',
+      });
+    }
   }, []);
 
   useEffect(() => {
     loadConfig();
   }, [loadConfig]);
 
-  // user live location from Map
-  const [me, setMe] = useState<{ lat: number; lon: number; acc?: number } | null>(null);
+  // distance + radius gate
+  const distanceM = useMemo(() => {
+    if (!pos) return null;
+    return haversineMeters({ lat: cfg.lat, lon: cfg.lon }, pos);
+  }, [cfg.lat, cfg.lon, pos]);
 
-  const inRadius = useMemo(() => {
-    if (!me) return false;
-    // rough haversine-lite (meters)
-    const R = 6371000;
-    const toRad = (d: number) => (d * Math.PI) / 180;
-    const dLat = toRad(me.lat - cfg.lat);
-    const dLon = toRad(me.lon - cfg.lon);
-    const lat1 = toRad(cfg.lat);
-    const lat2 = toRad(me.lat);
-    const a =
-      Math.sin(dLat / 2) ** 2 +
-      Math.sin(dLon / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    const dist = R * c;
-    return dist <= cfg.radiusM;
-  }, [me, cfg.lat, cfg.lon, cfg.radiusM]);
+  const inside = useMemo(() => {
+    if (distanceM == null) return false;
+    return distanceM <= cfg.radiusM;
+  }, [distanceM, cfg.radiusM]);
 
-  // check in/out actions
-  const [actionBusy, setActionBusy] = useState<boolean>(false);
-  const [actionMsg, setActionMsg] = useState<string>('');
+  // Map callback
+  const onLocationChange = (p: Pos, accuracy?: number) => {
+    setPos(p);
+    setAcc(accuracy ?? null);
+  };
 
-  async function doAction(kind: 'in' | 'out') {
-    setActionMsg('');
-    if (!email) {
-      // not signed in → go to /auth
-      window.location.href = '/auth';
-      return;
-    }
-    if (!me) {
-      setActionMsg('Please refresh your location first.');
-      return;
-    }
-    setActionBusy(true);
+  // Basic logger (one row per click)
+  const logAttendance = async (kind: 'in' | 'out') => {
     try {
-      // Adjust the column names here if your table differs
-      const { error } = await supabase
-        .from('attendance')
-        .insert({
-          staff_email: email,
-          ts: new Date().toISOString(),
-          lat: me.lat,
-          lon: me.lon,
-          action: kind, // remove this line if your table doesn't have `action`
-        });
-      if (error) {
-        setActionMsg('Insert failed: ' + error.message);
-      } else {
-        setActionMsg(kind === 'in' ? 'Checked in successfully.' : 'Checked out successfully.');
+      setBusy(true);
+      setMsg('');
+
+      // need an email (RLS)
+      const { data: u } = await supabase.auth.getUser();
+      const email = u.user?.email ?? null;
+      if (!email) {
+        setMsg('Please sign in first.');
+        setBusy(false);
+        return;
       }
+
+      if (!inside || !pos) {
+        setMsg('You must be inside the workshop radius.');
+        setBusy(false);
+        return;
+      }
+
+      // simple name guess (left of @); your app may upsert into staff separately
+      const staff_name = email.split('@')[0];
+
+      // Insert a log row. Your DB triggers/views handle in/out aggregation.
+      const { error } = await supabase.from('attendance').insert({
+        staff_email: email,
+        staff_name,
+        // optional: store raw coords if your table has these columns; ignored otherwise
+        lat: pos.lat,
+        lon: pos.lon,
+        note: kind === 'in' ? 'check-in' : 'check-out',
+      } as any);
+
+      if (error) setMsg('Error: ' + error.message);
+      else setMsg(kind === 'in' ? 'Checked in.' : 'Checked out.');
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setActionMsg('Exception: ' + msg);
+      setMsg('Error: ' + (e instanceof Error ? e.message : String(e)));
     } finally {
-      setActionBusy(false);
+      setBusy(false);
     }
-  }
+  };
 
   return (
-    <PageShell title="Workshop Attendance" subtitle={nowStr}>
+    <PageShell title="Workshop Attendance" subtitle={now}>
       <Card>
         <CardBody className="p-0">
+          {/* Small debug/status strip */}
+          <div className="px-3 py-2 text-xs">
+            <div className="mb-2 rounded-md bg-[#eef6ff] px-2 py-1 text-[#0b57d0]">
+              Workshop: {cfg.lat.toFixed(6)}, {cfg.lon.toFixed(6)} (radius {cfg.radiusM} m){' '}
+              <span
+                className={`ml-2 rounded px-1.5 py-[2px] text-[10px] ${
+                  cfg.source === 'DB'
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-gray-200 text-gray-700'
+                }`}
+              >
+                {cfg.source}
+              </span>
+              {cfgErr && (
+                <span className="ml-2 text-red-600">
+                  [config error: {cfgErr}]
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Map */}
           <div className="h-[360px] w-full">
-            {/* Pass DB (or fallback) coords into the Map */}
-            <Map
+            <CurrentMap
               workshop={{ lat: cfg.lat, lon: cfg.lon }}
               radiusM={cfg.radiusM}
-              // capture current device location
-              onLocationChange={(p, acc) => setMe({ lat: p.lat, lon: p.lon, acc })}
+              onLocationChange={onLocationChange}
             />
+          </div>
+
+          {/* Footer / actions */}
+          <div className="px-4 py-4">
+            <div className="mb-2 text-sm">
+              You:{' '}
+              {pos ? (
+                <>
+                  {pos.lat.toFixed(6)}, {pos.lon.toFixed(6)}{' '}
+                  {acc ? <>(±{Math.round(acc)} m)</> : null}
+                </>
+              ) : (
+                '—'
+              )}
+              <span className="mx-2">•</span>
+              Distance to workshop:{' '}
+              {distanceM == null ? '—' : `${distanceM} m`}{' '}
+              {distanceM != null && (
+                <span className={inside ? 'text-green-600' : 'text-red-600'}>
+                  {inside ? '✓ inside radius' : '✗ outside radius'}
+                </span>
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                disabled={busy || !inside || !pos}
+                onClick={() => logAttendance('in')}
+                className={`rounded px-4 py-2 text-white ${
+                  busy || !inside || !pos ? 'bg-green-300' : 'bg-green-600 hover:bg-green-700'
+                }`}
+              >
+                Check in
+              </button>
+              <button
+                disabled={busy || !inside || !pos}
+                onClick={() => logAttendance('out')}
+                className={`rounded px-4 py-2 text-white ${
+                  busy || !inside || !pos ? 'bg-blue-300' : 'bg-blue-600 hover:bg-blue-700'
+                }`}
+              >
+                Check out
+              </button>
+            </div>
+
+            {msg && <p className="mt-3 text-sm text-red-600">{msg}</p>}
           </div>
         </CardBody>
       </Card>
-
-      <div className="mt-3 flex items-center justify-between text-sm text-gray-600">
-        <div>
-          <span className="font-medium">Workshop:</span>{' '}
-          <span>
-            {cfg.lat.toFixed(6)}, {cfg.lon.toFixed(6)} (radius {cfg.radiusM} m)
-          </span>{' '}
-          <span className="ml-2 rounded bg-gray-100 px-2 py-0.5">{cfg.source}</span>
-          {cfgErr ? <span className="ml-2 text-red-600">[config error: {cfgErr}]</span> : null}
-        </div>
-        <div>
-          {me ? (
-            <span>
-              You: {me.lat.toFixed(6)}, {me.lon.toFixed(6)}
-              {typeof me.acc === 'number' ? ` (±${Math.round(me.acc)} m)` : ''}
-            </span>
-          ) : (
-            <span>Tap “Refresh location” on the map to get your position</span>
-          )}
-        </div>
-      </div>
-
-      <div className="mt-4 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
-        {!email ? (
-          <Link
-            href="/auth"
-            className="rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
-          >
-            Sign in to Check in/out
-          </Link>
-        ) : (
-          <>
-            <button
-              onClick={() => doAction('in')}
-              disabled={actionBusy || !inRadius || !me}
-              className="rounded-md bg-green-600 px-4 py-2 text-white disabled:cursor-not-allowed disabled:opacity-60 hover:bg-green-700"
-            >
-              {actionBusy ? 'Working…' : 'Check in'}
-            </button>
-            <button
-              onClick={() => doAction('out')}
-              disabled={actionBusy || !inRadius || !me}
-              className="rounded-md bg-gray-900 px-4 py-2 text-white disabled:cursor-not-allowed disabled:opacity-60 hover:bg-black"
-            >
-              {actionBusy ? 'Working…' : 'Check out'}
-            </button>
-            {!inRadius && (
-              <span className="text-sm text-red-600">
-                You are outside the workshop radius.
-              </span>
-            )}
-          </>
-        )}
-      </div>
-
-      {actionMsg ? (
-        <p className="mt-2 text-sm text-gray-800">{actionMsg}</p>
-      ) : null}
     </PageShell>
   );
 }
