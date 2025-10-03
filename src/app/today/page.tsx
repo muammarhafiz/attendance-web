@@ -25,6 +25,17 @@ function klTodayISO(): string {
   return `${y}-${m}-${d}`;
 }
 
+// Parse "HH:MM" from check_in_kl and compare to 09:30 (KL).
+// We assume check_in_kl is already stored/formatted in KL (it’s named *_kl).
+function isAfter930(checkInKL: string | null): boolean {
+  if (!checkInKL) return false;
+  const m = checkInKL.match(/(\d{2}):(\d{2})/); // grabs HH:MM from "YYYY-MM-DD HH:MM:SS" or "HH:MM"
+  if (!m) return false;
+  const hh = parseInt(m[1], 10);
+  const mm = parseInt(m[2], 10);
+  return (hh * 60 + mm) > (9 * 60 + 30); // > 09:30
+}
+
 export default function TodayPage() {
   const [dateISO] = useState<string>(klTodayISO());
   const [rows, setRows] = useState<DayRow[] | null>(null);
@@ -111,7 +122,7 @@ export default function TodayPage() {
 
   const hasData = useMemo(() => (rows?.length ?? 0) > 0, [rows]);
 
-  // NEW: compute "past 10:30 AM" in KL time (local to this component)
+  // Compute "past 10:30 AM" in KL time (for auto Absent)
   const past1030 = (() => {
     const now = new Date(
       new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' })
@@ -162,28 +173,29 @@ export default function TodayPage() {
             )}
             {(rows ?? []).map((r) => {
               const showStatus = r.status && r.status.trim() !== '';
+              const after930 = isAfter930(r.check_in_kl); // NEW red rule for check-in
               const late = typeof r.late_min === 'number' ? r.late_min : null;
               const lateIsPositive = !showStatus && late !== null && late > 0;
 
-              // NEW: auto Absent after 10:30 KL if no admin status and no check-in
+              // Auto Absent after 10:30 if no admin status and no check-in
               const autoAbsent = !showStatus && past1030 && !r.check_in_kl;
-              const blockTimes = showStatus || autoAbsent; // grey out times when status/absent applies
+              const blockTimes = showStatus || autoAbsent;
 
               return (
                 <tr key={r.staff_email}>
                   <td style={{ padding: 8 }}>{dateISO}</td>
                   <td style={{ padding: 8 }}>{r.staff_name}</td>
 
-                  {/* show 'Absent' when autoAbsent triggers (else keep original) */}
+                  {/* Status: admin status > auto Absent > — */}
                   <td style={{ padding: 8, fontWeight: 600 }}>
                     {showStatus ? r.status : (autoAbsent ? 'Absent' : '—')}
                   </td>
 
-                  {/* make Check-in red when late (unless times are blocked) */}
+                  {/* Check-in: red if after 09:30, unless blocked by status/absent */}
                   <td
                     style={{
                       padding: 8,
-                      color: blockTimes ? '#9CA3AF' : (lateIsPositive ? '#dc2626' : 'inherit'),
+                      color: blockTimes ? '#9CA3AF' : (after930 ? '#dc2626' : 'inherit'),
                       fontWeight: 400,
                     }}
                   >
@@ -194,7 +206,7 @@ export default function TodayPage() {
                     {blockTimes ? '—' : (r.check_out_kl ?? '—')}
                   </td>
 
-                  {/* Late(min) stays red & bold when late, unless blocked */}
+                  {/* Late(min) — keep original behavior (red & bold when late) */}
                   <td
                     style={{
                       padding: 8,
