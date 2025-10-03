@@ -28,6 +28,9 @@ const grayPill: React.CSSProperties = { padding: '2px 8px', borderRadius: 999, b
 
 export default function ReportPage() {
   const now = new Date();
+// near your other useState calls
+const [meEmail, setMeEmail] = useState<string | null>(null);
+const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [year, setYear] = useState<number>(now.getFullYear());
   const [month, setMonth] = useState<number>(now.getMonth() + 1);
   const [day, setDay] = useState<number | ''>(''); // optional
@@ -121,6 +124,10 @@ export default function ReportPage() {
   return (
     <div style={box}>
       <h2 style={{margin: 0}}>Attendance Report</h2>
+{/* DEBUG (remove later) */}
+<div style={{fontSize:12, color:'#666', marginTop:6}}>
+  session: <b>{meEmail ?? '(none)'}</b> · isAdmin: <b>{String(isAdmin)}</b>
+</div>
 
       {/* 👇 DEBUG BANNER — shows what the app thinks. Remove later. */}
       <div style={{fontSize:12, color:'#666', marginTop:6}}>
