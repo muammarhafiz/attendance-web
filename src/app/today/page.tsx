@@ -15,22 +15,24 @@ type DayRow = {
 type StaffRow = { email: string; name: string | null };
 type StatusRow = { staff_email: string; status: string | null };
 
-// --- KL helpers (pure, local) ---
-function klNowDate() {
-  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' }));
-}
 function klTodayISO(): string {
-  const n = klNowDate();
-  const y = n.getFullYear();
-  const m = String(n.getMonth() + 1).padStart(2, '0');
-  const d = String(n.getDate()).padStart(2, '0');
+  const klNow = new Date(
+    new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' })
+  );
+  const y = klNow.getFullYear();
+  const m = String(klNow.getMonth() + 1).padStart(2, '0');
+  const d = String(klNow.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
+
+// NEW: minimal helper to know if it's past 10:30am KL
 function isPast1030KL(): boolean {
-  const now = klNowDate();
+  const now = new Date(
+    new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' })
+  );
   const cutoff = new Date(now);
   cutoff.setHours(10, 30, 0, 0);
-  return now >= cutoff;
+  return now.getTime() >= cutoff.getTime();
 }
 
 export default function TodayPage() {
@@ -118,7 +120,7 @@ export default function TodayPage() {
   useEffect(() => { reload(); }, [reload]);
 
   const hasData = useMemo(() => (rows?.length ?? 0) > 0, [rows]);
-  const past1030 = isPast1030KL();
+  const past1030 = isPast1030KL(); // NEW
 
   return (
     <main style={{ padding: 16, fontFamily: 'system-ui' }}>
@@ -160,28 +162,27 @@ export default function TodayPage() {
               </tr>
             )}
             {(rows ?? []).map((r) => {
-              const adminStatus = r.status && r.status.trim() !== '' ? r.status!.trim() : null;
-              const noCheckIn = !r.check_in_kl;
-              const autoAbsent = !adminStatus && past1030 && noCheckIn;
-
-              const displayStatus = adminStatus ?? (autoAbsent ? 'Absent' : '—');
-
+              const showStatus = r.status && r.status.trim() !== '';
               const late = typeof r.late_min === 'number' ? r.late_min : null;
-              const lateIsPositive = !adminStatus && late !== null && late > 0;
-              const isStatusBlocking = !!adminStatus || autoAbsent;
+              const lateIsPositive = !showStatus && late !== null && late > 0;
+
+              // NEW: auto absent after 10:30 KL if no admin status and no check-in
+              const autoAbsent = !showStatus && past1030 && !r.check_in_kl;
+              const isStatusBlocking = showStatus || autoAbsent;
 
               return (
                 <tr key={r.staff_email}>
                   <td style={{ padding: 8 }}>{dateISO}</td>
                   <td style={{ padding: 8 }}>{r.staff_name}</td>
                   <td style={{ padding: 8, fontWeight: 600 }}>
-                    {displayStatus}
+                    {showStatus ? r.status : (autoAbsent ? 'Absent' : '—')}
                   </td>
                   <td
+                    // NEW: make Check-in red when late (keep original weight)
                     style={{
                       padding: 8,
                       color: isStatusBlocking ? '#9CA3AF' : (lateIsPositive ? '#dc2626' : 'inherit'),
-                      fontWeight: 400, // keep original weight (no layout shift)
+                      fontWeight: 400,
                     }}
                   >
                     {isStatusBlocking ? '—' : (r.check_in_kl ?? '—')}
@@ -190,10 +191,11 @@ export default function TodayPage() {
                     {isStatusBlocking ? '—' : (r.check_out_kl ?? '—')}
                   </td>
                   <td
+                    // (unchanged) Late min becomes red & bold when late
                     style={{
                       padding: 8,
                       color: isStatusBlocking ? '#9CA3AF' : (lateIsPositive ? '#dc2626' : 'inherit'),
-                      fontWeight: lateIsPositive ? 700 : 400, // your original “Late (min)” emphasis
+                      fontWeight: lateIsPositive ? 700 : 400,
                     }}
                   >
                     {isStatusBlocking ? '—' : (late ?? '—')}
