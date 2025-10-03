@@ -111,6 +111,16 @@ export default function TodayPage() {
 
   const hasData = useMemo(() => (rows?.length ?? 0) > 0, [rows]);
 
+  // NEW: compute "past 10:30 AM" in KL time (local to this component)
+  const past1030 = (() => {
+    const now = new Date(
+      new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' })
+    );
+    const cutoff = new Date(now);
+    cutoff.setHours(10, 30, 0, 0);
+    return now.getTime() >= cutoff.getTime();
+  })();
+
   return (
     <main style={{ padding: 16, fontFamily: 'system-ui' }}>
       <h2>Today</h2>
@@ -151,52 +161,52 @@ export default function TodayPage() {
               </tr>
             )}
             {(rows ?? []).map((r) => {
-  const showStatus = r.status && r.status.trim() !== '';
-  const late = typeof r.late_min === 'number' ? r.late_min : null;
-  const lateIsPositive = !showStatus && late !== null && late > 0;
+              const showStatus = r.status && r.status.trim() !== '';
+              const late = typeof r.late_min === 'number' ? r.late_min : null;
+              const lateIsPositive = !showStatus && late !== null && late > 0;
 
-  // NEW: auto Absent after 10:30 KL if no admin status and no check-in
-  const autoAbsent = !showStatus && past1030 && !r.check_in_kl;
-  const blockTimes = showStatus || autoAbsent; // grey out times when status/absent applies
+              // NEW: auto Absent after 10:30 KL if no admin status and no check-in
+              const autoAbsent = !showStatus && past1030 && !r.check_in_kl;
+              const blockTimes = showStatus || autoAbsent; // grey out times when status/absent applies
 
-  return (
-    <tr key={r.staff_email}>
-      <td style={{ padding: 8 }}>{dateISO}</td>
-      <td style={{ padding: 8 }}>{r.staff_name}</td>
+              return (
+                <tr key={r.staff_email}>
+                  <td style={{ padding: 8 }}>{dateISO}</td>
+                  <td style={{ padding: 8 }}>{r.staff_name}</td>
 
-      {/* NEW: show 'Absent' when autoAbsent triggers (else keep original) */}
-      <td style={{ padding: 8, fontWeight: 600 }}>
-        {showStatus ? r.status : (autoAbsent ? 'Absent' : '—')}
-      </td>
+                  {/* show 'Absent' when autoAbsent triggers (else keep original) */}
+                  <td style={{ padding: 8, fontWeight: 600 }}>
+                    {showStatus ? r.status : (autoAbsent ? 'Absent' : '—')}
+                  </td>
 
-      {/* NEW: make Check-in red when late (unless times are blocked) */}
-      <td
-        style={{
-          padding: 8,
-          color: blockTimes ? '#9CA3AF' : (lateIsPositive ? '#dc2626' : 'inherit'),
-          fontWeight: 400, // keep original weight
-        }}
-      >
-        {blockTimes ? '—' : (r.check_in_kl ?? '—')}
-      </td>
+                  {/* make Check-in red when late (unless times are blocked) */}
+                  <td
+                    style={{
+                      padding: 8,
+                      color: blockTimes ? '#9CA3AF' : (lateIsPositive ? '#dc2626' : 'inherit'),
+                      fontWeight: 400,
+                    }}
+                  >
+                    {blockTimes ? '—' : (r.check_in_kl ?? '—')}
+                  </td>
 
-      <td style={{ padding: 8, color: blockTimes ? '#9CA3AF' : 'inherit' }}>
-        {blockTimes ? '—' : (r.check_out_kl ?? '—')}
-      </td>
+                  <td style={{ padding: 8, color: blockTimes ? '#9CA3AF' : 'inherit' }}>
+                    {blockTimes ? '—' : (r.check_out_kl ?? '—')}
+                  </td>
 
-      {/* unchanged behavior for Late(min), but respects blockTimes */}
-      <td
-        style={{
-          padding: 8,
-          color: blockTimes ? '#9CA3AF' : (lateIsPositive ? '#dc2626' : 'inherit'),
-          fontWeight: lateIsPositive ? 700 : 400,
-        }}
-      >
-        {blockTimes ? '—' : (late ?? '—')}
-      </td>
-    </tr>
-  );
-})}
+                  {/* Late(min) stays red & bold when late, unless blocked */}
+                  <td
+                    style={{
+                      padding: 8,
+                      color: blockTimes ? '#9CA3AF' : (lateIsPositive ? '#dc2626' : 'inherit'),
+                      fontWeight: lateIsPositive ? 700 : 400,
+                    }}
+                  >
+                    {blockTimes ? '—' : (late ?? '—')}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
