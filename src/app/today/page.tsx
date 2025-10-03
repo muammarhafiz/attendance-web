@@ -1,107 +1,126 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-type Staff = {
-  email: string;
-  name: string;
-};
-
-type AttendanceRow = {
+type DayRow = {
   staff_name: string;
   staff_email: string;
   check_in_kl: string | null;
   check_out_kl: string | null;
   late_min: number | null;
+  status?: string | null; // MC / Offday / etc
 };
 
-type MergedRow = {
-  staff_email: string;
-  staff_name: string;
-  check_in_kl: string | null;
-  check_out_kl: string | null;
-  late_min: number | null;
-};
+type StaffRow = { email: string; name: string | null };
+type StatusRow = { staff_email: string; status: string | null };
 
+// --- Helpers (KL time) ---
+function klNowDate(): Date {
+  // makes a Date object representing current time in KL
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' }));
+}
 function klTodayISO(): string {
-  // YYYY-MM-DD for Asia/Kuala_Lumpur
-  const klNow = new Date(
-    new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' })
-  );
-  const y = klNow.getFullYear();
-  const m = String(klNow.getMonth() + 1).padStart(2, '0');
-  const d = String(klNow.getDate()).padStart(2, '0');
+  const n = klNowDate();
+  const y = n.getFullYear();
+  const m = String(n.getMonth() + 1).padStart(2, '0');
+  const d = String(n.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
+}
+function isPast1030KL(): boolean {
+  const now = klNowDate();
+  const cutoff = new Date(now);
+  cutoff.setHours(10, 30, 0, 0); // 10:30 AM KL
+  return now.getTime() >= cutoff.getTime();
 }
 
 export default function TodayPage() {
   const [dateISO] = useState<string>(klTodayISO());
-  const [rows, setRows] = useState<MergedRow[] | null>(null);
+  const [rows, setRows] = useState<DayRow[] | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [errorText, setErrorText] = useState<string>('');
+  const [notice, setNotice] = useState<string>('');
 
   const reload = useCallback(async () => {
     setLoading(true);
     setErrorText('');
+    setNotice('');
 
-    // Fetch staff list (public.get_staff_public) and today's attendance in parallel
-    const [staffRes, attRes] = await Promise.all([
-      supabase.rpc('get_staff_public'),
-      supabase.rpc('day_attendance_v2', { p_date: dateISO }),
-    ]);
+    // 1) today’s attendance
+    const { data: attData, error: attError } = await supabase
+      .rpc('day_attendance_v2', { p_date: dateISO });
 
-    // Handle staff fetch errors
-    if (staffRes.error) {
-      setErrorText(`Staff load error: ${staffRes.error.message}`);
+    // 2) all staff (requires sign-in)
+    const { data: staffData, error: staffError } = await supabase
+      .from('staff')
+      .select('email,name')
+      .order('name', { ascending: true });
+
+    // 3) today statuses (MC/Offday/etc)
+    const { data: statData, error: statError } = await supabase
+      .from('day_status')
+      .select('staff_email,status')
+      .eq('day', dateISO);
+
+    if (attError) {
+      setErrorText(attError.message);
       setRows([]);
       setLoading(false);
       return;
     }
 
-    // Handle attendance fetch errors
-    if (attRes.error) {
-      setErrorText(`Attendance load error: ${attRes.error.message}`);
-      setRows([]);
+    const dayRows = (attData as DayRow[]) ?? [];
+
+    // fallback if staff blocked by RLS
+    if (staffError || !staffData || staffData.length === 0) {
+      if (staffError) {
+        setNotice('Showing only checked-in staff. Sign in to view all staff & statuses.');
+      }
+      const statusMap = new Map<string, string | null>();
+      if (!statError && statData) {
+        for (const s of statData as StatusRow[]) statusMap.set(s.staff_email.toLowerCase(), s.status);
+      }
+      const mergedFallback = dayRows.map(r => ({
+        ...r,
+        status: statusMap.get(r.staff_email.toLowerCase()) ?? null,
+      }));
+      setRows(mergedFallback);
       setLoading(false);
       return;
     }
 
-    const staff: Staff[] = (staffRes.data as Staff[]) ?? [];
-    const attendance: AttendanceRow[] = (attRes.data as AttendanceRow[]) ?? [];
+    // build maps for merge
+    const byEmail = new Map<string, DayRow>();
+    for (const r of dayRows) byEmail.set(r.staff_email.toLowerCase(), r);
 
-    // Create a quick lookup by email from attendance
-    const byEmail = new Map<string, AttendanceRow>();
-    for (const r of attendance) {
-      byEmail.set(r.staff_email.toLowerCase(), r);
+    const statusMap = new Map<string, string | null>();
+    if (!statError && statData) {
+      for (const s of statData as StatusRow[]) statusMap.set(s.staff_email.toLowerCase(), s.status);
     }
 
-    // Merge to ensure every staff shows up
-    const merged: MergedRow[] = staff.map((s) => {
-      const found = byEmail.get(s.email.toLowerCase());
+    // left-join staff with attendance, then attach status
+    const merged: DayRow[] = (staffData as StaffRow[]).map((s) => {
+      const key = s.email.toLowerCase();
+      const hit = byEmail.get(key);
       return {
+        staff_name: s.name ?? s.email.split('@')[0],
         staff_email: s.email,
-        staff_name: s.name,
-        check_in_kl: found?.check_in_kl ?? null,
-        check_out_kl: found?.check_out_kl ?? null,
-        late_min: found?.late_min ?? null,
+        check_in_kl: hit?.check_in_kl ?? null,
+        check_out_kl: hit?.check_out_kl ?? null,
+        late_min: hit?.late_min ?? null,
+        status: statusMap.get(key) ?? null,
       };
     });
-
-    // Sort by staff_name (case-insensitive)
-    merged.sort((a, b) =>
-      a.staff_name.localeCompare(b.staff_name, undefined, { sensitivity: 'base' })
-    );
 
     setRows(merged);
     setLoading(false);
   }, [dateISO]);
 
-  useEffect(() => {
-    reload();
-  }, [reload]);
+  useEffect(() => { reload(); }, [reload]);
 
   const hasData = useMemo(() => (rows?.length ?? 0) > 0, [rows]);
+
+  const past1030 = isPast1030KL();
 
   return (
     <main style={{ padding: 16, fontFamily: 'system-ui' }}>
@@ -113,6 +132,11 @@ export default function TodayPage() {
         <span>KL Date: {dateISO}</span>
       </div>
 
+      {notice && (
+        <p style={{ color: '#374151', background:'#f3f4f6', padding:'8px 10px', borderRadius:8, marginBottom:12 }}>
+          {notice}
+        </p>
+      )}
       {errorText && (
         <p style={{ color: '#b00020', marginBottom: 12 }}>{errorText}</p>
       )}
@@ -123,6 +147,7 @@ export default function TodayPage() {
             <tr style={{ background: '#f5f7fb' }}>
               <th style={{ textAlign: 'left', padding: 8 }}>Date (KL)</th>
               <th style={{ textAlign: 'left', padding: 8 }}>Staff</th>
+              <th style={{ textAlign: 'left', padding: 8 }}>Status</th>
               <th style={{ textAlign: 'left', padding: 8 }}>Check-in</th>
               <th style={{ textAlign: 'left', padding: 8 }}>Check-out</th>
               <th style={{ textAlign: 'left', padding: 8 }}>Late (min)</th>
@@ -131,20 +156,54 @@ export default function TodayPage() {
           <tbody>
             {!hasData && (
               <tr>
-                <td colSpan={5} style={{ padding: 12, color: '#555' }}>
+                <td colSpan={6} style={{ padding: 12, color: '#555' }}>
                   {loading ? 'Loading…' : 'No rows.'}
                 </td>
               </tr>
             )}
-            {(rows ?? []).map((r) => (
-              <tr key={r.staff_email}>
-                <td style={{ padding: 8 }}>{dateISO}</td>
-                <td style={{ padding: 8 }}>{r.staff_name}</td>
-                <td style={{ padding: 8 }}>{r.check_in_kl ?? '—'}</td>
-                <td style={{ padding: 8 }}>{r.check_out_kl ?? '—'}</td>
-                <td style={{ padding: 8 }}>{r.late_min ?? '—'}</td>
-              </tr>
-            ))}
+            {(rows ?? []).map((r) => {
+              const adminStatus = r.status && r.status.trim() !== '' ? r.status!.trim() : null;
+              const noCheckIn = !r.check_in_kl;
+              const autoAbsent = !adminStatus && past1030 && noCheckIn; // after 10:30, no check-in -> Absent
+              const displayStatus = adminStatus ?? (autoAbsent ? 'Absent' : '—');
+
+              const late = typeof r.late_min === 'number' ? r.late_min : null;
+              const lateIsPositive = !adminStatus && late !== null && late > 0;
+
+              // Grey out time cells when an admin status exists or auto Absent triggers
+              const isStatusBlocking = !!adminStatus || autoAbsent;
+
+              return (
+                <tr key={r.staff_email}>
+                  <td style={{ padding: 8 }}>{dateISO}</td>
+                  <td style={{ padding: 8 }}>{r.staff_name}</td>
+                  <td style={{ padding: 8, fontWeight: 700 }}>
+                    {displayStatus}
+                  </td>
+                  <td
+                    style={{
+                      padding: 8,
+                      color: isStatusBlocking ? '#9CA3AF' : (lateIsPositive ? '#dc2626' : 'inherit'),
+                      fontWeight: lateIsPositive ? 700 : 400,
+                    }}
+                  >
+                    {isStatusBlocking ? '—' : (r.check_in_kl ?? '—')}
+                  </td>
+                  <td style={{ padding: 8, color: isStatusBlocking ? '#9CA3AF' : 'inherit' }}>
+                    {isStatusBlocking ? '—' : (r.check_out_kl ?? '—')}
+                  </td>
+                  <td
+                    style={{
+                      padding: 8,
+                      color: isStatusBlocking ? '#9CA3AF' : (lateIsPositive ? '#dc2626' : 'inherit'),
+                      fontWeight: lateIsPositive ? 700 : 400,
+                    }}
+                  >
+                    {isStatusBlocking ? '—' : (late ?? '—')}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
