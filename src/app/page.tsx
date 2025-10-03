@@ -31,6 +31,16 @@ type Cfg = {
 
 type Pos = { lat: number; lon: number };
 
+/** Minimal payload shape for your attendance insert */
+type AttendanceInsert = {
+  staff_email: string;
+  staff_name: string;
+  // these are optional — they will be ignored by PostgREST if columns don't exist
+  lat?: number;
+  lon?: number;
+  note?: string;
+};
+
 function haversineMeters(a: Pos, b: Pos): number {
   const R = 6371000;
   const toRad = (d: number) => (d * Math.PI) / 180;
@@ -84,7 +94,6 @@ export default function HomePage() {
 
     if (error) {
       setCfgErr(error.message);
-      // keep CODE fallback already in state
       return;
     }
 
@@ -143,15 +152,17 @@ export default function HomePage() {
       // simple name guess (left of @); your app may upsert into staff separately
       const staff_name = email.split('@')[0];
 
-      // Insert a log row. Your DB triggers/views handle in/out aggregation.
-      const { error } = await supabase.from('attendance').insert({
+      const payload = {
         staff_email: email,
         staff_name,
-        // optional: store raw coords if your table has these columns; ignored otherwise
         lat: pos.lat,
         lon: pos.lon,
         note: kind === 'in' ? 'check-in' : 'check-out',
-      } as any);
+      } satisfies AttendanceInsert;
+
+      const { error } = await supabase
+        .from('attendance')
+        .insert<AttendanceInsert>(payload);
 
       if (error) setMsg('Error: ' + error.message);
       else setMsg(kind === 'in' ? 'Checked in.' : 'Checked out.');
