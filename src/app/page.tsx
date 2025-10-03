@@ -63,7 +63,7 @@ export default function HomePage() {
         });
       } else {
         // fallback if table empty
-        setCfg({ lat: 2.952535, lon: 101.731364, radiusM: 120 });
+        setCfg({ lat: 2.687268, lon: 101.889403, radiusM: 120 });
       }
     })();
   }, []);
