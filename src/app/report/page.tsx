@@ -1,9 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import Link from 'next/link'
-import React from 'react';
+import Link from 'next/link';
 
 type Row = {
   staff_name: string;
@@ -331,8 +330,18 @@ export default function ReportPage() {
         )}
 
         {visibleGroups.map(group => {
-          const lateTotal = group.rows.reduce((acc, r) => acc + (r.late_min ?? 0), 0);
-          const absentDays = group.rows.reduce((acc, r) => acc + ((!r.check_in_kl && !r.override) ? 1 : 0), 0);
+          // ✅ new absent-day logic (ignores Sundays & future days, honors overrides)
+          const todayISO = klTodayISO();
+
+          const isAbsent = (r: Row) => {
+            if (r.override) return false;        // admin MC/Offday
+            if (r.day > todayISO) return false;  // future day
+            if (isSunday(r.day)) return false;   // Sunday = Offday
+            return !r.check_in_kl;               // no check-in => absent
+          };
+
+          const lateTotal  = group.rows.reduce((acc, r) => acc + (r.late_min ?? 0), 0);
+          const absentDays = group.rows.reduce((acc, r) => acc + (isAbsent(r) ? 1 : 0), 0);
 
           return (
             <div key={group.key} style={{marginTop:24}}>
@@ -357,8 +366,8 @@ export default function ReportPage() {
                   </thead>
                   <tbody>
                     {group.rows.map(r => {
-                      const todayISO = klTodayISO();
-                      const future = r.day > todayISO;
+                      const todayISORow = todayISO; // reuse
+                      const future = r.day > todayISORow;
                       const sunday = isSunday(r.day);
 
                       // Status precedence:
@@ -379,8 +388,7 @@ export default function ReportPage() {
                         statusEl = <span style={greenPill}>Present</span>;
                       }
 
-                      // Hide times/late for future or Sunday (unless admin provided times via override,
-                      // but since overrides are already merged into r, we still hide to match the brief)
+                      // Hide times/late for future or Sunday
                       const blockTimes = future || sunday;
 
                       const showIn  = !blockTimes ? (r.check_in_kl  ?? '—') : '—';
