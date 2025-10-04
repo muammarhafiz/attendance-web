@@ -53,6 +53,24 @@ function minutesLateFrom930(hhmm: string | null): number | null {
   return Math.max(0, mins - nineThirty);
 }
 
+/** KL “today” in yyyy-mm-dd */
+function klTodayISO(): string {
+  const klNow = new Date(
+    new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' })
+  );
+  const y = klNow.getFullYear();
+  const m = String(klNow.getMonth() + 1).padStart(2, '0');
+  const d = String(klNow.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/** true if the given yyyy-mm-dd is a Sunday */
+function isSunday(isoDay: string): boolean {
+  // treat as UTC midnight to avoid TZ drift
+  const dow = new Date(`${isoDay}T00:00:00Z`).getUTCDay();
+  return dow === 0;
+}
+
 /* ------------ main page ------------ */
 
 export default function ReportPage() {
@@ -338,18 +356,44 @@ export default function ReportPage() {
                   </thead>
                   <tbody>
                     {group.rows.map(r => {
-                      const absent = !r.check_in_kl && !r.override;
-                      const statusEl = r.override
-                        ? <span style={grayPill}>{r.override}</span>
-                        : (absent ? <span style={redCell}>Absent</span> : <span style={greenPill}>Present</span>);
-                      const lateEl = r.override ? '—' : (r.late_min && r.late_min > 0 ? r.late_min : '—');
+                      const todayISO = klTodayISO();
+                      const future = r.day > todayISO;
+                      const sunday = isSunday(r.day);
+
+                      // Status precedence:
+                      // 1) Admin override (MC/OFFDAY)
+                      // 2) Future day → —
+                      // 3) Sunday → Offday
+                      // 4) Else: Absent if no check-in, else Present
+                      let statusEl: JSX.Element;
+                      if (r.override) {
+                        statusEl = <span style={grayPill}>{r.override}</span>;
+                      } else if (future) {
+                        statusEl = <span>—</span>;
+                      } else if (sunday) {
+                        statusEl = <span style={grayPill}>Offday</span>;
+                      } else if (!r.check_in_kl) {
+                        statusEl = <span style={redCell}>Absent</span>;
+                      } else {
+                        statusEl = <span style={greenPill}>Present</span>;
+                      }
+
+                      // Hide times/late for future or Sunday (unless admin provided times via override,
+                      // but since overrides are already merged into r, we still hide to match the brief)
+                      const blockTimes = future || sunday;
+
+                      const showIn  = !blockTimes ? (r.check_in_kl  ?? '—') : '—';
+                      const showOut = !blockTimes ? (r.check_out_kl ?? '—') : '—';
+                      const showLate = (!blockTimes && !r.override && r.late_min && r.late_min > 0) ? r.late_min : '—';
 
                       return (
                         <tr key={`${group.key}-${r.day}`}>
                           <td style={td}>{r.day}</td>
-                          <td style={td}>{r.check_in_kl ?? '—'}</td>
-                          <td style={td}>{r.check_out_kl ?? '—'}</td>
-                          <td style={{...td, ...(r.late_min && r.late_min > 0 ? redCell : {})}}>{lateEl}</td>
+                          <td style={td}>{showIn}</td>
+                          <td style={td}>{showOut}</td>
+                          <td style={{ ...td, ...(typeof showLate === 'number' ? redCell : {}) }}>
+                            {showLate}
+                          </td>
                           <td style={td}>{statusEl}</td>
                           {isAdmin && (
                             <td style={td}>
