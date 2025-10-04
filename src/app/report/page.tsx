@@ -26,22 +26,50 @@ const redCell: React.CSSProperties = { color: '#b42318', fontWeight: 600 };
 const greenPill: React.CSSProperties = { padding: '2px 8px', borderRadius: 999, background: '#e8f5e9', color: '#1b5e20', fontSize: 12 };
 const grayPill: React.CSSProperties = { padding: '2px 8px', borderRadius: 999, background: '#f0f0f0', color: '#333', fontSize: 12 };
 
+/* ------------ small helpers ------------ */
+
+function hhmmOrEmpty(s: string | null | undefined): string {
+  if (!s) return '';
+  const m = s.match(/(\d{1,2}):(\d{2})/);
+  return m ? `${m[1].padStart(2, '0')}:${m[2]}` : '';
+}
+
+function isValidHHMM(s: string): boolean {
+  // Accept "H:MM" or "HH:MM" 24h
+  const m = s.match(/^(\d{1,2}):([0-5]\d)$/);
+  if (!m) return false;
+  const hh = parseInt(m[1], 10);
+  return hh >= 0 && hh <= 23;
+}
+
+/* ------------ main page ------------ */
+
 export default function ReportPage() {
   const now = new Date();
   const [year, setYear] = useState<number>(now.getFullYear());
   const [month, setMonth] = useState<number>(now.getMonth() + 1);
   const [day, setDay] = useState<number | ''>(''); // optional
+
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
 
-  // SINGLE declarations:
+  // who am I + admin flag
   const [meEmail, setMeEmail] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
 
   // Staff dropdown
-  const [selectedKey, setSelectedKey] = useState<string>(''); // '' = show nothing, 'ALL' = all staff
+  const [selectedKey, setSelectedKey] = useState<string>(''); // '' = none, 'ALL' = all staff
 
-  // Session + admin check (via security-definer RPC)
+  // Edit modal state
+  const [showModal, setShowModal] = useState<boolean>(false);
+  const [editRow, setEditRow] = useState<Row | null>(null);
+  const [editIn, setEditIn] = useState<string>('');   // HH:MM
+  const [editOut, setEditOut] = useState<string>(''); // HH:MM
+  const [editNote, setEditNote] = useState<string>(''); // optional short note
+  const [saving, setSaving] = useState<boolean>(false);
+  const [saveErr, setSaveErr] = useState<string>('');
+
+  // session + admin check via SECDEF RPC
   useEffect(() => {
     const getSession = async () => {
       const { data } = await supabase.auth.getSession();
@@ -96,15 +124,77 @@ export default function ReportPage() {
   }, [rows]);
 
   const visibleGroups: Group[] = useMemo(() => {
-    if (selectedKey === '') return [];
+    if (selectedKey === '' ) return [];
     if (selectedKey === 'ALL') return groups;
     return groups.filter(g => g.key === selectedKey);
   }, [groups, selectedKey]);
 
-  // TEMP handler; we’ll replace with modal after you confirm it appears
-  const onEdit = (row: Row) => {
-    alert(`Edit clicked: ${row.staff_name} — ${row.day}`);
-  };
+  /* ------------ edit flow ------------ */
+
+  function openEdit(row: Row) {
+    setEditRow(row);
+    setEditIn(hhmmOrEmpty(row.check_in_kl));
+    setEditOut(hhmmOrEmpty(row.check_out_kl));
+    setEditNote('');
+    setSaveErr('');
+    setShowModal(true);
+  }
+
+  function closeEdit() {
+    if (saving) return;
+    setShowModal(false);
+    setEditRow(null);
+    setEditIn('');
+    setEditOut('');
+    setEditNote('');
+    setSaveErr('');
+  }
+
+  async function saveEdit() {
+    if (!editRow || !isAdmin) return;
+
+    // allow empty to clear an override; otherwise enforce HH:MM
+    if (editIn !== '' && !isValidHHMM(editIn)) {
+      setSaveErr('Check-in must be HH:MM (24-hour). Example: 09:15');
+      return;
+    }
+    if (editOut !== '' && !isValidHHMM(editOut)) {
+      setSaveErr('Check-out must be HH:MM (24-hour). Example: 18:00');
+      return;
+    }
+
+    setSaving(true);
+    setSaveErr('');
+    try {
+      // NOTE: this assumes you created "public.day_time_override"
+      // with columns: day (date), staff_email (text), check_in_kl (text), check_out_kl (text), note (text), created_by (text), created_at (timestamptz default now())
+      const payload = {
+        day: editRow.day,
+        staff_email: editRow.staff_email,
+        check_in_kl: editIn === '' ? null : editIn,
+        check_out_kl: editOut === '' ? null : editOut,
+        note: editNote || null,
+        created_by: meEmail ?? null,
+      };
+
+      const { error } = await supabase
+        .from('day_time_override')
+        .upsert(payload, { onConflict: 'day,staff_email' }); // ensure upsert by composite key
+
+      if (error) throw error;
+
+      // reflect in UI
+      setShowModal(false);
+      setEditRow(null);
+      await reload();
+    } catch (e) {
+      setSaveErr((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /* ------------ render ------------ */
 
   if (!meEmail) {
     return (
@@ -117,17 +207,6 @@ export default function ReportPage() {
   return (
     <div style={box}>
       <h2 style={{margin: 0}}>Attendance Report</h2>
-
-    {/* DEBUG — remove after verifying */}
-    <div style={{marginTop:6, padding:'6px 8px', border:'1px dashed #999', borderRadius:6}}>
-      [DEBUG] You are editing <b>src/app/report/page.tsx</b>
-    </div>
-
-
-      {/* Debug so you can SEE the state on iPad */}
-      <div style={{fontSize:12, color:'#666', marginTop:6}}>
-        session: <b>{meEmail ?? '(none)'}</b> · isAdmin: <b>{String(isAdmin)}</b>
-      </div>
 
       <div style={{display:'flex', gap:12, flexWrap:'wrap', marginTop:12, alignItems:'center'}}>
         <div>
@@ -154,7 +233,6 @@ export default function ReportPage() {
           {loading ? 'Loading…' : 'Reload'}
         </button>
 
-        {/* Staff dropdown */}
         <div>
           <div style={{fontSize:12, color:'#777'}}>Staff</div>
           <select
@@ -225,7 +303,7 @@ export default function ReportPage() {
                             <td style={td}>
                               <button
                                 style={{...btn, padding:'6px 10px'}}
-                                onClick={() => onEdit(r)}
+                                onClick={() => openEdit(r)}
                               >
                                 Edit
                               </button>
@@ -241,6 +319,70 @@ export default function ReportPage() {
           );
         })}
       </div>
+
+      {/* -------- Modal -------- */}
+      {showModal && editRow && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position:'fixed', inset:0, background:'rgba(0,0,0,0.35)',
+            display:'flex', alignItems:'center', justifyContent:'center', zIndex:50
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !saving) closeEdit();
+          }}
+        >
+          <div style={{ background:'#fff', borderRadius:10, width:'min(520px, 92vw)', boxShadow:'0 10px 30px rgba(0,0,0,0.2)' }}>
+            <div style={{padding:'14px 16px', borderBottom:'1px solid #eee', fontWeight:700}}>
+              Edit times — {editRow.staff_name} • {editRow.day}
+            </div>
+            <div style={{padding:16, display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+              <div>
+                <div style={{fontSize:12, color:'#777', marginBottom:6}}>Check-in (HH:MM, 24h)</div>
+                <input
+                  style={{...input, width:'100%'}}
+                  placeholder="e.g. 09:25"
+                  value={editIn}
+                  onChange={(e) => setEditIn(e.target.value)}
+                />
+              </div>
+              <div>
+                <div style={{fontSize:12, color:'#777', marginBottom:6}}>Check-out (HH:MM, 24h)</div>
+                <input
+                  style={{...input, width:'100%'}}
+                  placeholder="e.g. 18:00"
+                  value={editOut}
+                  onChange={(e) => setEditOut(e.target.value)}
+                />
+              </div>
+              <div style={{gridColumn:'1 / span 2'}}>
+                <div style={{fontSize:12, color:'#777', marginBottom:6}}>Note (optional, short)</div>
+                <input
+                  style={{...input, width:'100%'}}
+                  placeholder="reason / context"
+                  value={editNote}
+                  onChange={(e) => setEditNote(e.target.value)}
+                />
+              </div>
+
+              {saveErr && (
+                <div style={{gridColumn:'1 / span 2', color:'#b00020', marginTop:4}}>{saveErr}</div>
+              )}
+            </div>
+            <div style={{padding:12, display:'flex', justifyContent:'flex-end', gap:8, borderTop:'1px solid #eee'}}>
+              <button onClick={closeEdit} style={btn} disabled={saving}>Cancel</button>
+              <button
+                onClick={saveEdit}
+                style={{...btn, background:'#0ea5e9', color:'#fff', borderColor:'#0ea5e9'}}
+                disabled={saving}
+              >
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
