@@ -118,6 +118,12 @@ export default function ReportPage() {
     <div style={box}>
       <h2 style={{margin: 0}}>Attendance Report</h2>
 
+    {/* DEBUG — remove after verifying */}
+    <div style={{marginTop:6, padding:'6px 8px', border:'1px dashed #999', borderRadius:6}}>
+      [DEBUG] You are editing <b>src/app/report/page.tsx</b>
+    </div>
+
+
       {/* Debug so you can SEE the state on iPad */}
       <div style={{fontSize:12, color:'#666', marginTop:6}}>
         session: <b>{meEmail ?? '(none)'}</b> · isAdmin: <b>{String(isAdmin)}</b>
