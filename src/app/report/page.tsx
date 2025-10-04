@@ -34,14 +34,14 @@ export default function ReportPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
 
-  // who am I + admin flag (SINGLE declaration)
+  // SINGLE declarations:
   const [meEmail, setMeEmail] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
 
-  // staff selection
+  // Staff dropdown
   const [selectedKey, setSelectedKey] = useState<string>(''); // '' = show nothing, 'ALL' = all staff
 
-  // session + admin check via SECDEF RPC
+  // Session + admin check (via security-definer RPC)
   useEffect(() => {
     const getSession = async () => {
       const { data } = await supabase.auth.getSession();
@@ -49,8 +49,8 @@ export default function ReportPage() {
       setMeEmail(email);
 
       if (email) {
-        const { data: adminFlag, error } = await supabase.rpc('is_admin', {});
-        setIsAdmin(!error && adminFlag === true);
+        const { data: flag, error } = await supabase.rpc('is_admin', {});
+        setIsAdmin(!error && flag === true);
       } else {
         setIsAdmin(false);
       }
@@ -71,9 +71,7 @@ export default function ReportPage() {
         p_day,
       });
       if (error) throw error;
-
-      const casted: Row[] = (data as Row[]) ?? [];
-      setRows(casted);
+      setRows((data as Row[]) ?? []);
     } catch (e) {
       alert(`Failed to load report: ${(e as Error).message}`);
       setRows([]);
@@ -89,25 +87,23 @@ export default function ReportPage() {
   const groups: Group[] = useMemo(() => {
     const m = new Map<string, Group>();
     for (const r of rows) {
-      const key = r.staff_email; // use email as stable key
+      const key = r.staff_email;
       if (!m.has(key)) m.set(key, { key, name: r.staff_name, email: r.staff_email, rows: [] });
       m.get(key)!.rows.push(r);
     }
     for (const g of m.values()) g.rows.sort((a, b) => a.day.localeCompare(b.day));
-    // sort staff by name
     return Array.from(m.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [rows]);
 
-  // which groups to show based on dropdown
   const visibleGroups: Group[] = useMemo(() => {
-    if (selectedKey === '' ) return [];           // show none by default
-    if (selectedKey === 'ALL') return groups;     // show all
+    if (selectedKey === '') return [];
+    if (selectedKey === 'ALL') return groups;
     return groups.filter(g => g.key === selectedKey);
   }, [groups, selectedKey]);
 
-  // placeholder edit handler (we’ll swap to modal after you see it)
+  // TEMP handler; we’ll replace with modal after you confirm it appears
   const onEdit = (row: Row) => {
-    alert(`Edit clicked for ${row.staff_name} — ${row.day}`);
+    alert(`Edit clicked: ${row.staff_name} — ${row.day}`);
   };
 
   if (!meEmail) {
@@ -120,9 +116,9 @@ export default function ReportPage() {
 
   return (
     <div style={box}>
-      <h2 style={{margin: 0}}>Attendance Repor</h2>
+      <h2 style={{margin: 0}}>Attendance Report</h2>
 
-      {/* DEBUG (remove later) */}
+      {/* Debug so you can SEE the state on iPad */}
       <div style={{fontSize:12, color:'#666', marginTop:6}}>
         session: <b>{meEmail ?? '(none)'}</b> · isAdmin: <b>{String(isAdmin)}</b>
       </div>
