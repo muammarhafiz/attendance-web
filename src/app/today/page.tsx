@@ -81,7 +81,7 @@ export default function TodayPage() {
       .order('name', { ascending: true });
 
     const { data: statData, error: statError } = await supabase
-      .from('day_status')
+      .from('v_day_status_effective')
       .select('staff_email,status')
       .eq('day', dateISO);
 
