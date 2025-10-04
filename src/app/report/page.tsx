@@ -26,7 +26,7 @@ const redCell: React.CSSProperties = { color: '#b42318', fontWeight: 600 };
 const greenPill: React.CSSProperties = { padding: '2px 8px', borderRadius: 999, background: '#e8f5e9', color: '#1b5e20', fontSize: 12 };
 const grayPill: React.CSSProperties = { padding: '2px 8px', borderRadius: 999, background: '#f0f0f0', color: '#333', fontSize: 12 };
 
-/* ------------ small helpers ------------ */
+/* ------------ helpers ------------ */
 
 function hhmmOrEmpty(s: string | null | undefined): string {
   if (!s) return '';
@@ -35,11 +35,22 @@ function hhmmOrEmpty(s: string | null | undefined): string {
 }
 
 function isValidHHMM(s: string): boolean {
-  // Accept "H:MM" or "HH:MM" 24h
   const m = s.match(/^(\d{1,2}):([0-5]\d)$/);
   if (!m) return false;
   const hh = parseInt(m[1], 10);
   return hh >= 0 && hh <= 23;
+}
+
+/** recompute late minutes vs 09:30 from "HH:MM" */
+function minutesLateFrom930(hhmm: string | null): number | null {
+  if (!hhmm) return null;
+  const m = hhmm.match(/^(\d{1,2}):([0-5]\d)$/);
+  if (!m) return null;
+  const hh = parseInt(m[1], 10);
+  const mm = parseInt(m[2], 10);
+  const mins = hh * 60 + mm;
+  const nineThirty = 9 * 60 + 30;
+  return Math.max(0, mins - nineThirty);
 }
 
 /* ------------ main page ------------ */
@@ -53,23 +64,23 @@ export default function ReportPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
 
-  // who am I + admin flag
+  // auth + admin
   const [meEmail, setMeEmail] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
 
-  // Staff dropdown
-  const [selectedKey, setSelectedKey] = useState<string>(''); // '' = none, 'ALL' = all staff
+  // staff filter
+  const [selectedKey, setSelectedKey] = useState<string>(''); // '' none, 'ALL' all
 
-  // Edit modal state
+  // edit modal
   const [showModal, setShowModal] = useState<boolean>(false);
   const [editRow, setEditRow] = useState<Row | null>(null);
-  const [editIn, setEditIn] = useState<string>('');   // HH:MM
-  const [editOut, setEditOut] = useState<string>(''); // HH:MM
-  const [editNote, setEditNote] = useState<string>(''); // optional short note
+  const [editIn, setEditIn] = useState<string>('');     // HH:MM
+  const [editOut, setEditOut] = useState<string>('');   // HH:MM
+  const [editNote, setEditNote] = useState<string>(''); // note
   const [saving, setSaving] = useState<boolean>(false);
   const [saveErr, setSaveErr] = useState<string>('');
 
-  // session + admin check via SECDEF RPC
+  // session + admin (rpc)
   useEffect(() => {
     const getSession = async () => {
       const { data } = await supabase.auth.getSession();
@@ -83,7 +94,6 @@ export default function ReportPage() {
         setIsAdmin(false);
       }
     };
-
     getSession();
     const { data: sub } = supabase.auth.onAuthStateChange(() => getSession());
     return () => { sub.subscription.unsubscribe(); };
@@ -93,13 +103,59 @@ export default function ReportPage() {
     setLoading(true);
     try {
       const p_day = day === '' ? null : Number(day);
+
+      // 1) base rows from month_attendance
       const { data, error } = await supabase.rpc('month_attendance', {
         p_year: Number(year),
         p_month: Number(month),
         p_day,
       });
       if (error) throw error;
-      setRows((data as Row[]) ?? []);
+      const baseRows: Row[] = (data as Row[]) ?? [];
+
+      // 2) fetch overrides for same period
+      const y = Number(year);
+      const m = Number(month);
+      const startISO = new Date(Date.UTC(y, m - 1, 1)).toISOString().slice(0, 10);
+      const endDate = (m === 12) ? new Date(Date.UTC(y + 1, 0, 1)) : new Date(Date.UTC(y, m, 1));
+      const endISO = endDate.toISOString().slice(0, 10);
+
+      type Ov = { day: string; staff_email: string; check_in_kl: string | null; check_out_kl: string | null; note?: string | null };
+      let ovQuery = supabase
+        .from('day_time_override')
+        .select('day, staff_email, check_in_kl, check_out_kl, note');
+
+      if (p_day !== null) {
+        const d = String(p_day).padStart(2, '0');
+        ovQuery = ovQuery.eq('day', `${year}-${String(month).padStart(2,'0')}-${d}`);
+      } else {
+        ovQuery = ovQuery.gte('day', startISO).lt('day', endISO);
+      }
+
+      const { data: overrides, error: ovErr } = await ovQuery;
+      if (ovErr) throw ovErr;
+
+      // 3) merge overrides into base rows by (day,email)
+      const key = (d: string, e: string) => `${d}|${e.toLowerCase()}`;
+      const ovMap = new Map<string, Ov>();
+      (overrides ?? []).forEach(o => ovMap.set(key(o.day, o.staff_email), o));
+
+      const merged: Row[] = baseRows.map(r => {
+        const ov = ovMap.get(key(r.day, r.staff_email));
+        if (!ov) return r;
+
+        const checkIn  = ov.check_in_kl  ?? r.check_in_kl;
+        const checkOut = ov.check_out_kl ?? r.check_out_kl;
+
+        return {
+          ...r,
+          check_in_kl: checkIn,
+          check_out_kl: checkOut,
+          late_min: minutesLateFrom930(checkIn),
+        };
+      });
+
+      setRows(merged);
     } catch (e) {
       alert(`Failed to load report: ${(e as Error).message}`);
       setRows([]);
@@ -110,7 +166,7 @@ export default function ReportPage() {
 
   useEffect(() => { reload(); }, [reload]);
 
-  // group rows by staff (email key)
+  // group rows by staff
   type Group = { key: string; name: string; email: string; rows: Row[] };
   const groups: Group[] = useMemo(() => {
     const m = new Map<string, Group>();
@@ -153,7 +209,6 @@ export default function ReportPage() {
   async function saveEdit() {
     if (!editRow || !isAdmin) return;
 
-    // allow empty to clear an override; otherwise enforce HH:MM
     if (editIn !== '' && !isValidHHMM(editIn)) {
       setSaveErr('Check-in must be HH:MM (24-hour). Example: 09:15');
       return;
@@ -166,8 +221,6 @@ export default function ReportPage() {
     setSaving(true);
     setSaveErr('');
     try {
-      // NOTE: this assumes you created "public.day_time_override"
-      // with columns: day (date), staff_email (text), check_in_kl (text), check_out_kl (text), note (text), created_by (text), created_at (timestamptz default now())
       const payload = {
         day: editRow.day,
         staff_email: editRow.staff_email,
@@ -179,11 +232,10 @@ export default function ReportPage() {
 
       const { error } = await supabase
         .from('day_time_override')
-        .upsert(payload, { onConflict: 'day,staff_email' }); // ensure upsert by composite key
+        .upsert(payload, { onConflict: 'day,staff_email' });
 
       if (error) throw error;
 
-      // reflect in UI
       setShowModal(false);
       setEditRow(null);
       await reload();
