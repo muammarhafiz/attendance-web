@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import Link from 'next/link';
+import Link from 'next/link'
+import React from 'react';
 
 type Row = {
   staff_name: string;
@@ -365,7 +366,7 @@ export default function ReportPage() {
                       // 2) Future day → —
                       // 3) Sunday → Offday
                       // 4) Else: Absent if no check-in, else Present
-                      let statusEl: JSX.Element;
+                      let statusEl: React.ReactNode;
                       if (r.override) {
                         statusEl = <span style={grayPill}>{r.override}</span>;
                       } else if (future) {
