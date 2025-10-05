@@ -219,9 +219,10 @@ export default function MonthlyPrintPage() {
     <div>
       {/* Print styles */}
       <style>{`
-  @page { size: A4 landscape; margin: 10mm; }
+  /* === PAGE === */
+  @page { size: A4 portrait; margin: 10mm; }
 
-  /* Hide navbar and UI elements during print */
+  /* Hide app chrome in print */
   @media print {
     .no-print,
     header, nav, [role="navigation"],
@@ -241,19 +242,29 @@ export default function MonthlyPrintPage() {
   }
 
   .wrap { padding: 8px 12px; }
-  .page { page-break-after: always; }
+  .page {
+    page-break-after: always;
+    display: grid;
+    grid-template-columns: 1fr 1fr;   /* ✅ two columns side-by-side */
+    gap: 6mm;                         /* space between the two staff blocks */
+    align-items: start;
+  }
+
+  /* Each page has 2 columns; we want both blocks to fit the page height.
+     A4 printable height ≈ 277mm - 20mm margins = 257mm.
+     With 6mm gap between rows (none here), give each ~ 124–126mm.
+  */
   .staff-block {
     page-break-inside: avoid;
-    border: 1px solid #ddd;
-    border-radius: 6px;
+    border: 1px solid #ddd; border-radius: 6px;
     padding: 6px 8px;
-    margin-bottom: 6mm;
+    min-height: 124mm;                /* ✅ ensures exactly two fit vertically */
+    display: flex; flex-direction: column;
   }
+
   .staff-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    margin-bottom: 3px;
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 4px;
   }
   .staff-title { font-weight: 700; font-size: 7pt; }
   .muted { color: #666; font-weight: 400; font-size: 6pt; }
@@ -262,14 +273,14 @@ export default function MonthlyPrintPage() {
   table {
     width: 100%;
     border-collapse: collapse;
-    table-layout: auto; /* ✅ auto-fit column width */
+    table-layout: auto;               /* ✅ auto-fit column widths */
   }
   th, td {
     padding: 2px 4px;
     border-bottom: 1px solid #eee;
     text-align: left;
     vertical-align: top;
-    white-space: nowrap; /* prevent breaking text */
+    white-space: nowrap;              /* keep rows compact */
   }
   thead th {
     background: #f8fafc;
@@ -279,28 +290,16 @@ export default function MonthlyPrintPage() {
   }
 
   .pill-off {
-    padding: 1px 4px;
-    border-radius: 999px;
-    background: #f0f0f0;
-    color: #333;
-    font-weight: 600;
-    font-size: 6pt;
+    padding: 1px 4px; border-radius: 999px;
+    background: #f0f0f0; color: #333; font-weight: 600; font-size: 6pt;
   }
   .pill-present {
-    padding: 1px 4px;
-    border-radius: 999px;
-    background: #e8f5e9;
-    color: #1b5e20;
-    font-weight: 600;
-    font-size: 6pt;
+    padding: 1px 4px; border-radius: 999px;
+    background: #e8f5e9; color: #1b5e20; font-weight: 600; font-size: 6pt;
   }
   .pill-absent {
-    padding: 1px 4px;
-    border-radius: 999px;
-    background: #fdecea;
-    color: #b42318;
-    font-weight: 700;
-    font-size: 6pt;
+    padding: 1px 4px; border-radius: 999px;
+    background: #fdecea; color: #b42318; font-weight: 700; font-size: 6pt;
   }
   .number { text-align: right; }
 `}</style>
