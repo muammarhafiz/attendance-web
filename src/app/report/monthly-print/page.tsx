@@ -4,24 +4,32 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
-/** Row exactly as provided by month_ui */
+/** Rows from month_attendance */
 type Row = {
   staff_email: string;
   staff_name: string;
-  day: string;                  // YYYY-MM-DD
-  check_in_kl: string | null;   // HH:MM
-  check_out_kl: string | null;  // HH:MM
-  late_min: number | null;      // minutes late vs 09:30
-  status: 'Present' | 'Absent' | 'OFFDAY' | 'MC' | '—';
-  lat?: number | null;
-  lon?: number | null;
-  distance_m?: number | null;
+  day: string;                 // YYYY-MM-DD
+  check_in_kl: string | null;  // HH:MM
+  check_out_kl: string | null; // HH:MM
+  late_min: number | null;
+  override: 'OFFDAY' | 'MC' | null;
 };
+
+/** Extra coords we’ll merge (first check-in of the day) */
+type Coords = {
+  staff_email: string;
+  day: string;        // YYYY-MM-DD
+  lat: number | null;
+  lon: number | null;
+  distance_m: number | null;
+};
+
+type MergedRow = Row & Coords;
 
 type StaffGroup = {
   staff_email: string;
   staff_name: string;
-  rows: Row[];
+  rows: MergedRow[];
   late_total: number;
   absent_days: number;
 };
@@ -37,16 +45,43 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
+/** KL “today” in yyyy-mm-dd */
+function klTodayISO(): string {
+  const klNow = new Date(
+    new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' })
+  );
+  const y = klNow.getFullYear();
+  const m = String(klNow.getMonth() + 1).padStart(2, '0');
+  const d = String(klNow.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/** true if yyyy-mm-dd is Sunday */
+function isSunday(isoDay: string): boolean {
+  return new Date(`${isoDay}T00:00:00Z`).getUTCDay() === 0;
+}
+
+/** recompute late minutes vs 09:30 from "HH:MM" */
+function minutesLateFrom930(hhmm: string | null): number | null {
+  if (!hhmm) return null;
+  const m = hhmm.match(/^(\d{1,2}):([0-5]\d)$/);
+  if (!m) return null;
+  const hh = parseInt(m[1], 10);
+  const mm = parseInt(m[2], 10);
+  return Math.max(0, (hh * 60 + mm) - (9 * 60 + 30));
+}
+
 export default function MonthlyPrintPage() {
   const sp = useSearchParams();
   const year = Number(sp.get('year') ?? '0');
   const month = Number(sp.get('month') ?? '0');
 
   const [rows, setRows] = useState<Row[]>([]);
+  const [coords, setCoords] = useState<Coords[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
 
-  // Fetch the exact same dataset used by the Report page
+  // Fetch data from the SAME RPC as the Report page
   useEffect(() => {
     (async () => {
       if (!year || !month) {
@@ -56,12 +91,56 @@ export default function MonthlyPrintPage() {
       setLoading(true);
       setErr('');
       try {
-        const { data, error } = await supabase.rpc('month_ui', {
+        // 1) month_attendance (same as Report page)
+        const { data: mData, error: mErr } = await supabase.rpc('month_attendance', {
           p_year: year,
           p_month: month,
+          p_day: null,
         });
-        if (error) throw error;
-        setRows((data as Row[]) ?? []);
+        if (mErr) throw mErr;
+        setRows((mData as Row[]) ?? []);
+
+        // 2) first check-in coords per day (optional, for Distance/Coords columns)
+        // Compute month bounds (UTC, we’ll derive KL date on server via AT TIME ZONE)
+        const startISO = new Date(Date.UTC(year, month - 1, 1)).toISOString();
+        const endISO = new Date(Date.UTC(month === 12 ? year + 1 : year, month === 12 ? 0 : month, 1)).toISOString();
+
+        type RawCI = {
+          staff_email: string;
+          ts: string;     // timestamptz
+          lat: number | null;
+          lon: number | null;
+          distance_m: number | null;
+        };
+
+        // Get all check-ins for month, then compact client-side to first per staff/day
+        const { data: raw, error: aErr } = await supabase
+          .from('attendance')
+          .select('staff_email, ts, lat, lon, distance_m')
+          .eq('action', 'Check-in')
+          .gte('ts', startISO)
+          .lt('ts', endISO);
+
+        if (aErr) throw aErr;
+
+        const byKey = new Map<string, Coords>(); // key: day|email
+        (raw as RawCI[] ?? []).forEach((r) => {
+          // derive KL date from ts
+          const tsKl = new Date(new Date(r.ts).toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' }));
+          const d = `${tsKl.getFullYear()}-${String(tsKl.getMonth() + 1).padStart(2, '0')}-${String(tsKl.getDate()).padStart(2, '0')}`;
+          const key = `${d}|${r.staff_email.toLowerCase()}`;
+          // keep the earliest check-in we encounter for that (day,email)
+          if (!byKey.has(key)) {
+            byKey.set(key, {
+              staff_email: r.staff_email,
+              day: d,
+              lat: r.lat ?? null,
+              lon: r.lon ?? null,
+              distance_m: r.distance_m ?? null,
+            });
+          }
+        });
+        setCoords(Array.from(byKey.values()));
       } catch (e) {
         setErr((e as Error).message);
       } finally {
@@ -70,25 +149,62 @@ export default function MonthlyPrintPage() {
     })();
   }, [year, month]);
 
-  // Group by staff, sort, and compute stats USING server status
+  const todayISO = useMemo(() => klTodayISO(), []);
+
+  // Merge coords into the month_attendance rows
+  const mergedRows: MergedRow[] = useMemo(() => {
+    const map = new Map<string, Coords>();
+    coords.forEach(c => map.set(`${c.day}|${c.staff_email.toLowerCase()}`, c));
+    return rows.map(r => {
+      const c = map.get(`${r.day}|${r.staff_email.toLowerCase()}`);
+      return {
+        ...r,
+        lat: c?.lat ?? null,
+        lon: c?.lon ?? null,
+        distance_m: c?.distance_m ?? null,
+      };
+    });
+  }, [rows, coords]);
+
+  // Group & stats with the SAME rules you use on the Report page
   const groups: StaffGroup[] = useMemo(() => {
     const m = new Map<string, StaffGroup>();
-    for (const r of rows) {
+
+    const isAbsent = (r: MergedRow) => {
+      if (r.override) return false;         // admin MC/OFFDAY
+      if (r.day > todayISO) return false;   // future not absent
+      if (isSunday(r.day)) return false;    // Sunday = Offday
+      return !r.check_in_kl;                // no check-in => absent
+    };
+
+    for (const r of mergedRows) {
       const key = r.staff_email;
       if (!m.has(key)) {
         m.set(key, { staff_email: r.staff_email, staff_name: r.staff_name, rows: [], late_total: 0, absent_days: 0 });
       }
       m.get(key)!.rows.push(r);
     }
+
     for (const g of m.values()) {
       g.rows.sort((a, b) => a.day.localeCompare(b.day));
-      g.absent_days = g.rows.reduce((acc, r) => acc + (r.status === 'Absent' ? 1 : 0), 0);
-      g.late_total  = g.rows.reduce((acc, r) => acc + ((r.status === 'Present' && typeof r.late_min === 'number') ? r.late_min : 0), 0);
-    }
-    return Array.from(m.values()).sort((a, b) => a.staff_name.localeCompare(b.staff_name));
-  }, [rows]);
 
-  // 3 staff blocks per printed page
+      g.absent_days = g.rows.reduce((acc, r) => acc + (isAbsent(r) ? 1 : 0), 0);
+
+      g.late_total = g.rows.reduce((acc, r) => {
+        const future = r.day > todayISO;
+        const sunday = isSunday(r.day);
+        if (future || sunday || r.override || !r.check_in_kl) return acc;
+        const late = typeof r.late_min === 'number' && r.late_min != null
+          ? r.late_min
+          : (minutesLateFrom930(r.check_in_kl) ?? 0);
+        return acc + late;
+      }, 0);
+    }
+
+    return Array.from(m.values()).sort((a, b) => a.staff_name.localeCompare(b.staff_name));
+  }, [mergedRows, todayISO]);
+
+  // Split into pages of 3 staff blocks
   const pages = useMemo(() => chunk(groups, 3), [groups]);
 
   // Auto-open print dialog once content is ready
@@ -107,8 +223,7 @@ export default function MonthlyPrintPage() {
         @media print { .no-print { display: none !important; } }
         body {
           font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
-          font-size: 9pt;
-          color: #111;
+          font-size: 9pt; color: #111;
         }
         .toolbar {
           display: flex; gap: 8px; align-items: center;
@@ -116,7 +231,7 @@ export default function MonthlyPrintPage() {
           position: sticky; top: 0; z-index: 10;
         }
         .wrap { padding: 12px 16px; }
-        .page { page-break-after: always; margin: 0; padding: 0; }
+        .page { page-break-after: always; }
         .staff-block {
           page-break-inside: avoid;
           border: 1px solid #e5e7eb; border-radius: 8px;
@@ -143,10 +258,7 @@ export default function MonthlyPrintPage() {
         <div style={{fontWeight: 700}}>Monthly Attendance (A4 Landscape, 3/staff per page)</div>
         <div className="muted">Period: {year && month ? titleForMonth(year, month) : '—'}</div>
         <div style={{flex: 1}} />
-        <button
-          onClick={() => window.print()}
-          style={{padding:'8px 12px', border:'1px solid #ddd', borderRadius:8, cursor:'pointer', background:'#f5f5f5'}}
-        >
+        <button onClick={() => window.print()} style={{padding:'8px 12px', border:'1px solid #ddd', borderRadius:8, cursor:'pointer', background:'#f5f5f5'}}>
           Print / Save PDF
         </button>
       </div>
@@ -183,32 +295,45 @@ export default function MonthlyPrintPage() {
                   </thead>
                   <tbody>
                     {g.rows.map((r) => {
-                      // Render status pill directly from server status
-                      const pill =
-                        r.status === 'Present' ? (
-                          <span className="pill-present">Present</span>
-                        ) : r.status === 'Absent' ? (
-                          <span className="pill-absent">Absent</span>
-                        ) : r.status === 'OFFDAY' || r.status === 'MC' ? (
-                          <span className="pill-off">{r.status}</span>
-                        ) : (
-                          <span>—</span>
-                        );
+                      const future = r.day > todayISO;
+                      const sunday = isSunday(r.day);
 
-                      const distTxt =
-                        r.distance_m != null ? `${r.distance_m} m` : '—';
+                      // Status precedence = SAME as Report page
+                      let statusEl: React.ReactNode;
+                      if (r.override) {
+                        statusEl = <span className="pill-off">{r.override}</span>;
+                      } else if (future) {
+                        statusEl = <span>—</span>;
+                      } else if (sunday) {
+                        statusEl = <span className="pill-off">Offday</span>;
+                      } else if (!r.check_in_kl) {
+                        statusEl = <span className="pill-absent">Absent</span>;
+                      } else {
+                        statusEl = <span className="pill-present">Present</span>;
+                      }
+
+                      const blockTimes = future || sunday;
+                      const showIn  = blockTimes ? '—' : (r.check_in_kl  ?? '—');
+                      const showOut = blockTimes ? '—' : (r.check_out_kl ?? '—');
+
+                      const late = (() => {
+                        if (blockTimes || r.override || !r.check_in_kl) return '—';
+                        if (typeof r.late_min === 'number' && r.late_min != null) return r.late_min;
+                        const recomputed = minutesLateFrom930(r.check_in_kl);
+                        return recomputed == null ? '—' : recomputed;
+                      })();
+
+                      const distTxt = (r.distance_m != null) ? `${r.distance_m} m` : '—';
                       const coordsTxt =
-                        r.lat != null && r.lon != null
-                          ? `${r.lat.toFixed(6)}, ${r.lon.toFixed(6)}`
-                          : '—';
+                        (r.lat != null && r.lon != null) ? `${r.lat.toFixed(6)}, ${r.lon.toFixed(6)}` : '—';
 
                       return (
                         <tr key={`${g.staff_email}-${r.day}`}>
                           <td>{r.day}</td>
-                          <td>{r.check_in_kl ?? '—'}</td>
-                          <td>{r.check_out_kl ?? '—'}</td>
-                          <td className="number">{r.late_min ?? '—'}</td>
-                          <td>{pill}</td>
+                          <td>{showIn}</td>
+                          <td>{showOut}</td>
+                          <td className="number">{late}</td>
+                          <td>{statusEl}</td>
                           <td>{distTxt}</td>
                           <td>{coordsTxt}</td>
                         </tr>
