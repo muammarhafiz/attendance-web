@@ -205,7 +205,7 @@ export default function MonthlyPrintPage() {
   }, [mergedRows, todayISO]);
 
   // Split into pages of 3 staff blocks
-  const pages = useMemo(() => chunk(groups, 3), [groups]);
+  const pages = useMemo(() => chunk(groups, 2), [groups]);
 
   // Auto-open print dialog once content is ready
   useEffect(() => {
