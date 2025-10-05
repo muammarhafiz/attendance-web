@@ -219,39 +219,65 @@ export default function MonthlyPrintPage() {
     <div>
       {/* Print styles */}
       <style>{`
-        @page { size: A4 landscape; margin: 10mm; }
-        @media print { .no-print { display: none !important; } }
-        body {
-          font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
-          font-size: 9pt; color: #111;
-        }
-        .toolbar {
-          display: flex; gap: 8px; align-items: center;
-          padding: 10px 14px; border-bottom: 1px solid #eee; background: #fafafa;
-          position: sticky; top: 0; z-index: 10;
-        }
-        .wrap { padding: 12px 16px; }
-        .page { page-break-after: always; }
-        .staff-block {
-          page-break-inside: avoid;
-          border: 1px solid #e5e7eb; border-radius: 8px;
-          padding: 10px 12px; margin-bottom: 8mm;
-        }
-        .staff-header {
-          display: flex; justify-content: space-between; align-items: baseline;
-          margin-bottom: 6px;
-        }
-        .staff-title { font-weight: 700; font-size: 10pt; }
-        .muted { color: #666; font-weight: 400; font-size: 9pt; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 4px 6px; border-bottom: 1px solid #f0f0f0; text-align: left; white-space: nowrap; }
-        thead th { border-bottom: 1px solid #e5e7eb; background: #f8fafc; font-weight: 700; }
-        .stats { font-size: 9pt; color: #333; }
-        .pill-off { padding: 1px 6px; border-radius: 999px; background: #f0f0f0; color: #333; font-weight: 600; font-size: 8pt; }
-        .pill-present { padding: 1px 6px; border-radius: 999px; background: #e8f5e9; color: #1b5e20; font-weight: 600; font-size: 8pt; }
-        .pill-absent { padding: 1px 6px; border-radius: 999px; background: #fdecea; color: #b42318; font-weight: 700; font-size: 8pt; }
-        .number { text-align: right; }
-      `}</style>
+  @page { size: A4 landscape; margin: 10mm; }
+
+  /* Hide common nav/header wrappers when printing */
+  @media print {
+    .no-print,
+    header,
+    nav,
+    [role="navigation"],
+    .navbar,
+    .nav,
+    .site-header,
+    .site-nav,
+    .app-header,
+    .app-nav,
+    .topbar,
+    .header,
+    .global-nav {
+      display: none !important;
+      visibility: hidden !important;
+      height: 0 !important;
+      overflow: hidden !important;
+    }
+  }
+
+  body {
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+    font-size: 9pt; color: #111;
+  }
+
+  .toolbar {
+    display: flex; gap: 8px; align-items: center;
+    padding: 10px 14px; border-bottom: 1px solid #eee; background: #fafafa;
+    position: sticky; top: 0; z-index: 10;
+  }
+  /* also hide the toolbar itself on print */
+  @media print { .toolbar { display: none !important; } }
+
+  .wrap { padding: 12px 16px; }
+  .page { page-break-after: always; }
+  .staff-block {
+    page-break-inside: avoid;
+    border: 1px solid #e5e7eb; border-radius: 8px;
+    padding: 10px 12px; margin-bottom: 8mm;
+  }
+  .staff-header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 6px;
+  }
+  .staff-title { font-weight: 700; font-size: 10pt; }
+  .muted { color: #666; font-weight: 400; font-size: 9pt; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 4px 6px; border-bottom: 1px solid #f0f0f0; text-align: left; white-space: nowrap; }
+  thead th { border-bottom: 1px solid #e5e7eb; background: #f8fafc; font-weight: 700; }
+  .stats { font-size: 9pt; color: #333; }
+  .pill-off { padding: 1px 6px; border-radius: 999px; background: #f0f0f0; color: #333; font-weight: 600; font-size: 8pt; }
+  .pill-present { padding: 1px 6px; border-radius: 999px; background: #e8f5e9; color: #1b5e20; font-weight: 600; font-size: 8pt; }
+  .pill-absent { padding: 1px 6px; border-radius: 999px; background: #fdecea; color: #b42318; font-weight: 700; font-size: 8pt; }
+  .number { text-align: right; }
+`}</style>
 
       {/* Toolbar (hidden in print) */}
       <div className="toolbar no-print">
