@@ -4,14 +4,15 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import Link from 'next/link';
 
+/** Row coming from month_ui(p_year, p_month) */
 type Row = {
   staff_name: string;
   staff_email: string;
-  day: string;                  // yyyy-mm-dd
-  check_in_kl: string | null;
-  check_out_kl: string | null;
-  late_min: number | null;
-  override: 'OFFDAY' | 'MC' | null;
+  day: string;                  // YYYY-MM-DD
+  check_in_kl: string | null;   // HH:MM or null
+  check_out_kl: string | null;  // HH:MM or null
+  late_min: number | null;      // null when no check-in / Sunday / future / MC/OFFDAY
+  status: 'Present' | 'Absent' | 'OFFDAY' | 'MC' | '—';
 };
 
 const box: React.CSSProperties = { maxWidth: 980, margin: '16px auto', padding: 16 };
@@ -41,43 +42,13 @@ function isValidHHMM(s: string): boolean {
   return hh >= 0 && hh <= 23;
 }
 
-/** recompute late minutes vs 09:30 from "HH:MM" */
-function minutesLateFrom930(hhmm: string | null): number | null {
-  if (!hhmm) return null;
-  const m = hhmm.match(/^(\d{1,2}):([0-5]\d)$/);
-  if (!m) return null;
-  const hh = parseInt(m[1], 10);
-  const mm = parseInt(m[2], 10);
-  const mins = hh * 60 + mm;
-  const nineThirty = 9 * 60 + 30;
-  return Math.max(0, mins - nineThirty);
-}
-
-/** KL “today” in yyyy-mm-dd */
-function klTodayISO(): string {
-  const klNow = new Date(
-    new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' })
-  );
-  const y = klNow.getFullYear();
-  const m = String(klNow.getMonth() + 1).padStart(2, '0');
-  const d = String(klNow.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
-/** true if the given yyyy-mm-dd is a Sunday */
-function isSunday(isoDay: string): boolean {
-  // treat as UTC midnight to avoid TZ drift
-  const dow = new Date(`${isoDay}T00:00:00Z`).getUTCDay();
-  return dow === 0;
-}
-
 /* ------------ main page ------------ */
 
 export default function ReportPage() {
   const now = new Date();
   const [year, setYear] = useState<number>(now.getFullYear());
   const [month, setMonth] = useState<number>(now.getMonth() + 1);
-  const [day, setDay] = useState<number | ''>(''); // optional
+  const [day, setDay] = useState<number | ''>(''); // optional filter
 
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -120,60 +91,21 @@ export default function ReportPage() {
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      const p_day = day === '' ? null : Number(day);
-
-      // 1) base rows from month_attendance
-      const { data, error } = await supabase.rpc('month_attendance', {
+      // Pull the unified, UI-ready rows for the whole month
+      const { data, error } = await supabase.rpc('month_ui', {
         p_year: Number(year),
         p_month: Number(month),
-        p_day,
       });
       if (error) throw error;
-      const baseRows: Row[] = (data as Row[]) ?? [];
 
-      // 2) fetch overrides for same period
-      const y = Number(year);
-      const m = Number(month);
-      const startISO = new Date(Date.UTC(y, m - 1, 1)).toISOString().slice(0, 10);
-      const endDate = (m === 12) ? new Date(Date.UTC(y + 1, 0, 1)) : new Date(Date.UTC(y, m, 1));
-      const endISO = endDate.toISOString().slice(0, 10);
-
-      type Ov = { day: string; staff_email: string; check_in_kl: string | null; check_out_kl: string | null; note?: string | null };
-      let ovQuery = supabase
-        .from('day_time_override')
-        .select('day, staff_email, check_in_kl, check_out_kl, note');
-
-      if (p_day !== null) {
-        const d = String(p_day).padStart(2, '0');
-        ovQuery = ovQuery.eq('day', `${year}-${String(month).padStart(2,'0')}-${d}`);
-      } else {
-        ovQuery = ovQuery.gte('day', startISO).lt('day', endISO);
+      // Optional single-day filter (client-side)
+      let list: Row[] = (data as Row[]) ?? [];
+      if (day !== '') {
+        const d = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        list = list.filter(r => r.day === d);
       }
 
-      const { data: overrides, error: ovErr } = await ovQuery;
-      if (ovErr) throw ovErr;
-
-      // 3) merge overrides into base rows by (day,email)
-      const key = (d: string, e: string) => `${d}|${e.toLowerCase()}`;
-      const ovMap = new Map<string, Ov>();
-      (overrides ?? []).forEach(o => ovMap.set(key(o.day, o.staff_email), o));
-
-      const merged: Row[] = baseRows.map(r => {
-        const ov = ovMap.get(key(r.day, r.staff_email));
-        if (!ov) return r;
-
-        const checkIn  = ov.check_in_kl  ?? r.check_in_kl;
-        const checkOut = ov.check_out_kl ?? r.check_out_kl;
-
-        return {
-          ...r,
-          check_in_kl: checkIn,
-          check_out_kl: checkOut,
-          late_min: minutesLateFrom930(checkIn),
-        };
-      });
-
-      setRows(merged);
+      setRows(list);
     } catch (e) {
       alert(`Failed to load report: ${(e as Error).message}`);
       setRows([]);
@@ -239,6 +171,7 @@ export default function ReportPage() {
     setSaving(true);
     setSaveErr('');
     try {
+      // Upsert into the override table. The function month_ui will read this.
       const payload = {
         day: editRow.day,
         staff_email: editRow.staff_email,
@@ -303,14 +236,14 @@ export default function ReportPage() {
           {loading ? 'Loading…' : 'Reload'}
         </button>
 
-<Link
-  href={`/report/monthly-print?year=${year}&month=${String(month).padStart(2,'0')}`}
-  target="_blank"
-  rel="noopener noreferrer"
-  style={{ ...btn, textDecoration:'none', display:'inline-block' }}
->
-  Monthly report (PDF)
-</Link>
+        <Link
+          href={`/report/monthly-print?year=${year}&month=${String(month).padStart(2,'0')}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ ...btn, textDecoration:'none', display:'inline-block' }}
+        >
+          Monthly report (PDF)
+        </Link>
 
         <div>
           <div style={{fontSize:12, color:'#777'}}>Staff</div>
@@ -339,18 +272,8 @@ export default function ReportPage() {
         )}
 
         {visibleGroups.map(group => {
-          // ✅ new absent-day logic (ignores Sundays & future days, honors overrides)
-          const todayISO = klTodayISO();
-
-          const isAbsent = (r: Row) => {
-            if (r.override) return false;        // admin MC/Offday
-            if (r.day > todayISO) return false;  // future day
-            if (isSunday(r.day)) return false;   // Sunday = Offday
-            return !r.check_in_kl;               // no check-in => absent
-          };
-
           const lateTotal  = group.rows.reduce((acc, r) => acc + (r.late_min ?? 0), 0);
-          const absentDays = group.rows.reduce((acc, r) => acc + (isAbsent(r) ? 1 : 0), 0);
+          const absentDays = group.rows.reduce((acc, r) => acc + (r.status === 'Absent' ? 1 : 0), 0);
 
           return (
             <div key={group.key} style={{marginTop:24}}>
@@ -375,42 +298,21 @@ export default function ReportPage() {
                   </thead>
                   <tbody>
                     {group.rows.map(r => {
-                      const todayISORow = todayISO; // reuse
-                      const future = r.day > todayISORow;
-                      const sunday = isSunday(r.day);
+                      // Render status pill directly from RPC output
+                      let statusEl: React.ReactNode = '—';
+                      if (r.status === 'Present') statusEl = <span style={greenPill}>Present</span>;
+                      else if (r.status === 'Absent') statusEl = <span style={redCell}>Absent</span>;
+                      else if (r.status === 'OFFDAY' || r.status === 'MC') statusEl = <span style={grayPill}>{r.status}</span>;
 
-                      // Status precedence:
-                      // 1) Admin override (MC/OFFDAY)
-                      // 2) Future day → —
-                      // 3) Sunday → Offday
-                      // 4) Else: Absent if no check-in, else Present
-                      let statusEl: React.ReactNode;
-                      if (r.override) {
-                        statusEl = <span style={grayPill}>{r.override}</span>;
-                      } else if (future) {
-                        statusEl = <span>—</span>;
-                      } else if (sunday) {
-                        statusEl = <span style={grayPill}>Offday</span>;
-                      } else if (!r.check_in_kl) {
-                        statusEl = <span style={redCell}>Absent</span>;
-                      } else {
-                        statusEl = <span style={greenPill}>Present</span>;
-                      }
-
-                      // Hide times/late for future or Sunday
-                      const blockTimes = future || sunday;
-
-                      const showIn  = !blockTimes ? (r.check_in_kl  ?? '—') : '—';
-                      const showOut = !blockTimes ? (r.check_out_kl ?? '—') : '—';
-                      const showLate = (!blockTimes && !r.override && r.late_min && r.late_min > 0) ? r.late_min : '—';
+                      const lateEl = (r.late_min != null && r.late_min > 0) ? r.late_min : '—';
 
                       return (
                         <tr key={`${group.key}-${r.day}`}>
                           <td style={td}>{r.day}</td>
-                          <td style={td}>{showIn}</td>
-                          <td style={td}>{showOut}</td>
-                          <td style={{ ...td, ...(typeof showLate === 'number' ? redCell : {}) }}>
-                            {showLate}
+                          <td style={td}>{r.check_in_kl ?? '—'}</td>
+                          <td style={td}>{r.check_out_kl ?? '—'}</td>
+                          <td style={{ ...td, ...(typeof lateEl === 'number' ? redCell : {}) }}>
+                            {lateEl}
                           </td>
                           <td style={td}>{statusEl}</td>
                           {isAdmin && (
