@@ -303,6 +303,15 @@ export default function ReportPage() {
           {loading ? 'Loading…' : 'Reload'}
         </button>
 
+<Link
+  href={`/report/monthly-print?year=${year}&month=${String(month).padStart(2,'0')}`}
+  target="_blank"
+  rel="noopener noreferrer"
+  style={{ ...btn, textDecoration:'none', display:'inline-block' }}
+>
+  Monthly report (PDF)
+</Link>
+
         <div>
           <div style={{fontSize:12, color:'#777'}}>Staff</div>
           <select
