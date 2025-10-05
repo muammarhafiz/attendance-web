@@ -25,21 +25,26 @@ function klTodayISO(): string {
   return `${y}-${m}-${d}`;
 }
 
-// Grab HH:MM from strings like "11:27", "2025-10-03 11:27:05", "11:27 am"
+/** Extract first HH:MM we can find */
 function extractHHMM(s: string | null): { hh: number; mm: number } | null {
   if (!s) return null;
   const m = s.match(/(\d{1,2}):(\d{2})/);
   if (!m) return null;
-  const hh = parseInt(m[1], 10);
-  const mm = parseInt(m[2], 10);
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
   if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
   return { hh, mm };
 }
+
+/** True if HH:MM is strictly after 09:30 */
 function isAfter930(checkInKL: string | null): boolean {
   const t = extractHHMM(checkInKL);
   if (!t) return false;
-  return (t.hh * 60 + t.mm) > (9 * 60 + 30);
+  const minutes = t.hh * 60 + t.mm;
+  return minutes > (9 * 60 + 30);
 }
+
+/** True if *now* in KL is >= 10:30 */
 function computePast1030(): boolean {
   const now = new Date(
     new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' })
@@ -56,13 +61,13 @@ export default function TodayPage() {
   const [errorText, setErrorText] = useState<string>('');
   const [notice, setNotice] = useState<string>('');
 
-  // keep past10:30 live so Absent flips without reload
+  // tick every 30s so "auto Absent after 10:30" flips without reload
   const [, setTick] = useState(0);
   const [past1030, setPast1030] = useState<boolean>(computePast1030());
   useEffect(() => {
     const id = setInterval(() => {
       setPast1030(computePast1030());
-      setTick(t => t + 1);
+      setTick((n) => n + 1);
     }, 30000);
     return () => clearInterval(id);
   }, []);
@@ -72,14 +77,17 @@ export default function TodayPage() {
     setErrorText('');
     setNotice('');
 
+    // 1) today’s attendance (function you already have)
     const { data: attData, error: attError } = await supabase
       .rpc('day_attendance_v2', { p_date: dateISO });
 
+    // 2) all staff (requires sign-in)
     const { data: staffData, error: staffError } = await supabase
       .from('staff')
       .select('email,name')
       .order('name', { ascending: true });
 
+    // 3) today statuses (MC/Offday/etc) — use the effective view (Sundays = OFFDAY)
     const { data: statData, error: statError } = await supabase
       .from('v_day_status_effective')
       .select('staff_email,status')
@@ -94,6 +102,7 @@ export default function TodayPage() {
 
     const dayRows = (attData as DayRow[]) ?? [];
 
+    // fallback if staff blocked by RLS
     if (staffError || !staffData || staffData.length === 0) {
       if (staffError) {
         setNotice('Showing only checked-in staff. Sign in to view all staff & statuses.');
@@ -113,6 +122,7 @@ export default function TodayPage() {
       return;
     }
 
+    // build maps for merge
     const byEmail = new Map<string, DayRow>();
     for (const r of dayRows) byEmail.set(r.staff_email.toLowerCase(), r);
 
@@ -123,6 +133,7 @@ export default function TodayPage() {
       }
     }
 
+    // left-join staff with attendance, then attach status
     const merged: DayRow[] = (staffData as StaffRow[]).map((s) => {
       const key = s.email.toLowerCase();
       const hit = byEmail.get(key);
@@ -136,7 +147,6 @@ export default function TodayPage() {
       };
     });
 
-    console.table(merged); // DEBUG: confirm what front-end receives
     setRows(merged);
     setLoading(false);
   }, [dateISO]);
@@ -185,60 +195,52 @@ export default function TodayPage() {
               </tr>
             )}
             {(rows ?? []).map((r) => {
-              const hasAdminStatus = !!r.status && r.status.trim() !== '';
+              const hasAdminStatus = r.status && r.status.trim() !== '';
               const after930 = isAfter930(r.check_in_kl);
               const autoAbsent = !hasAdminStatus && past1030 && !r.check_in_kl;
+
+              // Grey-out times whenever status exists (MC/OFFDAY) or we auto-mark Absent
               const blockTimes = hasAdminStatus || autoAbsent;
+
+              // Late(min) display rule (same as before)
               const isLateMin = typeof r.late_min === 'number' && r.late_min > 0;
 
               return (
-                <>
-                  <tr key={r.staff_email}>
-                    <td style={{ padding: 8 }}>{dateISO}</td>
-                    <td style={{ padding: 8 }}>{r.staff_name}</td>
+                <tr key={r.staff_email}>
+                  <td style={{ padding: 8 }}>{dateISO}</td>
+                  <td style={{ padding: 8 }}>{r.staff_name}</td>
 
-                    {/* Status: admin status > auto Absent > em dash */}
-                    <td style={{ padding: 8, fontWeight: 600 }}>
-                      {hasAdminStatus ? r.status : (autoAbsent ? 'Absent' : '—')}
-                    </td>
+                  {/* Status column: admin status > auto Absent > em dash */}
+                  <td style={{ padding: 8, fontWeight: 600 }}>
+                    {hasAdminStatus ? r.status : (autoAbsent ? 'Absent' : '—')}
+                  </td>
 
-                    {/* Check-in: red if after 09:30, unless blocked */}
-                    <td
-                      style={{
-                        padding: 8,
-                        color: blockTimes ? '#9CA3AF' : (after930 ? '#dc2626' : '#111827'),
-                        fontWeight: 400,
-                      }}
-                    >
-                      {blockTimes ? '—' : (r.check_in_kl ?? '—')}
-                    </td>
+                  {/* Check-in: red if after 09:30, unless blocked */}
+                  <td
+                    style={{
+                      padding: 8,
+                      color: blockTimes ? '#9CA3AF' : (after930 ? '#dc2626' : 'inherit'),
+                      fontWeight: 400,
+                    }}
+                  >
+                    {blockTimes ? '—' : (r.check_in_kl ?? '—')}
+                  </td>
 
-                    <td style={{ padding: 8, color: blockTimes ? '#9CA3AF' : '#111827' }}>
-                      {blockTimes ? '—' : (r.check_out_kl ?? '—')}
-                    </td>
+                  <td style={{ padding: 8, color: blockTimes ? '#9CA3AF' : 'inherit' }}>
+                    {blockTimes ? '—' : (r.check_out_kl ?? '—')}
+                  </td>
 
-                    {/* Late(min): red & bold when >0, unless blocked */}
-                    <td
-                      style={{
-                        padding: 8,
-                        color: blockTimes ? '#9CA3AF' : (isLateMin ? '#dc2626' : '#111827'),
-                        fontWeight: isLateMin ? 700 : 400,
-                      }}
-                    >
-                      {blockTimes ? '—' : (typeof r.late_min === 'number' ? r.late_min : '—')}
-                    </td>
-                  </tr>
-
-                  {/* ===== DEBUG LINE (temporary): remove after verification) ===== */}
-                  <tr>
-                    <td colSpan={6} style={{ padding: 6, fontSize: 12, color: '#6b7280' }}>
-                      <code>
-                        {`email=${r.staff_email} | check_in_kl=${r.check_in_kl ?? 'null'} | after930=${after930} | past1030=${past1030} | autoAbsent=${autoAbsent} | hasAdminStatus=${hasAdminStatus}`}
-                      </code>
-                    </td>
-                  </tr>
-                  {/* ===== END DEBUG ===== */}
-                </>
+                  {/* Late(min): unchanged; red/bold when >0, unless blocked */}
+                  <td
+                    style={{
+                      padding: 8,
+                      color: blockTimes ? '#9CA3AF' : (isLateMin ? '#dc2626' : 'inherit'),
+                      fontWeight: isLateMin ? 700 : 400,
+                    }}
+                  >
+                    {blockTimes ? '—' : (typeof r.late_min === 'number' ? r.late_min : '—')}
+                  </td>
+                </tr>
               );
             })}
           </tbody>
