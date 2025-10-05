@@ -7,10 +7,10 @@ import { supabase } from '@/lib/supabaseClient';
 type Row = {
   staff_name: string;
   staff_email: string;
-  day: string;                  // yyyy-mm-dd
-  status: string | null;        // Present | Absent | OFFDAY | MC | (ignored for final display precedence)
-  check_in_kl: string | null;   // HH:MM
-  check_out_kl: string | null;  // HH:MM
+  day: string;                 // yyyy-mm-dd
+  status: string | null;       // Present | Absent | OFFDAY | MC (ignored for final precedence)
+  check_in_kl: string | null;  // HH:MM or HH:MM:SS
+  check_out_kl: string | null; // HH:MM or HH:MM:SS
   late_min: number | null;
   lat: number | null;
   lon: number | null;
@@ -33,11 +33,12 @@ const grayPill: React.CSSProperties = { padding: '2px 8px', borderRadius: 999, b
 
 function hhmmOrEmpty(s: string | null | undefined): string {
   if (!s) return '';
-  const m = s.match(/(\d{1,2}):(\d{2})/);
+  const m = s.match(/(\d{1,2}):([0-5]\d)(?::\d{2})?/);
   return m ? `${m[1].padStart(2, '0')}:${m[2]}` : '';
 }
 
 function isValidHHMM(s: string): boolean {
+  // accept HH:MM only for manual input
   const m = s.match(/^(\d{1,2}):([0-5]\d)$/);
   if (!m) return false;
   const hh = parseInt(m[1], 10);
@@ -46,7 +47,8 @@ function isValidHHMM(s: string): boolean {
 
 function minutesLateFrom930(hhmm: string | null): number | null {
   if (!hhmm) return null;
-  const m = hhmm.match(/^(\d{1,2}):([0-5]\d)$/);
+  // accept H:MM, HH:MM, or HH:MM:SS from DB
+  const m = hhmm.match(/^(\d{1,2}):([0-5]\d)(?::\d{2})?$/);
   if (!m) return null;
   const hh = parseInt(m[1], 10);
   const mm = parseInt(m[2], 10);
@@ -114,7 +116,7 @@ export default function ReportPage() {
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      // fetch the same dataset as monthly-print
+      // Use the unified monthly dataset
       const { data, error } = await supabase.rpc('month_print_report', {
         p_year: Number(year),
         p_month: Number(month),
@@ -122,17 +124,17 @@ export default function ReportPage() {
       if (error) throw error;
       let rws: Row[] = (data as Row[]) ?? [];
 
-      // optional day filter (client-side)
+      // optional day filter
       if (day !== '') {
         const d = String(day).padStart(2, '0');
         const iso = `${year}-${String(month).padStart(2,'0')}-${d}`;
         rws = rws.filter(r => r.day === iso);
       }
 
-      // ensure late_min is present if backend didn’t send it
+      // ALWAYS recompute late from check-in (handles HH:MM:SS)
       rws = rws.map(r => ({
         ...r,
-        late_min: (typeof r.late_min === 'number') ? r.late_min : minutesLateFrom930(r.check_in_kl),
+        late_min: minutesLateFrom930(r.check_in_kl),
       }));
 
       setRows(rws);
@@ -303,7 +305,6 @@ export default function ReportPage() {
         )}
 
         {visibleGroups.map(group => {
-          // absent-day logic aligned with monthly page
           const isAbsent = (r: Row) => {
             const overrideOff = r.status === 'OFFDAY' || r.status === 'MC';
             if (overrideOff) return false;
@@ -317,7 +318,7 @@ export default function ReportPage() {
             const sunday = isSunday(r.day);
             const overrideOff = r.status === 'OFFDAY' || r.status === 'MC';
             if (future || sunday || overrideOff || !r.check_in_kl) return acc;
-            return acc + (typeof r.late_min === 'number' ? r.late_min : (minutesLateFrom930(r.check_in_kl) ?? 0));
+            return acc + (minutesLateFrom930(r.check_in_kl) ?? 0);
           }, 0);
 
           const absentDays = group.rows.reduce((acc, r) => acc + (isAbsent(r) ? 1 : 0), 0);
@@ -365,20 +366,19 @@ export default function ReportPage() {
                       const blockTimes = future || sunday;
                       const showIn  = blockTimes ? '—' : (r.check_in_kl  ?? '—');
                       const showOut = blockTimes ? '—' : (r.check_out_kl ?? '—');
-                      const showLate = (() => {
-                        if (blockTimes || overrideOff || !r.check_in_kl) return '—';
-                        if (typeof r.late_min === 'number') return r.late_min;
-                        const recomputed = minutesLateFrom930(r.check_in_kl);
-                        return recomputed == null ? '—' : recomputed;
-                      })();
+
+                      const lateVal =
+                        blockTimes || overrideOff || !r.check_in_kl
+                          ? null
+                          : minutesLateFrom930(r.check_in_kl);
 
                       return (
                         <tr key={`${group.key}-${r.day}`}>
                           <td style={td}>{r.day}</td>
                           <td style={td}>{showIn}</td>
                           <td style={td}>{showOut}</td>
-                          <td style={{ ...td, ...(typeof showLate === 'number' ? redCell : {}) }}>
-                            {showLate}
+                          <td style={{ ...td, ...(lateVal != null && lateVal > 0 ? redCell : {}) }}>
+                            {lateVal == null ? '—' : lateVal}
                           </td>
                           <td style={td}>{statusEl}</td>
                           {isAdmin && (
@@ -417,7 +417,7 @@ export default function ReportPage() {
         >
           <div style={{ background:'#fff', borderRadius:10, width:'min(520px, 92vw)', boxShadow:'0 10px 30px rgba(0,0,0,0.2)' }}>
             <div style={{padding:'14px 16px', borderBottom:'1px solid #eee', fontWeight:700}}>
-              Edit times — {editRow.staff_name} • {editRow.day}
+              Edit times — {editRow!.staff_name} • {editRow!.day}
             </div>
             <div style={{padding:16, display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
               <div>
