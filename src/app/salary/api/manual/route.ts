@@ -3,144 +3,127 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
-type CookieStoreLike = {
-  get(name: string): { value?: string } | undefined;
+type CookieStoreLike = { get(name: string): { value?: string } | undefined };
+const readCookie = (n: string) => {
+  try { return (cookies() as unknown as CookieStoreLike).get(n)?.value ?? ''; }
+  catch { return ''; }
 };
 
-function readCookie(name: string): string {
-  try {
-    const jar = cookies() as unknown as CookieStoreLike;
-    return jar.get(name)?.value ?? '';
-  } catch {
-    return '';
-  }
-}
-
-function base64UrlDecode(input: string): string {
-  const b64 = input.replace(/-/g, '+').replace(/_/g, '/').padEnd(
-    Math.ceil(input.length / 4) * 4,
-    '='
-  );
-  if (typeof atob === 'function') return atob(b64);
-  return Buffer.from(b64, 'base64').toString('utf8');
-}
-
-async function getSupabase() {
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return readCookie(name);
-        },
-        set(_n: string, _v: string, _o: CookieOptions) {},
-        remove(_n: string, _o: CookieOptions) {},
-      },
-    }
-  );
-}
-
-async function getSessionEmail(supabase: Awaited<ReturnType<typeof getSupabase>>): Promise<string | null> {
-  // 1) Try official way
-  const { data, error } = await supabase.auth.getUser();
-  if (!error && data?.user?.email) return data.user.email;
-
-  // 2) Fallback: decode JWT from cookie
-  const token = readCookie('sb-access-token') || readCookie('sb:token'); // either name depending on version
-  if (!token) return null;
-  const parts = token.split('.');
-  if (parts.length < 2) return null;
-  try {
-    const payload = JSON.parse(base64UrlDecode(parts[1]));
-    const email: string | undefined = payload?.email || payload?.user_metadata?.email;
-    return email ?? null;
-  } catch {
-    return null;
-  }
-}
-
-async function assertAdmin(supabase: Awaited<ReturnType<typeof getSupabase>>) {
-  const email = await getSessionEmail(supabase);
-  if (!email) throw new Error('No active session');
-
-  const { data, error } = await supabase
-    .from('staff')
-    .select('is_admin')
-    .eq('email', email)
-    .maybeSingle();
-
-  if (error) throw error;
-  if (!data?.is_admin) throw new Error('Admins only');
-  return email;
+function b64UrlDecode(s: string) {
+  const b64 = s.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(s.length/4) * 4, '=');
+  // @ts-ignore Buffer exists in Node route handlers
+  return (typeof atob === 'function' ? atob(b64) : Buffer.from(b64, 'base64').toString('utf8'));
 }
 
 type Body = {
-  staff_email: string;               // target staff (email)
-  kind: 'EARN' | 'DEDUCT';           // enum (matches your check constraint)
-  amount: number;                    // RM
-  label?: string | null;             // optional description
-  code?: string | null;              // optional code
+  staff_email: string;
+  kind: 'EARN' | 'DEDUCT';
+  amount: number | string;
+  label?: string | null;
+  code?: string | null;
 };
 
 export async function POST(req: Request) {
   try {
-    const supabase = await getSupabase();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get: (n: string) => readCookie(n),
+          set(_n: string, _v: string, _o: CookieOptions) {},
+          remove(_n: string, _o: CookieOptions) {},
+        },
+      }
+    );
 
-    // Only admins may insert manual items
-    await assertAdmin(supabase);
-
+    // Parse & validate body
     const body = (await req.json()) as Body;
-    if (!body?.staff_email || !body?.kind || typeof body.amount !== 'number') {
-      return NextResponse.json(
-        { ok: false, error: 'Invalid payload' },
-        { status: 400 }
-      );
+    const staff_email = String(body.staff_email || '').trim();
+    const kind = body.kind === 'DEDUCT' ? 'DEDUCT' : 'EARN';
+    const amountNum = Number(body.amount);
+    const label = body.label?.toString().trim() || null;
+    const code = body.code?.toString().trim() || null;
+
+    if (!staff_email) throw new Error('staff_email required');
+    if (!Number.isFinite(amountNum)) throw new Error('amount must be a number');
+    if (amountNum <= 0) throw new Error('amount must be > 0');
+
+    // Identify caller
+    const { data: authData } = await supabase.auth.getUser();
+    let callerEmail = authData?.user?.email ?? null;
+
+    if (!callerEmail) {
+      const tok = readCookie('sb-access-token') || readCookie('sb:token');
+      if (tok && tok.split('.').length >= 2) {
+        try {
+          const payload = JSON.parse(b64UrlDecode(tok.split('.')[1]));
+          callerEmail = payload?.email ?? payload?.user_metadata?.email ?? null;
+        } catch {}
+      }
     }
 
-    // find current period
+    if (!callerEmail) {
+      return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
+    }
+
+    // Admin check
+    const { data: staffRow, error: staffErr } = await supabase
+      .from('staff')
+      .select('is_admin')
+      .eq('email', callerEmail)
+      .maybeSingle();
+    if (staffErr) throw staffErr;
+    if (!staffRow?.is_admin) {
+      return NextResponse.json({ ok: false, error: 'Admins only' }, { status: 403 });
+    }
+
+    // Ensure we have a current payroll period
     const now = new Date();
     const year = now.getFullYear();
     const month = now.getMonth() + 1;
 
-    // get (or create) payroll_periods row for this year/month
-    let { data: period, error: perr } = await supabase
+    const { data: found, error: findErr } = await supabase
       .from('payroll_periods')
-      .select('id, year, month, status')
+      .select('id')
       .eq('year', year)
       .eq('month', month)
       .maybeSingle();
+    if (findErr) throw findErr;
 
-    if (perr) throw perr;
+    let periodId = found?.id as string | undefined;
 
-    if (!period) {
-      const { data: inserted, error: ierr } = await supabase
+    if (!periodId) {
+      const { data: inserted, error: insertErr } = await supabase
         .from('payroll_periods')
         .insert([{ year, month, status: 'OPEN' }])
-        .select('id, year, month, status')
+        .select('id')
         .single();
-      if (ierr) throw ierr;
-      period = inserted;
+      if (insertErr) throw insertErr;
+      periodId = inserted.id as string;
     }
 
-    // Insert into manual_items (admin-only)
-    const { error: insErr } = await supabase.from('manual_items').insert([
-      {
-        staff_email: body.staff_email,
-        period_id: period.id,
-        kind: body.kind,
-        amount: body.amount,
-        label: body.label ?? null,
-        code: body.code ?? null,
-      },
-    ]);
-
+    // Insert manual item
+    const { error: insErr } = await supabase
+      .from('manual_items')
+      .insert([{
+        staff_email,
+        kind,          // 'EARN' | 'DEDUCT'
+        amount: amountNum,
+        label,
+        code,
+        period_id: periodId,
+      }]);
     if (insErr) throw insErr;
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({
+      ok: true,
+      inserted: { staff_email, kind, amount: amountNum, label, code, period_id: periodId },
+    });
   } catch (err: unknown) {
-    const msg =
-      err instanceof Error ? err.message : typeof err === 'string' ? err : 'Error';
-    return NextResponse.json({ ok: false, error: msg }, { status: 403 });
+    const message =
+      err instanceof Error ? err.message :
+      typeof err === 'string' ? err : 'Error';
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }
