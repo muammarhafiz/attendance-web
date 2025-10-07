@@ -33,23 +33,28 @@ export default function PayrollPage() {
 
   // Run payroll (fetches from our API)
   async function run() {
-    if (loading) return;
-    setLoading(true);
-    setErr(null);
-    try {
-      const r = await fetch('/salary/api/run', { method: 'POST' });
-      const j: ApiRes = await r.json();
-      if (!r.ok || !j.ok) {
-        throw new Error('ok' in j ? 'Unknown error' : j.error || 'Failed');
-      }
-      setRows(j.payslips);
-      setLastRunAt(new Date().toLocaleString());
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Error');
-    } finally {
-      setLoading(false);
+  if (loading) return;
+  setLoading(true);
+  setErr(null);
+  try {
+    const r = await fetch('/salary/api/run', { method: 'POST' });
+    const j: ApiRes = await r.json();
+
+    if (!r.ok) {
+      throw new Error(`HTTP ${r.status}`);
     }
+    if (!j.ok) {
+      throw new Error(j.error || 'Failed');
+    }
+
+    setRows(j.payslips);
+    setLastRunAt(new Date().toLocaleString());
+  } catch (e) {
+    setErr(e instanceof Error ? e.message : 'Error');
+  } finally {
+    setLoading(false);
   }
+}
 
   // Initial auto-run once
   useEffect(() => {
