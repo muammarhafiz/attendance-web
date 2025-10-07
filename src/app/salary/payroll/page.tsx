@@ -1,13 +1,13 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 type StaffRow = {
   email: string;
   name: string;
-  base_salary?: number | null;
-  include_in_payroll: boolean; // NEW
+  base_salary: number | null;
+  include_in_payroll: boolean;
 };
 
 export default function PayrollPage() {
@@ -16,30 +16,55 @@ export default function PayrollPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { auth: { persistSession: true, autoRefreshToken: true } }
+  // Create a stable Supabase client instance
+  const supabase: SupabaseClient = useMemo(
+    () =>
+      createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL as string,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string,
+        { auth: { persistSession: true, autoRefreshToken: true } }
+      ),
+    []
   );
 
   // Load staff list
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       setLoading(true);
       const { data, error } = await supabase
         .from('staff')
         .select('email,name,base_salary,include_in_payroll')
         .order('name', { ascending: true });
-      if (error) setErr(error.message);
-      else setRows((data || []).map((r: any) => ({
-        email: r.email,
-        name: r.name,
-        base_salary: r.base_salary,
-        include_in_payroll: r.include_in_payroll ?? true,
-      })));
+
+      if (cancelled) return;
+
+      if (error) {
+        setErr(error.message);
+      } else {
+        const casted: StaffRow[] = (data ?? []).map((r) => ({
+          email: r.email as string,
+          name: r.name as string,
+          base_salary:
+            typeof r.base_salary === 'number'
+              ? r.base_salary
+              : r.base_salary == null
+              ? null
+              : Number(r.base_salary) || 0,
+          include_in_payroll:
+            typeof r.include_in_payroll === 'boolean'
+              ? r.include_in_payroll
+              : true,
+        }));
+        setRows(casted);
+      }
       setLoading(false);
     })();
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
 
   // Save base salary
   const updateSalary = async (email: string, newValue: number) => {
@@ -50,17 +75,18 @@ export default function PayrollPage() {
       .eq('email', email);
     setSaving(null);
 
-    if (error) alert('Update failed: ' + error.message);
-    else {
-      setRows((r) =>
-        r.map((x) => (x.email === email ? { ...x, base_salary: newValue } : x))
-      );
+    if (error) {
+      alert('Update failed: ' + error.message);
+      return;
     }
+    setRows((r) =>
+      r.map((x) => (x.email === email ? { ...x, base_salary: newValue } : x))
+    );
   };
 
   // Save include/exclude toggle
   const toggleInclude = async (email: string, nextVal: boolean) => {
-    // optimistic UI
+    // optimistic update
     setRows((r) => r.map((x) => (x.email === email ? { ...x, include_in_payroll: nextVal } : x)));
     setSaving(email + ':toggle');
 
@@ -77,21 +103,16 @@ export default function PayrollPage() {
     }
   };
 
-  const included = useMemo(
-    () => rows.filter((r) => r.include_in_payroll),
-    [rows]
-  );
-
+  const included = useMemo(() => rows.filter((r) => r.include_in_payroll), [rows]);
   const totalBasic = useMemo(
     () => included.reduce((s, r) => s + (Number(r.base_salary) || 0), 0),
     [included]
   );
 
   const handleGenerate = () => {
-    // For now, just show a summary (hook up to your real payroll run later)
     alert(
       `Ready to generate payslips for ${included.length} staff.\n` +
-      `Total basic (included only): RM ${totalBasic.toFixed(2)}`
+        `Total basic (included only): RM ${totalBasic.toFixed(2)}`
     );
   };
 
@@ -166,18 +187,5 @@ const thLeft: React.CSSProperties = { textAlign: 'left', padding: '10px 8px', fo
 const thRight: React.CSSProperties = { textAlign: 'right', padding: '10px 8px', fontWeight: 600, whiteSpace: 'nowrap' };
 const tdLeft: React.CSSProperties = { textAlign: 'left', padding: '8px', verticalAlign: 'middle' };
 const tdRight: React.CSSProperties = { textAlign: 'right', padding: '8px', verticalAlign: 'middle' };
-const input: React.CSSProperties = {
-  width: 120,
-  textAlign: 'right',
-  border: '1px solid #d1d5db',
-  borderRadius: 6,
-  padding: '6px 8px',
-};
-const primaryBtn: React.CSSProperties = {
-  border: '1px solid #2563eb',
-  background: '#2563eb',
-  color: '#fff',
-  borderRadius: 8,
-  padding: '8px 12px',
-  cursor: 'pointer',
-};
+const input: React.CSSProperties = { width: 120, textAlign: 'right', border: '1px solid #d1d5db', borderRadius: 6, padding: '6px 8px' };
+const primaryBtn: React.CSSProperties = { border: '1px solid #2563eb', background: '#2563eb', color: '#fff', borderRadius: 8, padding: '8px 12px', cursor: 'pointer' };
