@@ -56,24 +56,34 @@ function findBracket(
   return null;
 }
 
+/** Minimal shape we need from Next's cookies() to avoid `any`. */
+type ReadonlyRequestCookiesLike = {
+  get(name: string): { value?: string } | undefined;
+};
+
+/** Read a cookie value without using `any`. */
+function readCookie(name: string): string {
+  try {
+    const store = cookies() as unknown as ReadonlyRequestCookiesLike;
+    return store.get(name)?.value ?? '';
+  } catch {
+    return '';
+  }
+}
+
 /* ---------- Route ---------- */
 export async function POST() {
   try {
-    // Build Supabase client using App Router cookies.
-    // Call cookies() inline and cast to any to avoid TS complaining about Promise types.
+    // Supabase client wired to App Router cookies
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
           get(name: string) {
-            try {
-              return (cookies() as any)?.get(name)?.value ?? '';
-            } catch {
-              return '';
-            }
+            return readCookie(name);
           },
-          // Route Handlers in this app don't mutate response cookies:
+          // Route Handlers here don't mutate response cookies:
           set(_n: string, _v: string, _o: CookieOptions) {},
           remove(_n: string, _o: CookieOptions) {},
         },
