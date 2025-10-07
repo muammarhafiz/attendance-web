@@ -65,7 +65,7 @@ function findBracket<T extends { min_wage: number; max_wage: number | null }>(
 /* ---------- Route ---------- */
 export async function POST() {
   try {
-    // Read request cookies (sync in Next.js App Router)
+    // IMPORTANT: cookies() is synchronous in App Router. Do NOT await it.
     const cookieJar = cookies();
 
     // Supabase (attendance project)
@@ -77,7 +77,7 @@ export async function POST() {
           get(name: string) {
             return cookieJar.get(name)?.value ?? '';
           },
-          // No-ops in a route handler (we don't mutate from here)
+          // We don't mutate response cookies from a route handler in this app:
           set(_name: string, _value: string, _options: CookieOptions) {},
           remove(_name: string, _options: CookieOptions) {},
         },
