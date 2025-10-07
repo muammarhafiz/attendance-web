@@ -1,140 +1,116 @@
 // src/app/salary/api/manual/route.ts
-import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 
-/** Minimal cookie store shape so we avoid `any`. */
-type CookieStoreLike = { get(name: string): { value?: string } | undefined };
-const readCookie = (n: string) => {
-  try { return (cookies() as unknown as CookieStoreLike).get(n)?.value ?? ''; }
-  catch { return ''; }
-};
+/** Light wrapper so we don’t use `any` for cookies */
+type CookiesLike = { get(name: string): { value?: string } | undefined };
 
-/** Base64url decode that works in Node or Edge runtimes without ts-comments. */
-function b64UrlDecodeToUtf8(input: string): string {
-  const b64 = input.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(input.length / 4) * 4, '=');
-  // Prefer atob if it exists (Edge/runtime)
-  if (typeof (globalThis as unknown as { atob?: (s: string) => string }).atob === 'function') {
-    const ascii = (globalThis as unknown as { atob: (s: string) => string }).atob(b64);
-    // Decode ASCII -> UTF-8
-    try { return decodeURIComponent(escape(ascii)); } catch { return ascii; }
-  }
-  // Fallback to Buffer in Node
+function readCookie(name: string): string {
   try {
-    // declare a minimal Buffer-like type so TS is happy without @ts-ignore
-    const Buf = (globalThis as unknown as { Buffer?: { from: (s: string, e: string) => { toString: (e: string) => string } } }).Buffer;
-    if (Buf) return Buf.from(b64, 'base64').toString('utf8');
-  } catch {}
-  return '';
+    const store = cookies() as unknown as CookiesLike;
+    return store.get(name)?.value ?? "";
+  } catch {
+    return "";
+  }
 }
 
-type Body = {
-  staff_email: string;
-  kind: 'EARN' | 'DEDUCT';
-  amount: number | string;
-  label?: string | null;
-  code?: string | null;
-};
+// Get or create the current payroll period and return its UUID
+async function getOrCreateCurrentPeriod(supabase: ReturnType<typeof createServerClient>) {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth() + 1;
+
+  // try to find existing
+  const { data: existing, error: findErr } = await supabase
+    .from("payroll_periods")
+    .select("id, year, month, status")
+    .eq("year", y)
+    .eq("month", m)
+    .maybeSingle();
+
+  if (findErr) throw findErr;
+  if (existing?.id) return existing.id as string; // <-- UUID string
+
+  // create one if missing (status draft)
+  const { data: created, error: insErr } = await supabase
+    .from("payroll_periods")
+    .insert({ year: y, month: m, status: "draft" })
+    .select("id")
+    .single();
+
+  if (insErr) throw insErr;
+  return created.id as string;
+}
 
 export async function POST(req: Request) {
   try {
+    // Supabase wired to Next cookies
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
-          get: (n: string) => readCookie(n),
-          // Adapter requires these, even if no-ops in route handlers
+          get(name: string) {
+            return readCookie(name);
+          },
           set(_n: string, _v: string, _o: CookieOptions) {},
           remove(_n: string, _o: CookieOptions) {},
         },
       }
     );
 
-    // 1) Parse body
-    const body = (await req.json()) as Body;
-    const staff_email = String(body.staff_email || '').trim();
-    const kind: 'EARN' | 'DEDUCT' = body.kind === 'DEDUCT' ? 'DEDUCT' : 'EARN';
-    const amountNum = Number(body.amount);
-    const label = body.label?.toString().trim() || null;
-    const code = body.code?.toString().trim() || null;
+    // who is calling?
+    const { data: userRes } = await supabase.auth.getUser();
+    const userEmail = userRes?.user?.email ?? "";
 
-    if (!staff_email) throw new Error('staff_email required');
-    if (!Number.isFinite(amountNum) || amountNum <= 0) throw new Error('amount must be a number > 0');
-
-    // 2) Who is calling?
-    const { data: authData } = await supabase.auth.getUser();
-    let callerEmail = authData?.user?.email ?? null;
-
-    if (!callerEmail) {
-      const tok = readCookie('sb-access-token') || readCookie('sb:token');
-      if (tok && tok.split('.').length >= 2) {
-        try {
-          const payload = JSON.parse(b64UrlDecodeToUtf8(tok.split('.')[1]));
-          callerEmail = payload?.email ?? payload?.user_metadata?.email ?? null;
-        } catch {}
-      }
-    }
-    if (!callerEmail) {
-      return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
-    }
-
-    // 3) Admin check
-    const { data: staffRow, error: staffErr } = await supabase
-      .from('staff')
-      .select('is_admin')
-      .eq('email', callerEmail)
+    // must be admin
+    const { data: me, error: meErr } = await supabase
+      .from("staff")
+      .select("email,is_admin")
+      .eq("email", userEmail)
       .maybeSingle();
-    if (staffErr) throw staffErr;
-    if (!staffRow?.is_admin) {
-      return NextResponse.json({ ok: false, error: 'Admins only' }, { status: 403 });
+    if (meErr) throw meErr;
+    if (!me?.is_admin) {
+      return NextResponse.json({ ok: false, error: "Admins only" }, { status: 403 });
     }
 
-    // 4) Ensure current payroll period exists
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1;
+    // read payload
+    const body = await req.json();
+    const staff_email = String(body?.staff_email ?? "").trim();
+    const rawKind = String(body?.kind ?? "").trim().toUpperCase();
+    const amountNum = Number(body?.amount ?? 0);
+    const label = body?.label ? String(body.label).slice(0, 120) : null;
 
-    const { data: found, error: findErr } = await supabase
-      .from('payroll_periods')
-      .select('id')
-      .eq('year', year)
-      .eq('month', month)
-      .maybeSingle();
-    if (findErr) throw findErr;
-
-    let periodId = found?.id as string | undefined;
-    if (!periodId) {
-      const { data: inserted, error: insertErr } = await supabase
-        .from('payroll_periods')
-        .insert([{ year, month, status: 'OPEN' }])
-        .select('id')
-        .single();
-      if (insertErr) throw insertErr;
-      periodId = inserted.id as string;
+    if (!staff_email) {
+      return NextResponse.json({ ok: false, error: "Select staff" }, { status: 400 });
+    }
+    if (!(rawKind === "EARN" || rawKind === "DEDUCT")) {
+      return NextResponse.json({ ok: false, error: "Kind must be EARN or DEDUCT" }, { status: 400 });
+    }
+    if (!Number.isFinite(amountNum) || amountNum <= 0) {
+      return NextResponse.json({ ok: false, error: "Amount must be > 0" }, { status: 400 });
     }
 
-    // 5) Insert manual adjustment
-    const { error: insErr } = await supabase
-      .from('manual_items')
-      .insert([{
-        staff_email,
-        kind,               // 'EARN' | 'DEDUCT'
-        amount: amountNum,
-        label,
-        code,
-        period_id: periodId,
-      }]);
-    if (insErr) throw insErr;
+    // find or create the current period UUID (this is the part that fixes the error)
+    const periodId = await getOrCreateCurrentPeriod(supabase); // <- a real UUID
 
-    return NextResponse.json({
-      ok: true,
-      inserted: { staff_email, kind, amount: amountNum, label, code, period_id: periodId },
+    // insert into manual_items
+    const { error: insErr2 } = await supabase.from("manual_items").insert({
+      period_id: periodId,        // UUID ✅
+      staff_email,                // TEXT  ✅
+      kind: rawKind,              // 'EARN' | 'DEDUCT'
+      amount: amountNum,          // numeric
+      label,
+      created_by: userEmail,
     });
+
+    if (insErr2) throw insErr2;
+
+    return NextResponse.json({ ok: true });
   } catch (err: unknown) {
     const message =
-      err instanceof Error ? err.message :
-      typeof err === 'string' ? err : 'Error';
+      err instanceof Error ? err.message : typeof err === "string" ? err : "Error";
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }
