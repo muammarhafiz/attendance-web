@@ -1,29 +1,36 @@
 // src/app/salary/payroll/page.tsx
+// Server Component (no "use client")
 import { cookies } from 'next/headers';
-import { createServerClient } from '@supabase/ssr';
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
 type StaffRow = {
   email: string;
   name: string;
-  // if you've already added base_salary to attendance.public.staff, this will populate.
   base_salary?: number | null;
 };
 
 export default async function PayrollPage() {
-  const cookieStore = cookies();
+  const cookieStore = await cookies(); // ✅ Next 15: cookies() is async
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get: (name: string) => cookieStore.get(name)?.value,
+        get(name: string) {
+          return cookieStore.get(name)?.value;
+        },
+        set(name: string, value: string, options: CookieOptions) {
+          // Next 15 cookieStore supports set
+          cookieStore.set({ name, value, ...options });
+        },
+        remove(name: string, options: CookieOptions) {
+          cookieStore.set({ name, value: '', ...options, maxAge: 0 });
+        },
       },
     }
   );
 
-  // Pull from attendance DB -> public.staff
-  // If base_salary column exists, it will come through; otherwise it's just undefined.
   const { data, error } = await supabase
     .from('staff')
     .select('email,name,base_salary')
@@ -43,7 +50,7 @@ export default async function PayrollPage() {
     <div style={{ padding: 16 }}>
       <h2 style={{ margin: 0, fontSize: 18 }}>Payroll</h2>
       <p style={{ margin: '6px 0 16px', color: '#6b7280' }}>
-        Staff list shown below is fetched directly from Attendance <code>public.staff</code>.
+        Staff list is fetched directly from Attendance <code>public.staff</code>.
       </p>
 
       <div style={{ overflowX: 'auto' }}>
@@ -52,7 +59,7 @@ export default async function PayrollPage() {
             <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
               <th style={thLeft}>Name</th>
               <th style={thLeft}>Email</th>
-              <th style={thRight}>Basic Salary (if any)</th>
+              <th style={thRight}>Basic Salary</th>
             </tr>
           </thead>
           <tbody>
