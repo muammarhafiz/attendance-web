@@ -1,191 +1,287 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import React, { useMemo, useState } from 'react';
 
-type StaffRow = {
-  email: string;
-  name: string;
-  base_salary: number | null;
-  include_in_payroll: boolean;
+type Payslip = {
+  staff_email: string;
+  staff_name: string;
+  basic: number;
+  additions: number;
+  other_deduct: number;
+
+  // employee (EE) deductions
+  epf_ee: number;
+  socso_ee: number;
+  eis_ee: number;
+  pcb: number;
+
+  // employer (ER) contributions
+  epf_er: number;
+  socso_er: number;
+  eis_er: number;
+  hrd_er: number;
+
+  gross: number;
+  net: number;
+};
+
+type RunResponse = {
+  ok: boolean;
+  message?: string;
+  count?: number;
+  payslips?: Payslip[];
+  totals?: {
+    basic: number;
+    additions: number;
+    other_deduct: number;
+    gross: number;
+    pcb: number;
+    epf_ee: number;
+    socso_ee: number;
+    eis_ee: number;
+    epf_er: number;
+    socso_er: number;
+    eis_er: number;
+    hrd_er: number;
+    net: number;
+  };
 };
 
 export default function PayrollPage() {
-  const [rows, setRows] = useState<StaffRow[]>([]);
+  const now = new Date();
+  const [year, setYear] = useState<number>(now.getFullYear());
+  const [month, setMonth] = useState<number>(now.getMonth() + 1); // 1-12
+  const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState<string | null>(null);
+  const [data, setData] = useState<RunResponse | null>(null);
+  const [lastRunAt, setLastRunAt] = useState<string | null>(null);
 
-  // Create a stable Supabase client instance
-  const supabase: SupabaseClient = useMemo(
-    () =>
-      createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL as string,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string,
-        { auth: { persistSession: true, autoRefreshToken: true } }
-      ),
-    []
-  );
+  const runPayroll = async () => {
+    if (loading) return;
+    setLoading(true);
+    setErr(null);
 
-  // Load staff list
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('staff')
-        .select('email,name,base_salary,include_in_payroll')
-        .order('name', { ascending: true });
+    try {
+      const res = await fetch('/salary/api/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({ year, month }),
+      });
 
-      if (cancelled) return;
-
-      if (error) {
-        setErr(error.message);
-      } else {
-        const casted: StaffRow[] = (data ?? []).map((r) => ({
-          email: r.email as string,
-          name: r.name as string,
-          base_salary:
-            typeof r.base_salary === 'number'
-              ? r.base_salary
-              : r.base_salary == null
-              ? null
-              : Number(r.base_salary) || 0,
-          include_in_payroll:
-            typeof r.include_in_payroll === 'boolean'
-              ? r.include_in_payroll
-              : true,
-        }));
-        setRows(casted);
+      const json: RunResponse = await res.json();
+      if (!res.ok || !json.ok) {
+        throw new Error(json?.message || 'Payroll run failed');
       }
+      setData(json);
+      setLastRunAt(new Date().toLocaleString());
+    } catch (e: any) {
+      setErr(e?.message || 'Error running payroll');
+      setData(null);
+    } finally {
       setLoading(false);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [supabase]);
-
-  // Save base salary
-  const updateSalary = async (email: string, newValue: number) => {
-    setSaving(email + ':salary');
-    const { error } = await supabase
-      .from('staff')
-      .update({ base_salary: newValue })
-      .eq('email', email);
-    setSaving(null);
-
-    if (error) {
-      alert('Update failed: ' + error.message);
-      return;
-    }
-    setRows((r) =>
-      r.map((x) => (x.email === email ? { ...x, base_salary: newValue } : x))
-    );
-  };
-
-  // Save include/exclude toggle
-  const toggleInclude = async (email: string, nextVal: boolean) => {
-    // optimistic update
-    setRows((r) => r.map((x) => (x.email === email ? { ...x, include_in_payroll: nextVal } : x)));
-    setSaving(email + ':toggle');
-
-    const { error } = await supabase
-      .from('staff')
-      .update({ include_in_payroll: nextVal })
-      .eq('email', email);
-
-    setSaving(null);
-    if (error) {
-      alert('Failed to save toggle: ' + error.message);
-      // revert if failed
-      setRows((r) => r.map((x) => (x.email === email ? { ...x, include_in_payroll: !nextVal } : x)));
     }
   };
 
-  const included = useMemo(() => rows.filter((r) => r.include_in_payroll), [rows]);
-  const totalBasic = useMemo(
-    () => included.reduce((s, r) => s + (Number(r.base_salary) || 0), 0),
-    [included]
-  );
-
-  const handleGenerate = () => {
-    alert(
-      `Ready to generate payslips for ${included.length} staff.\n` +
-        `Total basic (included only): RM ${totalBasic.toFixed(2)}`
-    );
-  };
-
-  if (loading) return <div style={{ padding: 16 }}>Loading…</div>;
-  if (err) return <div style={{ padding: 16, color: '#b91c1c' }}>Error: {err}</div>;
+  const totals = useMemo(() => data?.totals, [data]);
 
   return (
     <div style={{ padding: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
-        <h2 style={{ margin: 0, fontSize: 18 }}>Payroll</h2>
-        <span style={{ color: '#6b7280' }}>
-          Included: <b>{included.length}</b> / {rows.length} &nbsp;·&nbsp; Total basic: <b>RM {totalBasic.toFixed(2)}</b>
-        </span>
-        <button onClick={handleGenerate} style={primaryBtn}>Generate Payslips (preview)</button>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+        <h1 style={{ margin: 0, fontSize: 22 }}>Salary System</h1>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          <select
+            value={month}
+            onChange={(e) => setMonth(Number(e.target.value))}
+            style={selectStyle}
+            aria-label="Month"
+          >
+            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+              <option key={m} value={m}>
+                {m.toString().padStart(2, '0')}
+              </option>
+            ))}
+          </select>
+          <select
+            value={year}
+            onChange={(e) => setYear(Number(e.target.value))}
+            style={selectStyle}
+            aria-label="Year"
+          >
+            {Array.from({ length: 6 }, (_, i) => now.getFullYear() - 2 + i).map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
+          <button onClick={runPayroll} disabled={loading} style={primaryBtn}>
+            {loading ? 'Running…' : 'Run Payroll'}
+          </button>
+        </div>
       </div>
 
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-          <thead>
-            <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
-              <th style={thLeft}>Include</th>
-              <th style={thLeft}>Name</th>
-              <th style={thLeft}>Email</th>
-              <th style={thRight}>Basic Salary (RM)</th>
-              <th style={thLeft}>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => {
-              const isSaving = saving?.startsWith(r.email + ':');
-              return (
-                <tr key={r.email} style={{ borderBottom: '1px solid #f3f4f6' }}>
+      {err && (
+        <div style={{ color: '#b91c1c', marginBottom: 12 }}>
+          Error: {err}
+        </div>
+      )}
+      {lastRunAt && (
+        <div style={{ color: '#6b7280', fontSize: 12, marginBottom: 8 }}>
+          Last updated: {lastRunAt}
+        </div>
+      )}
+
+      {data?.payslips && data.payslips.length > 0 && (
+        <div style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 12 }}>
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={thLeft}>Employee</th>
+                <th style={th}>Basic</th>
+                <th style={th}>Additions</th>
+                <th style={th}>Other Deduct</th>
+                <th style={th}>Gross</th>
+                <th style={th}>PCB</th>
+                <th style={th}>EPF (Emp)</th>
+                <th style={th}>SOCSO (Emp)</th>
+                <th style={th}>EIS (Emp)</th>
+                <th style={thSep}>EPF (Er)</th>
+                <th style={th}>SOCSO (Er)</th>
+                <th style={th}>EIS (Er)</th>
+                <th style={th}>HRD (Er)</th>
+                <th style={thStrong}>Net Pay</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.payslips.map((p) => (
+                <tr key={p.staff_email} style={rowStyle}>
                   <td style={tdLeft}>
-                    <input
-                      type="checkbox"
-                      checked={r.include_in_payroll}
-                      onChange={(e) => toggleInclude(r.email, e.target.checked)}
-                    />
+                    <div style={{ fontWeight: 600 }}>{p.staff_name}</div>
+                    <div style={{ fontSize: 12, color: '#6b7280' }}>{p.staff_email}</div>
                   </td>
-                  <td style={tdLeft}>{r.name}</td>
-                  <td style={tdLeft}>{r.email}</td>
-                  <td style={tdRight}>
-                    <input
-                      type="number"
-                      step="0.01"
-                      defaultValue={r.base_salary ?? ''}
-                      onBlur={(e) => {
-                        const val = parseFloat(e.target.value);
-                        if (!isNaN(val)) updateSalary(r.email, val);
-                      }}
-                      style={input}
-                    />
-                  </td>
-                  <td style={tdLeft}>
-                    {isSaving ? <span style={{ color: '#6b7280' }}>Saving…</span> : <span style={{ color: '#059669' }}>OK</span>}
-                  </td>
+                  <td style={td}>{fmt(p.basic)}</td>
+                  <td style={td}>{fmt(p.additions)}</td>
+                  <td style={td}>{fmt(p.other_deduct)}</td>
+                  <td style={td}>{fmt(p.gross)}</td>
+                  <td style={td}>{fmt(p.pcb)}</td>
+                  <td style={td}>{fmt(p.epf_ee)}</td>
+                  <td style={td}>{fmt(p.socso_ee)}</td>
+                  <td style={td}>{fmt(p.eis_ee)}</td>
+                  <td style={tdSep}>{fmt(p.epf_er)}</td>
+                  <td style={td}>{fmt(p.socso_er)}</td>
+                  <td style={td}>{fmt(p.eis_er)}</td>
+                  <td style={td}>{fmt(p.hrd_er)}</td>
+                  <td style={{ ...td, fontWeight: 700 }}>{fmt(p.net)}</td>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+              ))}
 
-      <p style={{ marginTop: 8, color: '#6b7280', fontSize: 12 }}>
-        Tip: Uncheck “Include” to skip that staff for the payroll run. Salary updates save on blur.
-      </p>
+              {totals && (
+                <tr>
+                  <td style={{ ...tdLeft, fontWeight: 700 }}>TOTAL</td>
+                  <td style={{ ...td, fontWeight: 700 }}>{fmt(totals.basic)}</td>
+                  <td style={{ ...td, fontWeight: 700 }}>{fmt(totals.additions)}</td>
+                  <td style={{ ...td, fontWeight: 700 }}>{fmt(totals.other_deduct)}</td>
+                  <td style={{ ...td, fontWeight: 700 }}>{fmt(totals.gross)}</td>
+                  <td style={{ ...td, fontWeight: 700 }}>{fmt(totals.pcb)}</td>
+                  <td style={{ ...td, fontWeight: 700 }}>{fmt(totals.epf_ee)}</td>
+                  <td style={{ ...td, fontWeight: 700 }}>{fmt(totals.socso_ee)}</td>
+                  <td style={{ ...td, fontWeight: 700 }}>{fmt(totals.eis_ee)}</td>
+                  <td style={{ ...tdSep, fontWeight: 700 }}>{fmt(totals.epf_er)}</td>
+                  <td style={{ ...td, fontWeight: 700 }}>{fmt(totals.socso_er)}</td>
+                  <td style={{ ...td, fontWeight: 700 }}>{fmt(totals.eis_er)}</td>
+                  <td style={{ ...td, fontWeight: 700 }}>{fmt(totals.hrd_er)}</td>
+                  <td style={{ ...td, fontWeight: 700 }}>{fmt(totals.net)}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          <p style={{ marginTop: 8, color: '#6b7280', fontSize: 12 }}>
+            Tip: select month &amp; year, then press “Run Payroll”.
+          </p>
+        </div>
+      )}
+
+      {!loading && !data?.payslips?.length && (
+        <div style={{ color: '#6b7280' }}>No data yet — run payroll to see results.</div>
+      )}
     </div>
   );
 }
 
-const thLeft: React.CSSProperties = { textAlign: 'left', padding: '10px 8px', fontWeight: 600, whiteSpace: 'nowrap' };
-const thRight: React.CSSProperties = { textAlign: 'right', padding: '10px 8px', fontWeight: 600, whiteSpace: 'nowrap' };
-const tdLeft: React.CSSProperties = { textAlign: 'left', padding: '8px', verticalAlign: 'middle' };
-const tdRight: React.CSSProperties = { textAlign: 'right', padding: '8px', verticalAlign: 'middle' };
-const input: React.CSSProperties = { width: 120, textAlign: 'right', border: '1px solid #d1d5db', borderRadius: 6, padding: '6px 8px' };
-const primaryBtn: React.CSSProperties = { border: '1px solid #2563eb', background: '#2563eb', color: '#fff', borderRadius: 8, padding: '8px 12px', cursor: 'pointer' };
+/* ---------- styles (kept small, similar to your other pages) ---------- */
+const selectStyle: React.CSSProperties = {
+  padding: '8px 10px',
+  borderRadius: 8,
+  border: '1px solid #d1d5db',
+  outline: 'none',
+  fontSize: 14,
+};
+
+const primaryBtn: React.CSSProperties = {
+  padding: '9px 12px',
+  borderRadius: 8,
+  border: '1px solid #2563eb',
+  background: '#2563eb',
+  color: '#fff',
+  cursor: 'pointer',
+  fontSize: 14,
+};
+
+const tableStyle: React.CSSProperties = {
+  width: '100%',
+  borderCollapse: 'collapse',
+  fontSize: 14, // match adjustment box look
+};
+
+const thLeft: React.CSSProperties = {
+  textAlign: 'left',
+  padding: '10px 8px',
+  borderBottom: '1px solid #e5e7eb',
+  whiteSpace: 'nowrap',
+  fontWeight: 600,
+};
+
+const th: React.CSSProperties = {
+  textAlign: 'right',
+  padding: '10px 8px',
+  borderBottom: '1px solid #e5e7eb',
+  whiteSpace: 'nowrap',
+  fontWeight: 600,
+};
+
+const thSep: React.CSSProperties = {
+  ...th,
+  borderLeft: '2px solid #e5e7eb', // subtle divider between EE and ER
+};
+
+const thStrong: React.CSSProperties = {
+  ...th,
+  fontWeight: 800,
+};
+
+const rowStyle: React.CSSProperties = {
+  borderBottom: '1px solid #f3f4f6',
+};
+
+const tdLeft: React.CSSProperties = {
+  textAlign: 'left',
+  padding: '8px',
+  verticalAlign: 'top',
+};
+
+const td: React.CSSProperties = {
+  textAlign: 'right',
+  padding: '8px',
+  verticalAlign: 'top',
+};
+
+const tdSep: React.CSSProperties = {
+  ...td,
+  borderLeft: '2px solid #f3f4f6',
+};
+
+/* ---------- helpers ---------- */
+function fmt(n: number | undefined | null) {
+  const v = Number(n || 0);
+  return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
