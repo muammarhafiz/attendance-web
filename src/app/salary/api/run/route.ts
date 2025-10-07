@@ -22,6 +22,12 @@ type BracketRow = {
   employer: number; // employer RM
 };
 
+type AddDedRow = {
+  staff_email: string;
+  additions_total: number | null;
+  deductions_total: number | null;
+};
+
 type Payslip = {
   email: string;
   name: string;
@@ -121,15 +127,28 @@ export async function POST() {
       .order('wage_min', { ascending: true });
     if (eisErr) throw eisErr;
 
-    /* 4) Compute payslips */
+    /* 4) Additions & Deductions (from admin-only view v_add_ded_current_month) */
+    const { data: addDed, error: addDedErr } = await supabase
+      .from('v_add_ded_current_month')
+      .select('staff_email, additions_total, deductions_total');
+    if (addDedErr) throw addDedErr;
+
+    const addByEmail = new Map<string, number>();
+    const dedByEmail = new Map<string, number>();
+    (addDed as AddDedRow[] | null)?.forEach((row) => {
+      addByEmail.set(row.staff_email, Number(row.additions_total ?? 0));
+      // store positive deduction; we subtract later
+      dedByEmail.set(row.staff_email, Math.abs(Number(row.deductions_total ?? 0)));
+    });
+
+    /* 5) Compute payslips */
     const payslips: Payslip[] = [];
 
     for (const s of (staff ?? []) as StaffRow[]) {
       const basic = Number(baseByEmail.get(s.email) ?? 0);
 
-      // placeholders (commission/allowance/deductions to add later)
-      const additions = 0;
-      const other_deduct = 0;
+      const additions = addByEmail.get(s.email) ?? 0;
+      const other_deduct = dedByEmail.get(s.email) ?? 0;
 
       const gross = basic + additions;
 
