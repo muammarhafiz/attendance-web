@@ -160,7 +160,11 @@ type StaffRow = {
 
 export async function POST() {
   try {
-    const cookieStore = cookies();
+    export async function POST() {
+  try {
+    // ⬇⬇ change this line
+-   const cookieStore = cookies();
++   const cookieStore = await cookies();
 
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL as string,
@@ -168,17 +172,19 @@ export async function POST() {
       {
         cookies: {
           get(name: string) {
-            return cookieStore.get(name)?.value;
+-           return cookieStore.get(name)?.value;
++           return cookieStore.get(name)?.value;
           },
           set(name: string, value: string, options: CookieOptions) {
-            // route handlers can't set from here easily; ignore
+            /* noop in route handlers */
           },
           remove(name: string, options: CookieOptions) {
-            // ignore
+            /* noop */
           },
         },
       }
     );
+    // ...rest unchanged...
 
     // Only included staff
     const { data, error } = await supabase
