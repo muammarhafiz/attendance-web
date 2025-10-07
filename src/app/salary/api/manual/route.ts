@@ -3,19 +3,26 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
-type ReadonlyRequestCookiesLike = {
+type CookieStoreLike = {
   get(name: string): { value?: string } | undefined;
 };
-const jarGet = (name: string) => {
-  const j = cookies() as unknown as ReadonlyRequestCookiesLike;
-  return j.get(name)?.value ?? '';
-};
 
-function ok<T>(data: T) {
-  return NextResponse.json({ ok: true, ...data });
+function readCookie(name: string): string {
+  try {
+    const jar = cookies() as unknown as CookieStoreLike;
+    return jar.get(name)?.value ?? '';
+  } catch {
+    return '';
+  }
 }
-function fail(error: string, status = 400) {
-  return NextResponse.json({ ok: false, error }, { status });
+
+function base64UrlDecode(input: string): string {
+  const b64 = input.replace(/-/g, '+').replace(/_/g, '/').padEnd(
+    Math.ceil(input.length / 4) * 4,
+    '='
+  );
+  if (typeof atob === 'function') return atob(b64);
+  return Buffer.from(b64, 'base64').toString('utf8');
 }
 
 async function getSupabase() {
@@ -24,7 +31,9 @@ async function getSupabase() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get: jarGet,
+        get(name: string) {
+          return readCookie(name);
+        },
         set(_n: string, _v: string, _o: CookieOptions) {},
         remove(_n: string, _o: CookieOptions) {},
       },
@@ -32,156 +41,106 @@ async function getSupabase() {
   );
 }
 
+async function getSessionEmail(supabase: Awaited<ReturnType<typeof getSupabase>>): Promise<string | null> {
+  // 1) Try official way
+  const { data, error } = await supabase.auth.getUser();
+  if (!error && data?.user?.email) return data.user.email;
+
+  // 2) Fallback: decode JWT from cookie
+  const token = readCookie('sb-access-token') || readCookie('sb:token'); // either name depending on version
+  if (!token) return null;
+  const parts = token.split('.');
+  if (parts.length < 2) return null;
+  try {
+    const payload = JSON.parse(base64UrlDecode(parts[1]));
+    const email: string | undefined = payload?.email || payload?.user_metadata?.email;
+    return email ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function assertAdmin(supabase: Awaited<ReturnType<typeof getSupabase>>) {
+  const email = await getSessionEmail(supabase);
+  if (!email) throw new Error('No active session');
+
   const { data, error } = await supabase
     .from('staff')
     .select('is_admin')
-    .eq('email', supabase.auth.getUser ? (await supabase.auth.getUser()).data.user?.email ?? '' : '')
-    .maybeSingle();
-
-  // Fallback: if supabase.auth.getUser() is not available in SSR adapter, use RLS helper
-  if (error || !data || data.is_admin !== true) {
-    // Try admin via RLS helper function, if present:
-    const { data: adminCheck } = await supabase.rpc('is_admin');
-    if (adminCheck !== true) throw new Error('Admins only');
-  }
-}
-
-async function getCurrentPeriodId(supabase: Awaited<ReturnType<typeof getSupabase>>) {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
-
-  const { data, error } = await supabase
-    .from('payroll_periods')
-    .select('id')
-    .eq('year', year)
-    .eq('month', month)
-    .limit(1)
+    .eq('email', email)
     .maybeSingle();
 
   if (error) throw error;
-  if (data?.id) return data.id;
-
-  // If period row missing, create one
-  const { data: ins, error: insErr } = await supabase
-    .from('payroll_periods')
-    .insert({ year, month, status: 'OPEN' })
-    .select('id')
-    .single();
-
-  if (insErr) throw insErr;
-  return ins.id as string;
+  if (!data?.is_admin) throw new Error('Admins only');
+  return email;
 }
 
-/** GET: list manual_items for current period */
-export async function GET() {
-  try {
-    const supabase = await getSupabase();
-    await assertAdmin(supabase);
-    const periodId = await getCurrentPeriodId(supabase);
+type Body = {
+  staff_email: string;               // target staff (email)
+  kind: 'EARN' | 'DEDUCT';           // enum (matches your check constraint)
+  amount: number;                    // RM
+  label?: string | null;             // optional description
+  code?: string | null;              // optional code
+};
 
-    const { data, error } = await supabase
-      .from('manual_items')
-      .select('id, staff_email, kind, label, amount, created_at, created_by')
-      .eq('period_id', periodId)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return ok({ items: data ?? [] });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : 'Error';
-    return fail(msg, 500);
-  }
-}
-
-/** POST: create a new manual item */
 export async function POST(req: Request) {
   try {
     const supabase = await getSupabase();
+
+    // Only admins may insert manual items
     await assertAdmin(supabase);
-    const periodId = await getCurrentPeriodId(supabase);
 
-    const body = (await req.json()) as {
-      staff_email: string;
-      kind: 'EARN' | 'DEDUCT';
-      amount: number;
-      label?: string;
-    };
-
+    const body = (await req.json()) as Body;
     if (!body?.staff_email || !body?.kind || typeof body.amount !== 'number') {
-      return fail('Missing staff_email/kind/amount');
+      return NextResponse.json(
+        { ok: false, error: 'Invalid payload' },
+        { status: 400 }
+      );
     }
 
-    const { data: ins, error } = await supabase
-      .from('manual_items')
-      .insert({
+    // find current period
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+
+    // get (or create) payroll_periods row for this year/month
+    let { data: period, error: perr } = await supabase
+      .from('payroll_periods')
+      .select('id, year, month, status')
+      .eq('year', year)
+      .eq('month', month)
+      .maybeSingle();
+
+    if (perr) throw perr;
+
+    if (!period) {
+      const { data: inserted, error: ierr } = await supabase
+        .from('payroll_periods')
+        .insert([{ year, month, status: 'OPEN' }])
+        .select('id, year, month, status')
+        .single();
+      if (ierr) throw ierr;
+      period = inserted;
+    }
+
+    // Insert into manual_items (admin-only)
+    const { error: insErr } = await supabase.from('manual_items').insert([
+      {
         staff_email: body.staff_email,
+        period_id: period.id,
         kind: body.kind,
         amount: body.amount,
         label: body.label ?? null,
-        period_id: periodId,
-      })
-      .select('id')
-      .single();
+        code: body.code ?? null,
+      },
+    ]);
 
-    if (error) throw error;
-    return ok({ id: ins.id });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : 'Error';
-    return fail(msg, 500);
-  }
-}
+    if (insErr) throw insErr;
 
-/** PUT: update an existing item */
-export async function PUT(req: Request) {
-  try {
-    const supabase = await getSupabase();
-    await assertAdmin(supabase);
-    await getCurrentPeriodId(supabase); // ensure a period exists (not strictly needed for update)
-
-    const body = (await req.json()) as {
-      id: string;
-      staff_email?: string;
-      kind?: 'EARN' | 'DEDUCT';
-      amount?: number;
-      label?: string | null;
-    };
-    if (!body?.id) return fail('Missing id');
-
-    const patch: Record<string, unknown> = {};
-    if (body.staff_email) patch.staff_email = body.staff_email;
-    if (body.kind) patch.kind = body.kind;
-    if (typeof body.amount === 'number') patch.amount = body.amount;
-    if (typeof body.label !== 'undefined') patch.label = body.label;
-
-    const { error } = await supabase
-      .from('manual_items')
-      .update(patch)
-      .eq('id', body.id);
-
-    if (error) throw error;
-    return ok({ updated: true });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : 'Error';
-    return fail(msg, 500);
-  }
-}
-
-/** DELETE: remove an item by id */
-export async function DELETE(req: Request) {
-  try {
-    const supabase = await getSupabase();
-    await assertAdmin(supabase);
-    const { searchParams } = new URL(req.url);
-    const id = searchParams.get('id');
-    if (!id) return fail('Missing id');
-
-    const { error } = await supabase.from('manual_items').delete().eq('id', id);
-    if (error) throw error;
-    return ok({ deleted: true });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : 'Error';
-    return fail(msg, 500);
+    return NextResponse.json({ ok: true });
+  } catch (err: unknown) {
+    const msg =
+      err instanceof Error ? err.message : typeof err === 'string' ? err : 'Error';
+    return NextResponse.json({ ok: false, error: msg }, { status: 403 });
   }
 }
