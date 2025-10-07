@@ -58,7 +58,11 @@ function findBracket(
 export async function POST() {
   try {
     // Auth cookies from Attendance app session
-    const jar = cookies();
+    //const jar = cookies();
+
+const jar = cookies() as unknown as {
+  get(name: string): { value?: string } | undefined;
+};
 
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
