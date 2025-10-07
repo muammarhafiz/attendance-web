@@ -1,10 +1,9 @@
 // src/app/salary/api/run/route.ts
 import { NextResponse } from 'next/server';
-// ❌ remove any `import { headers } from 'next/headers'`
-import { headers } from 'next/headers';
+import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
-// Types from our DB shape
+/* ---------- Types ---------- */
 type StaffRow = {
   email: string;
   name: string;
@@ -12,7 +11,7 @@ type StaffRow = {
 };
 
 type ExtraRow = {
-  staff_email: string; // FK to staff.email
+  staff_email: string;            // FK -> staff.email
   basic_salary: number | null;
   skip_payroll?: boolean | null;
 };
@@ -49,6 +48,7 @@ type Payslip = {
   net_pay: number;
 };
 
+/* ---------- Helpers ---------- */
 function findBracket<T extends { min_wage: number; max_wage: number | null }>(
   brackets: T[] | null,
   wage: number
@@ -62,12 +62,13 @@ function findBracket<T extends { min_wage: number; max_wage: number | null }>(
   return null;
 }
 
+/* ---------- Route ---------- */
 export async function POST() {
   try {
-    // Supabase (attendance project) via cookies from headers()
-    //const cookieStore = headers();
-		const cookieJar = await cookies();
+    // Read request cookies (sync in Next.js App Router)
+    const cookieJar = cookies();
 
+    // Supabase (attendance project)
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -76,44 +77,45 @@ export async function POST() {
           get(name: string) {
             return cookieJar.get(name)?.value ?? '';
           },
-          // In a route handler we usually don't mutate response cookies here,
-          // so keep these as no-ops to satisfy Supabase's adapter interface.
-          set(_name: string, _value: string, _options: any) {},
-          remove(_name: string, _options: any) {},
+          // No-ops in a route handler (we don't mutate from here)
+          set(_name: string, _value: string, _options: CookieOptions) {},
+          remove(_name: string, _options: CookieOptions) {},
         },
       }
     );
 
-    // 1) Load staff
+    /* 1) Staff (source of truth) */
     const { data: staff, error: staffErr } = await supabase
       .from('staff')
       .select('email,name,is_admin')
       .order('name', { ascending: true });
     if (staffErr) throw staffErr;
 
-    // 2) Load salary extras (basic + skip flag)
+    /* 2) Salary extras (basic salary + skip flag) */
     const { data: extras, error: extrasErr } = await supabase
       .from('salary_staff_extras')
       .select('staff_email,basic_salary,skip_payroll');
     if (extrasErr) throw extrasErr;
 
-    // 3) SOCSO brackets
+    /* 3) SOCSO brackets */
     const { data: socsoRows, error: socsoErr } = await supabase
       .from('socso_bracket')
       .select('min_wage,max_wage,employer_rm,employee_rm')
       .order('min_wage', { ascending: true });
     if (socsoErr) throw socsoErr;
 
-    // 4) EIS brackets
+    /* 4) EIS brackets */
     const { data: eisRows, error: eisErr } = await supabase
       .from('eis_bracket')
       .select('min_wage,max_wage,employer_rm,employee_rm')
       .order('min_wage', { ascending: true });
     if (eisErr) throw eisErr;
 
+    /* Build lookup of extras by email */
     const extrasByEmail = new Map<string, ExtraRow>();
     (extras || []).forEach((e) => extrasByEmail.set(e.staff_email, e));
 
+    /* Compute payslips */
     const payslips: Payslip[] = [];
 
     for (const s of (staff || []) as StaffRow[]) {
@@ -123,17 +125,16 @@ export async function POST() {
 
       if (skip) continue;
 
-      // EPF/SOCSO/EIS on basic only
+      // EPF/SOCSO/EIS are based on basic only
       const additions = 0;
       const other_deduct = 0;
-
       const gross = basic + additions;
 
       // EPF (fixed rates for now)
       const epf_emp = Math.round(basic * 0.11 * 100) / 100; // 11% employee
       const epf_er = Math.round(basic * 0.13 * 100) / 100;  // 13% employer
 
-      // SOCSO from table
+      // SOCSO (from table)
       let socso_emp = 0;
       let socso_er = 0;
       {
@@ -144,7 +145,7 @@ export async function POST() {
         }
       }
 
-      // EIS from table
+      // EIS (from table)
       let eis_emp = 0;
       let eis_er = 0;
       {
@@ -155,7 +156,7 @@ export async function POST() {
         }
       }
 
-      // HRD and PCB: 0 for now
+      // HRD/PCB placeholders
       const hrd_er = 0;
       const pcb = 0;
 
