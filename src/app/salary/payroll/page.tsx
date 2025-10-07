@@ -75,8 +75,10 @@ export default function PayrollPage() {
       }
       setData(json);
       setLastRunAt(new Date().toLocaleString());
-    } catch (e: any) {
-      setErr(e?.message || 'Error running payroll');
+    } catch (e: unknown) {
+      const message =
+        e instanceof Error ? e.message : typeof e === 'string' ? e : 'Error running payroll';
+      setErr(message);
       setData(null);
     } finally {
       setLoading(false);
@@ -208,7 +210,7 @@ export default function PayrollPage() {
   );
 }
 
-/* ---------- styles (kept small, similar to your other pages) ---------- */
+/* ---------- styles ---------- */
 const selectStyle: React.CSSProperties = {
   padding: '8px 10px',
   borderRadius: 8,
@@ -230,7 +232,7 @@ const primaryBtn: React.CSSProperties = {
 const tableStyle: React.CSSProperties = {
   width: '100%',
   borderCollapse: 'collapse',
-  fontSize: 14, // match adjustment box look
+  fontSize: 14,
 };
 
 const thLeft: React.CSSProperties = {
@@ -251,7 +253,7 @@ const th: React.CSSProperties = {
 
 const thSep: React.CSSProperties = {
   ...th,
-  borderLeft: '2px solid #e5e7eb', // subtle divider between EE and ER
+  borderLeft: '2px solid #e5e7eb',
 };
 
 const thStrong: React.CSSProperties = {
