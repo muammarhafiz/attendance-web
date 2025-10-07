@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
-/* ---------- Types based on your Attendance DB ---------- */
+/* ---------- Types (based on your Attendance DB) ---------- */
 type StaffRow = {
   email: string;
   name: string;
@@ -15,7 +15,7 @@ type ProfileRow = {
   base_salary: number | null;
 };
 
-type Bracket = {
+type BracketRow = {
   wage_min: number;
   wage_max: number | null;
   employee: number; // employee RM
@@ -41,10 +41,12 @@ type Payslip = {
 };
 
 /* ---------- Helpers ---------- */
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
 function findBracket(
-  brackets: Bracket[] | null,
+  brackets: BracketRow[] | null,
   wage: number
-): Bracket | null {
+): BracketRow | null {
   if (!brackets) return null;
   for (const b of brackets) {
     const minOk = wage >= Number(b.wage_min);
@@ -57,13 +59,10 @@ function findBracket(
 /* ---------- Route ---------- */
 export async function POST() {
   try {
-    // Auth cookies from Attendance app session
-    //const jar = cookies();
+    // App Router cookies() is synchronous.
+    const jar = cookies();
 
-const jar = cookies() as unknown as {
-  get(name: string): { value?: string } | undefined;
-};
-
+    // Supabase (attendance project)
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -72,14 +71,14 @@ const jar = cookies() as unknown as {
           get(name: string) {
             return jar.get(name)?.value ?? '';
           },
-          // no-ops in a Route Handler
+          // Route Handlers in this app don't mutate response cookies:
           set(_n: string, _v: string, _o: CookieOptions) {},
           remove(_n: string, _o: CookieOptions) {},
         },
       }
     );
 
-    /* 1) Staff list */
+    /* 1) Staff list (source of names/emails) */
     const { data: staff, error: staffErr } = await supabase
       .from('staff')
       .select('email,name,is_admin')
@@ -92,7 +91,12 @@ const jar = cookies() as unknown as {
       .select('staff_email,base_salary');
     if (profErr) throw profErr;
 
-    /* 3) SOCSO & EIS brackets */
+    const baseByEmail = new Map<string, number>();
+    (profiles ?? []).forEach((p: ProfileRow) => {
+      baseByEmail.set(p.staff_email, Number(p.base_salary ?? 0));
+    });
+
+    /* 3) SOCSO & EIS brackets (note plural table names) */
     const { data: socsoRows, error: socsoErr } = await supabase
       .from('socso_brackets')
       .select('wage_min,wage_max,employee,employer')
@@ -105,24 +109,21 @@ const jar = cookies() as unknown as {
       .order('wage_min', { ascending: true });
     if (eisErr) throw eisErr;
 
-    const baseByEmail = new Map<string, number>();
-    (profiles || []).forEach((p) => {
-      baseByEmail.set(p.staff_email, Number(p.base_salary ?? 0));
-    });
-
     /* 4) Compute payslips */
     const payslips: Payslip[] = [];
 
-    for (const s of (staff || []) as StaffRow[]) {
+    for (const s of (staff ?? []) as StaffRow[]) {
       const basic = Number(baseByEmail.get(s.email) ?? 0);
 
-      const additions = 0;     // (commission/allowance to add later)
-      const other_deduct = 0;  // (advance/unpaid to add later)
+      // placeholders (we’ll add commission/allowance/advance later)
+      const additions = 0;
+      const other_deduct = 0;
+
       const gross = basic + additions;
 
-      // EPF (simple fixed rates for now)
-      const epf_emp = Math.round(basic * 0.11 * 100) / 100; // 11%
-      const epf_er = Math.round(basic * 0.13 * 100) / 100;  // 13%
+      // EPF (fixed rates for now)
+      const epf_emp = round2(basic * 0.11); // 11% employee
+      const epf_er = round2(basic * 0.13);  // 13% employer
 
       // SOCSO from brackets
       let socso_emp = 0;
@@ -164,7 +165,7 @@ const jar = cookies() as unknown as {
         basic_pay: basic,
         additions,
         other_deduct,
-        gross_pay: Math.round(gross * 100) / 100,
+        gross_pay: round2(gross),
         epf_emp,
         epf_er,
         socso_emp,
@@ -173,7 +174,7 @@ const jar = cookies() as unknown as {
         eis_er,
         hrd_er,
         pcb,
-        net_pay: Math.round(net * 100) / 100,
+        net_pay: round2(net),
       });
     }
 
