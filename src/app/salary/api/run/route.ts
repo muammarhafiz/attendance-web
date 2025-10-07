@@ -160,8 +160,6 @@ type StaffRow = {
 
 export async function POST() {
   try {
-    export async function POST() {
-  try {
     // ⬇⬇ change this line
 -   const cookieStore = cookies();
 +   const cookieStore = await cookies();
