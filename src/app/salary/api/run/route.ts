@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
-/* ---------- Types (based on your Attendance DB) ---------- */
+/* ---------- Types (reflect your Attendance DB) ---------- */
 type StaffRow = {
   email: string;
   name: string;
@@ -49,10 +49,7 @@ type Payslip = {
 /* ---------- Helpers ---------- */
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-function findBracket(
-  brackets: BracketRow[] | null,
-  wage: number
-): BracketRow | null {
+function findBracket(brackets: BracketRow[] | null, wage: number): BracketRow | null {
   if (!brackets) return null;
   for (const b of brackets) {
     const minOk = wage >= Number(b.wage_min);
@@ -62,7 +59,7 @@ function findBracket(
   return null;
 }
 
-/** Minimal shape we need from Next's cookies() to avoid `any`. */
+/** Minimal shape for Next's cookies() to avoid `any`. */
 type ReadonlyRequestCookiesLike = {
   get(name: string): { value?: string } | undefined;
 };
@@ -80,7 +77,7 @@ function readCookie(name: string): string {
 /* ---------- Route ---------- */
 export async function POST() {
   try {
-    // Supabase client wired to App Router cookies
+    // Supabase client using App Router cookies
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -127,7 +124,7 @@ export async function POST() {
       .order('wage_min', { ascending: true });
     if (eisErr) throw eisErr;
 
-    /* 4) Additions & Deductions (from admin-only view v_add_ded_current_month) */
+    /* 4) Additions & Deductions (from admin-only view) */
     const { data: addDed, error: addDedErr } = await supabase
       .from('v_add_ded_current_month')
       .select('staff_email, additions_total, deductions_total');
@@ -135,9 +132,9 @@ export async function POST() {
 
     const addByEmail = new Map<string, number>();
     const dedByEmail = new Map<string, number>();
-    (addDed as AddDedRow[] | null)?.forEach((row) => {
+    (addDed ?? []).forEach((row: AddDedRow) => {
       addByEmail.set(row.staff_email, Number(row.additions_total ?? 0));
-      // store positive deduction; we subtract later
+      // store as positive number
       dedByEmail.set(row.staff_email, Math.abs(Number(row.deductions_total ?? 0)));
     });
 
