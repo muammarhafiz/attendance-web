@@ -3,16 +3,29 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
+/** Minimal cookie store shape so we avoid `any`. */
 type CookieStoreLike = { get(name: string): { value?: string } | undefined };
 const readCookie = (n: string) => {
   try { return (cookies() as unknown as CookieStoreLike).get(n)?.value ?? ''; }
   catch { return ''; }
 };
 
-function b64UrlDecode(s: string) {
-  const b64 = s.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(s.length/4) * 4, '=');
-  // @ts-ignore Buffer exists in Node route handlers
-  return (typeof atob === 'function' ? atob(b64) : Buffer.from(b64, 'base64').toString('utf8'));
+/** Base64url decode that works in Node or Edge runtimes without ts-comments. */
+function b64UrlDecodeToUtf8(input: string): string {
+  const b64 = input.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(input.length / 4) * 4, '=');
+  // Prefer atob if it exists (Edge/runtime)
+  if (typeof (globalThis as unknown as { atob?: (s: string) => string }).atob === 'function') {
+    const ascii = (globalThis as unknown as { atob: (s: string) => string }).atob(b64);
+    // Decode ASCII -> UTF-8
+    try { return decodeURIComponent(escape(ascii)); } catch { return ascii; }
+  }
+  // Fallback to Buffer in Node
+  try {
+    // declare a minimal Buffer-like type so TS is happy without @ts-ignore
+    const Buf = (globalThis as unknown as { Buffer?: { from: (s: string, e: string) => { toString: (e: string) => string } } }).Buffer;
+    if (Buf) return Buf.from(b64, 'base64').toString('utf8');
+  } catch {}
+  return '';
 }
 
 type Body = {
@@ -31,25 +44,25 @@ export async function POST(req: Request) {
       {
         cookies: {
           get: (n: string) => readCookie(n),
+          // Adapter requires these, even if no-ops in route handlers
           set(_n: string, _v: string, _o: CookieOptions) {},
           remove(_n: string, _o: CookieOptions) {},
         },
       }
     );
 
-    // Parse & validate body
+    // 1) Parse body
     const body = (await req.json()) as Body;
     const staff_email = String(body.staff_email || '').trim();
-    const kind = body.kind === 'DEDUCT' ? 'DEDUCT' : 'EARN';
+    const kind: 'EARN' | 'DEDUCT' = body.kind === 'DEDUCT' ? 'DEDUCT' : 'EARN';
     const amountNum = Number(body.amount);
     const label = body.label?.toString().trim() || null;
     const code = body.code?.toString().trim() || null;
 
     if (!staff_email) throw new Error('staff_email required');
-    if (!Number.isFinite(amountNum)) throw new Error('amount must be a number');
-    if (amountNum <= 0) throw new Error('amount must be > 0');
+    if (!Number.isFinite(amountNum) || amountNum <= 0) throw new Error('amount must be a number > 0');
 
-    // Identify caller
+    // 2) Who is calling?
     const { data: authData } = await supabase.auth.getUser();
     let callerEmail = authData?.user?.email ?? null;
 
@@ -57,17 +70,16 @@ export async function POST(req: Request) {
       const tok = readCookie('sb-access-token') || readCookie('sb:token');
       if (tok && tok.split('.').length >= 2) {
         try {
-          const payload = JSON.parse(b64UrlDecode(tok.split('.')[1]));
+          const payload = JSON.parse(b64UrlDecodeToUtf8(tok.split('.')[1]));
           callerEmail = payload?.email ?? payload?.user_metadata?.email ?? null;
         } catch {}
       }
     }
-
     if (!callerEmail) {
       return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
     }
 
-    // Admin check
+    // 3) Admin check
     const { data: staffRow, error: staffErr } = await supabase
       .from('staff')
       .select('is_admin')
@@ -78,7 +90,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'Admins only' }, { status: 403 });
     }
 
-    // Ensure we have a current payroll period
+    // 4) Ensure current payroll period exists
     const now = new Date();
     const year = now.getFullYear();
     const month = now.getMonth() + 1;
@@ -92,7 +104,6 @@ export async function POST(req: Request) {
     if (findErr) throw findErr;
 
     let periodId = found?.id as string | undefined;
-
     if (!periodId) {
       const { data: inserted, error: insertErr } = await supabase
         .from('payroll_periods')
@@ -103,12 +114,12 @@ export async function POST(req: Request) {
       periodId = inserted.id as string;
     }
 
-    // Insert manual item
+    // 5) Insert manual adjustment
     const { error: insErr } = await supabase
       .from('manual_items')
       .insert([{
         staff_email,
-        kind,          // 'EARN' | 'DEDUCT'
+        kind,               // 'EARN' | 'DEDUCT'
         amount: amountNum,
         label,
         code,
