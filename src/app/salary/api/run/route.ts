@@ -1,5 +1,6 @@
 // src/app/salary/api/run/route.ts
 import { NextResponse } from 'next/server';
+// ❌ remove any `import { headers } from 'next/headers'`
 import { headers } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
@@ -64,7 +65,8 @@ function findBracket<T extends { min_wage: number; max_wage: number | null }>(
 export async function POST() {
   try {
     // Supabase (attendance project) via cookies from headers()
-    const cookieStore = headers();
+    //const cookieStore = headers();
+		const cookieJar = await cookies();
 
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -72,11 +74,12 @@ export async function POST() {
       {
         cookies: {
           get(name: string) {
-            return cookieStore.get(name)?.value;
+            return cookieJar.get(name)?.value ?? '';
           },
-          // route handlers can't set/remove response cookies this way; keep stubs
-          set(_name: string, _value: string, _options: CookieOptions) { /* no-op */ },
-          remove(_name: string, _options: CookieOptions) { /* no-op */ },
+          // In a route handler we usually don't mutate response cookies here,
+          // so keep these as no-ops to satisfy Supabase's adapter interface.
+          set(_name: string, _value: string, _options: any) {},
+          remove(_name: string, _options: any) {},
         },
       }
     );
