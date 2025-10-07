@@ -1,58 +1,20 @@
 // src/app/salary/api/run/route.ts
-import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
+import { NextResponse, NextRequest } from 'next/server';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
 /* ---------- Types ---------- */
-type StaffRow = {
-  email: string;
-  name: string;
-  is_admin: boolean;
-};
-
-type ExtraRow = {
-  staff_email: string;            // FK -> staff.email
-  basic_salary: number | null;
-  skip_payroll?: boolean | null;
-};
-
-type SocsoBracket = {
-  min_wage: number;
-  max_wage: number | null;
-  employer_rm: number;
-  employee_rm: number;
-};
-
-type EisBracket = {
-  min_wage: number;
-  max_wage: number | null;
-  employer_rm: number;
-  employee_rm: number;
-};
-
+type StaffRow = { email: string; name: string; is_admin: boolean };
+type ExtraRow = { staff_email: string; basic_salary: number | null; skip_payroll?: boolean | null };
+type SocsoBracket = { min_wage: number; max_wage: number | null; employer_rm: number; employee_rm: number };
+type EisBracket  = { min_wage: number; max_wage: number | null; employer_rm: number; employee_rm: number };
 type Payslip = {
-  email: string;
-  name: string;
-  basic_pay: number;
-  additions: number;
-  other_deduct: number;
-  gross_pay: number;
-  epf_emp: number;
-  epf_er: number;
-  socso_emp: number;
-  socso_er: number;
-  eis_emp: number;
-  eis_er: number;
-  hrd_er: number;
-  pcb: number;
-  net_pay: number;
+  email: string; name: string; basic_pay: number; additions: number; other_deduct: number; gross_pay: number;
+  epf_emp: number; epf_er: number; socso_emp: number; socso_er: number; eis_emp: number; eis_er: number;
+  hrd_er: number; pcb: number; net_pay: number;
 };
 
 /* ---------- Helpers ---------- */
-function findBracket<T extends { min_wage: number; max_wage: number | null }>(
-  brackets: T[] | null,
-  wage: number
-): T | null {
+function findBracket<T extends { min_wage: number; max_wage: number | null }>(brackets: T[] | null, wage: number): T | null {
   if (!brackets) return null;
   for (const b of brackets) {
     const minOk = wage >= b.min_wage;
@@ -63,142 +25,99 @@ function findBracket<T extends { min_wage: number; max_wage: number | null }>(
 }
 
 /* ---------- Route ---------- */
-export async function POST() {
+export async function POST(req: NextRequest) {
   try {
-    // IMPORTANT: cookies() is synchronous in App Router. Do NOT await it.
-    const cookieJar = cookies();
+    // Read cookies from the request (avoids the Promise typing issue)
+    const cookieStore = req.cookies;
 
-    // Supabase (attendance project)
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
           get(name: string) {
-            return cookieJar.get(name)?.value ?? '';
+            return cookieStore.get(name)?.value ?? '';
           },
-          // We don't mutate response cookies from a route handler in this app:
+          // We don't mutate response cookies from this route:
           set(_name: string, _value: string, _options: CookieOptions) {},
           remove(_name: string, _options: CookieOptions) {},
         },
       }
     );
 
-    /* 1) Staff (source of truth) */
+    // 1) Staff (source of truth)
     const { data: staff, error: staffErr } = await supabase
       .from('staff')
       .select('email,name,is_admin')
       .order('name', { ascending: true });
     if (staffErr) throw staffErr;
 
-    /* 2) Salary extras (basic salary + skip flag) */
+    // 2) Salary extras (basic + skip flag)
     const { data: extras, error: extrasErr } = await supabase
       .from('salary_staff_extras')
       .select('staff_email,basic_salary,skip_payroll');
     if (extrasErr) throw extrasErr;
 
-    /* 3) SOCSO brackets */
+    // 3) SOCSO brackets
     const { data: socsoRows, error: socsoErr } = await supabase
       .from('socso_bracket')
       .select('min_wage,max_wage,employer_rm,employee_rm')
       .order('min_wage', { ascending: true });
     if (socsoErr) throw socsoErr;
 
-    /* 4) EIS brackets */
+    // 4) EIS brackets
     const { data: eisRows, error: eisErr } = await supabase
       .from('eis_bracket')
       .select('min_wage,max_wage,employer_rm,employee_rm')
       .order('min_wage', { ascending: true });
     if (eisErr) throw eisErr;
 
-    /* Build lookup of extras by email */
     const extrasByEmail = new Map<string, ExtraRow>();
     (extras || []).forEach((e) => extrasByEmail.set(e.staff_email, e));
 
-    /* Compute payslips */
     const payslips: Payslip[] = [];
 
     for (const s of (staff || []) as StaffRow[]) {
       const ex = extrasByEmail.get(s.email);
       const skip = Boolean(ex?.skip_payroll);
       const basic = Number(ex?.basic_salary || 0);
-
       if (skip) continue;
 
-      // EPF/SOCSO/EIS are based on basic only
       const additions = 0;
       const other_deduct = 0;
       const gross = basic + additions;
 
-      // EPF (fixed rates for now)
-      const epf_emp = Math.round(basic * 0.11 * 100) / 100; // 11% employee
-      const epf_er = Math.round(basic * 0.13 * 100) / 100;  // 13% employer
+      const epf_emp = Math.round(basic * 0.11 * 100) / 100; // 11%
+      const epf_er  = Math.round(basic * 0.13 * 100) / 100; // 13%
 
-      // SOCSO (from table)
-      let socso_emp = 0;
-      let socso_er = 0;
+      let socso_emp = 0, socso_er = 0;
       {
         const b = findBracket<SocsoBracket>(socsoRows, basic);
-        if (b) {
-          socso_emp = b.employee_rm;
-          socso_er = b.employer_rm;
-        }
+        if (b) { socso_emp = b.employee_rm; socso_er = b.employer_rm; }
       }
 
-      // EIS (from table)
-      let eis_emp = 0;
-      let eis_er = 0;
+      let eis_emp = 0, eis_er = 0;
       {
         const b = findBracket<EisBracket>(eisRows, basic);
-        if (b) {
-          eis_emp = b.employee_rm;
-          eis_er = b.employer_rm;
-        }
+        if (b) { eis_emp = b.employee_rm; eis_er = b.employer_rm; }
       }
 
-      // HRD/PCB placeholders
       const hrd_er = 0;
       const pcb = 0;
 
-      const net =
-        gross
-        - epf_emp
-        - socso_emp
-        - eis_emp
-        - pcb
-        - other_deduct;
+      const net = gross - epf_emp - socso_emp - eis_emp - pcb - other_deduct;
 
       payslips.push({
-        email: s.email,
-        name: s.name,
-        basic_pay: basic,
-        additions,
-        other_deduct,
+        email: s.email, name: s.name, basic_pay: basic, additions, other_deduct,
         gross_pay: Math.round(gross * 100) / 100,
-        epf_emp,
-        epf_er,
-        socso_emp,
-        socso_er,
-        eis_emp,
-        eis_er,
-        hrd_er,
-        pcb,
+        epf_emp, epf_er, socso_emp, socso_er, eis_emp, eis_er, hrd_er, pcb,
         net_pay: Math.round(net * 100) / 100,
       });
     }
 
-    return NextResponse.json({
-      ok: true,
-      payslips,
-      totals: { count: payslips.length },
-    });
+    return NextResponse.json({ ok: true, payslips, totals: { count: payslips.length } });
   } catch (err: unknown) {
-    const message =
-      err instanceof Error
-        ? err.message
-        : typeof err === 'string'
-          ? err
-          : 'Error';
+    const message = err instanceof Error ? err.message : typeof err === 'string' ? err : 'Error';
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }
