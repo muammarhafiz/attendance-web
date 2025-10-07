@@ -59,17 +59,19 @@ function findBracket(
 /* ---------- Route ---------- */
 export async function POST() {
   try {
-    // App Router cookies() is synchronous.
-    const jar = cookies();
-
-    // Supabase (attendance project)
+    // Build Supabase client using App Router cookies.
+    // Call cookies() inline and cast to any to avoid TS complaining about Promise types.
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
           get(name: string) {
-            return jar.get(name)?.value ?? '';
+            try {
+              return (cookies() as any)?.get(name)?.value ?? '';
+            } catch {
+              return '';
+            }
           },
           // Route Handlers in this app don't mutate response cookies:
           set(_n: string, _v: string, _o: CookieOptions) {},
@@ -96,7 +98,7 @@ export async function POST() {
       baseByEmail.set(p.staff_email, Number(p.base_salary ?? 0));
     });
 
-    /* 3) SOCSO & EIS brackets (note plural table names) */
+    /* 3) SOCSO & EIS brackets (plural table names) */
     const { data: socsoRows, error: socsoErr } = await supabase
       .from('socso_brackets')
       .select('wage_min,wage_max,employee,employer')
@@ -115,7 +117,7 @@ export async function POST() {
     for (const s of (staff ?? []) as StaffRow[]) {
       const basic = Number(baseByEmail.get(s.email) ?? 0);
 
-      // placeholders (we’ll add commission/allowance/advance later)
+      // placeholders (commission/allowance/deductions to add later)
       const additions = 0;
       const other_deduct = 0;
 
