@@ -49,9 +49,10 @@ type Payslip = {
 };
 
 function findBracket<T extends { min_wage: number; max_wage: number | null }>(
-  brackets: T[],
+  brackets: T[] | null,
   wage: number
 ): T | null {
+  if (!brackets) return null;
   for (const b of brackets) {
     const minOk = wage >= b.min_wage;
     const maxOk = b.max_wage == null ? true : wage <= b.max_wage;
@@ -73,12 +74,9 @@ export async function POST() {
           get(name: string) {
             return cookieStore.get(name)?.value;
           },
-          set(_name: string, _value: string, _options: CookieOptions) {
-            /* route handlers: ignore set */
-          },
-          remove(_name: string, _options: CookieOptions) {
-            /* route handlers: ignore remove */
-          },
+          // route handlers can't set/remove response cookies this way; keep stubs
+          set(_name: string, _value: string, _options: CookieOptions) { /* no-op */ },
+          remove(_name: string, _options: CookieOptions) { /* no-op */ },
         },
       }
     );
@@ -90,7 +88,7 @@ export async function POST() {
       .order('name', { ascending: true });
     if (staffErr) throw staffErr;
 
-    // 2) Load salary extras (basic + skip flag) — table you created to store basics per staff
+    // 2) Load salary extras (basic + skip flag)
     const { data: extras, error: extrasErr } = await supabase
       .from('salary_staff_extras')
       .select('staff_email,basic_salary,skip_payroll');
@@ -111,7 +109,7 @@ export async function POST() {
     if (eisErr) throw eisErr;
 
     const extrasByEmail = new Map<string, ExtraRow>();
-    (extras || []).forEach((e) => extrasByEmail.set(e.staff_email, e as ExtraRow));
+    (extras || []).forEach((e) => extrasByEmail.set(e.staff_email, e));
 
     const payslips: Payslip[] = [];
 
@@ -120,23 +118,23 @@ export async function POST() {
       const skip = Boolean(ex?.skip_payroll);
       const basic = Number(ex?.basic_salary || 0);
 
-      if (skip) continue; // honor "skip payroll" flag
+      if (skip) continue;
 
-      // Your rule: EPF/SOCSO/EIS calculated on basic only.
-      const additions = 0; // we’ll add commission/allowances later (separate module)
+      // EPF/SOCSO/EIS on basic only
+      const additions = 0;
       const other_deduct = 0;
 
       const gross = basic + additions;
 
-      // EPF (keep your existing fixed-rate scheme for now; adjust here if you later add EPF table)
+      // EPF (fixed rates for now)
       const epf_emp = Math.round(basic * 0.11 * 100) / 100; // 11% employee
       const epf_er = Math.round(basic * 0.13 * 100) / 100;  // 13% employer
 
       // SOCSO from table
       let socso_emp = 0;
       let socso_er = 0;
-      if (socsoRows && socsoRows.length) {
-        const b = findBracket<SocsoBracket>(socsoRows as SocsoBracket[], basic);
+      {
+        const b = findBracket<SocsoBracket>(socsoRows, basic);
         if (b) {
           socso_emp = b.employee_rm;
           socso_er = b.employer_rm;
@@ -146,18 +144,16 @@ export async function POST() {
       // EIS from table
       let eis_emp = 0;
       let eis_er = 0;
-      if (eisRows && eisRows.length) {
-        const b = findBracket<EisBracket>(eisRows as EisBracket[], basic);
+      {
+        const b = findBracket<EisBracket>(eisRows, basic);
         if (b) {
           eis_emp = b.employee_rm;
           eis_er = b.employer_rm;
         }
       }
 
-      // HRD (if applicable; 0 for now)
+      // HRD and PCB: 0 for now
       const hrd_er = 0;
-
-      // PCB (income tax) — 0 for now
       const pcb = 0;
 
       const net =
@@ -170,7 +166,7 @@ export async function POST() {
 
       payslips.push({
         email: s.email,
-        name: s.name, // ← ensure we pass the name back
+        name: s.name,
         basic_pay: basic,
         additions,
         other_deduct,
@@ -190,11 +186,15 @@ export async function POST() {
     return NextResponse.json({
       ok: true,
       payslips,
-      totals: {
-        count: payslips.length,
-      },
+      totals: { count: payslips.length },
     });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || 'Error' }, { status: 500 });
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error
+        ? err.message
+        : typeof err === 'string'
+          ? err
+          : 'Error';
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }
