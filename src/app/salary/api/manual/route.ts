@@ -1,184 +1,179 @@
-// src/app/salary/api/manual/route.ts
-import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { createServerClient, type CookieOptions } from "@supabase/ssr";
+// src/app/salary/api/run/route.ts
+import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
-/* --------------------------- helpers --------------------------- */
+/* ---------- Types (match your Attendance DB) ---------- */
+type StaffRow = { email: string; name: string; is_admin: boolean };
+type ProfileRow = { staff_email: string; base_salary: number | null };
+type BracketRow = { wage_min: number; wage_max: number | null; employee: number; employer: number };
+type AddDedRow = { staff_email: string; additions_total: string | number | null; deductions_total: string | number | null };
 
-type CookiesLike = { get(name: string): { value?: string } | undefined };
-const readCookie = (n: string) => {
-  try {
-    const c = cookies() as unknown as CookiesLike;
-    return c.get(n)?.value ?? "";
-  } catch {
-    return "";
-  }
+type Payslip = {
+  email: string;
+  name: string;
+  basic_pay: number;
+  additions: number;
+  other_deduct: number;
+  gross_pay: number;
+  epf_emp: number;
+  epf_er: number;
+  socso_emp: number;
+  socso_er: number;
+  eis_emp: number;
+  eis_er: number;
+  hrd_er: number;
+  pcb: number;
+  net_pay: number;
 };
 
-const isUuid = (s: unknown): s is string =>
-  typeof s === "string" &&
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
-function parseAmount(x: unknown): number {
-  if (typeof x === "number") return x;
-  if (typeof x === "string") {
-    const cleaned = x.replace(/[, ]+/g, "");
-    const n = Number(cleaned);
-    return Number.isFinite(n) ? n : NaN;
-  }
-  return NaN;
-}
-
-/** uniform error response with step & context */
-function fail(step: string, message: string, ctx?: Record<string, unknown>, status = 400) {
-  return NextResponse.json({ ok: false, step, error: message, ctx }, { status });
-}
-
-/* ---------------------------- main ----------------------------- */
-
-export async function POST(req: Request) {
-  // STEP 0: construct supabase client
-  let supabase: ReturnType<typeof createServerClient>;
+type ReadonlyRequestCookiesLike = {
+  get(name: string): { value?: string } | undefined;
+};
+function readCookie(name: string): string {
   try {
-    supabase = createServerClient(
+    const store = cookies() as unknown as ReadonlyRequestCookiesLike;
+    return store.get(name)?.value ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function pickBracket(rows: BracketRow[] | null, wage: number): BracketRow | null {
+  if (!rows) return null;
+  for (const b of rows) {
+    const minOk = wage >= Number(b.wage_min);
+    const maxOk = b.wage_max == null ? true : wage <= Number(b.wage_max);
+    if (minOk && maxOk) return b;
+  }
+  return null;
+}
+
+/* ---------- Route ---------- */
+export async function POST() {
+  try {
+    const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
-          get(name: string) {
-            return readCookie(name);
-          },
+          get(name: string) { return readCookie(name); },
           set(_n: string, _v: string, _o: CookieOptions) {},
           remove(_n: string, _o: CookieOptions) {},
         },
       }
     );
-  } catch (e: any) {
-    return fail("STEP0_CLIENT", e?.message ?? "failed to create supabase client");
-  }
 
-  // STEP 1: auth
-  try {
-    const { data, error } = await supabase.auth.getUser();
-    if (error) return fail("STEP1_AUTH", error.message);
-    const email = data?.user?.email ?? "";
-    if (!email) return fail("STEP1_AUTH", "no user email from session");
-  } catch (e: any) {
-    return fail("STEP1_AUTH_THROW", e?.message ?? "auth getUser threw");
-  }
+    // 1) Staff (names/emails)
+    const { data: staff, error: staffErr } = await supabase
+      .from('staff')
+      .select('email,name,is_admin')
+      .order('name', { ascending: true });
+    if (staffErr) throw staffErr;
 
-  // STEP 2: admin check
-  let callerEmail = "";
-  try {
-    const { data } = await supabase.auth.getUser();
-    callerEmail = data?.user?.email ?? "";
-    const { data: me, error: meErr } = await supabase
-      .from("staff")
-      .select("email,is_admin")
-      .eq("email", callerEmail)
-      .maybeSingle();
-    if (meErr) return fail("STEP2_ADMIN_QUERY", meErr.message);
-    if (!me?.is_admin) return fail("STEP2_ADMIN", "Admins only", { callerEmail }, 403);
-  } catch (e: any) {
-    return fail("STEP2_ADMIN_THROW", e?.message ?? "admin check threw", { callerEmail });
-  }
+    // 2) Base salary (from salary_profiles)
+    const { data: profiles, error: profErr } = await supabase
+      .from('salary_profiles')
+      .select('staff_email,base_salary');
+    if (profErr) throw profErr;
 
-  // STEP 3: read & validate body
-  let payload: any = {};
-  try {
-    payload = await req.json();
-  } catch {
-    payload = {};
-  }
-
-  const staff_email = String(payload?.staff_email ?? "").trim();
-  const kind = String(payload?.kind ?? "").trim().toUpperCase(); // 'EARN' | 'DEDUCT'
-  const amount = parseAmount(payload?.amount);
-  const label = payload?.label ? String(payload.label).slice(0, 120) : null;
-
-  if (!staff_email) return fail("STEP3_BODY", "staff_email required", { payload });
-  if (!(kind === "EARN" || kind === "DEDUCT"))
-    return fail("STEP3_BODY", "kind must be EARN or DEDUCT", { kind });
-  if (!Number.isFinite(amount) || amount <= 0)
-    return fail("STEP3_BODY", "amount must be a positive number", { amount, raw: payload?.amount });
-
-  // STEP 4: resolve/create current period
-  let period_id: string | null = null;
-  try {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1;
-
-    // try find
-    const { data: found, error: findErr } = await supabase
-      .from("payroll_periods")
-      .select("id,year,month")
-      .eq("year", year)
-      .eq("month", month)
-      .limit(1)
-      .maybeSingle();
-    if (findErr) return fail("STEP4_PERIOD_FIND", findErr.message, { year, month });
-
-    if (found?.id) {
-      if (!isUuid(found.id))
-        return fail("STEP4_PERIOD_UUID_INVALID", "period id is not a UUID", { id: found.id, year, month });
-      period_id = found.id;
-    } else {
-      // create
-      const { error: insErr } = await supabase
-        .from("payroll_periods")
-        .insert({ year, month, status: "draft" });
-      if (insErr) return fail("STEP4_PERIOD_CREATE", insErr.message, { year, month });
-
-      const { data: refetch, error: refErr } = await supabase
-        .from("payroll_periods")
-        .select("id")
-        .eq("year", year)
-        .eq("month", month)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (refErr) return fail("STEP4_PERIOD_REFETCH", refErr.message, { year, month });
-
-      if (!refetch?.id || !isUuid(refetch.id))
-        return fail("STEP4_PERIOD_UUID_INVALID", "re-fetched period id invalid", {
-          id: refetch?.id,
-          year,
-          month,
-        });
-
-      period_id = refetch.id;
-    }
-  } catch (e: any) {
-    return fail("STEP4_PERIOD_THROW", e?.message ?? "period resolution threw");
-  }
-
-  // STEP 5: insert manual_items
-  try {
-    const row = {
-      period_id,         // uuid (validated)
-      staff_email,       // text
-      kind,              // 'EARN' | 'DEDUCT' (fits check constraint)
-      amount,            // numeric
-      label,             // text | null
-      created_by: callerEmail,
-      code: null as string | null, // optional column exists in schema
-    };
-
-    const { error: insErr } = await supabase.from("manual_items").insert(row);
-    if (insErr) {
-      return fail("STEP5_INSERT", insErr.message, { row });
-    }
-  } catch (e: any) {
-    return fail("STEP5_INSERT_THROW", e?.message ?? "insert threw", {
-      period_id,
-      staff_email,
-      kind,
-      amount,
-      label,
-      created_by: callerEmail,
+    const baseByEmail = new Map<string, number>();
+    (profiles ?? []).forEach((p: ProfileRow) => {
+      baseByEmail.set(p.staff_email, Number(p.base_salary ?? 0));
     });
-  }
 
-  return NextResponse.json({ ok: true, period_id, staff_email, kind, amount, label });
+    // 3) Additions/Deductions for the current month (from view)
+    const { data: addDed, error: addDedErr } = await supabase
+      .from('v_add_ded_current_month')
+      .select('staff_email, additions_total, deductions_total');
+    if (addDedErr) throw addDedErr;
+
+    const addsByEmail = new Map<string, number>();
+    const dedsByEmail = new Map<string, number>();
+    (addDed ?? []).forEach((r: AddDedRow) => {
+      const email = r.staff_email;
+      const adds = Number(r.additions_total ?? 0);
+      const deds = Math.abs(Number(r.deductions_total ?? 0));
+      if (email) {
+        addsByEmail.set(email, adds);
+        dedsByEmail.set(email, deds);
+      }
+    });
+
+    // 4) Brackets
+    const { data: socsoRows, error: socsoErr } = await supabase
+      .from('socso_brackets')
+      .select('wage_min,wage_max,employee,employer')
+      .order('wage_min', { ascending: true });
+    if (socsoErr) throw socsoErr;
+
+    const { data: eisRows, error: eisErr } = await supabase
+      .from('eis_brackets')
+      .select('wage_min,wage_max,employee,employer')
+      .order('wage_min', { ascending: true });
+    if (eisErr) throw eisErr;
+
+    // 5) Compute payslips
+    const payslips: Payslip[] = [];
+
+    for (const s of (staff ?? []) as StaffRow[]) {
+      const basic = Number(baseByEmail.get(s.email) ?? 0);
+      const additions = Number(addsByEmail.get(s.email) ?? 0);
+      const other_deduct = Number(dedsByEmail.get(s.email) ?? 0);
+
+      const gross = basic + additions;
+
+      // EPF (fixed for now)
+      const epf_emp = round2(basic * 0.11);
+      const epf_er  = round2(basic * 0.13);
+
+      // SOCSO
+      let socso_emp = 0, socso_er = 0;
+      const sb = pickBracket(socsoRows ?? null, basic);
+      if (sb) { socso_emp = Number(sb.employee); socso_er = Number(sb.employer); }
+
+      // EIS
+      let eis_emp = 0, eis_er = 0;
+      const eb = pickBracket(eisRows ?? null, basic);
+      if (eb) { eis_emp = Number(eb.employee); eis_er = Number(eb.employer); }
+
+      const hrd_er = 0; // placeholder
+      const pcb = 0;    // placeholder
+
+      const net =
+        gross
+        - epf_emp
+        - socso_emp
+        - eis_emp
+        - pcb
+        - other_deduct;
+
+      payslips.push({
+        email: s.email,
+        name: s.name,
+        basic_pay: basic,
+        additions,
+        other_deduct,
+        gross_pay: round2(gross),
+        epf_emp,
+        epf_er,
+        socso_emp,
+        socso_er,
+        eis_emp,
+        eis_er,
+        hrd_er,
+        pcb,
+        net_pay: round2(net),
+      });
+    }
+
+    return NextResponse.json({ ok: true, payslips, totals: { count: payslips.length } });
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error ? err.message :
+      typeof err === 'string' ? err : 'Error';
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  }
 }
