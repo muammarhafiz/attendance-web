@@ -3,6 +3,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 
+/* ---------- Types ---------- */
 type Payslip = {
   email: string;
   name: string;
@@ -21,15 +22,28 @@ type Payslip = {
   net_pay: number;
 };
 
-type ApiOk  = { ok: true;  payslips: Payslip[]; totals?: { count: number } };
-type ApiErr = { ok: false; error: string };
-type ApiRes = ApiOk | ApiErr;
+type RunOk = { ok: true; payslips: Payslip[]; totals?: { count: number } };
+type RunErr = { ok: false; error: string; where?: string; code?: string; details?: string };
+type RunRes = RunOk | RunErr;
 
+type ManualOk = { ok: true };
+type ManualErr = { ok: false; error: string; where?: string; code?: string; details?: string };
+type ManualRes = ManualOk | ManualErr;
+
+/* ---------- Component ---------- */
 export default function PayrollPage() {
   const [rows, setRows] = useState<Payslip[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [lastRunAt, setLastRunAt] = useState<string | null>(null);
+
+  // Adjustment form
+  const [adjEmail, setAdjEmail] = useState('');
+  const [adjKind, setAdjKind] = useState<'EARN' | 'DEDUCT'>('EARN');
+  const [adjAmount, setAdjAmount] = useState('');
+  const [adjLabel, setAdjLabel] = useState('');
+  const [adjBusy, setAdjBusy] = useState(false);
+  const [adjMsg, setAdjMsg] = useState<string | null>(null);
 
   async function run() {
     if (loading) return;
@@ -38,28 +52,18 @@ export default function PayrollPage() {
     try {
       const r = await fetch('/salary/api/run', {
         method: 'POST',
-        // be explicit so Supabase cookies are included even across previews
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // IMPORTANT for RLS-authenticated calls
       });
-
-      // If HTTP failed, bail early with an HTTP-shaped error
+      const j: RunRes = await r.json();
       if (!r.ok) {
-        const text = await r.text().catch(() => '');
-        throw new Error(`HTTP ${r.status}: ${text || r.statusText}`);
+        throw new Error((j as RunErr)?.error || `HTTP ${r.status}`);
       }
-
-      const j: ApiRes = await r.json();
-
-      // Properly narrow the union before accessing fields
-      if ('ok' in j && j.ok === true) {
-        setRows(j.payslips);
-        setLastRunAt(new Date().toLocaleString());
-      } else if ('ok' in j && j.ok === false) {
-        throw new Error(j.error || 'Failed');
-      } else {
-        throw new Error('Malformed response');
+      if (!j.ok) {
+        const e = j as RunErr;
+        throw new Error(e.error || 'Failed');
       }
+      setRows(j.payslips);
+      setLastRunAt(new Date().toLocaleString());
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Error');
     } finally {
@@ -67,6 +71,7 @@ export default function PayrollPage() {
     }
   }
 
+  // Initial auto-run once
   useEffect(() => {
     run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -93,8 +98,125 @@ export default function PayrollPage() {
     };
   }, [rows]);
 
+  const onAddAdjustment = async () => {
+    setAdjMsg(null);
+    setErr(null);
+    if (!adjEmail || !adjEmail.includes('@')) {
+      setAdjMsg('Enter a valid email (staff_email).');
+      return;
+    }
+    if (!adjAmount.trim()) {
+      setAdjMsg('Enter an amount.');
+      return;
+    }
+
+    setAdjBusy(true);
+    try {
+      const r = await fetch('/salary/api/manual', {
+        method: 'POST',
+        credentials: 'include', // IMPORTANT for admin-only insert
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          staff_email: adjEmail,
+          kind: adjKind,
+          amount: adjAmount,
+          label: adjLabel || null,
+        }),
+      });
+      const j: ManualRes = await r.json();
+      if (!r.ok) {
+        const msg = (j as ManualErr)?.error || `HTTP ${r.status}`;
+        throw new Error(msg);
+      }
+      if (!j.ok) {
+        const e = j as ManualErr;
+        throw new Error(e.error || 'Insert failed');
+      }
+
+      // success: clear inputs, re-run payroll
+      setAdjLabel('');
+      setAdjAmount('');
+      setAdjMsg('Saved ✔ — refreshing payroll…');
+      await run();
+      setAdjMsg('Saved ✔');
+    } catch (e) {
+      const m = e instanceof Error ? e.message : 'Error';
+      setAdjMsg(`Error: ${m}`);
+    } finally {
+      setAdjBusy(false);
+    }
+  };
+
   return (
     <div style={{ fontFamily: 'system-ui, sans-serif', fontSize: 14 }}>
+      {/* ---------- Adjustment box ---------- */}
+      <div
+        style={{
+          border: '1px solid #e5e7eb',
+          borderRadius: 8,
+          padding: 12,
+          marginBottom: 12,
+        }}
+      >
+        <div style={{ fontWeight: 700, marginBottom: 8 }}>Adjustment (EARN/DEDUCT)</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px 140px 1fr 120px', gap: 8 }}>
+          <input
+            placeholder="staff email"
+            value={adjEmail}
+            onChange={(e) => setAdjEmail(e.target.value)}
+            style={input}
+            list="staff-emails"
+          />
+          <select
+            value={adjKind}
+            onChange={(e) => setAdjKind(e.target.value as 'EARN' | 'DEDUCT')}
+            style={select}
+          >
+            <option value="EARN">EARN</option>
+            <option value="DEDUCT">DEDUCT</option>
+          </select>
+          <input
+            placeholder="amount"
+            value={adjAmount}
+            onChange={(e) => setAdjAmount(e.target.value)}
+            style={input}
+            inputMode="decimal"
+          />
+          <input
+            placeholder="label (optional)"
+            value={adjLabel}
+            onChange={(e) => setAdjLabel(e.target.value)}
+            style={input}
+          />
+          <button
+            onClick={onAddAdjustment}
+            disabled={adjBusy}
+            style={{
+              ...button,
+              opacity: adjBusy ? 0.6 : 1,
+              cursor: adjBusy ? 'default' : 'pointer',
+            }}
+          >
+            {adjBusy ? 'Saving…' : 'Add'}
+          </button>
+        </div>
+        {!!rows?.length && (
+          <datalist id="staff-emails">
+            {rows.map((r) => (
+              <option key={r.email} value={r.email}>
+                {r.name}
+              </option>
+            ))}
+          </datalist>
+        )}
+        {adjMsg && (
+          <div style={{ marginTop: 8, color: adjMsg.startsWith('Error') ? '#b91c1c' : '#065f46' }}>
+            {adjMsg}
+          </div>
+        )}
+      </div>
+
+      {/* ---------- Run Payroll button ---------- */}
       <button
         onClick={run}
         disabled={loading}
@@ -112,9 +234,7 @@ export default function PayrollPage() {
       </button>
 
       {err && (
-        <div style={{ color: '#b91c1c', marginBottom: 12 }}>
-          Error: {err}
-        </div>
+        <div style={{ color: '#b91c1c', marginBottom: 12 }}>Error: {err}</div>
       )}
       {lastRunAt && (
         <div style={{ color: '#6b7280', fontSize: 12, marginBottom: 8 }}>
@@ -122,6 +242,7 @@ export default function PayrollPage() {
         </div>
       )}
 
+      {/* ---------- Table ---------- */}
       {rows && (
         <div
           style={{
@@ -229,6 +350,26 @@ const td: React.CSSProperties = {
   fontSize: 14,
 };
 const tdBold: React.CSSProperties = { ...td, fontWeight: 700 };
+const input: React.CSSProperties = {
+  width: '100%',
+  padding: '8px 10px',
+  border: '1px solid #d1d5db',
+  borderRadius: 6,
+};
+const select: React.CSSProperties = {
+  width: '100%',
+  padding: '8px 10px',
+  border: '1px solid #d1d5db',
+  borderRadius: 6,
+  background: 'white',
+};
+const button: React.CSSProperties = {
+  padding: '8px 10px',
+  border: '1px solid #111827',
+  borderRadius: 6,
+  background: 'white',
+  fontWeight: 600,
+};
 
 /* ---------- helpers ---------- */
 function fmt(n: number) {
