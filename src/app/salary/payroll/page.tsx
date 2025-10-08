@@ -3,7 +3,6 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 
-/* ---------- Types ---------- */
 type Payslip = {
   email: string;
   name: string;
@@ -22,33 +21,16 @@ type Payslip = {
   net_pay: number;
 };
 
-type ApiOk = { ok: true; payslips: Payslip[] };
+type ApiOk  = { ok: true;  payslips: Payslip[]; totals?: { count: number } };
 type ApiErr = { ok: false; error: string };
 type ApiRes = ApiOk | ApiErr;
 
-type ManualOk = { ok: true };
-type ManualErr = { ok: false; error: string };
-type ManualRes = ManualOk | ManualErr;
-
-type Kind = 'EARN' | 'DEDUCT';
-
-/* ---------- Page ---------- */
 export default function PayrollPage() {
   const [rows, setRows] = useState<Payslip[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [lastRunAt, setLastRunAt] = useState<string | null>(null);
 
-  // adjustment box state
-  const [selEmail, setSelEmail] = useState<string>('');
-  const [kind, setKind] = useState<Kind>('EARN');
-  const [amount, setAmount] = useState<string>(''); // keep as string for input UX
-  const [label, setLabel] = useState<string>('');
-  const [adjBusy, setAdjBusy] = useState(false);
-  const [adjErr, setAdjErr] = useState<string | null>(null);
-  const [adjOk, setAdjOk] = useState<string | null>(null);
-
-  // Load payroll
   async function run() {
     if (loading) return;
     setLoading(true);
@@ -56,14 +38,28 @@ export default function PayrollPage() {
     try {
       const r = await fetch('/salary/api/run', {
         method: 'POST',
-        credentials: 'include', // <<< carry Supabase session cookies
+        // be explicit so Supabase cookies are included even across previews
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
       });
-      const j: ApiRes = await r.json();
-      if (!r.ok || !j.ok) {
-        throw new Error('ok' in j ? 'Unknown error' : j.error || 'Failed');
+
+      // If HTTP failed, bail early with an HTTP-shaped error
+      if (!r.ok) {
+        const text = await r.text().catch(() => '');
+        throw new Error(`HTTP ${r.status}: ${text || r.statusText}`);
       }
-      setRows(j.payslips);
-      setLastRunAt(new Date().toLocaleString());
+
+      const j: ApiRes = await r.json();
+
+      // Properly narrow the union before accessing fields
+      if ('ok' in j && j.ok === true) {
+        setRows(j.payslips);
+        setLastRunAt(new Date().toLocaleString());
+      } else if ('ok' in j && j.ok === false) {
+        throw new Error(j.error || 'Failed');
+      } else {
+        throw new Error('Malformed response');
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Error');
     } finally {
@@ -71,21 +67,11 @@ export default function PayrollPage() {
     }
   }
 
-  // Initial auto-run once
   useEffect(() => {
     run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Options for staff dropdown (derived from rows once loaded)
-  const staffOptions = useMemo(() => {
-    const list = rows ?? [];
-    return list
-      .map((r) => ({ email: r.email, name: r.name || r.email }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [rows]);
-
-  // Totals row
   const totals = useMemo(() => {
     const list = rows ?? [];
     const sum = (k: keyof Payslip) =>
@@ -107,171 +93,8 @@ export default function PayrollPage() {
     };
   }, [rows]);
 
-  // Add manual adjustment
-  async function addAdjustment() {
-    setAdjErr(null);
-    setAdjOk(null);
-
-    const amt = Number(amount);
-    if (!selEmail) return setAdjErr('Please select a staff.');
-    if (!Number.isFinite(amt) || amt <= 0) return setAdjErr('Enter a valid amount.');
-
-    setAdjBusy(true);
-    try {
-      const r = await fetch('/salary/api/manual', {
-        method: 'POST',
-        credentials: 'include', // <<< carry Supabase session cookies (fixes “Auth session missing!”)
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          staff_email: selEmail,
-          kind, // 'EARN' | 'DEDUCT'
-          amount: amt,
-          label: label || null,
-        }),
-      });
-
-      const j: ManualRes = await r.json();
-      if (!r.ok || !j.ok) {
-        throw new Error('ok' in j ? 'Unknown error' : j.error || 'Failed');
-      }
-
-      // Clear inputs & refresh payroll
-      setAmount('');
-      setLabel('');
-      setAdjOk('Added.');
-      await run();
-    } catch (e) {
-      setAdjErr(e instanceof Error ? e.message : 'Error');
-    } finally {
-      setAdjBusy(false);
-    }
-  }
-
   return (
     <div style={{ fontFamily: 'system-ui, sans-serif', fontSize: 14 }}>
-      {/* ---------- Adjustments box ---------- */}
-      <div
-        style={{
-          border: '1px solid #e5e7eb',
-          borderRadius: 8,
-          padding: 12,
-          marginBottom: 12,
-          background: '#fff',
-        }}
-      >
-        <div style={{ fontWeight: 700, marginBottom: 10 }}>
-          Adjustments (EARN / DEDUCT)
-        </div>
-
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'minmax(220px, 1fr) 100px 140px 1fr 100px',
-            gap: 8,
-            alignItems: 'center',
-          }}
-        >
-          {/* staff select */}
-          <div>
-            <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>
-              Select staff…
-            </div>
-            <select
-              value={selEmail}
-              onChange={(e) => setSelEmail(e.target.value)}
-              style={input}
-            >
-              <option value="" disabled>
-                — choose —
-              </option>
-              {staffOptions.map((s) => (
-                <option key={s.email} value={s.email}>
-                  {s.name} — {s.email}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* kind */}
-          <div>
-            <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>
-              Type
-            </div>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <input
-                  type="radio"
-                  name="kind"
-                  value="EARN"
-                  checked={kind === 'EARN'}
-                  onChange={() => setKind('EARN')}
-                />
-                EARN
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <input
-                  type="radio"
-                  name="kind"
-                  value="DEDUCT"
-                  checked={kind === 'DEDUCT'}
-                  onChange={() => setKind('DEDUCT')}
-                />
-                DEDUCT
-              </label>
-            </div>
-          </div>
-
-          {/* amount */}
-          <div>
-            <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>
-              Amount
-            </div>
-            <input
-              type="number"
-              inputMode="decimal"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="0.00"
-              style={{ ...input, textAlign: 'right' }}
-            />
-          </div>
-
-          {/* label */}
-          <div>
-            <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>
-              Label (optional)
-            </div>
-            <input
-              type="text"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              placeholder={kind === 'EARN' ? 'Commission' : 'Advance'}
-              style={input}
-            />
-          </div>
-
-          {/* add button */}
-          <div style={{ alignSelf: 'end' }}>
-            <button
-              onClick={addAdjustment}
-              disabled={adjBusy || !rows}
-              style={btnPrimary}
-            >
-              {adjBusy ? 'Adding…' : 'Add'}
-            </button>
-          </div>
-        </div>
-
-        {/* inline error/success */}
-        {adjErr && (
-          <div style={{ color: '#b91c1c', marginTop: 8 }}>Error: {adjErr}</div>
-        )}
-        {adjOk && (
-          <div style={{ color: '#047857', marginTop: 8 }}>{adjOk}</div>
-        )}
-      </div>
-
-      {/* ---------- Run Payroll ---------- */}
       <button
         onClick={run}
         disabled={loading}
@@ -283,14 +106,15 @@ export default function PayrollPage() {
           width: '100%',
           opacity: loading ? 0.6 : 1,
           cursor: 'pointer',
-          background: '#fff',
         }}
       >
         {loading ? 'Running…' : 'Run Payroll'}
       </button>
 
       {err && (
-        <div style={{ color: '#b91c1c', marginBottom: 12 }}>Error: {err}</div>
+        <div style={{ color: '#b91c1c', marginBottom: 12 }}>
+          Error: {err}
+        </div>
       )}
       {lastRunAt && (
         <div style={{ color: '#6b7280', fontSize: 12, marginBottom: 8 }}>
@@ -298,7 +122,6 @@ export default function PayrollPage() {
         </div>
       )}
 
-      {/* ---------- Table ---------- */}
       {rows && (
         <div
           style={{
@@ -306,7 +129,6 @@ export default function PayrollPage() {
             borderRadius: 8,
             padding: 12,
             overflowX: 'auto',
-            background: '#fff',
           }}
         >
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -407,24 +229,6 @@ const td: React.CSSProperties = {
   fontSize: 14,
 };
 const tdBold: React.CSSProperties = { ...td, fontWeight: 700 };
-
-const input: React.CSSProperties = {
-  width: '100%',
-  border: '1px solid #d1d5db',
-  borderRadius: 6,
-  padding: '8px 10px',
-  fontSize: 14,
-  background: '#fff',
-};
-
-const btnPrimary: React.CSSProperties = {
-  width: '100%',
-  padding: '9px 12px',
-  borderRadius: 8,
-  border: '1px solid #111827',
-  cursor: 'pointer',
-  background: '#fff',
-};
 
 /* ---------- helpers ---------- */
 function fmt(n: number) {
