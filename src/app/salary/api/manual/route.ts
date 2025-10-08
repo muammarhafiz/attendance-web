@@ -19,12 +19,13 @@ const isUuid = (s: unknown): s is string =>
     s
   );
 
+/** Resolve (or create) the current month period and return its UUID. */
 async function getCurrentPeriodId(supabase: ReturnType<typeof createServerClient>) {
   const now = new Date();
   const y = now.getFullYear();
   const m = now.getMonth() + 1;
 
-  // 1) try to find existing
+  // STEP A1: find existing
   const { data: found, error: findErr } = await supabase
     .from("payroll_periods")
     .select("id, year, month")
@@ -32,16 +33,16 @@ async function getCurrentPeriodId(supabase: ReturnType<typeof createServerClient
     .eq("month", m)
     .limit(1)
     .maybeSingle();
-  if (findErr) throw findErr;
+  if (findErr) throw new Error(`[STEP:A1] find period failed: ${findErr.message}`);
   if (found?.id && isUuid(found.id)) return found.id;
 
-  // 2) create if missing
+  // STEP A2: create if missing
   const { error: insErr } = await supabase
     .from("payroll_periods")
     .insert({ year: y, month: m, status: "draft" });
-  if (insErr) throw insErr;
+  if (insErr) throw new Error(`[STEP:A2] create period failed: ${insErr.message}`);
 
-  // 3) re-fetch to get its UUID (avoid relying on RETURNING when RLS transforms)
+  // STEP A3: re-fetch
   const { data: re, error: reErr } = await supabase
     .from("payroll_periods")
     .select("id")
@@ -50,11 +51,23 @@ async function getCurrentPeriodId(supabase: ReturnType<typeof createServerClient
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (reErr) throw reErr;
+  if (reErr) throw new Error(`[STEP:A3] read period after insert failed: ${reErr.message}`);
   if (!re?.id || !isUuid(re.id)) {
-    throw new Error("Could not resolve a valid period UUID");
+    throw new Error(`[STEP:A3] invalid period UUID read back: ${String(re?.id)}`);
   }
   return re.id;
+}
+
+/** Coerce amount from string/number to a safe number. */
+function parseAmount(input: unknown): number {
+  if (typeof input === "number") return input;
+  if (typeof input === "string") {
+    // remove commas/spaces
+    const cleaned = input.replace(/[, ]+/g, "");
+    const n = Number(cleaned);
+    return Number.isFinite(n) ? n : NaN;
+  }
+  return NaN;
 }
 
 export async function POST(req: Request) {
@@ -73,26 +86,27 @@ export async function POST(req: Request) {
       }
     );
 
-    // who is calling
-    const { data: ures } = await supabase.auth.getUser();
+    // STEP U1: who is calling
+    const { data: ures, error: uerr } = await supabase.auth.getUser();
+    if (uerr) throw new Error(`[STEP:U1] auth getUser failed: ${uerr.message}`);
     const userEmail = ures?.user?.email ?? "";
 
-    // must be admin
+    // STEP ADM1: must be admin
     const { data: me, error: meErr } = await supabase
       .from("staff")
       .select("email,is_admin")
       .eq("email", userEmail)
       .maybeSingle();
-    if (meErr) throw meErr;
+    if (meErr) throw new Error(`[STEP:ADM1] admin check failed: ${meErr.message}`);
     if (!me?.is_admin) {
       return NextResponse.json({ ok: false, error: "Admins only" }, { status: 403 });
     }
 
-    // payload
-    const body = await req.json();
+    // STEP P1: read body
+    const body = await req.json().catch(() => ({}));
     const staff_email = String(body?.staff_email ?? "").trim();
     const kind = String(body?.kind ?? "").trim().toUpperCase(); // 'EARN' | 'DEDUCT'
-    const amount = Number(body?.amount ?? 0);
+    const amount = parseAmount(body?.amount);
     const label = body?.label ? String(body.label).slice(0, 120) : null;
 
     if (!staff_email) {
@@ -105,31 +119,36 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Amount must be > 0" }, { status: 400 });
     }
 
-    // resolve period UUID (this is where prior error came from)
+    // STEP PID: resolve period UUID
     const period_id = await getCurrentPeriodId(supabase);
     if (!isUuid(period_id)) {
       return NextResponse.json(
-        { ok: false, error: "Internal: invalid period UUID" },
+        { ok: false, error: `[STEP:PID] invalid period UUID computed: ${String(period_id)}` },
         { status: 500 }
       );
     }
 
-    // insert
+    // STEP INS: insert into manual_items
     const { error: insErr } = await supabase.from("manual_items").insert({
-      period_id,     // UUID ✅
+      period_id,     // UUID (verified)
       staff_email,   // TEXT
       kind,          // 'EARN' | 'DEDUCT'
       amount,        // numeric
       label,
       created_by: userEmail,
     });
-    if (insErr) throw insErr;
 
-    return NextResponse.json({ ok: true });
+    if (insErr) {
+      // include the values to see what DB rejected (esp. UUID)
+      throw new Error(
+        `[STEP:INS] insert failed: ${insErr.message} | period_id=${period_id} | staff_email=${staff_email} | kind=${kind} | amount=${amount}`
+      );
+    }
+
+    return NextResponse.json({ ok: true, period_id });
   } catch (err: unknown) {
     const msg =
       err instanceof Error ? err.message : typeof err === "string" ? err : "Error";
-    // You were seeing: “The string did not match the expected pattern.” (UUID)
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }
