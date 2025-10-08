@@ -7,7 +7,6 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 type StaffRow = {
   email: string;
   name: string;
-  // payroll flags & rates live on staff in your DB
   base_salary: number;
   skip_payroll: boolean;
   epf_enabled: boolean;
@@ -123,7 +122,37 @@ export async function POST() {
       );
     }
 
-    const staff = (staffRows ?? []) as StaffRow[];
+    // Normalize/guard types from DB (avoid dangerous casts)
+    type StaffRowDB = {
+      email?: unknown;
+      name?: unknown;
+      base_salary?: unknown;
+      skip_payroll?: unknown;
+      epf_enabled?: unknown;
+      epf_rate_employee?: unknown;
+      epf_rate_employer?: unknown;
+      socso_enabled?: unknown;
+      eis_enabled?: unknown;
+      hrd_enabled?: unknown;
+      is_foreign_worker?: unknown;
+      include_in_payroll?: unknown;
+    };
+
+    const rawList: StaffRowDB[] = Array.isArray(staffRows) ? (staffRows as unknown as StaffRowDB[]) : [];
+    const staff: StaffRow[] = rawList.map((r) => ({
+      email: String(r.email ?? ''),
+      name: String(r.name ?? ''),
+      base_salary: Number(r.base_salary ?? 0),
+      skip_payroll: Boolean(r.skip_payroll),
+      epf_enabled: Boolean(r.epf_enabled),
+      epf_rate_employee: Number(r.epf_rate_employee ?? 0),
+      epf_rate_employer: Number(r.epf_rate_employer ?? 0),
+      socso_enabled: Boolean(r.socso_enabled),
+      eis_enabled: Boolean(r.eis_enabled),
+      hrd_enabled: Boolean(r.hrd_enabled),
+      is_foreign_worker: Boolean(r.is_foreign_worker),
+      include_in_payroll: Boolean(r.include_in_payroll),
+    }));
 
     /* 2) Additions/deductions view (aggregates recurring, one-off, manual) */
     const { data: addDedRows, error: addDedErr } = await supabase
@@ -131,7 +160,6 @@ export async function POST() {
       .select('staff_email, additions_total, deductions_total');
 
     if (addDedErr) {
-      // Not fatal — but tell the caller what happened
       return NextResponse.json(
         { ok: false, where: 'db', error: addDedErr.message, details: 'select v_add_ded_current_month' },
         { status: 500 }
