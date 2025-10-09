@@ -1,4 +1,3 @@
-// src/app/salary/payroll/page.tsx
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -21,33 +20,41 @@ type Payslip = {
   net_pay: number;
 };
 
-type RunApiRes =
-  | { ok: true; payslips: Payslip[]; totals?: { count: number } }
-  | { ok: false; error?: string; where?: string; code?: string };
+type RunOk = { ok: true; payslips: Payslip[]; totals?: { count: number } };
+type RunErr = { ok: false; error?: string; where?: string; code?: string };
+type RunApiRes = RunOk | RunErr;
 
-type ManualApiRes =
-  | { ok: true }
-  | { ok: false; error?: string; where?: string; field?: string; code?: string };
+type ManualOk = { ok: true };
+type ManualErr = { ok: false; error?: string; where?: string; field?: string; code?: string };
+type ManualApiRes = ManualOk | ManualErr;
 
 type StaffPick = { email: string; name: string };
 
 const currency = (n: number) =>
   (isFinite(n) ? n : 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+// -------- type guards --------
+function isRunErr(r: RunApiRes): r is RunErr {
+  return !r.ok;
+}
+function isManualErr(r: ManualApiRes): r is ManualErr {
+  return !r.ok;
+}
+
 export default function PayrollPage() {
-  // UI state
+  // table state
   const [rows, setRows] = useState<Payslip[]>([]);
   const [lastRunAt, setLastRunAt] = useState<string>('');
   const [err, setErr] = useState<string | null>(null);
 
-  // adjustment form
+  // adjustment box state
   const [staff, setStaff] = useState<StaffPick[]>([]);
   const [selEmail, setSelEmail] = useState<string>('');
   const [kind, setKind] = useState<'EARN' | 'DEDUCT'>('EARN');
   const [amount, setAmount] = useState<string>('100');
   const [label, setLabel] = useState<string>('');
 
-  // load staff for selector (server already exposes staff via salary_staff_view)
+  // load staff list for selector
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -55,32 +62,41 @@ export default function PayrollPage() {
         const r = await fetch('/api/staff-for-salary', { credentials: 'include' });
         const j = await r.json();
         if (!cancelled && j?.ok && Array.isArray(j.data)) {
-          setStaff(j.data as StaffPick[]);
-          if (j.data.length && !selEmail) setSelEmail(j.data[0].email);
+          const list = j.data as StaffPick[];
+          setStaff(list);
+          if (list.length && !selEmail) {
+            setSelEmail(list[0].email);
+          }
         }
       } catch {
-        // ignore (selector can stay empty)
+        // ignore
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
+    // intentionally not depending on selEmail to avoid re-fetch loop
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // run payroll
+  // run payroll (fetch payslips)
   async function runPayroll() {
     setErr(null);
     try {
       const r = await fetch('/salary/api/run', {
         method: 'POST',
-        credentials: 'include', // <<< IMPORTANT: send cookies (Supabase session)
+        credentials: 'include',
       });
       const j: RunApiRes = await r.json();
-      if (!r.ok || !j.ok) {
-        const msg =
-          !r.ok ? `HTTP ${r.status}` :
-          j.error ? `${j.where ? j.where + ': ' : ''}${j.error}` :
-          'Failed';
+
+      if (!r.ok) {
+        throw new Error(`HTTP ${r.status}`);
+      }
+      if (isRunErr(j)) {
+        const msg = j.error ? `${j.where ? j.where + ': ' : ''}${j.error}` : 'Failed';
         throw new Error(msg);
       }
+
       setRows(j.payslips);
       setLastRunAt(new Date().toLocaleString());
     } catch (e: unknown) {
@@ -88,14 +104,14 @@ export default function PayrollPage() {
     }
   }
 
-  // add adjustment
+  // add manual adjustment, then refresh table
   async function addAdjustment() {
     setErr(null);
     const amt = (amount || '').toString().trim();
     try {
       const r = await fetch('/salary/api/manual', {
         method: 'POST',
-        credentials: 'include', // <<< IMPORTANT
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           staff_email: selEmail,
@@ -105,14 +121,15 @@ export default function PayrollPage() {
         }),
       });
       const j: ManualApiRes = await r.json();
-      if (!r.ok || !j.ok) {
-        const msg =
-          !r.ok ? `HTTP ${r.status}` :
-          j.error ? `${j.where ? j.where + ': ' : ''}${j.error}` :
-          'Failed to add';
+
+      if (!r.ok) {
+        throw new Error(`HTTP ${r.status}`);
+      }
+      if (isManualErr(j)) {
+        const msg = j.error ? `${j.where ? j.where + ': ' : ''}${j.error}` : 'Failed to add';
         throw new Error(msg);
       }
-      // refresh table after successful insert
+
       await runPayroll();
       setAmount('100');
       setLabel('');
@@ -121,7 +138,7 @@ export default function PayrollPage() {
     }
   }
 
-  // optional: auto-run once when page opens so table isn’t empty
+  // auto-run once
   useEffect(() => {
     runPayroll().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -129,23 +146,34 @@ export default function PayrollPage() {
 
   const totalRow = useMemo(() => {
     const init: Omit<Payslip, 'email' | 'name'> = {
-      basic_pay: 0, additions: 0, other_deduct: 0, gross_pay: 0, pcb: 0,
-      epf_emp: 0, socso_emp: 0, eis_emp: 0, epf_er: 0, socso_er: 0, eis_er: 0, hrd_er: 0, net_pay: 0
+      basic_pay: 0,
+      additions: 0,
+      other_deduct: 0,
+      gross_pay: 0,
+      pcb: 0,
+      epf_emp: 0,
+      socso_emp: 0,
+      eis_emp: 0,
+      epf_er: 0,
+      socso_er: 0,
+      eis_er: 0,
+      hrd_er: 0,
+      net_pay: 0,
     };
     return rows.reduce((acc, r) => {
-      acc.basic_pay   += r.basic_pay;
-      acc.additions   += r.additions;
-      acc.other_deduct+= r.other_deduct;
-      acc.gross_pay   += r.gross_pay;
-      acc.pcb         += r.pcb;
-      acc.epf_emp     += r.epf_emp;
-      acc.socso_emp   += r.socso_emp;
-      acc.eis_emp     += r.eis_emp;
-      acc.epf_er      += r.epf_er;
-      acc.socso_er    += r.socso_er;
-      acc.eis_er      += r.eis_er;
-      acc.hrd_er      += r.hrd_er;
-      acc.net_pay     += r.net_pay;
+      acc.basic_pay += r.basic_pay;
+      acc.additions += r.additions;
+      acc.other_deduct += r.other_deduct;
+      acc.gross_pay += r.gross_pay;
+      acc.pcb += r.pcb;
+      acc.epf_emp += r.epf_emp;
+      acc.socso_emp += r.socso_emp;
+      acc.eis_emp += r.eis_emp;
+      acc.epf_er += r.epf_er;
+      acc.socso_er += r.socso_er;
+      acc.eis_er += r.eis_er;
+      acc.hrd_er += r.hrd_er;
+      acc.net_pay += r.net_pay;
       return acc;
     }, { ...init });
   }, [rows]);
@@ -156,16 +184,21 @@ export default function PayrollPage() {
       <div style={{ color: '#666', marginBottom: 12 }}>Payroll & Employees</div>
 
       {/* Adjustment box */}
-      <div style={{
-        border: '1px solid #e5e7eb', borderRadius: 8, padding: 14, marginBottom: 16,
-        background: '#fff'
-      }}>
+      <div
+        style={{
+          border: '1px solid #e5e7eb',
+          borderRadius: 8,
+          padding: 14,
+          marginBottom: 16,
+          background: '#fff',
+        }}
+      >
         <div style={{ fontWeight: 600, marginBottom: 10 }}>Adjustment (EARN/DEDUCT)</div>
 
         <div style={{ display: 'grid', gap: 8, gridTemplateColumns: '1.6fr 0.9fr 0.8fr 1.2fr 0.6fr' }}>
           {/* staff select */}
           <select value={selEmail} onChange={(e) => setSelEmail(e.target.value)} style={{ padding: 8 }}>
-            {staff.map(s => (
+            {staff.map((s) => (
               <option key={s.email} value={s.email}>
                 {s.name ? `${s.name} — ${s.email}` : s.email}
               </option>
@@ -173,7 +206,7 @@ export default function PayrollPage() {
           </select>
 
           {/* kind */}
-          <select value={kind} onChange={(e) => setKind(e.target.value as 'EARN'|'DEDUCT')} style={{ padding: 8 }}>
+          <select value={kind} onChange={(e) => setKind(e.target.value as 'EARN' | 'DEDUCT')} style={{ padding: 8 }}>
             <option value="EARN">EARN</option>
             <option value="DEDUCT">DEDUCT</option>
           </select>
@@ -212,8 +245,11 @@ export default function PayrollPage() {
         <button
           onClick={runPayroll}
           style={{
-            width: '100%', padding: '10px 12px',
-            border: '1px solid #d1d5db', borderRadius: 8, background: '#fff'
+            width: '100%',
+            padding: '10px 12px',
+            border: '1px solid #d1d5db',
+            borderRadius: 8,
+            background: '#fff',
           }}
         >
           Run Payroll
