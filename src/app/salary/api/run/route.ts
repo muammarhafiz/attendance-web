@@ -47,9 +47,6 @@ export async function POST() {
   try {
     const supabase = createClientServer();
 
-    // sanity: who am I (helps avoid “Auth session missing!” surprises)
-    // const who = await supabase.auth.getUser();
-
     /* 1) Staff list (source of names/emails) */
     const { data: staffRows, error: staffErr } = await supabase
       .from('staff')
@@ -58,12 +55,16 @@ export async function POST() {
 
     if (staffErr) throw staffErr;
 
-    const staff = (staffRows ?? []).filter(
-      (s): s is StaffRow =>
-        !!s &&
-        typeof s.email === 'string' &&
-        typeof s.name === 'string'
-    );
+    // 🔧 Normalize instead of using a type predicate (fixes TS error)
+    const staff: StaffRow[] = (staffRows ?? [])
+      .filter((s) => s && typeof s.email === 'string' && typeof s.name === 'string')
+      .map((s) => ({
+        email: String(s.email),
+        name: String(s.name),
+        is_admin: !!(s as any).is_admin,
+        include_in_payroll: (s as any).include_in_payroll ?? true,
+        skip_payroll: (s as any).skip_payroll ?? false,
+      }));
 
     /* 1b) Salary profiles (basic pay) */
     const { data: profiles, error: profErr } = await supabase
@@ -73,8 +74,7 @@ export async function POST() {
 
     const baseByEmail = new Map<string, number>();
     for (const p of profiles ?? []) {
-      // @ts-expect-error base salary is numeric in DB; coerce to number
-      baseByEmail.set(p.staff_email, Number(p.base_salary ?? 0));
+      baseByEmail.set((p as any).staff_email, Number((p as any).base_salary ?? 0));
     }
 
     /* 2) SOCSO & EIS brackets (plural table names) */
@@ -100,11 +100,11 @@ export async function POST() {
     const addByEmail = new Map<string, number>();
     const dedByEmail = new Map<string, number>();
     for (const r of addDedRows ?? []) {
-      addByEmail.set(r.staff_email, Number(r.additions_total || 0));
-      dedByEmail.set(r.staff_email, Math.abs(Number(r.deductions_total || 0)));
+      addByEmail.set((r as any).staff_email, Number((r as any).additions_total || 0));
+      dedByEmail.set((r as any).staff_email, Math.abs(Number((r as any).deductions_total || 0)));
     }
 
-    /* 4) Build payslips in memory */
+    /* 4) Build payslips */
     const payslips: Payslip[] = [];
 
     for (const s of staff) {
