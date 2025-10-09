@@ -1,6 +1,6 @@
 // src/app/salary/api/manual/route.ts
 import { NextResponse } from 'next/server';
-import { createClientServer } from '@/lib/supabaseServer';
+import { createClientServer } from '../../../../lib/supabaseServer';
 
 type BodyIn = {
   staff_email?: string;
@@ -40,6 +40,7 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
+  // allow "1,200.50", spaces, etc.
   const amountNum = Number(rawAmt.replace(/[, ]/g, ''));
   if (!isFinite(amountNum) || amountNum < 0) {
     return NextResponse.json(
@@ -49,6 +50,7 @@ export async function POST(req: Request) {
   }
   const amount = round2(amountNum);
 
+  // ---------- supabase (server) with Next cookies ----------
   const supabase = createClientServer();
 
   // who is the caller? (for created_by)
@@ -89,7 +91,7 @@ export async function POST(req: Request) {
     .from('manual_items')
     .insert([
       {
-        staff_email,
+        staff_email,          // TEXT (matches your table)
         kind: rawKind,        // 'EARN' | 'DEDUCT'
         amount,               // NUMERIC >= 0 (check constraint)
         label,                // optional
