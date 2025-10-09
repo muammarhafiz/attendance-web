@@ -25,8 +25,8 @@ type ProfileRow = {
 type BracketRow = {
   wage_min: number;
   wage_max: number | null;
-  employee: number; // employee RM
-  employer: number; // employer RM
+  employee: number;
+  employer: number;
 };
 
 type Payslip = {
@@ -60,7 +60,6 @@ function findBracket(brackets: BracketRow[] | null, wage: number): BracketRow | 
   return null;
 }
 
-/* Shape of our JSON response */
 type RunApiRes =
   | { ok: true; payslips: Payslip[]; totals?: { count: number } }
   | { ok: false; where?: string; error: string; code?: string };
@@ -69,9 +68,9 @@ export async function POST() {
   try {
     const supabase = createClientServer();
 
-    /* 0) Current user (optional; not required to compute, but helpful for RLS context) */
+    /* 0) (optional) load user to ensure auth context is present for RLS */
     const { data: userCtx } = await supabase.auth.getUser();
-    const who = userCtx?.user?.email ?? 'anonymous';
+    const _who = userCtx?.user?.email ?? 'anonymous';
 
     /* 1) Staff list + filters */
     const { data: staffRows, error: staffErr } = await supabase
@@ -83,14 +82,20 @@ export async function POST() {
       const res: RunApiRes = { ok: false, where: 'staff', error: staffErr.message, code: staffErr.code };
       return NextResponse.json(res, { status: 500 });
     }
-    const staff = (staffRows ?? []).filter(
-      (s): s is StaffRow =>
-        !!s &&
-        typeof s.email === 'string' &&
-        typeof s.name === 'string'
-    ).filter(s => (s.include_in_payroll ?? true) && !(s.skip_payroll ?? false));
 
-    /* 2) Salary profiles (basic pay) */
+    // Avoid a type predicate; normalize to our StaffRow explicitly
+    const staff: StaffRow[] = (staffRows ?? [])
+      .filter((s: any) => s && typeof s.email === 'string' && typeof s.name === 'string')
+      .map((s: any): StaffRow => ({
+        email: s.email,
+        name: s.name,
+        is_admin: !!s.is_admin,
+        include_in_payroll: s.include_in_payroll ?? true,
+        skip_payroll: s.skip_payroll ?? false,
+      }))
+      .filter((s) => (s.include_in_payroll ?? true) && !(s.skip_payroll ?? false));
+
+    /* 2) Salary profiles (basic pay + flags/rates) */
     const { data: profiles, error: profErr } = await supabase
       .from('salary_profiles')
       .select(
@@ -131,7 +136,7 @@ export async function POST() {
       return NextResponse.json(res, { status: 500 });
     }
 
-    /* 4) Additions/deductions view (aggregates recurring, one-off, manual) */
+    /* 4) Additions/deductions aggregated view */
     const { data: addDedRows, error: addDedErr } = await supabase
       .from('v_add_ded_current_month')
       .select('staff_email, additions_total, deductions_total');
@@ -143,7 +148,7 @@ export async function POST() {
 
     const addByEmail = new Map<string, number>();
     const dedByEmail = new Map<string, number>();
-    (addDedRows ?? []).forEach((r) => {
+    (addDedRows ?? []).forEach((r: any) => {
       if (!r?.staff_email) return;
       addByEmail.set(r.staff_email, Number(r.additions_total ?? 0));
       dedByEmail.set(r.staff_email, Math.abs(Number(r.deductions_total ?? 0)));
@@ -156,20 +161,20 @@ export async function POST() {
       const profile = byEmail.get(s.email);
       const basic = Number(profile?.base_salary ?? 0);
 
-      // manual/recurring/one-off from view
+      // totals from view
       const additions = Number(addByEmail.get(s.email) ?? 0);
       const other_deduct = Number(dedByEmail.get(s.email) ?? 0);
 
       const gross = basic + additions;
 
-      // EPF (use per-profile flags/rates if provided; default 11% emp, 13% er)
+      // EPF
       const epfEnabled = profile?.epf_enabled ?? true;
       const empRate = Number(profile?.epf_rate_employee ?? 11) / 100;
-      const erRate  = Number(profile?.epf_rate_employer ?? 13) / 100;
+      const erRate = Number(profile?.epf_rate_employer ?? 13) / 100;
       const epf_emp = epfEnabled ? round2(basic * empRate) : 0;
-      const epf_er  = epfEnabled ? round2(basic * erRate)  : 0;
+      const epf_er = epfEnabled ? round2(basic * erRate) : 0;
 
-      // SOCSO from brackets
+      // SOCSO
       let socso_emp = 0;
       let socso_er = 0;
       if (profile?.socso_enabled ?? true) {
@@ -180,7 +185,7 @@ export async function POST() {
         }
       }
 
-      // EIS from brackets
+      // EIS
       let eis_emp = 0;
       let eis_er = 0;
       if (profile?.eis_enabled ?? true) {
@@ -191,8 +196,8 @@ export async function POST() {
         }
       }
 
-      // HRD & PCB placeholders
-      const hrd_er = (profile?.hrd_enabled ?? false) ? 0 : 0; // if needed later
+      // HRD & PCB (placeholders)
+      const hrd_er = (profile?.hrd_enabled ?? false) ? 0 : 0;
       const pcb = 0;
 
       const net =
@@ -225,8 +230,7 @@ export async function POST() {
     const res: RunApiRes = { ok: true, payslips, totals: { count: payslips.length } };
     return NextResponse.json(res);
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : typeof err === 'string' ? err : 'Error';
+    const message = err instanceof Error ? err.message : typeof err === 'string' ? err : 'Error';
     const res: RunApiRes = { ok: false, where: 'unknown', error: message };
     return NextResponse.json(res, { status: 500 });
   }
