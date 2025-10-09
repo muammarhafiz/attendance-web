@@ -3,30 +3,49 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
+/** minimal cookie interface (avoid `any`) */
 type ReadonlyRequestCookiesLike = {
   get(name: string): { value?: string } | undefined;
+  getAll?: () => { name: string; value: string }[];
 };
 
 function readCookie(name: string): string {
   try {
-    const jar = cookies() as unknown as ReadonlyRequestCookiesLike;
-    return jar.get(name)?.value ?? '';
+    const store = cookies() as unknown as ReadonlyRequestCookiesLike;
+    return store.get(name)?.value ?? '';
   } catch {
     return '';
   }
 }
 
+function listCookieNames(): string[] {
+  try {
+    const store = cookies() as unknown as ReadonlyRequestCookiesLike;
+    if (typeof store.getAll === 'function') {
+      return store.getAll().map((c) => c.name);
+    }
+    // Fallback: probe known Supabase cookie names
+    const names = [
+      'sb-access-token',
+      'sb-refresh-token',
+    ];
+    return names.filter((n) => !!readCookie(n));
+  } catch {
+    return [];
+  }
+}
+
 type BodyIn = {
   staff_email?: string;
-  kind?: string;              // 'EARN' | 'DEDUCT'
-  amount?: string | number;   // non-negative
+  kind?: string;      // 'EARN' | 'DEDUCT'
+  amount?: string | number;
   label?: string | null;
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export async function POST(req: Request) {
-  // 1) Parse & validate input
+  // ---------- parse & validate input ----------
   let body: BodyIn | null = null;
   try {
     body = (await req.json()) as BodyIn;
@@ -54,7 +73,7 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
-
+  // allow "1,200.50", spaces, etc.
   const amountNum = Number(rawAmt.replace(/[, ]/g, ''));
   if (!isFinite(amountNum) || amountNum < 0) {
     return NextResponse.json(
@@ -64,7 +83,7 @@ export async function POST(req: Request) {
   }
   const amount = round2(amountNum);
 
-  // 2) Create Supabase server client wired to App Router cookies
+  // ---------- supabase client with cookies ----------
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -73,39 +92,25 @@ export async function POST(req: Request) {
         get(name: string) {
           return readCookie(name);
         },
-        // Route Handler: we don’t mutate response cookies here
+        // route handler: no response cookie mutations here
         set(_n: string, _v: string, _o: CookieOptions) {},
         remove(_n: string, _o: CookieOptions) {},
       },
     }
   );
 
-  // 3) Who is the caller? (for created_by & RLS identity)
-  const { data: userData, error: userErr } = await supabase.auth.getUser();
-  if (userErr) {
-    return NextResponse.json(
-      { ok: false, where: 'auth', error: userErr.message },
-      { status: 401 }
-    );
-  }
-  const created_by = userData?.user?.email ?? null;
-
-  // 4) Find current payroll period (year/month = today)
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = today.getMonth() + 1;
-
-  const { data: period, error: periodErr } = await supabase
+  // ---------- find current payroll period ----------
+  const { data: period, error: perr } = await supabase
     .from('payroll_periods')
-    .select('id')
-    .eq('year', year)
-    .eq('month', month)
+    .select('id, year, month')
+    .eq('year', new Date().getFullYear())
+    .eq('month', new Date().getMonth() + 1)
     .limit(1)
     .maybeSingle();
 
-  if (periodErr) {
+  if (perr) {
     return NextResponse.json(
-      { ok: false, where: 'db', error: periodErr.message, details: 'lookup payroll_periods' },
+      { ok: false, where: 'db', error: perr.message, code: perr.code, details: 'lookup payroll_periods' },
       { status: 500 }
     );
   }
@@ -116,7 +121,7 @@ export async function POST(req: Request) {
     );
   }
 
-  // 5) Insert manual item (RLS requires admin -> policy manual_items_admin_all = is_admin())
+  // ---------- insert manual item (RLS enforces admin) ----------
   const { error: insErr } = await supabase
     .from('manual_items')
     .insert([
@@ -126,13 +131,13 @@ export async function POST(req: Request) {
         amount,               // NUMERIC >= 0
         label,                // optional
         period_id: period.id, // UUID
-        created_by,           // audit
-        code: null,           // optional
+        // created_by is nullable in your schema, so we can omit it;
+        // RLS will still check is_admin() via JWT session if cookies are present.
       },
     ]);
 
   if (insErr) {
-    // Clear message + hints
+    // Return cookie visibility to help diagnose session issues
     return NextResponse.json(
       {
         ok: false,
@@ -140,11 +145,7 @@ export async function POST(req: Request) {
         error: insErr.message,
         code: insErr.code,
         details: 'insert manual_items',
-        hints: [
-          'Are you logged in (supabase.auth.getUser())?',
-          'Does your request include cookies (fetch(..., { credentials: "include" }))?',
-          'Is your user an admin (is_admin() = true)?',
-        ],
+        saw_cookies: listCookieNames(),
       },
       { status: 403 }
     );
