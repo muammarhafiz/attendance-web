@@ -78,22 +78,15 @@ export async function POST(req: Request) {
     }
   );
 
-  // ensure session
-  const { data: authInfo, error: authErr } = await supabase.auth.getUser();
-  if (authErr || !authInfo?.user) {
-    return NextResponse.json(
-      { ok: false, where: 'auth', error: 'Auth session missing!' },
-      { status: 401 }
-    );
-  }
-  const created_by = authInfo.user.email ?? null;
+  // Try to read user, but DO NOT hard-fail if missing.
+  const { data: authInfo } = await supabase.auth.getUser();
+  const created_by = authInfo?.user?.email ?? null;
 
-  // ---- ensure a current payroll period exists (UPSERT)
+  // ---- ensure a current OPEN payroll period (idempotent)
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
 
-  // 1) try select (keep selErr as const to satisfy lint)
   const { data: found, error: selErr } = await supabase
     .from('payroll_periods')
     .select('id, year, month, status')
@@ -111,7 +104,6 @@ export async function POST(req: Request) {
 
   let period = found;
 
-  // 2) not found → try insert OPEN period
   if (!period?.id) {
     const { data: insData, error: insErr } = await supabase
       .from('payroll_periods')
@@ -121,7 +113,7 @@ export async function POST(req: Request) {
 
     if (insErr) {
       if (insErr.code === '23505') {
-        // unique race → reselect
+        // race: someone else created it; reselect
         const { data: again, error: againErr } = await supabase
           .from('payroll_periods')
           .select('id, year, month, status')
@@ -154,7 +146,7 @@ export async function POST(req: Request) {
     );
   }
 
-  // ---- insert manual item (RLS allows only admins via policy)
+  // ---- insert manual item (RLS enforces admin)
   const { error: insManualErr } = await supabase
     .from('manual_items')
     .insert([{
@@ -168,9 +160,16 @@ export async function POST(req: Request) {
     }]);
 
   if (insManualErr) {
+    // 42501 = insufficient_privilege (typical RLS block)
     const status = insManualErr.code === '42501' ? 403 : 400;
     return NextResponse.json(
-      { ok: false, where: 'db', error: insManualErr.message, code: insManualErr.code, details: 'insert manual_items' },
+      {
+        ok: false,
+        where: 'db',
+        error: insManualErr.message,
+        code: insManualErr.code,
+        details: 'insert manual_items (RLS: admins only or session not present)',
+      },
       { status }
     );
   }
