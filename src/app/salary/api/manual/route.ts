@@ -1,10 +1,10 @@
 // src/app/salary/api/manual/route.ts
 import { NextResponse } from 'next/server';
-import { createClientServer } from '@/src/lib/supabaseServer';
+import { createClientServer } from '@/lib/supabaseServer';
 
 type BodyIn = {
   staff_email?: string;
-  kind?: string;      // 'EARN' | 'DEDUCT'
+  kind?: string;      // 'EARN' | 'DEDUCT' (case-insensitive)
   amount?: string | number;
   label?: string | null;
 };
@@ -12,7 +12,7 @@ type BodyIn = {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export async function POST(req: Request) {
-  // 1) Parse & validate
+  // ---------- parse & validate input ----------
   let body: BodyIn | null = null;
   try {
     body = (await req.json()) as BodyIn;
@@ -24,9 +24,9 @@ export async function POST(req: Request) {
   }
 
   const staff_email = (body?.staff_email ?? '').trim();
-  const rawKind     = (body?.kind ?? '').toString().trim().toUpperCase();
-  const rawAmt      = (body?.amount ?? '').toString().trim();
-  const label       = body?.label?.toString().trim() || null;
+  const rawKind = (body?.kind ?? '').toString().trim().toUpperCase();
+  const rawAmt = (body?.amount ?? '').toString().trim();
+  const label = body?.label?.toString().trim() || null;
 
   if (!staff_email || !staff_email.includes('@')) {
     return NextResponse.json(
@@ -49,32 +49,31 @@ export async function POST(req: Request) {
   }
   const amount = round2(amountNum);
 
-  // 2) Supabase (server) that sees cookies/session
   const supabase = createClientServer();
 
-  // 3) Who is the caller? (for created_by + to ensure session exists)
+  // who is the caller? (for created_by)
   const { data: userData, error: userErr } = await supabase.auth.getUser();
-  if (userErr || !userData?.user?.email) {
+  if (userErr) {
     return NextResponse.json(
-      { ok: false, where: 'auth', error: userErr?.message || 'Auth session missing' },
+      { ok: false, where: 'auth', error: userErr.message },
       { status: 401 }
     );
   }
-  const created_by = userData.user.email;
+  const created_by = userData?.user?.email ?? null;
 
-  // 4) Current period
-  const year  = new Date().getFullYear();
-  const month = new Date().getMonth() + 1;
+  // ---------- find current payroll period ----------
+  const now = new Date();
   const { data: period, error: perr } = await supabase
     .from('payroll_periods')
-    .select('id')
-    .eq('year', year)
-    .eq('month', month)
+    .select('id, year, month')
+    .eq('year', now.getFullYear())
+    .eq('month', now.getMonth() + 1)
+    .limit(1)
     .maybeSingle();
 
   if (perr) {
     return NextResponse.json(
-      { ok: false, where: 'db', error: perr.message, details: 'lookup payroll_periods' },
+      { ok: false, where: 'db', error: perr.message, code: perr.code, details: 'lookup payroll_periods' },
       { status: 500 }
     );
   }
@@ -85,23 +84,31 @@ export async function POST(req: Request) {
     );
   }
 
-  // 5) Insert manual item — RLS: admins only (your policy)
+  // ---------- insert manual item (RLS enforces admin) ----------
   const { error: insErr } = await supabase
     .from('manual_items')
-    .insert([{
-      staff_email,
-      kind: rawKind,
-      amount,
-      label,
-      period_id: period.id,
-      created_by,
-      code: null,
-    }]);
+    .insert([
+      {
+        staff_email,
+        kind: rawKind,        // 'EARN' | 'DEDUCT'
+        amount,               // NUMERIC >= 0 (check constraint)
+        label,                // optional
+        period_id: period.id, // UUID
+        created_by,           // for audit
+        code: null,           // optional (kept nullable)
+      },
+    ]);
 
   if (insErr) {
     return NextResponse.json(
-      { ok: false, where: 'db', error: insErr.message, details: 'insert manual_items' },
-      { status: insErr.code === '42501' ? 403 : 400 }
+      {
+        ok: false,
+        where: 'db',
+        error: insErr.message,
+        code: insErr.code,
+        details: 'insert manual_items',
+      },
+      { status: 403 }
     );
   }
 
