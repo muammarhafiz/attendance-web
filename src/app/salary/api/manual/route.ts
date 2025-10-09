@@ -1,11 +1,9 @@
 // src/app/salary/api/manual/route.ts
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
+/** minimal cookie interface (avoid `any`) */
 type ReadonlyRequestCookiesLike = {
   get(name: string): { value?: string } | undefined;
 };
@@ -20,15 +18,20 @@ function readCookie(name: string): string {
 
 type BodyIn = {
   staff_email?: string;
-  kind?: string;          // 'EARN' | 'DEDUCT'
+  kind?: string;      // 'EARN' | 'DEDUCT' (case-insensitive)
   amount?: string | number;
   label?: string | null;
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+/* -------------------------------------------------------
+   POST /salary/api/manual
+   Inserts a manual item into public.manual_items
+   (RLS requires the caller to be an admin)
+------------------------------------------------------- */
 export async function POST(req: Request) {
-  // ---- parse & validate body
+  // ---------- parse & validate input ----------
   let body: BodyIn | null = null;
   try {
     body = (await req.json()) as BodyIn;
@@ -41,8 +44,8 @@ export async function POST(req: Request) {
 
   const staff_email = (body?.staff_email ?? '').trim();
   const rawKind = (body?.kind ?? '').toString().trim().toUpperCase();
-  const rawAmt  = (body?.amount ?? '').toString().trim();
-  const label   = body?.label?.toString().trim() || null;
+  const rawAmt = (body?.amount ?? '').toString().trim();
+  const label = body?.label?.toString().trim() || null;
 
   if (!staff_email || !staff_email.includes('@')) {
     return NextResponse.json(
@@ -56,6 +59,7 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
+  // allow "1,200.50", spaces, etc.
   const amountNum = Number(rawAmt.replace(/[, ]/g, ''));
   if (!isFinite(amountNum) || amountNum < 0) {
     return NextResponse.json(
@@ -65,7 +69,97 @@ export async function POST(req: Request) {
   }
   const amount = round2(amountNum);
 
-  // ---- supabase with cookies (so RLS sees your session)
+  // ---------- supabase client with cookies ----------
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return readCookie(name);
+        },
+        // route handler: no response cookie mutations here
+        set(_n: string, _v: string, _o: CookieOptions) {},
+        remove(_n: string, _o: CookieOptions) {},
+      },
+    }
+  );
+
+  // who is the caller? (for created_by)
+  const { data: userData, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !userData?.user) {
+    return NextResponse.json(
+      { ok: false, where: 'auth', error: userErr?.message || 'Auth session missing!' },
+      { status: 401 }
+    );
+  }
+  const created_by = userData.user.email ?? null;
+
+  // ---------- find current payroll period ----------
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+
+  const { data: period, error: perr } = await supabase
+    .from('payroll_periods')
+    .select('id, year, month')
+    .eq('year', year)
+    .eq('month', month)
+    .limit(1)
+    .maybeSingle();
+
+  if (perr) {
+    return NextResponse.json(
+      { ok: false, where: 'db', error: perr.message, code: perr.code, details: 'lookup payroll_periods' },
+      { status: 500 }
+    );
+  }
+  if (!period?.id) {
+    return NextResponse.json(
+      { ok: false, where: 'db', error: 'No current payroll period found (year/month).' },
+      { status: 400 }
+    );
+  }
+
+  // ---------- insert manual item (RLS enforces admin) ----------
+  const { error: insErr } = await supabase
+    .from('manual_items')
+    .insert([
+      {
+        staff_email,          // TEXT
+        kind: rawKind,        // 'EARN' | 'DEDUCT'
+        amount,               // NUMERIC >= 0 (check constraint)
+        label,                // optional
+        period_id: period.id, // UUID
+        created_by,           // for audit
+        code: null,           // optional (nullable)
+      },
+    ]);
+
+  if (insErr) {
+    return NextResponse.json(
+      {
+        ok: false,
+        where: 'db',
+        error: insErr.message,
+        code: insErr.code,
+        details: 'insert manual_items',
+      },
+      { status: insErr.code ? 403 : 400 }
+    );
+  }
+
+  return NextResponse.json({ ok: true });
+}
+
+/* -------------------------------------------------------
+   GET /salary/api/manual?debug=1
+   Diagnostics: what the server sees (auth/admin/period)
+------------------------------------------------------- */
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const debug = url.searchParams.get('debug');
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -78,101 +172,57 @@ export async function POST(req: Request) {
     }
   );
 
-  // Try to read user, but DO NOT hard-fail if missing.
-  const { data: authInfo } = await supabase.auth.getUser();
-  const created_by = authInfo?.user?.email ?? null;
+  const { data: authInfo, error: authErr } = await supabase.auth.getUser();
+  const userEmail = authInfo?.user?.email ?? null;
 
-  // ---- ensure a current OPEN payroll period (idempotent)
+  // ask DB if this email is admin
+  let amIAdmin: boolean | null = null;
+  if (userEmail) {
+    const { data: adminRow } = await supabase
+      .from('staff')
+      .select('is_admin')
+      .eq('email', userEmail)
+      .maybeSingle();
+    amIAdmin = adminRow?.is_admin ?? false;
+  }
+
+  // current period (if any)
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
 
-  const { data: found, error: selErr } = await supabase
+  const { data: period, error: perr } = await supabase
     .from('payroll_periods')
     .select('id, year, month, status')
     .eq('year', year)
     .eq('month', month)
-    .limit(1)
     .maybeSingle();
 
-  if (selErr) {
-    return NextResponse.json(
-      { ok: false, where: 'db', error: selErr.message, code: selErr.code, details: 'select payroll_periods' },
-      { status: 500 }
-    );
+  if (!debug) {
+    return NextResponse.json({
+      ok: true,
+      hasAuth: !!authInfo?.user,
+      userEmail,
+      amIAdmin,
+      periodFound: !!period?.id,
+    });
   }
 
-  let period = found;
-
-  if (!period?.id) {
-    const { data: insData, error: insErr } = await supabase
-      .from('payroll_periods')
-      .insert([{ year, month, status: 'OPEN' }])
-      .select('id, year, month, status')
-      .maybeSingle();
-
-    if (insErr) {
-      if (insErr.code === '23505') {
-        // race: someone else created it; reselect
-        const { data: again, error: againErr } = await supabase
-          .from('payroll_periods')
-          .select('id, year, month, status')
-          .eq('year', year)
-          .eq('month', month)
-          .limit(1)
-          .maybeSingle();
-        if (againErr || !again?.id) {
-          return NextResponse.json(
-            { ok: false, where: 'db', error: againErr?.message || 'Period upsert race failed' },
-            { status: 500 }
-          );
-        }
-        period = again;
-      } else {
-        return NextResponse.json(
-          { ok: false, where: 'db', error: insErr.message, code: insErr.code, details: 'insert payroll_periods' },
-          { status: 500 }
-        );
-      }
-    } else {
-      period = insData || period;
-    }
-  }
-
-  if (!period?.id) {
-    return NextResponse.json(
-      { ok: false, where: 'db', error: 'Could not ensure current payroll period.' },
-      { status: 500 }
-    );
-  }
-
-  // ---- insert manual item (RLS enforces admin)
-  const { error: insManualErr } = await supabase
-    .from('manual_items')
-    .insert([{
-      staff_email,
-      kind: rawKind,
-      amount,
-      label,
-      period_id: period.id,
-      created_by,
-      code: null,
-    }]);
-
-  if (insManualErr) {
-    // 42501 = insufficient_privilege (typical RLS block)
-    const status = insManualErr.code === '42501' ? 403 : 400;
-    return NextResponse.json(
-      {
-        ok: false,
-        where: 'db',
-        error: insManualErr.message,
-        code: insManualErr.code,
-        details: 'insert manual_items (RLS: admins only or session not present)',
+  return NextResponse.json({
+    ok: true,
+    diagnostics: {
+      auth: {
+        hasUser: !!authInfo?.user,
+        error: authErr?.message ?? null,
+        userEmail,
       },
-      { status }
-    );
-  }
-
-  return NextResponse.json({ ok: true, period_id: period.id });
+      admin: { amIAdmin },
+      period: {
+        year, month,
+        found: !!period?.id,
+        id: period?.id ?? null,
+        error: perr?.message ?? null,
+      },
+    },
+  });
 }
