@@ -78,7 +78,7 @@ export async function POST(req: Request) {
     }
   );
 
-  // ensure we actually have a session (useful error when cookies go missing)
+  // ensure session
   const { data: authInfo, error: authErr } = await supabase.auth.getUser();
   if (authErr || !authInfo?.user) {
     return NextResponse.json(
@@ -93,8 +93,8 @@ export async function POST(req: Request) {
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
 
-  // 1) try select
-  let { data: period, error: selErr } = await supabase
+  // 1) try select (keep selErr as const to satisfy lint)
+  const { data: found, error: selErr } = await supabase
     .from('payroll_periods')
     .select('id, year, month, status')
     .eq('year', year)
@@ -109,6 +109,8 @@ export async function POST(req: Request) {
     );
   }
 
+  let period = found;
+
   // 2) not found → try insert OPEN period
   if (!period?.id) {
     const { data: insData, error: insErr } = await supabase
@@ -118,8 +120,8 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (insErr) {
-      // If unique violation (another request already created it), re-select
       if (insErr.code === '23505') {
+        // unique race → reselect
         const { data: again, error: againErr } = await supabase
           .from('payroll_periods')
           .select('id, year, month, status')
@@ -157,7 +159,7 @@ export async function POST(req: Request) {
     .from('manual_items')
     .insert([{
       staff_email,
-      kind: rawKind,   // 'EARN' | 'DEDUCT'
+      kind: rawKind,
       amount,
       label,
       period_id: period.id,
@@ -166,7 +168,6 @@ export async function POST(req: Request) {
     }]);
 
   if (insManualErr) {
-    // 403 if RLS blocked (not admin), 400/500 otherwise
     const status = insManualErr.code === '42501' ? 403 : 400;
     return NextResponse.json(
       { ok: false, where: 'db', error: insManualErr.message, code: insManualErr.code, details: 'insert manual_items' },
