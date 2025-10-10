@@ -1,87 +1,85 @@
 // src/app/salary/api/run/route.ts
 import { NextResponse } from 'next/server';
-import { createClientServer } from '../../../../lib/supabaseServer';
+import { createClientServer } from '@/lib/supabaseServer';
 
-/** Strict types for this endpoint */
 type StaffRow = {
   email: string;
-  name: string | null;
-  is_admin: boolean | null;
-  include_in_payroll: boolean | null;
-  skip_payroll: boolean | null;
+  name: string;
+  is_admin: boolean;
+  include_in_payroll: boolean;
+  skip_payroll: boolean;
 };
 
-type Payslip = {
-  staff_email: string;
-  staff_name: string;
-  base_pay: number;
-  additions: number;
-  deductions: number;
-  gross_pay: number;
-  net_pay: number;
-};
+export async function GET(req: Request) {
+  // ---------- auth: forward user's Bearer so RLS sees the session ----------
+  const authHeader = req.headers.get('authorization') || '';
+  const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
 
-type RunOk = {
-  ok: true;
-  staff: { email: string; name: string }[];
-  payslips: Payslip[];
-  totals?: { count: number };
-};
+  const supabase = createClientServer(bearer);
 
-type RunErr = {
-  ok: false;
-  where?: string;
-  error: string;
-  code?: string;
-};
+  // 1) current period
+  const now = new Date();
+  const { data: period, error: perr } = await supabase
+    .from('payroll_periods')
+    .select('id, year, month')
+    .eq('year', now.getFullYear())
+    .eq('month', now.getMonth() + 1)
+    .limit(1)
+    .maybeSingle();
 
-export async function GET() {
-  try {
-    const supabase = createClientServer();
-
-    // who is the caller?
-    const { data: auth, error: authErr } = await supabase.auth.getUser();
-    if (authErr) {
-      return NextResponse.json<RunErr>(
-        { ok: false, where: 'auth', error: authErr.message, code: authErr.code },
-        { status: 401 }
-      );
-    }
-
-    // load staff for the Adjustment dropdown
-    const { data: staffRows, error: staffErr } = await supabase
-      .from('staff')
-      .select('email, name, is_admin, include_in_payroll, skip_payroll')
-      .order('name', { ascending: true });
-
-    if (staffErr) {
-      return NextResponse.json<RunErr>(
-        { ok: false, where: 'db', error: staffErr.message, code: staffErr.code },
-        { status: 500 }
-      );
-    }
-
-    const staff =
-      (staffRows ?? [])
-        .filter((s): s is StaffRow => !!s && typeof s.email === 'string')
-        .filter((s) => (s.include_in_payroll ?? true) && !(s.skip_payroll ?? false))
-        .map((s) => ({ email: s.email, name: s.name ?? s.email }));
-
-    // For now, return empty payslips; the page will render and the Adjustment form will work.
-    // We can plug the real payroll rows once we align with your salary schema/views.
-    const payload: RunOk = {
-      ok: true,
-      staff,
-      payslips: [],
-      totals: { count: staff.length },
-    };
-
-    return NextResponse.json(payload);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : 'Unknown error';
-    return NextResponse.json<RunErr>(
-      { ok: false, where: 'server', error: msg },
+  if (perr) {
+    return NextResponse.json(
+      { ok: false, where: 'db', error: perr.message, code: perr.code },
       { status: 500 }
     );
   }
+  if (!period?.id) {
+    return NextResponse.json(
+      { ok: false, where: 'db', error: 'No current payroll period found.' },
+      { status: 400 }
+    );
+  }
+
+  // 2) staff list (for dropdown)
+  const { data: staffRows, error: sErr } = await supabase
+    .from('staff')
+    .select('email, name, is_admin, include_in_payroll, skip_payroll')
+    .order('name', { ascending: true });
+
+  if (sErr) {
+    return NextResponse.json(
+      { ok: false, where: 'db', error: sErr.message, code: sErr.code },
+      { status: 400 }
+    );
+  }
+
+  const staff: StaffRow[] = (staffRows ?? []).filter(
+    (s: any): s is StaffRow =>
+      !!s &&
+      typeof s.email === 'string' &&
+      typeof s.name === 'string' &&
+      typeof s.is_admin === 'boolean' &&
+      typeof s.include_in_payroll === 'boolean' &&
+      typeof s.skip_payroll === 'boolean'
+  );
+
+  // 3) payslips view (read-only)
+  const { data: payslips, error: pErr } = await supabase
+    .from('v_payslip')
+    .select('staff_email, staff_name, base_pay, additions, deductions, gross_pay, net_pay')
+    .eq('period_id', period.id)
+    .order('staff_name', { ascending: true });
+
+  if (pErr) {
+    return NextResponse.json(
+      { ok: false, where: 'db', error: pErr.message, code: pErr.code },
+      { status: 400 }
+    );
+  }
+
+  return NextResponse.json({
+    ok: true,
+    payslips: payslips ?? [],
+    staff: staff.map(s => ({ email: s.email, name: s.name })),
+  });
 }
