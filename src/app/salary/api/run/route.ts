@@ -9,7 +9,7 @@ type StaffRow = {
   is_admin: boolean;
   include_in_payroll: boolean;
   skip_payroll: boolean;
-  base_salary?: number | null;   // staff.base_salary or staff.basic_salary (fallback)
+  base_salary?: number | null;   // staff.base_salary
   basic_salary?: number | null;  // legacy column — we’ll coalesce
 };
 
@@ -43,6 +43,22 @@ type RunErr = {
   code?: string;
 };
 
+function isStaffRow(s: unknown): s is StaffRow {
+  if (!s || typeof s !== 'object') return false;
+  const o = s as Record<string, unknown>;
+  return (
+    typeof o.email === 'string' &&
+    typeof o.name === 'string' &&
+    typeof o.is_admin === 'boolean' &&
+    typeof o.include_in_payroll === 'boolean' &&
+    typeof o.skip_payroll === 'boolean'
+  );
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 export async function GET() {
   const supabase = createClientServer();
 
@@ -71,14 +87,8 @@ export async function GET() {
     return NextResponse.json(out, { status: 500 });
   }
 
-  const staff: StaffRow[] = (staffRows ?? []).filter((s): s is StaffRow => {
-    return !!s &&
-      typeof s.email === 'string' &&
-      typeof s.name === 'string' &&
-      typeof s.is_admin === 'boolean' &&
-      typeof s.include_in_payroll === 'boolean' &&
-      typeof s.skip_payroll === 'boolean';
-  });
+  // Cast to unknown[] first so TS doesn’t invent a weird union type
+  const staff: StaffRow[] = ((staffRows ?? []) as unknown[]).filter(isStaffRow);
 
   // 2) Load current-month additions/deductions view
   const { data: addDedRows, error: addDedErr } = await supabase
@@ -97,7 +107,7 @@ export async function GET() {
 
   const addDedMap = new Map<string, { add: number; ded: number }>();
   for (const r of (addDedRows ?? []) as AddDedRow[]) {
-    if (!r.staff_email) continue;
+    if (!r?.staff_email) continue;
     addDedMap.set(r.staff_email.toLowerCase(), {
       add: Number(r.additions_total ?? 0),
       ded: Number(r.deductions_total ?? 0),
@@ -140,8 +150,4 @@ export async function GET() {
   };
 
   return NextResponse.json(out);
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
 }
