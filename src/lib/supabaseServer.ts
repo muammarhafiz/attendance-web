@@ -1,35 +1,43 @@
 // src/lib/supabaseServer.ts
 import { cookies } from 'next/headers';
-import { createServerClient, type CookieOptions, type SupabaseClient } from '@supabase/ssr';
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
+/** minimal cookie interface (avoid any) */
 type ReadonlyRequestCookiesLike = {
   get(name: string): { value?: string } | undefined;
 };
 
-/** Read a cookie value safely in a route handler (no exceptions during build/SSG). */
-function readCookie(name: string): string | undefined {
+function readCookie(name: string): string {
   try {
     const store = cookies() as unknown as ReadonlyRequestCookiesLike;
-    return store.get(name)?.value;
+    return store.get(name)?.value ?? '';
   } catch {
-    // In edge/build contexts cookies() can throw; treat as missing cookie.
-    return undefined;
+    // if cookies() throws (edge/runtime mismatch), just return empty
+    return '';
   }
 }
 
-/** Create a Supabase server client that reads auth cookies but never mutates them here. */
+/** Server-side Supabase client that reads auth from request cookies */
 export function createClientServer(): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-  return createServerClient(url, anon, {
+  return createServerClient(url, anonKey, {
     cookies: {
-      get(name: string): string | undefined {
+      get(name: string) {
         return readCookie(name);
       },
-      // No-ops in route handlers; we don’t set/remove cookies here.
-      set(_name: string, _value: string, _options: CookieOptions): void {},
-      remove(_name: string, _options: CookieOptions): void {},
+      // Route handlers generally shouldn't mutate cookies.
+      // We still implement the interface to keep SSR helper happy.
+      set(name: string, value: string, options: CookieOptions) {
+        void name; void value; void options;
+        // no-op
+      },
+      remove(name: string, options: CookieOptions) {
+        void name; void options;
+        // no-op
+      },
     },
-  });
+  }) as unknown as SupabaseClient;
 }
