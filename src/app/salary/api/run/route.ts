@@ -1,6 +1,6 @@
 // src/app/salary/api/run/route.ts
 import { NextResponse } from 'next/server';
-import { createClientServer } from '@/src/lib/supabaseServer';
+import { createClientServer } from '@/lib/supabaseServer';
 
 /** Strict types (no `any`) */
 type StaffRow = {
@@ -46,7 +46,7 @@ type RunErr = {
 export async function GET() {
   const supabase = createClientServer();
 
-  // 1) Load staff (we read the `staff` table to get include/skip flags & salary)
+  // 1) Load staff
   const { data: staffRows, error: staffErr } = await supabase
     .from('staff')
     .select(
@@ -128,7 +128,6 @@ export async function GET() {
         net_pay: round2(net),
       };
     })
-    // stable order by name/email
     .sort((a, b) =>
       a.staff_name.localeCompare(b.staff_name) || a.staff_email.localeCompare(b.staff_email)
     );
