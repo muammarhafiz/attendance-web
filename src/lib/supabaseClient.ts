@@ -1,11 +1,14 @@
-// src/lib/supabaseClient.ts
-import { createBrowserClient } from '@supabase/ssr';
+import { createClient } from '@supabase/supabase-js';
 
-/**
- * Browser-side Supabase client that manages the session via cookies,
- * so server Route Handlers (using createServerClient) can read them.
- */
-export const supabase = createBrowserClient(
+export const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      flowType: 'pkce',
+    },
+  }
 );
