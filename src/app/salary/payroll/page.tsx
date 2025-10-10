@@ -2,7 +2,6 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
 
 type Payslip = {
   staff_email: string;
@@ -43,26 +42,14 @@ export default function PayrollPage() {
   const [amount, setAmount] = useState<string>('');
   const [label, setLabel] = useState<string>('');
 
-  async function getAccessToken(): Promise<string | null> {
-    const { data } = await supabase.auth.getSession();
-    return data.session?.access_token ?? null;
-  }
-
   useEffect(() => {
     let mounted = true;
     (async () => {
       setLoading(true);
       setErrMsg('');
       try {
-        const token = await getAccessToken();
-        if (!token) throw new Error('You are not signed in. Please sign in again.');
-
-        const r = await fetch('/salary/api/run', {
-          cache: 'no-store',
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const r = await fetch('/salary/api/run', { cache: 'no-store', credentials: 'include' });
         const j = (await r.json()) as RunApiRes;
-
         if (!r.ok || !j.ok) {
           const msg = !r.ok
             ? `HTTP ${r.status}`
@@ -102,15 +89,10 @@ export default function PayrollPage() {
     if (!Number.isFinite(amt) || amt < 0) return setErrMsg('Amount must be ≥ 0.');
 
     try {
-      const token = await getAccessToken();
-      if (!token) throw new Error('You are not signed in. Please sign in again.');
-
       const r = await fetch('/salary/api/manual', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           staff_email: selEmail,
           kind,
@@ -130,17 +112,12 @@ export default function PayrollPage() {
       }
 
       // refetch the table
-      const rr = await fetch('/salary/api/run', {
-        cache: 'no-store',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const runJson = (await rr.json()) as RunApiRes;
-      if (!rr.ok || !runJson.ok) {
+      const runRes = await fetch('/salary/api/run', { cache: 'no-store', credentials: 'include' });
+      const runJson = (await runRes.json()) as RunApiRes;
+      if (!runRes.ok || !runJson.ok) {
         throw new Error('Saved, but failed to refresh table.');
       }
-
       setRows(runJson.payslips);
-      setStaff(runJson.staff);
       setLastRunAt(new Date().toLocaleString());
       setAmount('');
       setLabel('');
