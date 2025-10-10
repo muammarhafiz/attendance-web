@@ -2,6 +2,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { supabase } from '@/src/lib/supabaseClient';
 
 type Payslip = {
   staff_email: string;
@@ -13,12 +14,10 @@ type Payslip = {
   net_pay: number;
 };
 
-type StaffLite = { email: string; name: string };
-
 type RunOk = {
   ok: true;
   payslips: Payslip[];
-  staff: StaffLite[];
+  staff: { email: string; name: string }[];
   totals?: { count: number };
 };
 
@@ -33,42 +32,49 @@ type RunApiRes = RunOk | RunErr;
 
 export default function PayrollPage() {
   const [rows, setRows] = useState<Payslip[]>([]);
-  const [staff, setStaff] = useState<StaffLite[]>([]);
+  const [staff, setStaff] = useState<{ email: string; name: string }[]>([]);
   const [lastRunAt, setLastRunAt] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [errMsg, setErrMsg] = useState<string>('');
 
-  // Adjustment form
+  // Adjustment form state
   const [selEmail, setSelEmail] = useState<string>('');
   const [kind, setKind] = useState<'EARN' | 'DEDUCT'>('EARN');
   const [amount, setAmount] = useState<string>('');
   const [label, setLabel] = useState<string>('');
 
-  // Initial load
+  async function getAccessToken(): Promise<string | null> {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? null;
+  }
+
   useEffect(() => {
     let mounted = true;
     (async () => {
       setLoading(true);
       setErrMsg('');
       try {
+        const token = await getAccessToken();
+        if (!token) throw new Error('You are not signed in. Please sign in again.');
+
         const r = await fetch('/salary/api/run', {
           cache: 'no-store',
-          credentials: 'include',
+          headers: { Authorization: `Bearer ${token}` },
         });
         const j = (await r.json()) as RunApiRes;
 
         if (!r.ok || !j.ok) {
           const msg = !r.ok
             ? `HTTP ${r.status}`
-            : (('ok' in j && j.ok === false) && (j.error || j.where))
-              ? `${j.where ? j.where + ': ' : ''}${j.error ?? 'Failed'}`
+            : !j.ok
+              ? `${j.where ? j.where + ': ' : ''}${j.error}`
               : 'Unknown error';
           throw new Error(msg);
         }
 
         if (!mounted) return;
         setRows(j.payslips);
-        setStaff(j.staff ?? []);
+        setStaff(j.staff);
         setLastRunAt(new Date().toLocaleString());
       } catch (e) {
         if (!mounted) return;
@@ -96,11 +102,15 @@ export default function PayrollPage() {
     if (!Number.isFinite(amt) || amt < 0) return setErrMsg('Amount must be ≥ 0.');
 
     try {
-      // Create manual adjustment
+      const token = await getAccessToken();
+      if (!token) throw new Error('You are not signed in. Please sign in again.');
+
       const r = await fetch('/salary/api/manual', {
         method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
           staff_email: selEmail,
           kind,
@@ -108,7 +118,6 @@ export default function PayrollPage() {
           label: label || null,
         }),
       });
-
       const j = (await r.json()) as { ok: boolean; where?: string; error?: string };
 
       if (!r.ok || !j.ok) {
@@ -120,24 +129,18 @@ export default function PayrollPage() {
         throw new Error(msg);
       }
 
-      // Refresh table after successful add
-      const runRes = await fetch('/salary/api/run', {
+      // refetch the table
+      const rr = await fetch('/salary/api/run', {
         cache: 'no-store',
-        credentials: 'include',
+        headers: { Authorization: `Bearer ${token}` },
       });
-      const runJson = (await runRes.json()) as RunApiRes;
-      if (!runRes.ok || !runJson.ok) {
-        const msg =
-          !runRes.ok
-            ? `HTTP ${runRes.status}`
-            : (('ok' in runJson && runJson.ok === false) && (runJson.error || runJson.where))
-              ? `${runJson.where ? runJson.where + ': ' : ''}${runJson.error ?? 'Failed'}`
-              : 'Unknown error';
-        throw new Error(`Saved, but failed to refresh table. ${msg}`);
+      const runJson = (await rr.json()) as RunApiRes;
+      if (!rr.ok || !runJson.ok) {
+        throw new Error('Saved, but failed to refresh table.');
       }
 
       setRows(runJson.payslips);
-      setStaff(runJson.staff ?? []);
+      setStaff(runJson.staff);
       setLastRunAt(new Date().toLocaleString());
       setAmount('');
       setLabel('');
@@ -153,10 +156,7 @@ export default function PayrollPage() {
       {/* Adjustment Box */}
       <div className="border rounded-lg p-4 shadow-sm">
         <h2 className="font-medium mb-3">Adjustment</h2>
-        <form
-          onSubmit={handleAddAdjustment}
-          className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end"
-        >
+        <form onSubmit={handleAddAdjustment} className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
           <div className="flex flex-col">
             <label className="text-sm mb-1">Staff</label>
             <select
@@ -271,12 +271,8 @@ export default function PayrollPage() {
               </tbody>
               <tfoot>
                 <tr className="border-t">
-                  <td className="py-2 pr-2 font-medium" colSpan={6}>
-                    Total Net
-                  </td>
-                  <td className="py-2 pr-2 font-semibold">
-                    {formatMYR(totalNet)}
-                  </td>
+                  <td className="py-2 pr-2 font-medium" colSpan={6}>Total Net</td>
+                  <td className="py-2 pr-2 font-semibold">{formatMYR(totalNet)}</td>
                 </tr>
               </tfoot>
             </table>
