@@ -53,14 +53,16 @@ export default function PayrollPage() {
       try {
         const r = await fetch('/salary/api/run', {
           cache: 'no-store',
-          credentials: 'include', // send Supabase cookies
+          credentials: 'include',
         });
         const j = (await r.json()) as RunApiRes;
 
         if (!r.ok || !j.ok) {
           const msg = !r.ok
             ? `HTTP ${r.status}`
-            : `${j.where ? j.where + ': ' : ''}${j.error}`;
+            : (('ok' in j && j.ok === false) && (j.error || j.where))
+              ? `${j.where ? j.where + ': ' : ''}${j.error ?? 'Failed'}`
+              : 'Unknown error';
           throw new Error(msg);
         }
 
@@ -97,7 +99,7 @@ export default function PayrollPage() {
       // Create manual adjustment
       const r = await fetch('/salary/api/manual', {
         method: 'POST',
-        credentials: 'include', // send Supabase cookies
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           staff_email: selEmail,
@@ -125,7 +127,13 @@ export default function PayrollPage() {
       });
       const runJson = (await runRes.json()) as RunApiRes;
       if (!runRes.ok || !runJson.ok) {
-        throw new Error('Saved, but failed to refresh table.');
+        const msg =
+          !runRes.ok
+            ? `HTTP ${runRes.status}`
+            : (('ok' in runJson && runJson.ok === false) && (runJson.error || runJson.where))
+              ? `${runJson.where ? runJson.where + ': ' : ''}${runJson.error ?? 'Failed'}`
+              : 'Unknown error';
+        throw new Error(`Saved, but failed to refresh table. ${msg}`);
       }
 
       setRows(runJson.payslips);
