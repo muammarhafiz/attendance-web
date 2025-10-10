@@ -2,6 +2,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { supabase } from '@/lib/supabaseClient';
 
 type Payslip = {
   staff_email: string;
@@ -42,20 +43,31 @@ export default function PayrollPage() {
   const [amount, setAmount] = useState<string>('');
   const [label, setLabel] = useState<string>('');
 
+  async function getAuthHeader() {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }
+
   useEffect(() => {
     let mounted = true;
     (async () => {
       setLoading(true);
       setErrMsg('');
       try {
-        const r = await fetch('/salary/api/run', { cache: 'no-store', credentials: 'include' });
+        const auth = await getAuthHeader();
+        const r = await fetch('/salary/api/run', {
+          cache: 'no-store',
+          credentials: 'include',
+          headers: { ...auth },
+        });
         const j = (await r.json()) as RunApiRes;
         if (!r.ok || !j.ok) {
           const msg = !r.ok
             ? `HTTP ${r.status}`
-            : !j.ok
-              ? `${j.where ? j.where + ': ' : ''}${j.error}`
-              : 'Unknown error';
+            : `Failed to load${'where' in j && j.where ? ` (${j.where})` : ''}: ${'error' in j ? j.error : 'Unknown'}`;
           throw new Error(msg);
         }
 
@@ -89,10 +101,11 @@ export default function PayrollPage() {
     if (!Number.isFinite(amt) || amt < 0) return setErrMsg('Amount must be ≥ 0.');
 
     try {
+      const auth = await getAuthHeader();
       const r = await fetch('/salary/api/manual', {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...auth },
         body: JSON.stringify({
           staff_email: selEmail,
           kind,
@@ -112,7 +125,12 @@ export default function PayrollPage() {
       }
 
       // refetch the table
-      const runRes = await fetch('/salary/api/run', { cache: 'no-store', credentials: 'include' });
+      const runAuth = await getAuthHeader();
+      const runRes = await fetch('/salary/api/run', {
+        cache: 'no-store',
+        credentials: 'include',
+        headers: { ...runAuth },
+      });
       const runJson = (await runRes.json()) as RunApiRes;
       if (!runRes.ok || !runJson.ok) {
         throw new Error('Saved, but failed to refresh table.');
