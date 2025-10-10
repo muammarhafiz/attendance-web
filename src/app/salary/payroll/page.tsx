@@ -13,10 +13,12 @@ type Payslip = {
   net_pay: number;
 };
 
+type StaffLite = { email: string; name: string };
+
 type RunOk = {
   ok: true;
   payslips: Payslip[];
-  staff: { email: string; name: string }[];
+  staff: StaffLite[];
   totals?: { count: number };
 };
 
@@ -31,37 +33,40 @@ type RunApiRes = RunOk | RunErr;
 
 export default function PayrollPage() {
   const [rows, setRows] = useState<Payslip[]>([]);
-  const [staff, setStaff] = useState<{ email: string; name: string }[]>([]);
+  const [staff, setStaff] = useState<StaffLite[]>([]);
   const [lastRunAt, setLastRunAt] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [errMsg, setErrMsg] = useState<string>('');
 
-  // Adjustment form state
+  // Adjustment form
   const [selEmail, setSelEmail] = useState<string>('');
   const [kind, setKind] = useState<'EARN' | 'DEDUCT'>('EARN');
   const [amount, setAmount] = useState<string>('');
   const [label, setLabel] = useState<string>('');
 
+  // Initial load
   useEffect(() => {
     let mounted = true;
     (async () => {
       setLoading(true);
       setErrMsg('');
       try {
-        const r = await fetch('/salary/api/run', { cache: 'no-store', credentials: 'include' });
+        const r = await fetch('/salary/api/run', {
+          cache: 'no-store',
+          credentials: 'include', // send Supabase cookies
+        });
         const j = (await r.json()) as RunApiRes;
+
         if (!r.ok || !j.ok) {
           const msg = !r.ok
             ? `HTTP ${r.status}`
-            : j.ok
-              ? 'Unknown error'
-              : `${j.where ? j.where + ': ' : ''}${j.error}`;
+            : `${j.where ? j.where + ': ' : ''}${j.error}`;
           throw new Error(msg);
         }
 
         if (!mounted) return;
         setRows(j.payslips);
-        setStaff(j.staff);
+        setStaff(j.staff ?? []);
         setLastRunAt(new Date().toLocaleString());
       } catch (e) {
         if (!mounted) return;
@@ -89,9 +94,10 @@ export default function PayrollPage() {
     if (!Number.isFinite(amt) || amt < 0) return setErrMsg('Amount must be ≥ 0.');
 
     try {
+      // Create manual adjustment
       const r = await fetch('/salary/api/manual', {
         method: 'POST',
-        credentials: 'include',
+        credentials: 'include', // send Supabase cookies
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           staff_email: selEmail,
@@ -100,6 +106,7 @@ export default function PayrollPage() {
           label: label || null,
         }),
       });
+
       const j = (await r.json()) as { ok: boolean; where?: string; error?: string };
 
       if (!r.ok || !j.ok) {
@@ -111,13 +118,18 @@ export default function PayrollPage() {
         throw new Error(msg);
       }
 
-      // refetch the table
-      const runRes = await fetch('/salary/api/run', { cache: 'no-store', credentials: 'include' });
+      // Refresh table after successful add
+      const runRes = await fetch('/salary/api/run', {
+        cache: 'no-store',
+        credentials: 'include',
+      });
       const runJson = (await runRes.json()) as RunApiRes;
       if (!runRes.ok || !runJson.ok) {
         throw new Error('Saved, but failed to refresh table.');
       }
+
       setRows(runJson.payslips);
+      setStaff(runJson.staff ?? []);
       setLastRunAt(new Date().toLocaleString());
       setAmount('');
       setLabel('');
@@ -130,10 +142,13 @@ export default function PayrollPage() {
     <div className="max-w-5xl mx-auto p-4 space-y-6">
       <h1 className="text-2xl font-semibold">Payroll</h1>
 
-      {/* Adjustment Box (same style as payroll card, placed on top) */}
+      {/* Adjustment Box */}
       <div className="border rounded-lg p-4 shadow-sm">
         <h2 className="font-medium mb-3">Adjustment</h2>
-        <form onSubmit={handleAddAdjustment} className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+        <form
+          onSubmit={handleAddAdjustment}
+          className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end"
+        >
           <div className="flex flex-col">
             <label className="text-sm mb-1">Staff</label>
             <select
@@ -248,8 +263,12 @@ export default function PayrollPage() {
               </tbody>
               <tfoot>
                 <tr className="border-t">
-                  <td className="py-2 pr-2 font-medium" colSpan={6}>Total Net</td>
-                  <td className="py-2 pr-2 font-semibold">{formatMYR(totalNet)}</td>
+                  <td className="py-2 pr-2 font-medium" colSpan={6}>
+                    Total Net
+                  </td>
+                  <td className="py-2 pr-2 font-semibold">
+                    {formatMYR(totalNet)}
+                  </td>
                 </tr>
               </tfoot>
             </table>
