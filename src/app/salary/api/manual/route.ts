@@ -1,10 +1,10 @@
 // src/app/salary/api/manual/route.ts
 import { NextResponse } from 'next/server';
-import { createClientServer } from '@/lib/supabaseServer';
+import { createClientServer } from '@/src/lib/supabaseServer';
 
 type BodyIn = {
   staff_email?: string;
-  kind?: string;      // 'EARN' | 'DEDUCT' (case-insensitive)
+  kind?: string;      // 'EARN' | 'DEDUCT'
   amount?: string | number;
   label?: string | null;
 };
@@ -49,12 +49,9 @@ export async function POST(req: Request) {
   }
   const amount = round2(amountNum);
 
-  // ---------- auth: forward user's Bearer so RLS sees the session ----------
-  const authHeader = req.headers.get('authorization') || '';
-  const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-
   // ---------- supabase (server) ----------
-  const supabase = createClientServer(bearer);
+  // IMPORTANT: pass the Request, not a string token
+  const supabase = createClientServer(req);
 
   // who is the caller? (for created_by)
   const { data: userData, error: userErr } = await supabase.auth.getUser();
@@ -66,48 +63,47 @@ export async function POST(req: Request) {
   }
   const created_by = userData?.user?.email ?? null;
 
-  // ---------- current payroll period ----------
+  // ---------- find current payroll period ----------
   const now = new Date();
   const { data: period, error: perr } = await supabase
     .from('payroll_periods')
     .select('id, year, month')
     .eq('year', now.getFullYear())
     .eq('month', now.getMonth() + 1)
-    .limit(1)
     .maybeSingle();
 
   if (perr) {
     return NextResponse.json(
-      { ok: false, where: 'db', error: perr.message, code: perr.code, details: 'lookup payroll_periods' },
-      { status: 500 }
+      { ok: false, where: 'db.period', error: perr.message, code: perr.code },
+      { status: 400 }
     );
   }
   if (!period?.id) {
     return NextResponse.json(
-      { ok: false, where: 'db', error: 'No current payroll period found (year/month).' },
+      { ok: false, where: 'db.period', error: 'No current payroll period found.' },
       { status: 400 }
     );
   }
 
-  // ---------- insert manual item (RLS enforces admin) ----------
+  // ---------- insert manual item ----------
   const { error: insErr } = await supabase
     .from('manual_items')
     .insert([
       {
         staff_email,
-        kind: rawKind,     // 'EARN' | 'DEDUCT'
-        amount,            // NUMERIC >= 0
-        label,             // optional
+        kind: rawKind,    // 'EARN' | 'DEDUCT'
+        amount,
+        label,
         period_id: period.id,
-        created_by,        // audit
-        code: null,        // optional
+        created_by,
+        code: null,
       },
     ]);
 
   if (insErr) {
     return NextResponse.json(
-      { ok: false, where: 'db', error: insErr.message, code: insErr.code, details: 'insert manual_items' },
-      { status: insErr.code === '42501' ? 403 : 400 } // 403 likely RLS
+      { ok: false, where: 'db.insert', error: insErr.message, code: insErr.code },
+      { status: 403 }
     );
   }
 
