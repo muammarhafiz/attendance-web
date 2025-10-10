@@ -10,11 +10,33 @@ type StaffRow = {
   skip_payroll: boolean;
 };
 
+type PayslipRow = {
+  staff_email: string;
+  staff_name: string;
+  base_pay: number;
+  additions: number;
+  deductions: number;
+  gross_pay: number;
+  net_pay: number;
+};
+
+/** Narrow an unknown to StaffRow without using `any` */
+function isStaffRow(u: unknown): u is StaffRow {
+  if (typeof u !== 'object' || u === null) return false;
+  const o = u as Record<string, unknown>;
+  return (
+    typeof o.email === 'string' &&
+    typeof o.name === 'string' &&
+    typeof o.is_admin === 'boolean' &&
+    typeof o.include_in_payroll === 'boolean' &&
+    typeof o.skip_payroll === 'boolean'
+  );
+}
+
 export async function GET(req: Request) {
-  // ---------- auth: forward user's Bearer so RLS sees the session ----------
+  // Forward user's bearer so RLS evaluates as the real user
   const authHeader = req.headers.get('authorization') || '';
   const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-
   const supabase = createClientServer(bearer);
 
   // 1) current period
@@ -53,20 +75,14 @@ export async function GET(req: Request) {
     );
   }
 
-  const staff: StaffRow[] = (staffRows ?? []).filter(
-    (s: any): s is StaffRow =>
-      !!s &&
-      typeof s.email === 'string' &&
-      typeof s.name === 'string' &&
-      typeof s.is_admin === 'boolean' &&
-      typeof s.include_in_payroll === 'boolean' &&
-      typeof s.skip_payroll === 'boolean'
-  );
+  const staff: StaffRow[] = (staffRows ?? []).filter(isStaffRow);
 
   // 3) payslips view (read-only)
   const { data: payslips, error: pErr } = await supabase
     .from('v_payslip')
-    .select('staff_email, staff_name, base_pay, additions, deductions, gross_pay, net_pay')
+    .select(
+      'staff_email, staff_name, base_pay, additions, deductions, gross_pay, net_pay'
+    )
     .eq('period_id', period.id)
     .order('staff_name', { ascending: true });
 
@@ -79,7 +95,7 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     ok: true,
-    payslips: payslips ?? [],
-    staff: staff.map(s => ({ email: s.email, name: s.name })),
+    payslips: (payslips ?? []) as PayslipRow[],
+    staff: staff.map((s) => ({ email: s.email, name: s.name })),
   });
 }
