@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { supabase } from '@/src/lib/supabaseClient';
+import { supabase } from '@/lib/supabaseClient';
 
 type Payslip = {
   staff_email: string;
