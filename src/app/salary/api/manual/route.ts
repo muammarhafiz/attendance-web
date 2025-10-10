@@ -1,6 +1,6 @@
 // src/app/salary/api/manual/route.ts
 import { NextResponse } from 'next/server';
-import { createClientServer } from '../../../../lib/supabaseServer';
+import { createClientServer } from '@/lib/supabaseServer';
 
 type BodyIn = {
   staff_email?: string;
@@ -40,7 +40,6 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
-  // allow "1,200.50", spaces, etc.
   const amountNum = Number(rawAmt.replace(/[, ]/g, ''));
   if (!isFinite(amountNum) || amountNum < 0) {
     return NextResponse.json(
@@ -50,8 +49,12 @@ export async function POST(req: Request) {
   }
   const amount = round2(amountNum);
 
-  // ---------- supabase (server) with Next cookies ----------
-  const supabase = createClientServer();
+  // ---------- auth: forward user's Bearer so RLS sees the session ----------
+  const authHeader = req.headers.get('authorization') || '';
+  const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+
+  // ---------- supabase (server) ----------
+  const supabase = createClientServer(bearer);
 
   // who is the caller? (for created_by)
   const { data: userData, error: userErr } = await supabase.auth.getUser();
@@ -63,7 +66,7 @@ export async function POST(req: Request) {
   }
   const created_by = userData?.user?.email ?? null;
 
-  // ---------- find current payroll period ----------
+  // ---------- current payroll period ----------
   const now = new Date();
   const { data: period, error: perr } = await supabase
     .from('payroll_periods')
@@ -91,26 +94,20 @@ export async function POST(req: Request) {
     .from('manual_items')
     .insert([
       {
-        staff_email,          // TEXT (matches your table)
-        kind: rawKind,        // 'EARN' | 'DEDUCT'
-        amount,               // NUMERIC >= 0 (check constraint)
-        label,                // optional
-        period_id: period.id, // UUID
-        created_by,           // for audit
-        code: null,           // optional (kept nullable)
+        staff_email,
+        kind: rawKind,     // 'EARN' | 'DEDUCT'
+        amount,            // NUMERIC >= 0
+        label,             // optional
+        period_id: period.id,
+        created_by,        // audit
+        code: null,        // optional
       },
     ]);
 
   if (insErr) {
     return NextResponse.json(
-      {
-        ok: false,
-        where: 'db',
-        error: insErr.message,
-        code: insErr.code,
-        details: 'insert manual_items',
-      },
-      { status: 403 }
+      { ok: false, where: 'db', error: insErr.message, code: insErr.code, details: 'insert manual_items' },
+      { status: insErr.code === '42501' ? 403 : 400 } // 403 likely RLS
     );
   }
 
