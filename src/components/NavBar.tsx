@@ -1,3 +1,4 @@
+// src/components/NavBar.tsx
 'use client';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
@@ -10,36 +11,22 @@ const supabase = createClient(
 
 export default function NavBar() {
   const [email, setEmail] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    // --- detect login session ---
-    supabase.auth.getUser().then(async ({ data }) => {
-      const userEmail = data.user?.email ?? null;
-      setEmail(userEmail);
-
-      if (userEmail) {
-        // --- check if admin (client-side RPC) ---
-        const { data: isAdminResult, error } = await supabase.rpc('is_admin');
-        if (!error) setIsAdmin(!!isAdminResult);
-      }
+    // Initial read
+    supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null));
+    // Live updates
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      setEmail(session?.user?.email ?? null);
     });
-
-    // --- subscribe to session changes ---
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_e, session) => {
-      const newEmail = session?.user?.email ?? null;
-      setEmail(newEmail);
-
-      if (newEmail) {
-        const { data: isAdminResult, error } = await supabase.rpc('is_admin');
-        if (!error) setIsAdmin(!!isAdminResult);
-      } else {
-        setIsAdmin(false);
-      }
-    });
-
     return () => sub.subscription.unsubscribe();
   }, []);
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    // Ensure the navbar reflects the logged-out state immediately
+    window.location.reload();
+  };
 
   return (
     <nav className="sticky top-0 z-40 w-full border-b border-gray-200 bg-white/90 backdrop-blur">
@@ -50,13 +37,8 @@ export default function NavBar() {
           <Link href="/report" className="text-sm font-semibold text-gray-700 hover:text-gray-900">Report</Link>
           <Link href="/manager" className="text-sm font-semibold text-gray-700 hover:text-gray-900">Manager</Link>
           <Link href="/offday" className="text-sm font-semibold text-gray-700 hover:text-gray-900">Offday/MC</Link>
-
-          {/* ✅ Show Payroll only if admin */}
-          {isAdmin && (
-            <Link href="/payroll/admin" className="text-sm font-semibold text-gray-700 hover:text-gray-900">
-              Payroll
-            </Link>
-          )}
+          {/* NEW: Payroll behaves exactly like Manager (always visible; page handles access) */}
+          <Link href="/payroll/admin" className="text-sm font-semibold text-gray-700 hover:text-gray-900">Payroll</Link>
         </div>
 
         {/* Auth button */}
@@ -65,7 +47,7 @@ export default function NavBar() {
             <>
               <span className="hidden text-sm text-gray-600 sm:inline">{email}</span>
               <button
-                onClick={() => supabase.auth.signOut()}
+                onClick={handleSignOut}
                 className="rounded-md bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-200"
               >
                 Sign out
