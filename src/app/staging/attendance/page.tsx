@@ -1,13 +1,13 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { createBrowserClient } from '@supabase/ssr'; // your repo already uses @supabase/ssr
+import { createBrowserClient } from '@supabase/ssr';
 import type { Session } from '@supabase/supabase-js';
 
 type TodayRow = {
   display_name: string | null;
   staff_email: string;
-  day: string;              // 'YYYY-MM-DD'
+  day: string; // 'YYYY-MM-DD'
   status: 'PRESENT' | 'ABSENT' | 'OFFDAY' | 'MC';
   check_in_kl: string | null;   // 'HH:MM:SS.mmm' or null
   check_out_kl: string | null;  // 'HH:MM:SS.mmm' or null
@@ -37,28 +37,29 @@ export default function StagingAttendancePage() {
   const [geo, setGeo] = useState<{ lat: number | null; lon: number | null; err?: string }>({ lat: null, lon: null });
 
   const supabase = useMemo(() => {
-    // Uses your NEXT_PUBLIC_SUPABASE_URL / ANON_KEY
-    return createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
+    return createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
   }, []);
-useEffect(() => {
-  let mounted = true;
 
-  supabase.auth.getSession().then(({ data }) => {
-    if (mounted) setSession(data.session ?? null);
-  });
+  // ✅ iOS/Safari: ensure we pick up the session and updates
+  useEffect(() => {
+    let mounted = true;
 
-  const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
-    setSession(s ?? null);
-  });
+    supabase.auth.getSession().then(({ data }) => {
+      if (mounted) setSession(data.session ?? null);
+    });
 
-  return () => {
-    mounted = false;
-    sub.subscription.unsubscribe();
-  };
-}, [supabase]);
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s ?? null);
+    });
 
-
-
+    return () => {
+      mounted = false;
+      sub.subscription.unsubscribe();
+    };
+  }, [supabase]);
 
   const fetchSessionAndAdmin = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -68,7 +69,6 @@ useEffect(() => {
       setIsAdmin(false);
       return;
     }
-    // check admin flag
     const { data: staff, error } = await supabase
       .from('staff')
       .select('is_admin')
@@ -85,7 +85,7 @@ useEffect(() => {
 
   const fetchToday = useCallback(async () => {
     const { data, error } = await supabase
-      .from('v2_today') // public view -> att_v2.v_today_with_names (security_invoker)
+      .from('v2_today')
       .select('*')
       .order('display_name', { ascending: true });
 
@@ -118,7 +118,7 @@ useEffect(() => {
       const fn = kind === 'in' ? 'att_v2.check_in' : 'att_v2.check_out';
       const { lat, lon } = geo;
 
-      const { data, error } = await supabase.rpc(fn, {
+      const { error } = await supabase.rpc(fn, {
         p_lat: lat ?? null,
         p_lon: lon ?? null,
         p_note: null,
@@ -129,7 +129,6 @@ useEffect(() => {
         console.error(error);
         return;
       }
-      // refresh table
       await fetchToday();
     },
     [geo, supabase, fetchToday]
@@ -144,7 +143,6 @@ useEffect(() => {
   }, [fetchSessionAndAdmin, fetchToday]);
 
   useEffect(() => {
-    // Try to get location immediately
     getLocation();
   }, [getLocation]);
 
@@ -157,6 +155,7 @@ useEffect(() => {
       <div style={box}>
         <h1>Staging Attendance (v2)</h1>
         <p>Please sign in to continue.</p>
+        <p><a href="/login">Go to Login</a></p>
       </div>
     );
   }
@@ -173,7 +172,9 @@ useEffect(() => {
   return (
     <div style={box}>
       <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>Staging Attendance (v2)</h1>
-      <p style={{ marginBottom: 12 }}>This page calls <code>att_v2.check_in/out</code> and reads <code>public.v2_today</code>. It does not affect your production flows.</p>
+      <p style={{ marginBottom: 12 }}>
+        This page calls <code>att_v2.check_in/out</code> and reads <code>public.v2_today</code>. It does not affect your production flows.
+      </p>
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
         <button style={btn} onClick={() => getLocation()}>Get GPS</button>
@@ -204,48 +205,42 @@ useEffect(() => {
               </tr>
             </thead>
             <tbody>
-  {today.map((r, i) => {
-    const isLate = (r.late_min ?? 0) > 0 && r.status === 'PRESENT';
-    const isAbsent = r.status === 'ABSENT';
-    return (
-      <tr key={r.staff_email + i} style={{ background: i % 2 ? '#fff' : '#fcfcfc' }}>
-        <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6' }}>
-          {r.display_name ?? '—'}
-        </td>
-        <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6' }}>
-          {r.staff_email}
-        </td>
-        <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6' }}>
-          <span style={badge(r.status, isAbsent ? 'absent' : 'ok')}>{r.status}</span>
-        </td>
-        <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6' }}>
-          {r.check_in_kl ?? '—'}
-        </td>
-        <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6' }}>
-          {r.check_out_kl ?? '—'}
-        </td>
-        <td
-          style={{
-            padding: 8,
-            borderBottom: '1px solid #f3f4f6',
-            textAlign: 'right',
-            color: isLate ? '#b91c1c' : undefined,
-            fontWeight: isLate ? 700 : 400,
-          }}
-        >
-          {r.late_min ?? 0}
-        </td>
-      </tr>
-    );
-  })}
-  {!today.length && (
-    <tr>
-      <td colSpan={6} style={{ padding: 12, textAlign: 'center', color: '#6b7280' }}>
-        No rows.
-      </td>
-    </tr>
-  )}
-</tbody>
+              {today.map((r, i) => {
+                const isLate = (r.late_min ?? 0) > 0 && r.status === 'PRESENT';
+                const isAbsent = r.status === 'ABSENT';
+                return (
+                  <tr key={r.staff_email + i} style={{ background: i % 2 ? '#fff' : '#fcfcfc' }}>
+                    <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6' }}>{r.display_name ?? '—'}</td>
+                    <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6' }}>{r.staff_email}</td>
+                    <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6' }}>
+                      <span style={badge(r.status, isAbsent ? 'absent' : 'ok')}>{r.status}</span>
+                    </td>
+                    <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6' }}>
+                      {r.check_in_kl ?? '—'}
+                    </td>
+                    <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6' }}>
+                      {r.check_out_kl ?? '—'}
+                    </td>
+                    <td
+                      style={{
+                        padding: 8,
+                        borderBottom: '1px solid #f3f4f6',
+                        textAlign: 'right',
+                        color: isLate ? '#b91c1c' : undefined,
+                        fontWeight: isLate ? 700 : 400,
+                      }}
+                    >
+                      {r.late_min ?? 0}
+                    </td>
+                  </tr>
+                );
+              })}
+              {!today.length && (
+                <tr>
+                  <td colSpan={6} style={{ padding: 12, textAlign: 'center', color: '#6b7280' }}>No rows.</td>
+                </tr>
+              )}
+            </tbody>
           </table>
         </div>
         <div style={{ marginTop: 8, fontSize: 12, color: '#6b7280' }}>
