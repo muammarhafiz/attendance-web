@@ -25,7 +25,7 @@ export default function AdminPayrollDashboard() {
   const [msg, setMsg] = useState<string | null>(null)
 
   // Scope all PostgREST calls to the pay_v2 schema
-  const pg = useMemo(() => supabase.schema('pay_v2'), [])
+  const pg = supabase
 
   const yyyymm = useMemo(() => `${year}-${String(month).padStart(2, '0')}`, [year, month])
 
