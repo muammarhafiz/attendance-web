@@ -10,12 +10,34 @@ const supabase = createClient(
 
 export default function NavBar() {
   const [email, setEmail] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null));
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
-      setEmail(session?.user?.email ?? null);
+    // --- detect login session ---
+    supabase.auth.getUser().then(async ({ data }) => {
+      const userEmail = data.user?.email ?? null;
+      setEmail(userEmail);
+
+      if (userEmail) {
+        // --- check if admin (client-side RPC) ---
+        const { data: isAdminResult, error } = await supabase.rpc('is_admin');
+        if (!error) setIsAdmin(!!isAdminResult);
+      }
     });
+
+    // --- subscribe to session changes ---
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_e, session) => {
+      const newEmail = session?.user?.email ?? null;
+      setEmail(newEmail);
+
+      if (newEmail) {
+        const { data: isAdminResult, error } = await supabase.rpc('is_admin');
+        if (!error) setIsAdmin(!!isAdminResult);
+      } else {
+        setIsAdmin(false);
+      }
+    });
+
     return () => sub.subscription.unsubscribe();
   }, []);
 
@@ -28,6 +50,13 @@ export default function NavBar() {
           <Link href="/report" className="text-sm font-semibold text-gray-700 hover:text-gray-900">Report</Link>
           <Link href="/manager" className="text-sm font-semibold text-gray-700 hover:text-gray-900">Manager</Link>
           <Link href="/offday" className="text-sm font-semibold text-gray-700 hover:text-gray-900">Offday/MC</Link>
+
+          {/* ✅ Show Payroll only if admin */}
+          {isAdmin && (
+            <Link href="/payroll/admin" className="text-sm font-semibold text-gray-700 hover:text-gray-900">
+              Payroll
+            </Link>
+          )}
         </div>
 
         {/* Auth button */}
@@ -44,7 +73,7 @@ export default function NavBar() {
             </>
           ) : (
             <Link
-              href="/login"   // ✅ Point to the actual login route
+              href="/login"
               className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
             >
               Sign in
