@@ -46,3 +46,14 @@ export function createClientServer(req?: Request) {
     global: authHeader ? { headers: { Authorization: authHeader } } : undefined,
   });
 }
+
+/** Convenience: schema-agnostic server client (no Request object needed). */
+export function supabaseServer() {
+  return createClientServer();
+}
+
+/** pay_v2-scoped client (tables, views, RPCs all hit the pay_v2 schema). */
+export function supabasePayV2(req?: Request) {
+  // @ts-expect-error supabase-js v2 has .schema() at runtime even if types lag
+  return createClientServer(req).schema('pay_v2');
+}
