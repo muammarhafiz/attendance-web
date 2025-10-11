@@ -6,7 +6,6 @@ import { createClientServer } from '@/lib/supabaseServer';
 type StaffRow = {
   email: string;
   name: string;
-  is_admin: boolean;
   include_in_payroll: boolean;
   skip_payroll: boolean;
 };
@@ -35,9 +34,17 @@ type RunErr = {
   code?: string;
 };
 
+// Helpers to sanitize unknown values without using `any`
+const asStr = (v: unknown): string =>
+  typeof v === 'string' ? v : String(v ?? '');
+const asNum = (v: unknown): number => {
+  const n = typeof v === 'number' ? v : Number(v ?? 0);
+  return Number.isFinite(n) ? n : 0;
+};
+
 export async function GET() {
   try {
-    // Use SSR client that reads Supabase auth cookies (no headers/bearer needed)
+    // Use SSR client that reads Supabase auth cookies
     const supabase = createClientServer();
 
     // 1) Find current payroll period (year/month = today)
@@ -77,11 +84,19 @@ export async function GET() {
     }
 
     const staff: { email: string; name: string }[] = (staffRows ?? [])
-      .filter((s): s is StaffRow => !!s && typeof s.email === 'string' && typeof s.name === 'string')
+      .filter((s: unknown): s is StaffRow => {
+        return (
+          !!s &&
+          typeof (s as StaffRow).email === 'string' &&
+          typeof (s as StaffRow).name === 'string' &&
+          typeof (s as StaffRow).include_in_payroll === 'boolean' &&
+          typeof (s as StaffRow).skip_payroll === 'boolean'
+        );
+      })
       .filter((s) => s.include_in_payroll && !s.skip_payroll)
       .map((s) => ({ email: s.email, name: s.name }));
 
-    // 3) Payslips — pull from view `v_payslip` (already granted)
+    // 3) Payslips — pull from view `v_payslip`
     const { data: payslipsRows, error: vErr } = await supabase
       .from('v_payslip')
       .select(
@@ -96,15 +111,19 @@ export async function GET() {
       );
     }
 
-    const payslips: PayslipRow[] = (payslipsRows ?? []).map((r) => ({
-      staff_email: String((r as any).staff_email ?? ''),
-      staff_name: String((r as any).staff_name ?? ''),
-      base_pay: Number((r as any).base_pay ?? 0),
-      additions: Number((r as any).additions ?? 0),
-      deductions: Number((r as any).deductions ?? 0),
-      gross_pay: Number((r as any).gross_pay ?? 0),
-      net_pay: Number((r as any).net_pay ?? 0),
-    }));
+    const payslips: PayslipRow[] = (payslipsRows ?? []).map((r: unknown) => {
+      // treat each row as unknown and sanitize fields
+      const obj = r as Record<string, unknown>;
+      return {
+        staff_email: asStr(obj.staff_email),
+        staff_name: asStr(obj.staff_name),
+        base_pay: asNum(obj.base_pay),
+        additions: asNum(obj.additions),
+        deductions: asNum(obj.deductions),
+        gross_pay: asNum(obj.gross_pay),
+        net_pay: asNum(obj.net_pay),
+      };
+    });
 
     return NextResponse.json<RunOk>({
       ok: true,
