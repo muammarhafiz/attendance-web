@@ -40,6 +40,25 @@ export default function StagingAttendancePage() {
     // Uses your NEXT_PUBLIC_SUPABASE_URL / ANON_KEY
     return createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
   }, []);
+useEffect(() => {
+  let mounted = true;
+
+  supabase.auth.getSession().then(({ data }) => {
+    if (mounted) setSession(data.session ?? null);
+  });
+
+  const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
+    setSession(s ?? null);
+  });
+
+  return () => {
+    mounted = false;
+    sub.subscription.unsubscribe();
+  };
+}, [supabase]);
+
+
+
 
   const fetchSessionAndAdmin = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
