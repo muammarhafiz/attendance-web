@@ -15,7 +15,7 @@ type Row = {
   eis_emp: string | number;
   total_deduct: string | number;  // manual + employee statutory
   net_pay: string | number;
-  // employer-side (for display only)
+  // employer-side (display only)
   epf_er: string | number;
   socso_er: string | number;
   eis_er: string | number;
@@ -30,39 +30,31 @@ function rm(x: number) {
 }
 
 export default function AdminPayrollPage() {
-  // period
   const now = useMemo(() => new Date(), []);
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1); // 1..12
 
-  // auth gate (same behavior as Manager: show message if not signed in)
   const [authed, setAuthed] = useState<boolean | null>(null);
-
-  // data
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  // ---- auth listener (safe for Next 15) ----
   useEffect(() => {
     let unsub: { data: { subscription: { unsubscribe: () => void } } } | null = null;
     (async () => {
       const { data } = await supabase.auth.getSession();
       setAuthed(!!data.session);
-      unsub = supabase.auth.onAuthStateChange((_e, session) => {
-        setAuthed(!!session);
-      });
+      unsub = supabase.auth.onAuthStateChange((_e, session) => setAuthed(!!session));
     })();
     return () => unsub?.data.subscription.unsubscribe();
   }, []);
 
-  // ---- load data from pay_v2 view ----
   const load = async () => {
     setLoading(true);
     setMsg(null);
-    const pg = supabase.schema('pay_v2');
-    const { data, error } = await pg
+    const { data, error } = await supabase
+      .schema('pay_v2')
       .from('v_payslip_admin_summary')
       .select('*')
       .eq('year', year)
@@ -83,7 +75,6 @@ export default function AdminPayrollPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, year, month]);
 
-  // ---- totals footer ----
   const totals = useMemo(() => {
     const sum = (k: keyof Row) => rows.reduce((a, r) => a + n(r[k]), 0);
     const gross = sum('total_earn');
@@ -100,7 +91,6 @@ export default function AdminPayrollPage() {
     return { gross, manual, epfEmp, socsoEmp, eisEmp, epfEr, socsoEr, eisEr, totalDeduct, net, employerCost };
   }, [rows]);
 
-  // ---- admin action: recompute statutory lines then refresh ----
   const recalc = async () => {
     setBusy(true); setMsg(null);
     try {
@@ -114,7 +104,6 @@ export default function AdminPayrollPage() {
     }
   };
 
-  // ---- UI ----
   if (authed === false) {
     return (
       <main className="mx-auto max-w-6xl p-6">
@@ -191,58 +180,98 @@ export default function AdminPayrollPage() {
           <div className="text-sm text-gray-500">No data for this period.</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] border-collapse text-sm">
+            <table className="w-full min-w-[1080px] border-collapse text-sm">
               <thead>
+                {/* group headers */}
+                <tr>
+                  <th className="border-b px-3 py-2 align-bottom bg-white text-left">Employee</th>
+                  <th className="border-b px-3 py-2 align-bottom bg-white text-right">Gross</th>
+
+                  <th colSpan={4} className="border-b px-3 py-2 bg-rose-50 text-rose-700 text-center font-semibold">
+                    Employee Deductions
+                  </th>
+
+                  <th className="border-b px-3 py-2 align-bottom bg-white text-right">Net Pay</th>
+
+                  <th colSpan={3} className="border-b px-3 py-2 bg-emerald-50 text-emerald-700 text-center font-semibold">
+                    Employer Contributions
+                  </th>
+
+                  <th className="border-b px-3 py-2 align-bottom bg-white text-right">Employer Cost</th>
+                </tr>
+
+                {/* column headers */}
                 <tr className="bg-gray-50 text-left">
                   <th className="border-b px-3 py-2">Employee</th>
-                  <th className="border-b px-3 py-2 text-right">Gross</th>
-                  <th className="border-b px-3 py-2 text-right">EPF (Emp)</th>
-                  <th className="border-b px-3 py-2 text-right">SOCSO (Emp)</th>
-                  <th className="border-b px-3 py-2 text-right">EIS (Emp)</th>
-                  <th className="border-b px-3 py-2 text-right">Manual Deduct</th>
-                  <th className="border-b px-3 py-2 text-right">Total Deduct</th>
+                  <th className="border-b px-3 py-2 text-right">Gross Wages</th>
+
+                  <th className="border-b px-3 py-2 text-right bg-rose-50">EPF (Emp)</th>
+                  <th className="border-b px-3 py-2 text-right bg-rose-50">SOCSO (Emp)</th>
+                  <th className="border-b px-3 py-2 text-right bg-rose-50">EIS (Emp)</th>
+                  <th className="border-b px-3 py-2 text-right bg-rose-50">Manual Adj/Deduct</th>
+
                   <th className="border-b px-3 py-2 text-right">Net</th>
-                  <th className="border-b px-3 py-2 text-right">EPF (Er)</th>
-                  <th className="border-b px-3 py-2 text-right">SOCSO (Er)</th>
-                  <th className="border-b px-3 py-2 text-right">EIS (Er)</th>
-                  <th className="border-b px-3 py-2 text-right">Cost</th>
+
+                  <th className="border-b px-3 py-2 text-right bg-emerald-50">EPF (Er)</th>
+                  <th className="border-b px-3 py-2 text-right bg-emerald-50">SOCSO (Er)</th>
+                  <th className="border-b px-3 py-2 text-right bg-emerald-50">EIS (Er)</th>
+
+                  <th className="border-b px-3 py-2 text-right">Total Cost</th>
                 </tr>
               </thead>
+
               <tbody>
-                {rows.map((r) => {
+                {rows.map((r, idx) => {
                   const gross = n(r.total_earn);
-                  const cost = gross + n(r.epf_er) + n(r.socso_er) + n(r.eis_er);
+                  const epfEmp = n(r.epf_emp);
+                  const socsoEmp = n(r.socso_emp);
+                  const eisEmp = n(r.eis_emp);
+                  const manual = n(r.manual_deduct);
+                  const net = n(r.net_pay);
+
+                  const epfEr = n(r.epf_er);
+                  const socsoEr = n(r.socso_er);
+                  const eisEr = n(r.eis_er);
+                  const employerCost = gross + epfEr + socsoEr + eisEr;
+
                   return (
-                    <tr key={`${r.staff_name}-${gross}-${n(r.net_pay)}`}>
+                    <tr key={`${idx}-${r.staff_name ?? ''}`}>
                       <td className="border-b px-3 py-2">{r.staff_name ?? '—'}</td>
                       <td className="border-b px-3 py-2 text-right">{rm(gross)}</td>
-                      <td className="border-b px-3 py-2 text-right">{rm(n(r.epf_emp))}</td>
-                      <td className="border-b px-3 py-2 text-right">{rm(n(r.socso_emp))}</td>
-                      <td className="border-b px-3 py-2 text-right">{rm(n(r.eis_emp))}</td>
-                      <td className="border-b px-3 py-2 text-right">{rm(n(r.manual_deduct))}</td>
-                      <td className="border-b px-3 py-2 text-right">{rm(n(r.total_deduct))}</td>
-                      <td className="border-b px-3 py-2 text-right font-medium">{rm(n(r.net_pay))}</td>
-                      <td className="border-b px-3 py-2 text-right">{rm(n(r.epf_er))}</td>
-                      <td className="border-b px-3 py-2 text-right">{rm(n(r.socso_er))}</td>
-                      <td className="border-b px-3 py-2 text-right">{rm(n(r.eis_er))}</td>
-                      <td className="border-b px-3 py-2 text-right">{rm(cost)}</td>
+
+                      <td className="border-b px-3 py-2 text-right bg-rose-50">{rm(epfEmp)}</td>
+                      <td className="border-b px-3 py-2 text-right bg-rose-50">{rm(socsoEmp)}</td>
+                      <td className="border-b px-3 py-2 text-right bg-rose-50">{rm(eisEmp)}</td>
+                      <td className="border-b px-3 py-2 text-right bg-rose-50">{rm(manual)}</td>
+
+                      <td className="border-b px-3 py-2 text-right font-medium">{rm(net)}</td>
+
+                      <td className="border-b px-3 py-2 text-right bg-emerald-50">{rm(epfEr)}</td>
+                      <td className="border-b px-3 py-2 text-right bg-emerald-50">{rm(socsoEr)}</td>
+                      <td className="border-b px-3 py-2 text-right bg-emerald-50">{rm(eisEr)}</td>
+
+                      <td className="border-b px-3 py-2 text-right">{rm(employerCost)}</td>
                     </tr>
                   );
                 })}
               </tbody>
+
               <tfoot>
                 <tr className="bg-gray-50 font-semibold">
                   <td className="border-t px-3 py-2 text-right">Totals:</td>
                   <td className="border-t px-3 py-2 text-right">{rm(totals.gross)}</td>
-                  <td className="border-t px-3 py-2 text-right">{rm(totals.epfEmp)}</td>
-                  <td className="border-t px-3 py-2 text-right">{rm(totals.socsoEmp)}</td>
-                  <td className="border-t px-3 py-2 text-right">{rm(totals.eisEmp)}</td>
-                  <td className="border-t px-3 py-2 text-right">{rm(totals.manual)}</td>
-                  <td className="border-t px-3 py-2 text-right">{rm(totals.totalDeduct)}</td>
+
+                  <td className="border-t px-3 py-2 text-right bg-rose-50">{rm(totals.epfEmp)}</td>
+                  <td className="border-t px-3 py-2 text-right bg-rose-50">{rm(totals.socsoEmp)}</td>
+                  <td className="border-t px-3 py-2 text-right bg-rose-50">{rm(totals.eisEmp)}</td>
+                  <td className="border-t px-3 py-2 text-right bg-rose-50">{rm(totals.manual)}</td>
+
                   <td className="border-t px-3 py-2 text-right">{rm(totals.net)}</td>
-                  <td className="border-t px-3 py-2 text-right">{rm(totals.epfEr)}</td>
-                  <td className="border-t px-3 py-2 text-right">{rm(totals.socsoEr)}</td>
-                  <td className="border-t px-3 py-2 text-right">{rm(totals.eisEr)}</td>
+
+                  <td className="border-t px-3 py-2 text-right bg-emerald-50">{rm(totals.epfEr)}</td>
+                  <td className="border-t px-3 py-2 text-right bg-emerald-50">{rm(totals.socsoEr)}</td>
+                  <td className="border-t px-3 py-2 text-right bg-emerald-50">{rm(totals.eisEr)}</td>
+
                   <td className="border-t px-3 py-2 text-right">{rm(totals.employerCost)}</td>
                 </tr>
               </tfoot>
