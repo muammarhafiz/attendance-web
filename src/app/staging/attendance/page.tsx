@@ -195,21 +195,11 @@ export default function StagingAttendancePage() {
                     <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6' }}>
                       <span style={badge(r.status, isAbsent ? 'absent' : 'ok')}>{r.status}</span>
                     </td>
-                    <td
-  style={{
-    padding: 8,
-    borderBottom: '1px solid #f3f4f6',
-    textAlign: 'right',
-    color: isLate ? '#b91c1c' : undefined,
-    fontWeight: isLate ? 700 : 400,
-  }}
->
-  {r.late_min ?? 0}
-</td>
+                    <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6', textAlign: 'right', color: isLate ? '#b91c1c' : undefined, fontWeight: isLate ? 700 : 400, }}>{r.late_min ?? 0}</td>
                     <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6' }}>
                       {r.check_out_kl ?? '—'}
                     </td>
-                    <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6', textAlign: 'right', color: isLate ? '#b91c1c' : fontWeight: isLate ? 700 : 400 }}>
+                    <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6', textAlign: 'right', color: isLate ? '#b91c1c' :, fontWeight: isLate ? 700 : 400 }}>
                       {r.late_min ?? 0}
                     </td>
                   </tr>
