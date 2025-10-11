@@ -7,6 +7,7 @@ type Row = {
   year: number;
   month: number;
   staff_name: string | null;
+  staff_email: string;
   // employee-facing
   total_earn: string | number;    // gross
   manual_deduct: string | number; // manual only (no statutory)
@@ -40,6 +41,10 @@ export default function AdminPayrollPage() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
+  // inline adjustments (per staff)
+  const [earnAdj, setEarnAdj] = useState<Record<string, string>>({});
+  const [dedAdj, setDedAdj] = useState<Record<string, string>>({});
+
   useEffect(() => {
     let unsub: { data: { subscription: { unsubscribe: () => void } } } | null = null;
     (async () => {
@@ -53,6 +58,8 @@ export default function AdminPayrollPage() {
   const load = async () => {
     setLoading(true);
     setMsg(null);
+
+    // Summary (with employer/employee splits)
     const { data, error } = await supabase
       .schema('pay_v2')
       .from('v_payslip_admin_summary')
@@ -67,6 +74,35 @@ export default function AdminPayrollPage() {
     } else {
       setRows((data ?? []) as Row[]);
     }
+
+    // Preload existing adjustment values (ADJ_EARN / ADJ_DEDUCT)
+    // so inputs show what’s currently applied for this period.
+    const { data: period } = await supabase
+      .schema('pay_v2')
+      .from('periods')
+      .select('id')
+      .eq('year', year)
+      .eq('month', month)
+      .maybeSingle();
+
+    if (period?.id) {
+      const { data: adjRows } = await supabase
+        .schema('pay_v2')
+        .from('items')
+        .select('staff_email, kind, code, amount')
+        .eq('period_id', period.id)
+        .in('code', ['ADJ_EARN', 'ADJ_DEDUCT']);
+
+      const e: Record<string, string> = {};
+      const d: Record<string, string> = {};
+      (adjRows ?? []).forEach(r => {
+        if (r.code === 'ADJ_EARN') e[r.staff_email] = String(r.amount ?? '0');
+        if (r.code === 'ADJ_DEDUCT') d[r.staff_email] = String(r.amount ?? '0');
+      });
+      setEarnAdj(e);
+      setDedAdj(d);
+    }
+
     setLoading(false);
   };
 
@@ -91,16 +127,108 @@ export default function AdminPayrollPage() {
     return { gross, manual, epfEmp, socsoEmp, eisEmp, epfEr, socsoEr, eisEr, totalDeduct, net, employerCost };
   }, [rows]);
 
-  const recalc = async () => {
+  const yyyymm = `${year}-${String(month).padStart(2, '0')}`;
+
+  // ---- persistence helpers -------------------------------------------------
+
+  const getPeriodId = async (): Promise<string | null> => {
+    const { data, error } = await supabase
+      .schema('pay_v2')
+      .from('periods')
+      .select('id')
+      .eq('year', year)
+      .eq('month', month)
+      .maybeSingle();
+    if (error) {
+      setMsg(`Failed to read period: ${error.message}`);
+      return null;
+    }
+    return data?.id ?? null;
+  };
+
+  const setSingleAdjustment = async ({
+    period_id,
+    staff_email,
+    kind,      // 'EARN' | 'DEDUCT'
+    code,      // 'ADJ_EARN' | 'ADJ_DEDUCT'
+    label,
+    amount,    // number (>=0)
+  }: {
+    period_id: string;
+    staff_email: string;
+    kind: 'EARN' | 'DEDUCT';
+    code: 'ADJ_EARN' | 'ADJ_DEDUCT';
+    label: string;
+    amount: number;
+  }) => {
+    // Replace if exists (keep one clean row per staff/kind/code)
+    await supabase.schema('pay_v2')
+      .from('items')
+      .delete()
+      .eq('period_id', period_id)
+      .eq('staff_email', staff_email)
+      .eq('code', code);
+
+    if (amount !== 0) {
+      const { error } = await supabase.schema('pay_v2')
+        .from('items')
+        .insert({
+          period_id,
+          staff_email,
+          kind,
+          code,
+          label,
+          amount,
+        });
+      if (error) throw error;
+    }
+  };
+
+  const saveRow = async (r: Row) => {
     setBusy(true); setMsg(null);
     try {
-      const { error } = await supabase.schema('pay_v2')
+      const period_id = await getPeriodId();
+      if (!period_id) return;
+
+      const ea = Number(earnAdj[r.staff_email] ?? '0') || 0;
+      const da = Number(dedAdj[r.staff_email] ?? '0') || 0;
+
+      // Persist adjustments
+      await setSingleAdjustment({
+        period_id,
+        staff_email: r.staff_email,
+        kind: 'EARN',
+        code: 'ADJ_EARN',
+        label: 'Adjustment (Earnings)',
+        amount: Math.max(0, ea),
+      });
+
+      await setSingleAdjustment({
+        period_id,
+        staff_email: r.staff_email,
+        kind: 'DEDUCT',
+        code: 'ADJ_DEDUCT',
+        label: 'Adjustment (Manual Deduct)',
+        amount: Math.max(0, da),
+      });
+
+      // Auto-recalc statutories after adjustments
+      const { error: recalcErr } = await supabase
+        .schema('pay_v2')
         .rpc('recalc_statutories', { p_year: year, p_month: month });
-      if (error) setMsg(`Recalc failed: ${error.message}`);
-      else setMsg(`Recalculated statutory lines for ${year}-${String(month).padStart(2, '0')}.`);
+
+      if (recalcErr) {
+        setMsg(`Recalc failed: ${recalcErr.message}`);
+      } else {
+        setMsg(`Saved & recalculated for ${r.staff_name ?? r.staff_email}.`);
+      }
+
+      // Reload fresh figures
+      await load();
+    } catch (e: any) {
+      setMsg(`Save failed: ${e.message ?? e}`);
     } finally {
       setBusy(false);
-      await load();
     }
   };
 
@@ -119,8 +247,6 @@ export default function AdminPayrollPage() {
       </main>
     );
   }
-
-  const yyyymm = `${year}-${String(month).padStart(2, '0')}`;
 
   return (
     <main className="mx-auto max-w-7xl p-6">
@@ -157,13 +283,6 @@ export default function AdminPayrollPage() {
           >
             Refresh
           </button>
-          <button
-            onClick={recalc}
-            disabled={loading || busy}
-            className="rounded bg-indigo-600 px-3 py-1.5 text-white hover:bg-indigo-700 disabled:opacity-50"
-          >
-            Recalc Statutories
-          </button>
         </div>
       </header>
 
@@ -180,14 +299,14 @@ export default function AdminPayrollPage() {
           <div className="text-sm text-gray-500">No data for this period.</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1080px] border-collapse text-sm">
+            <table className="w-full min-w-[1180px] border-collapse text-sm">
               <thead>
                 {/* group headers */}
                 <tr>
                   <th className="border-b px-3 py-2 align-bottom bg-white text-left">Employee</th>
-                  <th className="border-b px-3 py-2 align-bottom bg-white text-right">Gross</th>
+                  <th colSpan={2} className="border-b px-3 py-2 align-bottom bg-white text-right">Gross</th>
 
-                  <th colSpan={4} className="border-b px-3 py-2 bg-rose-50 text-rose-700 text-center font-semibold">
+                  <th colSpan={5} className="border-b px-3 py-2 bg-rose-50 text-rose-700 text-center font-semibold">
                     Employee Deductions
                   </th>
 
@@ -198,17 +317,22 @@ export default function AdminPayrollPage() {
                   </th>
 
                   <th className="border-b px-3 py-2 align-bottom bg-white text-right">Employer Cost</th>
+
+                  <th className="border-b px-3 py-2 align-bottom bg-white text-right">Action</th>
                 </tr>
 
                 {/* column headers */}
                 <tr className="bg-gray-50 text-left">
                   <th className="border-b px-3 py-2">Employee</th>
+
                   <th className="border-b px-3 py-2 text-right">Gross Wages</th>
+                  <th className="border-b px-3 py-2 text-right">Adj (Earn)</th>
 
                   <th className="border-b px-3 py-2 text-right bg-rose-50">EPF (Emp)</th>
                   <th className="border-b px-3 py-2 text-right bg-rose-50">SOCSO (Emp)</th>
                   <th className="border-b px-3 py-2 text-right bg-rose-50">EIS (Emp)</th>
-                  <th className="border-b px-3 py-2 text-right bg-rose-50">Manual Adj/Deduct</th>
+                  <th className="border-b px-3 py-2 text-right bg-rose-50">Manual Deduct</th>
+                  <th className="border-b px-3 py-2 text-right bg-rose-50">Adj (Deduct)</th>
 
                   <th className="border-b px-3 py-2 text-right">Net</th>
 
@@ -217,11 +341,13 @@ export default function AdminPayrollPage() {
                   <th className="border-b px-3 py-2 text-right bg-emerald-50">EIS (Er)</th>
 
                   <th className="border-b px-3 py-2 text-right">Total Cost</th>
+
+                  <th className="border-b px-3 py-2"></th>
                 </tr>
               </thead>
 
               <tbody>
-                {rows.map((r, idx) => {
+                {rows.map((r) => {
                   const gross = n(r.total_earn);
                   const epfEmp = n(r.epf_emp);
                   const socsoEmp = n(r.socso_emp);
@@ -234,15 +360,41 @@ export default function AdminPayrollPage() {
                   const eisEr = n(r.eis_er);
                   const employerCost = gross + epfEr + socsoEr + eisEr;
 
+                  const eVal = earnAdj[r.staff_email] ?? '';
+                  const dVal = dedAdj[r.staff_email] ?? '';
+
                   return (
-                    <tr key={`${idx}-${r.staff_name ?? ''}`}>
-                      <td className="border-b px-3 py-2">{r.staff_name ?? '—'}</td>
+                    <tr key={r.staff_email}>
+                      <td className="border-b px-3 py-2">{r.staff_name ?? r.staff_email}</td>
+
                       <td className="border-b px-3 py-2 text-right">{rm(gross)}</td>
+                      <td className="border-b px-3 py-2 text-right">
+                        <input
+                          inputMode="decimal"
+                          className="w-28 rounded border px-2 py-1 text-right"
+                          placeholder="0.00"
+                          value={eVal}
+                          onChange={(e) =>
+                            setEarnAdj((m) => ({ ...m, [r.staff_email]: e.target.value }))
+                          }
+                        />
+                      </td>
 
                       <td className="border-b px-3 py-2 text-right bg-rose-50">{rm(epfEmp)}</td>
                       <td className="border-b px-3 py-2 text-right bg-rose-50">{rm(socsoEmp)}</td>
                       <td className="border-b px-3 py-2 text-right bg-rose-50">{rm(eisEmp)}</td>
                       <td className="border-b px-3 py-2 text-right bg-rose-50">{rm(manual)}</td>
+                      <td className="border-b px-3 py-2 text-right bg-rose-50">
+                        <input
+                          inputMode="decimal"
+                          className="w-28 rounded border px-2 py-1 text-right"
+                          placeholder="0.00"
+                          value={dVal}
+                          onChange={(e) =>
+                            setDedAdj((m) => ({ ...m, [r.staff_email]: e.target.value }))
+                          }
+                        />
+                      </td>
 
                       <td className="border-b px-3 py-2 text-right font-medium">{rm(net)}</td>
 
@@ -251,6 +403,16 @@ export default function AdminPayrollPage() {
                       <td className="border-b px-3 py-2 text-right bg-emerald-50">{rm(eisEr)}</td>
 
                       <td className="border-b px-3 py-2 text-right">{rm(employerCost)}</td>
+
+                      <td className="border-b px-3 py-2 text-right">
+                        <button
+                          onClick={() => saveRow(r)}
+                          disabled={busy}
+                          className="rounded bg-indigo-600 px-3 py-1.5 text-white hover:bg-indigo-700 disabled:opacity-50"
+                        >
+                          Save
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
@@ -260,11 +422,13 @@ export default function AdminPayrollPage() {
                 <tr className="bg-gray-50 font-semibold">
                   <td className="border-t px-3 py-2 text-right">Totals:</td>
                   <td className="border-t px-3 py-2 text-right">{rm(totals.gross)}</td>
+                  <td className="border-t px-3 py-2 text-right">—</td>
 
                   <td className="border-t px-3 py-2 text-right bg-rose-50">{rm(totals.epfEmp)}</td>
                   <td className="border-t px-3 py-2 text-right bg-rose-50">{rm(totals.socsoEmp)}</td>
                   <td className="border-t px-3 py-2 text-right bg-rose-50">{rm(totals.eisEmp)}</td>
                   <td className="border-t px-3 py-2 text-right bg-rose-50">{rm(totals.manual)}</td>
+                  <td className="border-t px-3 py-2 text-right bg-rose-50">—</td>
 
                   <td className="border-t px-3 py-2 text-right">{rm(totals.net)}</td>
 
@@ -273,6 +437,7 @@ export default function AdminPayrollPage() {
                   <td className="border-t px-3 py-2 text-right bg-emerald-50">{rm(totals.eisEr)}</td>
 
                   <td className="border-t px-3 py-2 text-right">{rm(totals.employerCost)}</td>
+                  <td className="border-t px-3 py-2 text-right">—</td>
                 </tr>
               </tfoot>
             </table>
