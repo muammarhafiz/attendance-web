@@ -185,32 +185,48 @@ export default function StagingAttendancePage() {
               </tr>
             </thead>
             <tbody>
-              {today.map((r, i) => {
-                const isLate = (r.late_min ?? 0) > 0 && r.status === 'PRESENT';
-                const isAbsent = r.status === 'ABSENT';
-                return (
-                  <tr key={r.staff_email + i} style={{ background: i % 2 ? '#fff' : '#fcfcfc' }}>
-                    <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6' }}>{r.display_name ?? '—'}</td>
-                    <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6' }}>{r.staff_email}</td>
-                    <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6' }}>
-                      <span style={badge(r.status, isAbsent ? 'absent' : 'ok')}>{r.status}</span>
-                    </td>
-                    <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6', textAlign: 'right', color: isLate ? '#b91c1c' : undefined, fontWeight: isLate ? 700 : 400, }}>{r.late_min ?? 0}</td>
-                    <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6' }}>
-                      {r.check_out_kl ?? '—'}
-                    </td>
-                    <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6', textAlign: 'right', color: isLate ? '#b91c1c' :, fontWeight: isLate ? 700 : 400 }}>
-                      {r.late_min ?? 0}
-                    </td>
-                  </tr>
-                );
-              })}
-              {!today.length && (
-                <tr>
-                  <td colSpan={6} style={{ padding: 12, textAlign: 'center', color: '#6b7280' }}>No rows.</td>
-                </tr>
-              )}
-            </tbody>
+  {today.map((r, i) => {
+    const isLate = (r.late_min ?? 0) > 0 && r.status === 'PRESENT';
+    const isAbsent = r.status === 'ABSENT';
+    return (
+      <tr key={r.staff_email + i} style={{ background: i % 2 ? '#fff' : '#fcfcfc' }}>
+        <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6' }}>
+          {r.display_name ?? '—'}
+        </td>
+        <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6' }}>
+          {r.staff_email}
+        </td>
+        <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6' }}>
+          <span style={badge(r.status, isAbsent ? 'absent' : 'ok')}>{r.status}</span>
+        </td>
+        <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6' }}>
+          {r.check_in_kl ?? '—'}
+        </td>
+        <td style={{ padding: 8, borderBottom: '1px solid #f3f4f6' }}>
+          {r.check_out_kl ?? '—'}
+        </td>
+        <td
+          style={{
+            padding: 8,
+            borderBottom: '1px solid #f3f4f6',
+            textAlign: 'right',
+            color: isLate ? '#b91c1c' : undefined,
+            fontWeight: isLate ? 700 : 400,
+          }}
+        >
+          {r.late_min ?? 0}
+        </td>
+      </tr>
+    );
+  })}
+  {!today.length && (
+    <tr>
+      <td colSpan={6} style={{ padding: 12, textAlign: 'center', color: '#6b7280' }}>
+        No rows.
+      </td>
+    </tr>
+  )}
+</tbody>
           </table>
         </div>
         <div style={{ marginTop: 8, fontSize: 12, color: '#6b7280' }}>
