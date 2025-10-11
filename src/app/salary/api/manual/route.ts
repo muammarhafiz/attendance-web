@@ -1,6 +1,6 @@
 // src/app/salary/api/manual/route.ts
 import { NextResponse } from 'next/server';
-+ import { createClientServer } from '@/lib/supabaseServer';
+import { createClientServer } from '@/lib/supabaseServer';
 
 type BodyIn = {
   staff_email?: string;
