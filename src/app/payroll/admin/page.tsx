@@ -7,15 +7,15 @@ export const dynamic = 'force-dynamic';
 async function getSupabaseServer() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-  const cookieStore = cookies();
 
-  // Minimal cookie reader for server components
+  // In your project, cookies() is async-typed → await it
+  const cookieStore = await cookies();
+
   const sb = createServerClient(url, key, {
     cookies: {
       get(name: string) {
         return cookieStore.get(name)?.value;
       },
-      // No writes here — server component render only
       set() {},
       remove() {},
     },
@@ -39,7 +39,7 @@ export default async function AdminPayrollPage() {
     );
   }
 
-  // 2) Admin check (uses existing public.staff table)
+  // 2) Admin check
   const { data: staff, error } = await supabase
     .from('staff')
     .select('is_admin')
@@ -50,9 +50,7 @@ export default async function AdminPayrollPage() {
     return (
       <main className="mx-auto max-w-3xl p-6">
         <h1 className="mb-2 text-2xl font-semibold">Payroll (Admin)</h1>
-        <p className="text-sm text-red-700">
-          Failed to verify permission: {error.message}
-        </p>
+        <p className="text-sm text-red-700">Failed to verify permission: {error.message}</p>
       </main>
     );
   }
@@ -68,8 +66,7 @@ export default async function AdminPayrollPage() {
     );
   }
 
-  // 3) Authorized: show a simple placeholder for now.
-  // (In the next step, we’ll mount the existing client dashboard here.)
+  // 3) Authorized placeholder (we’ll mount the dashboard next)
   return (
     <main className="mx-auto max-w-6xl p-6">
       <header className="mb-4">
