@@ -1,84 +1,71 @@
-// /src/app/payroll/admin/page.tsx
-import { cookies } from 'next/headers';
-import { createServerClient } from '@supabase/ssr';
+'use client';
+import { useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabaseClient';
 
-export const dynamic = 'force-dynamic';
+export default function PayrollAdmin() {
+  const [loading, setLoading] = useState(true);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [periods, setPeriods] = useState<any[]>([]);
 
-async function getSupabaseServer() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  useEffect(() => {
+    const loadData = async () => {
+      const { data: sessionData } = await supabase.auth.getUser();
+      const email = sessionData?.user?.email ?? null;
+      setUserEmail(email);
 
-  // In your project, cookies() is async-typed → await it
-  const cookieStore = await cookies();
+      if (!email) {
+        setMsg('Please sign in to access Payroll.');
+        setLoading(false);
+        return;
+      }
 
-  const sb = createServerClient(url, key, {
-    cookies: {
-      get(name: string) {
-        return cookieStore.get(name)?.value;
-      },
-      set() {},
-      remove() {},
-    },
-  });
+      // check if admin
+      const { data: adminCheck } = await supabase
+        .from('staff')
+        .select('is_admin')
+        .eq('email', email)
+        .maybeSingle();
 
-  return sb;
-}
+      if (!adminCheck?.is_admin) {
+        setMsg('Access denied: Admins only.');
+        setLoading(false);
+        return;
+      }
 
-export default async function AdminPayrollPage() {
-  const supabase = await getSupabaseServer();
+      // load payroll periods
+      const { data: res, error } = await supabase.from('payroll_periods').select('*').order('created_at', { ascending: false });
+      if (error) setMsg(error.message);
+      else setPeriods(res ?? []);
+      setLoading(false);
+    };
+    loadData();
+  }, []);
 
-  // 1) Session
-  const { data: { user } } = await supabase.auth.getUser();
+  if (loading) return <main style={{ padding: 20 }}>Loading...</main>;
+  if (msg) return <main style={{ padding: 20 }}>{msg}</main>;
 
-  if (!user) {
-    return (
-      <main className="mx-auto max-w-3xl p-6">
-        <h1 className="mb-2 text-2xl font-semibold">Payroll (Admin)</h1>
-        <p className="text-sm text-gray-600">Please sign in to access Payroll.</p>
-      </main>
-    );
-  }
-
-  // 2) Admin check
-  const { data: staff, error } = await supabase
-    .from('staff')
-    .select('is_admin')
-    .eq('email', user.email)
-    .maybeSingle();
-
-  if (error) {
-    return (
-      <main className="mx-auto max-w-3xl p-6">
-        <h1 className="mb-2 text-2xl font-semibold">Payroll (Admin)</h1>
-        <p className="text-sm text-red-700">Failed to verify permission: {error.message}</p>
-      </main>
-    );
-  }
-
-  if (!staff?.is_admin) {
-    return (
-      <main className="mx-auto max-w-3xl p-6">
-        <h1 className="mb-2 text-2xl font-semibold">Payroll (Admin)</h1>
-        <p className="text-sm text-gray-600">
-          You’re signed in as <span className="font-medium">{user.email}</span>, but you’re not authorized to view this page.
-        </p>
-      </main>
-    );
-  }
-
-  // 3) Authorized placeholder (we’ll mount the dashboard next)
   return (
-    <main className="mx-auto max-w-6xl p-6">
-      <header className="mb-4">
-        <h1 className="text-2xl font-semibold">Payroll (Admin)</h1>
-        <p className="text-sm text-gray-600">Access granted for admin: {user.email}</p>
-      </header>
-
-      <div className="rounded border bg-white p-4">
-        <p className="text-sm text-gray-700">
-          Guard is working. Next step: wire in the dashboard UI.
-        </p>
-      </div>
+    <main style={{ padding: 20 }}>
+      <h2>Payroll Periods</h2>
+      <table style={{ marginTop: 16, width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr>
+            <th style={{ borderBottom: '1px solid #ddd', textAlign: 'left' }}>Year</th>
+            <th style={{ borderBottom: '1px solid #ddd', textAlign: 'left' }}>Month</th>
+            <th style={{ borderBottom: '1px solid #ddd', textAlign: 'left' }}>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {periods.map((p) => (
+            <tr key={p.id}>
+              <td style={{ borderBottom: '1px solid #eee' }}>{p.year}</td>
+              <td style={{ borderBottom: '1px solid #eee' }}>{p.month}</td>
+              <td style={{ borderBottom: '1px solid #eee' }}>{p.status}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </main>
   );
 }
