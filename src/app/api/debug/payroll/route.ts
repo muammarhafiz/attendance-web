@@ -42,7 +42,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, reason: 'period_not_found' }, { status: 404 });
     }
 
-    // 2) Summary row count (what the UI and finalize rely on)
+    // 2) Summary row count
     const { count: summaryCount, error: scErr } = await supabase
       .schema('pay_v2')
       .from('v_payslip_admin_summary')
@@ -61,9 +61,10 @@ export async function GET(req: Request) {
 
     if (icErr) throw icErr;
 
-    // 4) Storage bucket exists?
+    // 4) Storage bucket exists?  (FIX: set schema first)
     const { data: bucketRow, error: bucketErr } = await supabase
-      .from('buckets', { schema: 'storage' })
+      .schema('storage')
+      .from('buckets')
       .select('id, public')
       .eq('id', 'payroll')
       .maybeSingle();
