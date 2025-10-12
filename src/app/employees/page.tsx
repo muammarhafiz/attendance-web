@@ -110,15 +110,13 @@ export default function EmployeesPage() {
       .eq('email', email)
       .maybeSingle();
     if (error) { setMsg(`Load employee failed: ${error.message}`); setModel(null); return; }
-    const row = data as StaffFull;
-    setModel(row);
+    setModel(data as StaffFull);
   };
 
   const save = async () => {
     if (!model) return;
     setSaving(true); setMsg(null);
     try {
-      // Normalize whitespace → nulls where appropriate
       const payload = {
         ...model,
         full_name: emptyToNull(model.full_name) ?? emptyToNull(model.name),
@@ -139,17 +137,13 @@ export default function EmployeesPage() {
         epf_no: emptyToNull(model.epf_no),
         socso_no: emptyToNull(model.socso_no),
         eis_no: emptyToNull(model.eis_no),
-        // basic_salary is kept as number; allow 0 too
       };
 
       // 1) Save to staff (single source of truth)
-      const { error: upErr } = await supabase
-        .from('staff')
-        .update(payload)
-        .eq('email', model.email);
+      const { error: upErr } = await supabase.from('staff').update(payload).eq('email', model.email);
       if (upErr) throw upErr;
 
-      // 2) Find current (latest) payroll period
+      // 2) Sync latest payroll period from Employees.basic_salary -> BASE
       const { data: period, error: perErr } = await supabase
         .schema('pay_v2')
         .from('periods')
@@ -161,17 +155,13 @@ export default function EmployeesPage() {
       if (perErr) throw perErr;
 
       if (period?.year && period?.month) {
-        // 3) Sync BASE items from staff.basic_salary for that period
         const { error: syncErr } = await supabase
           .schema('pay_v2')
           .rpc('sync_base_items', { p_year: period.year, p_month: period.month });
         if (syncErr) throw syncErr;
 
-        // 4) Recompute EPF/SOCSO/EIS (BASE-only)
-        const { error: recalcErr } = await supabase
-          .schema('pay_v2')
-          .rpc('recalc_statutories', { p_year: period.year, p_month: period.month });
-        if (recalcErr) throw recalcErr;
+        // recalc is inside sync_base_items; calling explicitly is harmless if desired:
+        await supabase.schema('pay_v2').rpc('recalc_statutories', { p_year: period.year, p_month: period.month });
       }
 
       setMsg('Saved and payroll updated.');
@@ -374,8 +364,7 @@ function DateInput({ label, value, onChange }: { label:string; value:string; onC
   return (
     <div>
       <label className="mb-1 block text-xs text-gray-600">{label}</label>
-      <input type="date" className="w-full rounded border px-2 py-1"
-             value={value || ''} onChange={e=>onChange(e.target.value)} />
+      <input type="date" className="w-full rounded border px-2 py-1" value={value || ''} onChange={e=>onChange(e.target.value)} />
     </div>
   );
 }
