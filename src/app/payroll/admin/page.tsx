@@ -185,7 +185,7 @@ export default function AdminPayrollPage() {
         .rpc('sync_base_items', { p_year: year, p_month: month });
       if (error) throw error;
 
-      // recalc is called inside sync_base_items, but calling again is harmless if you prefer:
+      // sync_base_items already calls recalc_statutories; calling again is safe if desired:
       await supabase.schema('pay_v2').rpc('recalc_statutories', { p_year: year, p_month: month });
 
       setMsg('Synced base salaries from Employees into this month.');
@@ -308,7 +308,7 @@ export default function AdminPayrollPage() {
 
   const deleteLine = async (id: string, staff_email: string) => {
     setBusy(true);
-    setMsg(null);
+       setMsg(null);
     try {
       const { error } = await supabase.schema('pay_v2').from('items').delete().eq('id', id);
       if (error) throw error;
