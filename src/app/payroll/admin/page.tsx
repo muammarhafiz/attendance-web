@@ -65,6 +65,9 @@ export default function AdminPayrollPage() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
+  // NEW: divisor for absence → daily rate
+  const [dayDivisor, setDayDivisor] = useState<number>(26);
+
   // Inline editor
   const [openEditorFor, setOpenEditorFor] = useState<string | null>(null);
   const [editorLoading, setEditorLoading] = useState(false);
@@ -76,15 +79,12 @@ export default function AdminPayrollPage() {
   const [newEarn, setNewEarn] = useState<Record<string, { codeSel: string; code: string; label: string; amount: string }>>({});
   const [newDed, setNewDed] = useState<Record<string, { codeSel: string; code: string; label: string; amount: string }>>({});
 
-  // Memoized pay_v2 client
-  const pg = useMemo(() => supabase.schema('pay_v2'), []);
-
   useEffect(() => {
     let unsub: { data: { subscription: { unsubscribe: () => void } } } | null = null;
     (async () => {
       const { data } = await supabase.auth.getSession();
       setAuthed(!!data.session);
-      unsub = supabase.auth.onAuthStateChange((_e, session) => setAuthed(!!session));
+      unsub = supabase.auth.onAuthStateChange((_e, s) => setAuthed(!!s.session));
     })();
     return () => unsub?.data.subscription.unsubscribe();
   }, []);
@@ -92,7 +92,8 @@ export default function AdminPayrollPage() {
   const yyyymm = `${year}-${String(month).padStart(2, '0')}`;
 
   const getPeriodId = async (): Promise<string | null> => {
-    const { data, error } = await pg
+    const { data, error } = await supabase
+      .schema('pay_v2')
       .from('periods')
       .select('id')
       .eq('year', year)
@@ -109,7 +110,8 @@ export default function AdminPayrollPage() {
     setLoading(true);
     setMsg(null);
 
-    const { data, error } = await pg
+    const { data, error } = await supabase
+      .schema('pay_v2')
       .from('v_payslip_admin_summary')
       .select('*')
       .eq('year', year)
@@ -147,6 +149,42 @@ export default function AdminPayrollPage() {
     return { gross, manual, epfEmp, socsoEmp, eisEmp, epfEr, socsoEr, eisEr, totalDeduct, net, employerCost };
   }, [rows]);
 
+  // ---------- NEW: sync absences from Report logic + recalc ----------
+  const syncAbsences = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      // 1) run sync (returns one row per affected staff)
+      const { data: synced, error: syncErr } = await supabase
+        .schema('pay_v2')
+        .rpc('sync_absent_from_report', {
+          p_year: year,
+          p_month: month,
+          p_day_divisor: dayDivisor,
+        });
+
+      if (syncErr) throw syncErr;
+
+      const affected = Array.isArray(synced) ? synced.length : 0;
+
+      // 2) recalc EPF/SOCSO/EIS
+      const { error: recalcErr } = await supabase
+        .schema('pay_v2')
+        .rpc('recalc_statutories', { p_year: year, p_month: month });
+
+      if (recalcErr) throw recalcErr;
+
+      // 3) reload view
+      await loadSummary();
+
+      setMsg(`Synced absences from Report (divisor ${dayDivisor}). Updated ${affected} staff and recalculated statutories.`);
+    } catch (e: any) {
+      setMsg(`Sync absences failed: ${e.message ?? e}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // ---------- inline editor (BASE + add/remove arbitrary items) -------------
   const openEditor = async (staff_email: string) => {
     setEditorLoading(true);
@@ -155,7 +193,8 @@ export default function AdminPayrollPage() {
       const period_id = await getPeriodId();
       if (!period_id) return;
 
-      const { data, error } = await pg
+      const { data, error } = await supabase
+        .schema('pay_v2')
         .from('items')
         .select('id, kind, code, label, amount')
         .eq('period_id', period_id)
@@ -168,7 +207,7 @@ export default function AdminPayrollPage() {
       setItemsEarn((m) => ({ ...m, [staff_email]: earnLines as Item[] }));
       setItemsDed((m) => ({ ...m, [staff_email]: dedLines as Item[] }));
 
-      // set BASE input from existing BASE line (or empty)
+      // set BASE input
       const base = (earnLines as Item[]).find((x) => (x.code || '').toUpperCase() === 'BASE');
       setBaseInput((m) => ({ ...m, [staff_email]: base ? String(base.amount) : '' }));
 
@@ -191,7 +230,7 @@ export default function AdminPayrollPage() {
       const desired = Number(baseInput[staff_email] ?? '0') || 0;
 
       // delete existing BASE lines
-      await pg
+      await supabase.schema('pay_v2')
         .from('items')
         .delete()
         .eq('period_id', period_id)
@@ -199,7 +238,7 @@ export default function AdminPayrollPage() {
         .eq('code', 'BASE');
 
       if (desired !== 0) {
-        const { error } = await pg
+        const { error } = await supabase.schema('pay_v2')
           .from('items')
           .insert({
             period_id,
@@ -213,7 +252,9 @@ export default function AdminPayrollPage() {
       }
 
       // recalc
-      const { error: recalcErr } = await pg.rpc('recalc_statutories', { p_year: year, p_month: month });
+      const { error: recalcErr } = await supabase
+        .schema('pay_v2')
+        .rpc('recalc_statutories', { p_year: year, p_month: month });
       if (recalcErr) setMsg(`Recalc failed: ${recalcErr.message}`);
       else setMsg(`Base updated for ${staff_email}.`);
 
@@ -248,7 +289,7 @@ export default function AdminPayrollPage() {
         return;
       }
 
-      const { error } = await pg.from('items').insert({
+      const { error } = await supabase.schema('pay_v2').from('items').insert({
         period_id,
         staff_email,
         kind,
@@ -259,7 +300,9 @@ export default function AdminPayrollPage() {
       if (error) throw error;
 
       // recalc
-      const { error: recalcErr } = await pg.rpc('recalc_statutories', { p_year: year, p_month: month });
+      const { error: recalcErr } = await supabase
+        .schema('pay_v2')
+        .rpc('recalc_statutories', { p_year: year, p_month: month });
       if (recalcErr) setMsg(`Recalc failed: ${recalcErr.message}`);
 
       await loadSummary();
@@ -274,43 +317,18 @@ export default function AdminPayrollPage() {
   const deleteLine = async (id: string, staff_email: string) => {
     setBusy(true); setMsg(null);
     try {
-      const { error } = await pg.from('items').delete().eq('id', id);
+      const { error } = await supabase.schema('pay_v2').from('items').delete().eq('id', id);
       if (error) throw error;
 
-      const { error: recalcErr } = await pg.rpc('recalc_statutories', { p_year: year, p_month: month });
+      const { error: recalcErr } = await supabase
+        .schema('pay_v2')
+        .rpc('recalc_statutories', { p_year: year, p_month: month });
       if (recalcErr) setMsg(`Recalc failed: ${recalcErr.message}`);
 
       await loadSummary();
       await openEditor(staff_email);
     } catch (e: any) {
       setMsg(`Delete failed: ${e.message ?? e}`);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // ---------- Admin actions: Sync Absences + Recalc -------------------------
-  const callSyncAbsences = async () => {
-    setBusy(true); setMsg(null);
-    try {
-      const { error: syncErr } = await pg.rpc('sync_absent_deductions', { p_year: year, p_month: month });
-      if (syncErr) { setMsg(`Sync absences failed: ${syncErr.message}`); return; }
-      const { error: recalcErr } = await pg.rpc('recalc_statutories', { p_year: year, p_month: month });
-      if (recalcErr) { setMsg(`Recalc statutories failed: ${recalcErr.message}`); return; }
-      setMsg(`Absences synced & statutories recalculated for ${yyyymm}`);
-      await loadSummary();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const callRecalcOnly = async () => {
-    setBusy(true); setMsg(null);
-    try {
-      const { error } = await pg.rpc('recalc_statutories', { p_year: year, p_month: month });
-      if (error) { setMsg(`Recalc failed: ${error.message}`); return; }
-      setMsg(`Statutories recalculated for ${yyyymm}`);
-      await loadSummary();
     } finally {
       setBusy(false);
     }
@@ -361,21 +379,17 @@ export default function AdminPayrollPage() {
             />
           </div>
 
-          <button
-            onClick={callSyncAbsences}
-            disabled={loading || busy}
-            className="rounded bg-indigo-600 px-3 py-1.5 text-white hover:bg-indigo-700 disabled:opacity-50"
-          >
-            Sync absences
-          </button>
-
-          <button
-            onClick={callRecalcOnly}
-            disabled={loading || busy}
-            className="rounded bg-emerald-600 px-3 py-1.5 text-white hover:bg-emerald-700 disabled:opacity-50"
-          >
-            Recalc statutories
-          </button>
+          {/* NEW: day divisor input */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600">Day divisor</label>
+            <input
+              type="number"
+              className="w-24 rounded border px-2 py-1"
+              min={1} max={31}
+              value={dayDivisor}
+              onChange={(e) => setDayDivisor(Math.max(1, Math.min(31, Number(e.target.value || 26))))}
+            />
+          </div>
 
           <button
             onClick={loadSummary}
@@ -383,6 +397,16 @@ export default function AdminPayrollPage() {
             className="rounded border px-3 py-1.5 hover:bg-gray-50 disabled:opacity-50"
           >
             Refresh
+          </button>
+
+          {/* NEW: Sync absences button */}
+          <button
+            onClick={syncAbsences}
+            disabled={loading || busy}
+            className="rounded bg-sky-600 px-3 py-1.5 text-white hover:bg-sky-700 disabled:opacity-50"
+            title="Insert/refresh UNPAID (ABSENT) using the Report rules, then recalc EPF/SOCSO/EIS"
+          >
+            {busy ? 'Syncing…' : 'Sync Absences (from Report)'}
           </button>
         </div>
       </header>
