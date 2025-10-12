@@ -1,7 +1,7 @@
-// src/app/api/payroll/finalize/route.ts
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import PDFDocument from 'pdfkit/js/pdfkit.standalone.js'; // ✅ embed font data directly
+// @ts-ignore  // types provided by src/types/pdfkit-standalone.d.ts
+import PDFDocument from 'pdfkit/js/pdfkit.standalone.js';
 
 export const runtime = 'nodejs';
 
@@ -32,8 +32,6 @@ function toNum(x: string | number | null | undefined): number {
   return typeof x === 'string' ? Number(x) : x ?? 0;
 }
 
-/* ---------------------------------------------------------------------- */
-
 async function fetchPeriod(year: number, month: number) {
   const { data, error } = await supabaseAdmin
     .schema('pay_v2')
@@ -42,7 +40,6 @@ async function fetchPeriod(year: number, month: number) {
     .eq('year', year)
     .eq('month', month)
     .maybeSingle();
-
   if (error || !data) throw new Error(error?.message || 'Period not found');
   return data;
 }
@@ -55,7 +52,6 @@ async function fetchSummary(year: number, month: number): Promise<Row[]> {
     .eq('year', year)
     .eq('month', month)
     .order('staff_name', { ascending: true });
-
   if (error) throw new Error(error.message);
   return data ?? [];
 }
@@ -66,7 +62,6 @@ async function fetchItems(period_id: string) {
     .from('items')
     .select('staff_email, kind, code, label, amount')
     .eq('period_id', period_id);
-
   if (error) throw new Error(error.message);
   return data ?? [];
 }
@@ -75,20 +70,18 @@ async function fetchStaff() {
   const { data, error } = await supabaseAdmin
     .from('staff')
     .select('email, full_name, name, position, nric, epf_no, socso_no');
-
   if (error) throw new Error(error.message);
   const map = new Map<string, any>();
   (data ?? []).forEach((s) => map.set(s.email, s));
   return map;
 }
 
-/* ---------------------------------------------------------------------- */
-
-function makePdfBuffer(build: (doc: PDFDocument) => void): Promise<Buffer> {
+// keep typing minimal to avoid external type deps
+function makePdfBuffer(build: (doc: any) => void): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 36 });
     const chunks: Buffer[] = [];
-    doc.on('data', (c) => chunks.push(c as Buffer));
+    doc.on('data', (c: Buffer) => chunks.push(c));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
     build(doc);
@@ -96,25 +89,24 @@ function makePdfBuffer(build: (doc: PDFDocument) => void): Promise<Buffer> {
   });
 }
 
-/* ---------- PDF Builders ---------- */
-
 function summaryPdf(year: number, month: number, rows: Row[]) {
   return makePdfBuffer((doc) => {
-    doc.fontSize(16).text(`Payroll Summary — ${year}-${String(month).padStart(2, '0')}`, {
-      underline: true,
-    });
+    doc.fontSize(16).text(`Payroll Summary — ${year}-${String(month).padStart(2, '0')}`, { underline: true });
     doc.moveDown();
 
     doc.fontSize(10).text(
-      ['Employee', 'Gross', 'Base', 'EPF(E)', 'SOCSO(E)', 'EIS(E)', 'Manual', 'Net', 'EPF(Er)', 'SOCSO(Er)', 'EIS(Er)'].join(
-        ' | '
-      )
+      [
+        'Employee', 'Gross', 'Base',
+        'EPF(E)', 'SOCSO(E)', 'EIS(E)',
+        'Manual', 'Net',
+        'EPF(Er)', 'SOCSO(Er)', 'EIS(Er)'
+      ].join(' | ')
     );
     doc.moveDown(0.25);
 
-    rows.forEach((r) => {
+    rows.forEach(r => {
       const line = [
-        r.staff_name || r.staff_email,
+        (r.staff_name || r.staff_email),
         toNum(r.total_earn).toFixed(2),
         toNum(r.base_wage).toFixed(2),
         toNum(r.epf_emp).toFixed(2),
@@ -164,23 +156,21 @@ function payslipPdf(year: number, month: number, staff: any, summaryRow: Row, li
 
     doc.font('Helvetica-Bold').text('Earnings');
     doc.font('Helvetica');
-    lines
-      .filter((l) => l.kind === 'EARN')
-      .forEach((l) => doc.text(`${l.label || l.code} — RM ${Number(l.amount).toFixed(2)}`));
+    lines.filter((l: any) => l.kind === 'EARN').forEach((l: any) => {
+      doc.text(`${l.label || l.code}  —  RM ${Number(l.amount).toFixed(2)}`);
+    });
 
     doc.moveDown();
     doc.font('Helvetica-Bold').text('Deductions');
     doc.font('Helvetica');
-    lines
-      .filter((l) => l.kind === 'DEDUCT' || (l.kind || '').startsWith('STAT_EMP_'))
-      .forEach((l) => doc.text(`${l.label || l.code} — RM ${Number(l.amount).toFixed(2)}`));
+    lines.filter((l: any) => l.kind === 'DEDUCT' || (l.kind || '').startsWith('STAT_EMP_')).forEach((l: any) => {
+      doc.text(`${l.label || l.code}  —  RM ${Number(l.amount).toFixed(2)}`);
+    });
 
     doc.moveDown();
     doc.font('Helvetica-Bold').text(`Net Pay: RM ${toNum(summaryRow.net_pay).toFixed(2)}`);
   });
 }
-
-/* ---------------------------------------------------------------------- */
 
 async function uploadToStorage(path: string, bytes: Buffer, contentType = 'application/pdf') {
   const { error } = await supabaseAdmin.storage.from('payroll').upload(path, bytes, {
@@ -192,8 +182,6 @@ async function uploadToStorage(path: string, bytes: Buffer, contentType = 'appli
   const { data: pub } = supabaseAdmin.storage.from('payroll').getPublicUrl(path);
   return pub.publicUrl;
 }
-
-/* ---------------------------------------------------------------------- */
 
 export async function GET(req: Request) {
   try {
@@ -221,7 +209,7 @@ export async function GET(req: Request) {
     const payslipResults: { email: string; url: string }[] = [];
     for (const r of rows) {
       const email = r.staff_email;
-      const lines = items.filter((i) => i.staff_email === email);
+      const lines = items.filter((i: any) => i.staff_email === email);
       const staff = staffMap.get(email);
       const buf = await payslipPdf(year, month, staff, r, lines);
       const safeName = (staff?.full_name || staff?.name || email).replace(/[^\w\-]+/g, '_');
