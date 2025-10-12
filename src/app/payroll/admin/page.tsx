@@ -80,14 +80,22 @@ export default function AdminPayrollPage() {
   const [newDed, setNewDed] = useState<Record<string, { codeSel: string; code: string; label: string; amount: string }>>({});
 
   useEffect(() => {
-    let unsub: { data: { subscription: { unsubscribe: () => void } } } | null = null;
-    (async () => {
-      const { data } = await supabase.auth.getSession();
-      setAuthed(!!data.session);
-      unsub = supabase.auth.onAuthStateChange((_e, s) => setAuthed(!!s.session));
-    })();
-    return () => unsub?.data.subscription.unsubscribe();
-  }, []);
+  // set initial state from current session
+  (async () => {
+    const { data } = await supabase.auth.getSession();
+    setAuthed(!!data.session);
+  })();
+
+  // subscribe to auth changes
+  const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+    setAuthed(!!session); // <-- session is Session | null
+  });
+
+  // cleanup
+  return () => {
+    sub.subscription.unsubscribe();
+  };
+}, []);
 
   const yyyymm = `${year}-${String(month).padStart(2, '0')}`;
 
