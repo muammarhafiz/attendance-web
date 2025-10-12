@@ -1,15 +1,17 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+
+/* -------------------------------- Types -------------------------------- */
 
 type Row = {
   year: number;
   month: number;
   staff_name: string | null;
   staff_email: string;
-  total_earn: string | number;
-  base_wage: string | number;      // from new view
+  total_earn: string | number; // display gross (all EARN)
+  base_wage: string | number;  // BASE-only (statutory wage)
   epf_emp: string | number;
   socso_emp: string | number;
   eis_emp: string | number;
@@ -20,6 +22,10 @@ type Row = {
   net_pay: string | number;
 };
 
+type PayslipFile = { name: string; url: string };
+
+/* ------------------------------- Helpers ------------------------------- */
+
 function n(x: string | number | null | undefined) {
   const v = typeof x === 'string' ? Number(x) : x ?? 0;
   return Number.isFinite(v as number) ? (v as number) : 0;
@@ -27,6 +33,11 @@ function n(x: string | number | null | undefined) {
 function rm(x: number) {
   return `RM ${x.toFixed(2)}`;
 }
+function pad2(m: number) {
+  return String(m).padStart(2, '0');
+}
+
+/* -------------------------------- Page -------------------------------- */
 
 export default function PayrollRecordsPage() {
   const now = useMemo(() => new Date(), []);
@@ -34,24 +45,35 @@ export default function PayrollRecordsPage() {
 
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
+  const yyyymm = `${year}-${pad2(month)}`;
+  const basePath = `${year}-${pad2(month)}`;
 
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
 
+  // finalize/PDFs box
+  const [busy, setBusy] = useState(false);
+  const [finMsg, setFinMsg] = useState<string | null>(null);
+  const [finErr, setFinErr] = useState<string | null>(null);
+  const [summaryUrl, setSummaryUrl] = useState<string | null>(null);
+  const [payslips, setPayslips] = useState<PayslipFile[]>([]);
+
+  // auth
   useEffect(() => {
     let unsub: { data: { subscription: { unsubscribe: () => void } } } | null = null;
     (async () => {
       const { data } = await supabase.auth.getSession();
       setAuthed(!!data.session);
-      unsub = supabase.auth.onAuthStateChange((_e, session) => setAuthed(!!session));
+      const ret = supabase.auth.onAuthStateChange((_e, session) => setAuthed(!!session));
+      unsub = ret;
     })();
     return () => unsub?.data.subscription.unsubscribe();
   }, []);
 
-  const yyyymm = `${year}-${String(month).padStart(2,'0')}`;
+  /* ------------------------------ Data loads ---------------------------- */
 
-  const load = async () => {
+  const loadSummary = useCallback(async () => {
     setLoading(true);
     setMsg(null);
     const { data, error } = await supabase
@@ -69,17 +91,92 @@ export default function PayrollRecordsPage() {
       setRows((data ?? []) as Row[]);
     }
     setLoading(false);
-  };
+  }, [year, month]);
+
+  // list PDFs already generated for this month
+  const loadPdfLinks = useCallback(async () => {
+    setFinErr(null);
+    setFinMsg('Loading generated PDFs…');
+    try {
+      // Summary name is deterministic
+      const summaryName = `Payroll_Summary_${basePath}.pdf`;
+      const { data: lsSummary, error: lsSErr } = await supabase.storage
+        .from('payroll')
+        .list(basePath, { limit: 100, search: 'Payroll_Summary_' });
+      if (lsSErr) throw lsSErr;
+      const hasSummary = (lsSummary ?? []).some(f => f.name === summaryName);
+      if (hasSummary) {
+        const { data: pub } = supabase.storage.from('payroll').getPublicUrl(`${basePath}/${summaryName}`);
+        setSummaryUrl(pub.publicUrl);
+      } else {
+        setSummaryUrl(null);
+      }
+
+      // Payslips folder
+      const { data: ls, error: lsErr } = await supabase.storage
+        .from('payroll')
+        .list(`${basePath}/payslips`, { limit: 1000, sortBy: { column: 'name', order: 'asc' } });
+      if (lsErr) throw lsErr;
+
+      const files = (ls ?? []).filter(f => f.name.toLowerCase().endsWith('.pdf'));
+      const withUrls: PayslipFile[] = files.map(f => {
+        const { data: pub } = supabase.storage.from('payroll').getPublicUrl(`${basePath}/payslips/${f.name}`);
+        return { name: f.name, url: pub.publicUrl };
+      });
+      setPayslips(withUrls);
+      setFinMsg(null);
+    } catch (e: any) {
+      setFinErr(e.message ?? String(e));
+      setFinMsg(null);
+      setPayslips([]);
+      setSummaryUrl(null);
+    }
+  }, [basePath]);
 
   useEffect(() => {
-    if (authed) load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, year, month]);
+    if (authed) {
+      loadSummary();
+      loadPdfLinks();
+    }
+  }, [authed, loadSummary, loadPdfLinks]);
+
+  /* ------------------------------ Finalize ------------------------------ */
+
+  async function finalizeAndGenerate() {
+    setBusy(true);
+    setFinErr(null);
+    setFinMsg('Generating PDFs & finalizing…');
+    try {
+      const qs = new URLSearchParams({ year: String(year), month: String(month) }).toString();
+      const res = await fetch(`/api/payroll/finalize?${qs}`, { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || 'Failed to finalize');
+
+      // update links using API response for speed
+      setSummaryUrl(json.summaryUrl || null);
+      setPayslips(
+        (json.payslips ?? []).map((p: { email: string; url: string }) => {
+          const name = decodeURIComponent(p.url.split('/').pop() || p.email);
+          return { name, url: p.url };
+        })
+      );
+      setFinMsg('Done. Period is now LOCKED.');
+      // refresh table to reflect LOCK status effects (if you add any UI lock later)
+      await loadSummary();
+    } catch (e: any) {
+      setFinErr(e.message ?? String(e));
+      setFinMsg(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /* -------------------------------- Totals ------------------------------ */
 
   const totals = useMemo(() => {
     const sum = (k: keyof Row) => rows.reduce((a, r) => a + n(r[k]), 0);
-    const gross = sum('total_earn');           // display gross (all EARN)
-    const baseWage = sum('base_wage');         // BASE-only (statutories)
+    const gross = sum('total_earn');
+    const baseWage = sum('base_wage');
     const epfEmp = sum('epf_emp');
     const socsoEmp = sum('socso_emp');
     const eisEmp = sum('eis_emp');
@@ -91,6 +188,8 @@ export default function PayrollRecordsPage() {
     const employerCost = gross + epfEr + socsoEr + eisEr;
     return { gross, baseWage, epfEmp, socsoEmp, eisEmp, epfEr, socsoEr, eisEr, manual, net, employerCost };
   }, [rows]);
+
+  /* ------------------------------- Rendering ---------------------------- */
 
   if (authed === false) {
     return (
@@ -110,6 +209,7 @@ export default function PayrollRecordsPage() {
 
   return (
     <main className="mx-auto max-w-7xl p-6">
+      {/* Header */}
       <header className="mb-6 flex flex-wrap items-end gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Payroll Records</h1>
@@ -121,7 +221,8 @@ export default function PayrollRecordsPage() {
             <input
               type="number"
               className="rounded border px-2 py-1"
-              min={2020} max={2100}
+              min={2020}
+              max={2100}
               value={year}
               onChange={(e) => setYear(Number(e.target.value))}
             />
@@ -131,14 +232,15 @@ export default function PayrollRecordsPage() {
             <input
               type="number"
               className="rounded border px-2 py-1"
-              min={1} max={12}
+              min={1}
+              max={12}
               value={month}
               onChange={(e) => setMonth(Number(e.target.value))}
             />
           </div>
           <button
-            onClick={load}
-            disabled={loading}
+            onClick={() => { loadSummary(); loadPdfLinks(); }}
+            disabled={loading || busy}
             className="rounded border px-3 py-1.5 hover:bg-gray-50 disabled:opacity-50"
           >
             Refresh
@@ -146,12 +248,84 @@ export default function PayrollRecordsPage() {
         </div>
       </header>
 
+      {/* Finalize & PDFs panel */}
+      <section className="mb-6 rounded border bg-white p-4">
+        <div className="mb-3 flex items-center gap-3">
+          <h2 className="text-lg font-semibold">Finalize & PDFs</h2>
+          <span className="text-sm text-gray-500">Period {basePath}</span>
+          <div className="ml-auto flex gap-2">
+            <button
+              onClick={loadPdfLinks}
+              disabled={busy}
+              className="rounded border px-3 py-1.5 hover:bg-gray-50 disabled:opacity-50"
+            >
+              Refresh list
+            </button>
+            <button
+              onClick={finalizeAndGenerate}
+              disabled={busy}
+              className="rounded bg-black px-3 py-1.5 text-white hover:bg-gray-800 disabled:opacity-50"
+              title="Generate Summary + Payslips (and LOCK the period)"
+            >
+              {busy ? 'Working…' : 'Finalize & Generate PDFs'}
+            </button>
+          </div>
+        </div>
+
+        {finMsg && <div className="mb-3 rounded border border-sky-200 bg-sky-50 p-2 text-sm text-sky-800">{finMsg}</div>}
+        {finErr && <div className="mb-3 rounded border border-rose-200 bg-rose-50 p-2 text-sm text-rose-800">{finErr}</div>}
+
+        <div className="grid gap-3">
+          <div>
+            <div className="font-medium">Summary</div>
+            {summaryUrl ? (
+              <a href={summaryUrl} target="_blank" rel="noreferrer" className="text-blue-600 underline">
+                Download Payroll Summary ({basePath})
+              </a>
+            ) : (
+              <div className="text-sm text-gray-500">No summary for this month yet.</div>
+            )}
+          </div>
+
+          <div>
+            <div className="font-medium">Payslips</div>
+            {payslips.length === 0 ? (
+              <div className="text-sm text-gray-500">No payslips found for this month.</div>
+            ) : (
+              <div className="max-h-72 overflow-auto rounded border">
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 text-left">
+                      <th className="border-b px-2 py-1">File</th>
+                      <th className="border-b px-2 py-1">Link</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payslips.map((f) => (
+                      <tr key={f.url}>
+                        <td className="border-b px-2 py-1">{f.name}</td>
+                        <td className="border-b px-2 py-1">
+                          <a href={f.url} target="_blank" rel="noreferrer" className="text-blue-600 underline">
+                            Open
+                          </a>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
       {msg && (
         <div className="mb-4 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
           {msg}
         </div>
       )}
 
+      {/* Records table */}
       <section>
         {loading ? (
           <div className="text-sm text-gray-500">Loading…</div>
