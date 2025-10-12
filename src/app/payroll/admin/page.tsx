@@ -40,23 +40,6 @@ function rm(x: number) {
   return `RM ${x.toFixed(2)}`;
 }
 
-const EARN_CODE_OPTIONS = [
-  { value: 'COMM', label: 'COMM – Commission' },
-  { value: 'OT', label: 'OT – Overtime' },
-  { value: 'ALLOW', label: 'ALLOW – Allowance' },
-  { value: 'BONUS', label: 'BONUS – Bonus' },
-  { value: 'RETRO', label: 'RETRO – Retro Pay' },
-  { value: '__CUSTOM__', label: 'Custom…' },
-];
-
-const DED_CODE_OPTIONS = [
-  { value: 'UNPAID', label: 'UNPAID – Unpaid Leave' },
-  { value: 'ADV', label: 'ADV – Advance' },
-  { value: 'LOAN', label: 'LOAN – Loan Repayment' },
-  { value: 'PENALTY', label: 'PENALTY – Penalty' },
-  { value: '__CUSTOM__', label: 'Custom…' },
-];
-
 /* -------------------------------- Page -------------------------------- */
 
 export default function AdminPayrollPage() {
@@ -175,7 +158,8 @@ export default function AdminPayrollPage() {
     return r;
   }, [rows, q, fManual, fAbsent, fNegNet, absentCnt]);
 
-  /* ---------- Sync button: pull Employees.basic_salary into this month ---------- */
+  /* ---------- Sync actions ---------- */
+
   const syncSalariesToThisMonth = async () => {
     setBusy(true);
     setMsg(null);
@@ -184,14 +168,48 @@ export default function AdminPayrollPage() {
         .schema('pay_v2')
         .rpc('sync_base_items', { p_year: year, p_month: month });
       if (error) throw error;
-
-      // sync_base_items already calls recalc_statutories; calling again is safe if desired:
-      await supabase.schema('pay_v2').rpc('recalc_statutories', { p_year: year, p_month: month });
-
+      // sync_base_items already calls recalc_statutories
       setMsg('Synced base salaries from Employees into this month.');
       await loadSummary();
     } catch (e: any) {
-      setMsg(`Sync failed: ${e.message ?? e}`);
+      setMsg(`Sync salaries failed: ${e.message ?? e}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const syncAbsencesToDeductions = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const { error } = await supabase
+        .schema('pay_v2')
+        .rpc('sync_absent_deductions', { p_year: year, p_month: month });
+      if (error) throw error;
+      setMsg('Absences synced into UNPAID deductions.');
+      await loadSummary();
+      await loadAbsentCounts();
+    } catch (e: any) {
+      setMsg(`Sync absences failed: ${e.message ?? e}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const syncAllForMonth = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const s1 = await supabase.schema('pay_v2').rpc('sync_base_items', { p_year: year, p_month: month });
+      if (s1.error) throw s1.error;
+      const s2 = await supabase.schema('pay_v2').rpc('sync_absent_deductions', { p_year: year, p_month: month });
+      if (s2.error) throw s2.error;
+      await supabase.schema('pay_v2').rpc('recalc_statutories', { p_year: year, p_month: month }); // harmless extra
+      setMsg('Synced salaries + absences and recalculated statutories.');
+      await loadSummary();
+      await loadAbsentCounts();
+    } catch (e: any) {
+      setMsg(`Sync ALL failed: ${e.message ?? e}`);
     } finally {
       setBusy(false);
     }
@@ -213,17 +231,17 @@ export default function AdminPayrollPage() {
         .eq('staff_email', staff_email);
       if (error) throw error;
 
-      const earnLines = (data ?? []).filter((x: any) => x.kind === 'EARN');
-      const dedLines = (data ?? []).filter((x: any) => x.kind === 'DEDUCT');
+      const earnLines = (data ?? []).filter((x: any) => (x.kind || '').toUpperCase() === 'EARN');
+      const dedLines  = (data ?? []).filter((x: any) => (x.kind || '').toUpperCase() === 'DEDUCT');
 
       setItemsEarn(m => ({ ...m, [staff_email]: earnLines as Item[] }));
-      setItemsDed(m => ({ ...m, [staff_email]: dedLines as Item[] }));
+      setItemsDed(m  => ({ ...m, [staff_email]: dedLines  as Item[] }));
 
       const base = (earnLines as Item[]).find(x => (x.code || '').toUpperCase() === 'BASE');
       setBaseInput(m => ({ ...m, [staff_email]: base ? String(base.amount) : '' }));
 
-      setNewEarn(m => ({ ...m, [staff_email]: { codeSel: EARN_CODE_OPTIONS[0].value, code: EARN_CODE_OPTIONS[0].value, label: '', amount: '' } }));
-      setNewDed(m => ({ ...m, [staff_email]: { codeSel: DED_CODE_OPTIONS[0].value, code: DED_CODE_OPTIONS[0].value, label: '', amount: '' } }));
+      setNewEarn(m => ({ ...m, [staff_email]: { codeSel: 'COMM', code: 'COMM', label: '', amount: '' } }));
+      setNewDed(m  => ({ ...m, [staff_email]: { codeSel: 'UNPAID', code: 'UNPAID', label: '', amount: '' } }));
     } catch (e: any) {
       setMsg(`Editor load failed: ${e.message ?? e}`);
     } finally {
@@ -308,7 +326,7 @@ export default function AdminPayrollPage() {
 
   const deleteLine = async (id: string, staff_email: string) => {
     setBusy(true);
-       setMsg(null);
+    setMsg(null);
     try {
       const { error } = await supabase.schema('pay_v2').from('items').delete().eq('id', id);
       if (error) throw error;
@@ -346,12 +364,13 @@ export default function AdminPayrollPage() {
   return (
     <main className="mx-auto max-w-[1200px] p-6">
       {/* Header */}
-      <header className="mb-5 flex flex-wrap items-end gap-4">
-        <div>
+      <header className="mb-5 flex flex-wrap items-end gap-3">
+        <div className="mr-auto">
           <h1 className="text-2xl font-semibold">Payroll — Admin summary</h1>
           <p className="text-sm text-gray-500">Period {yyyymm}</p>
         </div>
-        <div className="ml-auto flex items-end gap-3">
+
+        <div className="flex items-end gap-3">
           <div>
             <label className="block text-xs font-medium text-gray-600">Year</label>
             <input type="number" className="rounded border px-2 py-1" min={2020} max={2100} value={year} onChange={(e) => setYear(Number(e.target.value))} />
@@ -367,14 +386,31 @@ export default function AdminPayrollPage() {
           >
             Refresh
           </button>
+        </div>
 
-          {/* NEW: sync button */}
+        {/* Sync actions */}
+        <div className="flex items-end gap-2">
           <button
             onClick={syncSalariesToThisMonth}
             disabled={busy}
             className="rounded bg-emerald-600 px-3 py-1.5 text-white hover:bg-emerald-700 disabled:opacity-50"
           >
-            Sync salaries to this month
+            Sync salaries
+          </button>
+          <button
+            onClick={syncAbsencesToDeductions}
+            disabled={busy}
+            className="rounded bg-sky-600 px-3 py-1.5 text-white hover:bg-sky-700 disabled:opacity-50"
+          >
+            Sync absences
+          </button>
+          <button
+            onClick={syncAllForMonth}
+            disabled={busy}
+            className="rounded bg-indigo-600 px-3 py-1.5 text-white hover:bg-indigo-700 disabled:opacity-50"
+            title="Salaries → BASE, Absences → UNPAID, then recalc"
+          >
+            Sync ALL
           </button>
         </div>
       </header>
@@ -417,8 +453,7 @@ export default function AdminPayrollPage() {
                   <th className="sticky left-0 z-30 border-b bg-white px-3 py-2 text-left">Employee</th>
                   <th className="border-b bg-white px-3 py-2 text-right">Gross</th>
                   <th className="border-b bg-white px-3 py-2 text-right">
-                    Base wage
-                    <span title="Statutories are computed on Base wage only." className="ml-1 cursor-help text-xs text-gray-500">ⓘ</span>
+                    Base wage <span title="Statutories are computed on Base wage only." className="ml-1 cursor-help text-xs text-gray-500">ⓘ</span>
                   </th>
                   <th colSpan={4} className="border-b bg-rose-50 px-3 py-2 text-center font-semibold text-rose-700">
                     Employee Deductions
@@ -562,7 +597,7 @@ export default function AdminPayrollPage() {
                       <label className="block text-xs text-gray-600">Code</label>
                       <select
                         className="w-full rounded border px-2 py-1"
-                        value={newEarn[openDrawerFor]?.codeSel ?? EARN_CODE_OPTIONS[0].value}
+                        value={newEarn[openDrawerFor]?.codeSel ?? 'COMM'}
                         onChange={(e) => {
                           const sel = e.target.value;
                           setNewEarn(m => ({
@@ -575,7 +610,12 @@ export default function AdminPayrollPage() {
                           }));
                         }}
                       >
-                        {EARN_CODE_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                        <option value="COMM">COMM – Commission</option>
+                        <option value="OT">OT – Overtime</option>
+                        <option value="ALLOW">ALLOW – Allowance</option>
+                        <option value="BONUS">BONUS – Bonus</option>
+                        <option value="RETRO">RETRO – Retro Pay</option>
+                        <option value="__CUSTOM__">Custom…</option>
                       </select>
                       {newEarn[openDrawerFor]?.codeSel === '__CUSTOM__' && (
                         <input
@@ -601,7 +641,7 @@ export default function AdminPayrollPage() {
                         onChange={(e) => setNewEarn(m => ({
                           ...m,
                           [openDrawerFor]: {
-                            ...(m[openDrawerFor] ?? { codeSel: EARN_CODE_OPTIONS[0].value, code: EARN_CODE_OPTIONS[0].value, label: '', amount: '' }),
+                            ...(m[openDrawerFor] ?? { codeSel: 'COMM', code: 'COMM', label: '', amount: '' }),
                             label: e.target.value,
                           },
                         }))}
@@ -617,7 +657,7 @@ export default function AdminPayrollPage() {
                         onChange={(e) => setNewEarn(m => ({
                           ...m,
                           [openDrawerFor]: {
-                            ...(m[openDrawerFor] ?? { codeSel: EARN_CODE_OPTIONS[0].value, code: EARN_CODE_OPTIONS[0].value, label: '', amount: '' }),
+                            ...(m[openDrawerFor] ?? { codeSel: 'COMM', code: 'COMM', label: '', amount: '' }),
                             amount: e.target.value,
                           },
                         }))}
@@ -640,7 +680,7 @@ export default function AdminPayrollPage() {
                       <label className="block text-xs text-gray-600">Code</label>
                       <select
                         className="w-full rounded border px-2 py-1"
-                        value={newDed[openDrawerFor]?.codeSel ?? DED_CODE_OPTIONS[0].value}
+                        value={newDed[openDrawerFor]?.codeSel ?? 'UNPAID'}
                         onChange={(e) => {
                           const sel = e.target.value;
                           setNewDed(m => ({
@@ -653,7 +693,11 @@ export default function AdminPayrollPage() {
                           }));
                         }}
                       >
-                        {DED_CODE_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                        <option value="UNPAID">UNPAID – Unpaid Leave</option>
+                        <option value="ADV">ADV – Advance</option>
+                        <option value="LOAN">LOAN – Loan Repayment</option>
+                        <option value="PENALTY">PENALTY – Penalty</option>
+                        <option value="__CUSTOM__">Custom…</option>
                       </select>
                       {newDed[openDrawerFor]?.codeSel === '__CUSTOM__' && (
                         <input
@@ -679,7 +723,7 @@ export default function AdminPayrollPage() {
                         onChange={(e) => setNewDed(m => ({
                           ...m,
                           [openDrawerFor]: {
-                            ...(m[openDrawerFor] ?? { codeSel: DED_CODE_OPTIONS[0].value, code: DED_CODE_OPTIONS[0].value, label: '', amount: '' }),
+                            ...(m[openDrawerFor] ?? { codeSel: 'UNPAID', code: 'UNPAID', label: '', amount: '' }),
                             label: e.target.value,
                           },
                         }))}
@@ -695,7 +739,7 @@ export default function AdminPayrollPage() {
                         onChange={(e) => setNewDed(m => ({
                           ...m,
                           [openDrawerFor]: {
-                            ...(m[openDrawerFor] ?? { codeSel: DED_CODE_OPTIONS[0].value, code: DED_CODE_OPTIONS[0].value, label: '', amount: '' }),
+                            ...(m[openDrawerFor] ?? { codeSel: 'UNPAID', code: 'UNPAID', label: '', amount: '' }),
                             amount: e.target.value,
                           },
                         }))}
