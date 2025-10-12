@@ -1,7 +1,9 @@
 // src/components/NavBar.tsx
 'use client';
+
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
+import { usePathname } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
@@ -10,38 +12,52 @@ const supabase = createClient(
 );
 
 export default function NavBar() {
+  const pathname = usePathname();
   const [email, setEmail] = useState<string | null>(null);
 
   useEffect(() => {
+    let unsub: { unsubscribe: () => void } | null = null;
+
     // Initial read
     supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null));
+
     // Live updates
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+    const { data } = supabase.auth.onAuthStateChange((_e, session) => {
       setEmail(session?.user?.email ?? null);
     });
-    return () => sub.subscription.unsubscribe();
+    unsub = data?.subscription ?? null;
+
+    return () => unsub?.unsubscribe();
   }, []);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
-    // Ensure the navbar reflects the logged-out state immediately
     window.location.reload();
   };
+
+  const linkCls = useMemo(
+    () =>
+      (href: string) =>
+        `text-sm font-semibold ${
+          pathname?.startsWith(href) ? 'text-gray-900' : 'text-gray-700 hover:text-gray-900'
+        }`,
+    [pathname]
+  );
 
   return (
     <nav className="sticky top-0 z-40 w-full border-b border-gray-200 bg-white/90 backdrop-blur">
       <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
         <div className="flex items-center gap-6">
-          <Link href="/" className="text-sm font-semibold text-gray-900">Check-in</Link>
-          <Link href="/today" className="text-sm font-semibold text-gray-700 hover:text-gray-900">Today</Link>
-          <Link href="/report" className="text-sm font-semibold text-gray-700 hover:text-gray-900">Report</Link>
-          <Link href="/manager" className="text-sm font-semibold text-gray-700 hover:text-gray-900">Manager</Link>
-          <Link href="/offday" className="text-sm font-semibold text-gray-700 hover:text-gray-900">Offday/MC</Link>
-          {/* NEW: Payroll behaves exactly like Manager (always visible; page handles access) */}
-          <Link href="/payroll/admin" className="text-sm font-semibold text-gray-700 hover:text-gray-900">Payroll</Link>
+          <Link href="/" className={linkCls('/')}>Check-in</Link>
+          <Link href="/today" className={linkCls('/today')}>Today</Link>
+          <Link href="/report" className={linkCls('/report')}>Report</Link>
+          <Link href="/manager" className={linkCls('/manager')}>Manager</Link>
+          <Link href="/offday" className={linkCls('/offday')}>Offday/MC</Link>
+          <Link href="/payroll/admin" className={linkCls('/payroll')}>Payroll</Link>
+          {/* NEW: Employees */}
+          <Link href="/employees" className={linkCls('/employees')}>Employees</Link>
         </div>
 
-        {/* Auth button */}
         <div className="flex items-center gap-3">
           {email ? (
             <>
