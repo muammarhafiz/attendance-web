@@ -1,16 +1,10 @@
 import { NextResponse } from 'next/server';
 import PDFDocument from 'pdfkit';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-export const runtime = 'nodejs'; // ensure Node runtime (Buffer, streams, etc.)
-
-// IMPORTANT: server-side admin client (service role key)
-// Make sure you set SUPABASE_SERVICE_ROLE_KEY in your Vercel/Env vars.
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { persistSession: false } }
-);
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 /* ----------------------------- Types & utils ---------------------------- */
 
@@ -38,41 +32,50 @@ function toNum(x: string | number | null | undefined) {
   return typeof x === 'string' ? Number(x) || 0 : x;
 }
 
+/* ---------------------------- Lazy admin client ------------------------- */
+
+function getAdmin(): SupabaseClient {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    // Throwing here is OK because it only runs at request time, not build time
+    throw new Error('Missing env: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+  }
+  return createClient(url, key, { auth: { persistSession: false } });
+}
+
 /* --------------------------------- DB IO -------------------------------- */
 
-async function fetchPeriod(year: number, month: number) {
-  const { data, error } = await supabaseAdmin
+async function fetchPeriod(db: SupabaseClient, year: number, month: number) {
+  const { data, error } = await db
     .schema('pay_v2')
     .from('periods')
     .select('id,status')
     .eq('year', year)
     .eq('month', month)
     .maybeSingle();
-
   if (error || !data) throw new Error(error?.message || 'Period not found');
   return data as { id: string; status: string };
 }
 
-async function fetchSummary(year: number, month: number) {
-  const { data, error } = await supabaseAdmin
+async function fetchSummary(db: SupabaseClient, year: number, month: number) {
+  const { data, error } = await db
     .schema('pay_v2')
     .from('v_payslip_admin_summary')
     .select('*')
     .eq('year', year)
     .eq('month', month)
     .order('staff_name', { ascending: true });
-
   if (error) throw new Error(error.message);
   return (data ?? []) as Row[];
 }
 
-async function fetchItems(period_id: string) {
-  const { data, error } = await supabaseAdmin
+async function fetchItems(db: SupabaseClient, period_id: string) {
+  const { data, error } = await db
     .schema('pay_v2')
     .from('items')
     .select('staff_email, kind, code, label, amount')
     .eq('period_id', period_id);
-
   if (error) throw new Error(error.message);
   return (data ?? []) as {
     staff_email: string;
@@ -83,11 +86,10 @@ async function fetchItems(period_id: string) {
   }[];
 }
 
-async function fetchStaffMap() {
-  const { data, error } = await supabaseAdmin
+async function fetchStaffMap(db: SupabaseClient) {
+  const { data, error } = await db
     .from('staff')
     .select('email, full_name, name, position, nric, epf_no, socso_no');
-
   if (error) throw new Error(error.message);
   const m = new Map<string, any>();
   (data ?? []).forEach((s) => m.set(s.email, s));
@@ -111,24 +113,11 @@ function makePdfBuffer(build: (doc: PDFDoc) => void): Promise<Buffer> {
 function summaryPdf(year: number, month: number, rows: Row[]) {
   return makePdfBuffer((doc) => {
     const ym = `${year}-${String(month).padStart(2, '0')}`;
-
     doc.fontSize(16).text(`Payroll Summary — ${ym}`, { underline: true });
     doc.moveDown();
 
     doc.fontSize(10).text(
-      [
-        'Employee',
-        'Gross',
-        'Base',
-        'EPF(E)',
-        'SOCSO(E)',
-        'EIS(E)',
-        'Manual',
-        'Net',
-        'EPF(Er)',
-        'SOCSO(Er)',
-        'EIS(Er)',
-      ].join(' | ')
+      ['Employee', 'Gross', 'Base', 'EPF(E)', 'SOCSO(E)', 'EIS(E)', 'Manual', 'Net', 'EPF(Er)', 'SOCSO(Er)', 'EIS(Er)'].join(' | ')
     );
     doc.moveDown(0.25);
 
@@ -150,7 +139,6 @@ function summaryPdf(year: number, month: number, rows: Row[]) {
     });
 
     const sum = (k: keyof Row) => rows.reduce((a, r) => a + toNum(r[k]), 0);
-
     doc.moveDown();
     doc.font('Helvetica-Bold').text(
       [
@@ -180,13 +168,10 @@ function payslipPdf(
 ) {
   return makePdfBuffer((doc) => {
     const ym = `${year}-${String(month).padStart(2, '0')}`;
-
     doc.fontSize(14).text('Payslip', { underline: true });
     doc.moveDown(0.5);
     doc.fontSize(10).text(`Period: ${ym}`);
-    doc.text(
-      `Employee: ${staff?.full_name || staff?.name || summaryRow.staff_name || summaryRow.staff_email}`
-    );
+    doc.text(`Employee: ${staff?.full_name || staff?.name || summaryRow.staff_name || summaryRow.staff_email}`);
     if (staff?.position) doc.text(`Position: ${staff.position}`);
     if (staff?.nric) doc.text(`NRIC: ${staff.nric}`);
     if (staff?.epf_no) doc.text(`EPF No: ${staff.epf_no}`);
@@ -197,9 +182,7 @@ function payslipPdf(
     doc.font('Helvetica');
     lines
       .filter((l) => (l.kind || '').toUpperCase() === 'EARN')
-      .forEach((l) => {
-        doc.text(`${l.label || l.code || 'EARN'}  —  RM ${Number(l.amount).toFixed(2)}`);
-      });
+      .forEach((l) => doc.text(`${l.label || l.code || 'EARN'}  —  RM ${Number(l.amount).toFixed(2)}`));
 
     doc.moveDown();
     doc.font('Helvetica-Bold').text('Deductions');
@@ -209,9 +192,7 @@ function payslipPdf(
         const k = (l.kind || '').toUpperCase();
         return k === 'DEDUCT' || k.startsWith('STAT_EMP_');
       })
-      .forEach((l) => {
-        doc.text(`${l.label || l.code || 'DEDUCT'}  —  RM ${Number(l.amount).toFixed(2)}`);
-      });
+      .forEach((l) => doc.text(`${l.label || l.code || 'DEDUCT'}  —  RM ${Number(l.amount).toFixed(2)}`));
 
     doc.moveDown();
     doc.font('Helvetica-Bold').text(`Net Pay: RM ${toNum(summaryRow.net_pay).toFixed(2)}`);
@@ -220,14 +201,14 @@ function payslipPdf(
 
 /* ------------------------------- Storage IO ------------------------------ */
 
-async function uploadToStorage(path: string, bytes: Buffer, contentType = 'application/pdf') {
-  const { error } = await supabaseAdmin.storage.from('payroll').upload(path, bytes, {
+async function uploadToStorage(db: SupabaseClient, path: string, bytes: Buffer, contentType = 'application/pdf') {
+  const { error } = await db.storage.from('payroll').upload(path, bytes, {
     cacheControl: '3600',
     upsert: true,
     contentType,
   });
   if (error) throw new Error(error.message);
-  const { data: pub } = supabaseAdmin.storage.from('payroll').getPublicUrl(path);
+  const { data: pub } = db.storage.from('payroll').getPublicUrl(path);
   return pub.publicUrl;
 }
 
@@ -242,8 +223,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'year & month required' }, { status: 400 });
     }
 
+    const db = getAdmin();
+
     // Only finalize OPEN periods
-    const period = await fetchPeriod(year, month);
+    const period = await fetchPeriod(db, year, month);
     if (period.status !== 'OPEN') {
       return NextResponse.json(
         { error: 'This period is not OPEN (maybe already finalized?)' },
@@ -252,17 +235,17 @@ export async function POST(req: Request) {
     }
 
     // Gather data
-    const rows = await fetchSummary(year, month);
-    const items = await fetchItems(period.id);
-    const staffMap = await fetchStaffMap();
+    const rows = await fetchSummary(db, year, month);
+    const items = await fetchItems(db, period.id);
+    const staffMap = await fetchStaffMap(db);
 
-    // Build and upload summary PDF
+    // Build & upload summary PDF
     const basePath = `${year}-${String(month).padStart(2, '0')}`;
     const summaryBuf = await summaryPdf(year, month, rows);
     const summaryPath = `${basePath}/Payroll_Summary_${basePath}.pdf`;
-    const summaryUrl = await uploadToStorage(summaryPath, summaryBuf);
+    const summaryUrl = await uploadToStorage(db, summaryPath, summaryBuf);
 
-    // Build and upload payslips
+    // Build & upload payslips
     const payslips: { email: string; url: string }[] = [];
     for (const r of rows) {
       const email = r.staff_email;
@@ -272,15 +255,12 @@ export async function POST(req: Request) {
 
       const safeName = String(staff?.full_name || staff?.name || email).replace(/[^\w\-]+/g, '_');
       const path = `${basePath}/payslips/${safeName}_${basePath}.pdf`;
-      const url = await uploadToStorage(path, buf);
+      const url = await uploadToStorage(db, path, buf);
       payslips.push({ email, url });
     }
 
     // Finalize (LOCK) the period
-    const { error: finErr } = await supabaseAdmin.rpc('pay_v2.finalize_period', {
-      p_year: year,
-      p_month: month,
-    });
+    const { error: finErr } = await db.rpc('pay_v2.finalize_period', { p_year: year, p_month: month });
     if (finErr) throw new Error(finErr.message);
 
     return NextResponse.json({ summaryUrl, payslips }, { status: 200 });
