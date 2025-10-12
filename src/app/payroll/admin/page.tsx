@@ -76,6 +76,9 @@ export default function AdminPayrollPage() {
   const [newEarn, setNewEarn] = useState<Record<string, { codeSel: string; code: string; label: string; amount: string }>>({});
   const [newDed, setNewDed] = useState<Record<string, { codeSel: string; code: string; label: string; amount: string }>>({});
 
+  // Memoized pay_v2 client
+  const pg = useMemo(() => supabase.schema('pay_v2'), []);
+
   useEffect(() => {
     let unsub: { data: { subscription: { unsubscribe: () => void } } } | null = null;
     (async () => {
@@ -89,8 +92,7 @@ export default function AdminPayrollPage() {
   const yyyymm = `${year}-${String(month).padStart(2, '0')}`;
 
   const getPeriodId = async (): Promise<string | null> => {
-    const { data, error } = await supabase
-      .schema('pay_v2')
+    const { data, error } = await pg
       .from('periods')
       .select('id')
       .eq('year', year)
@@ -107,8 +109,7 @@ export default function AdminPayrollPage() {
     setLoading(true);
     setMsg(null);
 
-    const { data, error } = await supabase
-      .schema('pay_v2')
+    const { data, error } = await pg
       .from('v_payslip_admin_summary')
       .select('*')
       .eq('year', year)
@@ -154,8 +155,7 @@ export default function AdminPayrollPage() {
       const period_id = await getPeriodId();
       if (!period_id) return;
 
-      const { data, error } = await supabase
-        .schema('pay_v2')
+      const { data, error } = await pg
         .from('items')
         .select('id, kind, code, label, amount')
         .eq('period_id', period_id)
@@ -191,7 +191,7 @@ export default function AdminPayrollPage() {
       const desired = Number(baseInput[staff_email] ?? '0') || 0;
 
       // delete existing BASE lines
-      await supabase.schema('pay_v2')
+      await pg
         .from('items')
         .delete()
         .eq('period_id', period_id)
@@ -199,7 +199,7 @@ export default function AdminPayrollPage() {
         .eq('code', 'BASE');
 
       if (desired !== 0) {
-        const { error } = await supabase.schema('pay_v2')
+        const { error } = await pg
           .from('items')
           .insert({
             period_id,
@@ -213,9 +213,7 @@ export default function AdminPayrollPage() {
       }
 
       // recalc
-      const { error: recalcErr } = await supabase
-        .schema('pay_v2')
-        .rpc('recalc_statutories', { p_year: year, p_month: month });
+      const { error: recalcErr } = await pg.rpc('recalc_statutories', { p_year: year, p_month: month });
       if (recalcErr) setMsg(`Recalc failed: ${recalcErr.message}`);
       else setMsg(`Base updated for ${staff_email}.`);
 
@@ -250,7 +248,7 @@ export default function AdminPayrollPage() {
         return;
       }
 
-      const { error } = await supabase.schema('pay_v2').from('items').insert({
+      const { error } = await pg.from('items').insert({
         period_id,
         staff_email,
         kind,
@@ -261,9 +259,7 @@ export default function AdminPayrollPage() {
       if (error) throw error;
 
       // recalc
-      const { error: recalcErr } = await supabase
-        .schema('pay_v2')
-        .rpc('recalc_statutories', { p_year: year, p_month: month });
+      const { error: recalcErr } = await pg.rpc('recalc_statutories', { p_year: year, p_month: month });
       if (recalcErr) setMsg(`Recalc failed: ${recalcErr.message}`);
 
       await loadSummary();
@@ -278,18 +274,43 @@ export default function AdminPayrollPage() {
   const deleteLine = async (id: string, staff_email: string) => {
     setBusy(true); setMsg(null);
     try {
-      const { error } = await supabase.schema('pay_v2').from('items').delete().eq('id', id);
+      const { error } = await pg.from('items').delete().eq('id', id);
       if (error) throw error;
 
-      const { error: recalcErr } = await supabase
-        .schema('pay_v2')
-        .rpc('recalc_statutories', { p_year: year, p_month: month });
+      const { error: recalcErr } = await pg.rpc('recalc_statutories', { p_year: year, p_month: month });
       if (recalcErr) setMsg(`Recalc failed: ${recalcErr.message}`);
 
       await loadSummary();
       await openEditor(staff_email);
     } catch (e: any) {
       setMsg(`Delete failed: ${e.message ?? e}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // ---------- Admin actions: Sync Absences + Recalc -------------------------
+  const callSyncAbsences = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      const { error: syncErr } = await pg.rpc('sync_absent_deductions', { p_year: year, p_month: month });
+      if (syncErr) { setMsg(`Sync absences failed: ${syncErr.message}`); return; }
+      const { error: recalcErr } = await pg.rpc('recalc_statutories', { p_year: year, p_month: month });
+      if (recalcErr) { setMsg(`Recalc statutories failed: ${recalcErr.message}`); return; }
+      setMsg(`Absences synced & statutories recalculated for ${yyyymm}`);
+      await loadSummary();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const callRecalcOnly = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      const { error } = await pg.rpc('recalc_statutories', { p_year: year, p_month: month });
+      if (error) { setMsg(`Recalc failed: ${error.message}`); return; }
+      setMsg(`Statutories recalculated for ${yyyymm}`);
+      await loadSummary();
     } finally {
       setBusy(false);
     }
@@ -339,6 +360,23 @@ export default function AdminPayrollPage() {
               onChange={(e) => setMonth(Number(e.target.value))}
             />
           </div>
+
+          <button
+            onClick={callSyncAbsences}
+            disabled={loading || busy}
+            className="rounded bg-indigo-600 px-3 py-1.5 text-white hover:bg-indigo-700 disabled:opacity-50"
+          >
+            Sync absences
+          </button>
+
+          <button
+            onClick={callRecalcOnly}
+            disabled={loading || busy}
+            className="rounded bg-emerald-600 px-3 py-1.5 text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            Recalc statutories
+          </button>
+
           <button
             onClick={loadSummary}
             disabled={loading || busy}
