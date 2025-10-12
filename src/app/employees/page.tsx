@@ -3,12 +3,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-type StaffBrief = {
-  display_name: string | null;
-  email: string;
-  salary_basic: number | null;
+type StaffRow = {
+  // from pay_v2.v_staff_with_current_base
+  name: string | null;
+  staff_email: string;
+  basic_salary: number | null;
+  base_in_current_payroll: number | null;
+  mismatched: boolean;
+  // merged from public.staff (for list display only)
   position: string | null;
-  start_date: string | null;    // ISO
+  start_date: string | null; // ISO yyyy-mm-dd
   year_join: number | null;
 };
 
@@ -18,7 +22,7 @@ type StaffFull = {
   name: string | null; // legacy
   nationality: string | null;
   nric: string | null;
-  dob: string | null; // ISO yyyy-mm-dd
+  dob: string | null; // ISO
 
   gender: 'Male' | 'Female' | null;
   race: 'Malay' | 'Chinese' | 'Indian' | 'Other' | null;
@@ -43,8 +47,8 @@ type StaffFull = {
   socso_no: string | null;
   eis_no: string | null;
 
-  basic_salary: number | null;
-  base_salary: number | null;
+  basic_salary: number | null; // drives Payroll BASE
+  base_salary: number | null;  // legacy fallback
 };
 
 function rm(n?: number | null) {
@@ -52,10 +56,17 @@ function rm(n?: number | null) {
   return `RM ${v.toFixed(2)}`;
 }
 
+/** yyyy-mm-dd -> number year */
+function yearFromISO(d?: string | null): number | null {
+  if (!d) return null;
+  const y = Number(String(d).slice(0, 4));
+  return Number.isFinite(y) ? y : null;
+}
+
 export default function EmployeesPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
-  const [rows, setRows] = useState<StaffBrief[]>([]);
+  const [rows, setRows] = useState<StaffRow[]>([]);
   const [q, setQ] = useState('');
 
   // editor
@@ -64,30 +75,65 @@ export default function EmployeesPage() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  // auth listener (TS-safe)
+  // auth listener (null-safe)
   useEffect(() => {
-    let cleanup: (() => void) | undefined;
+    let unsub: (() => void) | undefined;
     (async () => {
       const { data } = await supabase.auth.getSession();
       setAuthed(!!data.session);
-      const sub = supabase.auth.onAuthStateChange((_e) => {
-        supabase.auth.getSession().then(({ data }) => setAuthed(!!data.session));
+      const o = supabase.auth.onAuthStateChange((_e, session) => {
+        setAuthed(!!session);
       });
-      cleanup = () => sub.data.subscription.unsubscribe();
+      unsub = () => o.data.subscription.unsubscribe();
     })();
-    return () => cleanup && cleanup();
+    return () => { if (unsub) unsub(); };
   }, []);
 
+  /** Load list using the payroll view + merge minimal staff fields (position, start_date) */
   const load = async () => {
     setLoading(true);
     setMsg(null);
-    const { data, error } = await supabase
-      .from('v_staff_brief')
-      .select('*')
-      .order('display_name', { ascending: true });
-    if (error) setMsg(`Load failed: ${error.message}`);
-    setRows((data ?? []) as StaffBrief[]);
-    setLoading(false);
+
+    try {
+      // A) live payroll-base view
+      const { data: vrows, error: verr } = await supabase
+        .schema('pay_v2')
+        .from('v_staff_with_current_base')
+        .select('*');
+      if (verr) throw verr;
+
+      // B) minimal staff info to show position & year joined
+      const { data: srows, error: serr } = await supabase
+        .from('staff')
+        .select('email, position, start_date');
+      if (serr) throw serr;
+
+      const sMap = new Map<string, { position: string | null; start_date: string | null }>();
+      (srows ?? []).forEach((s) => sMap.set(s.email, { position: s.position ?? null, start_date: s.start_date ?? null }));
+
+      const merged: StaffRow[] = (vrows ?? []).map((r: any) => {
+        const extra = sMap.get(r.staff_email) ?? { position: null, start_date: null };
+        return {
+          name: r.name ?? null,
+          staff_email: r.staff_email,
+          basic_salary: toNumOrNull(r.basic_salary),
+          base_in_current_payroll: toNumOrNull(r.base_in_current_payroll),
+          mismatched: !!r.mismatched,
+          position: extra.position,
+          start_date: extra.start_date,
+          year_join: yearFromISO(extra.start_date),
+        };
+      });
+
+      // sort by name
+      merged.sort((a, b) => (a.name ?? a.staff_email).localeCompare(b.name ?? b.staff_email));
+      setRows(merged);
+    } catch (e: any) {
+      setMsg(`Load failed: ${e.message ?? e}`);
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { if (authed) load(); }, [authed]);
@@ -96,8 +142,8 @@ export default function EmployeesPage() {
     const term = q.trim().toLowerCase();
     if (!term) return rows;
     return rows.filter(r =>
-      (r.display_name ?? '').toLowerCase().includes(term) ||
-      r.email.toLowerCase().includes(term) ||
+      (r.name ?? '').toLowerCase().includes(term) ||
+      r.staff_email.toLowerCase().includes(term) ||
       (r.position ?? '').toLowerCase().includes(term)
     );
   }, [rows, q]);
@@ -117,38 +163,62 @@ export default function EmployeesPage() {
   const save = async () => {
     if (!model) return;
     setSaving(true); setMsg(null);
-    // derive canonical full_name & salary: keep your existing rules
-    const payload = {
-      ...model,
-      // normalize empty strings -> nulls for DB cleanliness
-      full_name: emptyToNull(model.full_name) ?? emptyToNull(model.name),
-      nationality: emptyToNull(model.nationality),
-      nric: emptyToNull(model.nric),
-      dob: emptyToNull(model.dob),
-      phone: emptyToNull(model.phone),
-      address: emptyToNull(model.address),
-      emergency_name: emptyToNull(model.emergency_name),
-      emergency_phone: emptyToNull(model.emergency_phone),
-      emergency_relationship: emptyToNull(model.emergency_relationship),
-      salary_payment_method: emptyToNull(model.salary_payment_method),
-      bank_name: emptyToNull(model.bank_name),
-      bank_account_name: emptyToNull(model.bank_account_name),
-      bank_account_no: emptyToNull(model.bank_account_no),
-      position: emptyToNull(model.position),
-      start_date: emptyToNull(model.start_date),
-      epf_no: emptyToNull(model.epf_no),
-      socso_no: emptyToNull(model.socso_no),
-      eis_no: emptyToNull(model.eis_no),
-    };
+    try {
+      // normalize payload
+      const payload = {
+        ...model,
+        full_name: emptyToNull(model.full_name) ?? emptyToNull(model.name),
+        nationality: emptyToNull(model.nationality),
+        nric: emptyToNull(model.nric),
+        dob: emptyToNull(model.dob),
+        phone: emptyToNull(model.phone),
+        address: emptyToNull(model.address),
+        emergency_name: emptyToNull(model.emergency_name),
+        emergency_phone: emptyToNull(model.emergency_phone),
+        emergency_relationship: emptyToNull(model.emergency_relationship),
+        salary_payment_method: emptyToNull(model.salary_payment_method),
+        bank_name: emptyToNull(model.bank_name),
+        bank_account_name: emptyToNull(model.bank_account_name),
+        bank_account_no: emptyToNull(model.bank_account_no),
+        position: emptyToNull(model.position),
+        start_date: emptyToNull(model.start_date),
+        epf_no: emptyToNull(model.epf_no),
+        socso_no: emptyToNull(model.socso_no),
+        eis_no: emptyToNull(model.eis_no),
+      };
 
-    const { error } = await supabase
-      .from('staff')
-      .update(payload)
-      .eq('email', model.email);
+      // 1) Save staff profile
+      const { error: upErr } = await supabase
+        .from('staff')
+        .update(payload)
+        .eq('email', model.email);
+      if (upErr) throw upErr;
 
-    if (error) setMsg(`Save failed: ${error.message}`);
-    else { setMsg('Saved.'); await load(); }
-    setSaving(false);
+      // 2) Get latest payroll period
+      const { data: periodRow, error: perErr } = await supabase
+        .schema('pay_v2')
+        .from('periods')
+        .select('year, month')
+        .order('year', { ascending: false })
+        .order('month', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (perErr) throw perErr;
+      if (!periodRow) throw new Error('No payroll periods found');
+
+      // 3) Sync staff.basic_salary -> BASE items for that month + recompute statutories
+      // (this updates Payroll page automatically)
+      const { error: syncErr } = await supabase
+        .rpc('sync_base_items', { p_year: periodRow.year, p_month: periodRow.month });
+      if (syncErr) throw syncErr;
+
+      setMsg('Saved. Basic Salary synced to Payroll and EPF/SOCSO/EIS recalculated.');
+      await load(); // refresh list (mismatch pill, amounts)
+    } catch (e: any) {
+      setMsg(`Save failed: ${e.message ?? e}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
   function closeEditor() {
@@ -168,7 +238,7 @@ export default function EmployeesPage() {
         <h1 className="text-2xl font-semibold">Employees</h1>
         <div className="ml-auto">
           <input
-            className="rounded border px-3 py-2 w-72"
+            className="w-72 rounded border px-3 py-2"
             placeholder="Search name / email / position"
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -195,21 +265,31 @@ export default function EmployeesPage() {
             </thead>
             <tbody>
               {filtered.map(r => (
-                <tr key={r.email} className="hover:bg-gray-50">
+                <tr key={r.staff_email} className="hover:bg-gray-50">
                   <td className="border-b px-3 py-2">
                     <button className="text-sky-700 hover:underline"
-                      onClick={() => openEditor(r.email)}>
-                      {r.display_name ?? r.email}
+                      onClick={() => openEditor(r.staff_email)}>
+                      {r.name ?? r.staff_email}
                     </button>
                   </td>
-                  <td className="border-b px-3 py-2">{r.email}</td>
-                  <td className="border-b px-3 py-2 text-right">{rm(r.salary_basic)}</td>
+                  <td className="border-b px-3 py-2">{r.staff_email}</td>
+                  <td className="border-b px-3 py-2 text-right align-top">
+                    <div>{rm(r.basic_salary)}</div>
+                    <div className="mt-0.5 text-xs text-gray-500">
+                      Payroll BASE: <b>{rm(r.base_in_current_payroll)}</b>
+                      {r.mismatched ? (
+                        <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-amber-800">Not synced</span>
+                      ) : (
+                        <span className="ml-2 rounded bg-emerald-100 px-2 py-0.5 text-emerald-800">In sync</span>
+                      )}
+                    </div>
+                  </td>
                   <td className="border-b px-3 py-2">{r.position ?? '—'}</td>
-                  <td className="border-b px-3 py-2">{r.year_join ?? (r.start_date?.slice(0,4) ?? '—')}</td>
+                  <td className="border-b px-3 py-2">{r.year_join ?? (yearFromISO(r.start_date) ?? '—')}</td>
                   <td className="border-b px-3 py-2 text-right">
                     <button
                       className="rounded border px-3 py-1.5 hover:bg-gray-50"
-                      onClick={() => openEditor(r.email)}
+                      onClick={() => openEditor(r.staff_email)}
                     >
                       Edit
                     </button>
@@ -224,7 +304,7 @@ export default function EmployeesPage() {
         )}
       </section>
 
-      {/* Drawer / Modal editor */}
+      {/* Drawer / Modal editor (FULL form preserved) */}
       {openEmail && model && (
         <div className="fixed inset-0 z-40 bg-black/40" onClick={(e) => { if (e.target === e.currentTarget) closeEditor(); }}>
           <div className="absolute right-0 top-0 h-full w-[min(720px,92vw)] overflow-y-auto bg-white shadow-xl">
@@ -285,8 +365,8 @@ export default function EmployeesPage() {
                 <Grid3>
                   <Text label="Position" value={model.position ?? ''} onChange={v => setModel(m => ({...m!, position: v}))} />
                   <DateInput label="Start date" value={model.start_date ?? ''} onChange={v => setModel(m => ({...m!, start_date: v}))} />
-                  <Money label="Basic salary (preferred)" value={num(model.basic_salary)} onChange={v => setModel(m => ({...m!, basic_salary: v}))} />
-                  <Money label="Base salary (fallback)" value={num(model.base_salary)} onChange={v => setModel(m => ({...m!, base_salary: v}))} />
+                  <Money label="Basic salary (drives Payroll BASE)" value={num(model.basic_salary)} onChange={v => setModel(m => ({...m!, basic_salary: v}))} />
+                  <Money label="Base salary (legacy fallback)" value={num(model.base_salary)} onChange={v => setModel(m => ({...m!, base_salary: v}))} />
                 </Grid3>
               </Section>
 
@@ -320,6 +400,11 @@ export default function EmployeesPage() {
 /* ---------- tiny UI helpers ---------- */
 function emptyToNull(v: any) { return v === '' ? null : v; }
 function num(v: any): number { return typeof v === 'number' ? v : (v ? Number(v) : 0); }
+function toNumOrNull(v: any): number | null {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
