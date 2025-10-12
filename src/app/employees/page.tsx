@@ -44,7 +44,7 @@ type StaffFull = {
   socso_no: string | null;
   eis_no: string | null;
 
-  basic_salary: number | null;   // << single salary field
+  basic_salary: number | null;   // single salary field
 };
 
 function rm(n?: number | null) {
@@ -110,13 +110,15 @@ export default function EmployeesPage() {
       .eq('email', email)
       .maybeSingle();
     if (error) { setMsg(`Load employee failed: ${error.message}`); setModel(null); return; }
-    setModel(data as StaffFull);
+    const row = data as StaffFull;
+    setModel(row);
   };
 
   const save = async () => {
     if (!model) return;
     setSaving(true); setMsg(null);
     try {
+      // Normalize whitespace → nulls where appropriate
       const payload = {
         ...model,
         full_name: emptyToNull(model.full_name) ?? emptyToNull(model.name),
@@ -140,27 +142,29 @@ export default function EmployeesPage() {
       };
 
       // 1) Save to staff (single source of truth)
-      const { error: upErr } = await supabase.from('staff').update(payload).eq('email', model.email);
+      const { error: upErr } = await supabase
+        .from('staff')
+        .update(payload)
+        .eq('email', model.email);
       if (upErr) throw upErr;
 
-      // 2) Sync latest payroll period from Employees.basic_salary -> BASE
+      // 2) Find latest OPEN payroll period
       const { data: period, error: perErr } = await supabase
         .schema('pay_v2')
         .from('periods')
         .select('year, month')
+        .eq('status', 'OPEN')
         .order('year', { ascending: false })
         .order('month', { ascending: false })
         .limit(1)
         .maybeSingle();
       if (perErr) throw perErr;
 
+      // 3) Push BASE + recalc for latest OPEN period so payroll reflects the change
       if (period?.year && period?.month) {
-        const { error: syncErr } = await supabase
-          .schema('pay_v2')
-          .rpc('sync_base_items', { p_year: period.year, p_month: period.month });
-        if (syncErr) throw syncErr;
-
-        // recalc is inside sync_base_items; calling explicitly is harmless if desired:
+        const s1 = await supabase.schema('pay_v2').rpc('sync_base_items', { p_year: period.year, p_month: period.month });
+        if (s1.error) throw s1.error;
+        // recalc is called inside sync_base_items; calling again is harmless
         await supabase.schema('pay_v2').rpc('recalc_statutories', { p_year: period.year, p_month: period.month });
       }
 
@@ -312,7 +316,7 @@ export default function EmployeesPage() {
                 <Grid3>
                   <Text label="EPF No" value={model.epf_no ?? ''} onChange={v => setModel(m => ({...m!, epf_no: v}))} />
                   <Text label="SOCSO No" value={model.socso_no ?? ''} onChange={v => setModel(m => ({...m!, socso_no: v}))} />
-                  <Text label="EIS No" value={model.eis_no ?? ''} onChange={v => setModel(m => ({...m!, eis_no: v}))} />
+                  <Text label="EIS No" value={model.eis_no ?? ''} onChange={v => setModel(m => setModel(m => ({...m!, eis_no: v})) as any)} />
                 </Grid3>
               </Section>
 
@@ -364,7 +368,8 @@ function DateInput({ label, value, onChange }: { label:string; value:string; onC
   return (
     <div>
       <label className="mb-1 block text-xs text-gray-600">{label}</label>
-      <input type="date" className="w-full rounded border px-2 py-1" value={value || ''} onChange={e=>onChange(e.target.value)} />
+      <input type="date" className="w-full rounded border px-2 py-1"
+             value={value || ''} onChange={e=>onChange(e.target.value)} />
     </div>
   );
 }
