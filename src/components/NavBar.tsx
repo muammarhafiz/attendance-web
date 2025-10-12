@@ -47,15 +47,16 @@ export default function NavBar() {
   return (
     <nav className="sticky top-0 z-40 w-full border-b border-gray-200 bg-white/90 backdrop-blur">
       <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
+        // src/components/NavBar.tsx  (add one link)
+
         <div className="flex items-center gap-6">
-          <Link href="/" className={linkCls('/')}>Check-in</Link>
-          <Link href="/today" className={linkCls('/today')}>Today</Link>
-          <Link href="/report" className={linkCls('/report')}>Report</Link>
-          <Link href="/manager" className={linkCls('/manager')}>Manager</Link>
-          <Link href="/offday" className={linkCls('/offday')}>Offday/MC</Link>
-          <Link href="/payroll/admin" className={linkCls('/payroll')}>Payroll</Link>
-          {/* NEW: Employees */}
-          <Link href="/employees" className={linkCls('/employees')}>Employees</Link>
+          <Link href="/" className="text-sm font-semibold text-gray-900">Check-in</Link>
+          <Link href="/today" className="text-sm font-semibold text-gray-700 hover:text-gray-900">Today</Link>
+          <Link href="/report" className="text-sm font-semibold text-gray-700 hover:text-gray-900">Report</Link>
+          <Link href="/manager" className="text-sm font-semibold text-gray-700 hover:text-gray-900">Manager</Link>
+          <Link href="/offday" className="text-sm font-semibold text-gray-700 hover:text-gray-900">Offday/MC</Link>
+          <Link href="/payroll/admin" className="text-sm font-semibold text-gray-700 hover:text-gray-900">Payroll</Link>
+          <Link href="/payroll/records" className="text-sm font-semibold text-gray-700 hover:text-gray-900">Payroll Records</Link>
         </div>
 
         <div className="flex items-center gap-3">
