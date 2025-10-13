@@ -128,7 +128,7 @@ export default function PayrollV2Page() {
 
       // 3) absent days per staff (from Report via RPC)
       const { data: absRows, error: aErr } = await supabase.rpc(
-  'pay_v2.absent_days_from_report',
+  'absent_days_from_report',
   { p_year: year, p_month: month }
 );
 
