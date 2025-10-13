@@ -105,29 +105,33 @@ export default function PayrollV2Page() {
     try {
       // 1) period meta
       const { data: periods, error: perr } = await supabase
-        .from('pay_v2.periods')
-        .select('*')
-        .eq('year', year)
-        .eq('month', month)
-        .limit(1);
+  .schema('pay_v2')
+  .from('periods')
+  .select('*')
+  .eq('year', year)
+  .eq('month', month)
+  .limit(1);
       if (perr) throw perr;
       setPeriod(periods?.[0] ?? null);
 
       // 2) summary rows
       const { data: rows, error: sErr } = await supabase
-        .from('pay_v2.v_payslip_admin_summary')
-        .select('*')
-        .eq('year', year)
-        .eq('month', month)
-        .order('staff_name', { ascending: true });
+  .schema('pay_v2')
+  .from('v_payslip_admin_summary')
+  .select('*')
+  .eq('year', year)
+  .eq('month', month)
+  .order('staff_name', { ascending: true });
+
       if (sErr) throw sErr;
       setSummary(rows ?? []);
 
       // 3) absent days per staff (from Report via RPC)
       const { data: absRows, error: aErr } = await supabase.rpc(
-        'absent_days_from_report',
-        { p_year: year, p_month: month }
-      );
+  'pay_v2.absent_days_from_report',
+  { p_year: year, p_month: month }
+);
+
       if (aErr) throw aErr;
       const map: Record<string, number> = {};
       (absRows ?? []).forEach(
