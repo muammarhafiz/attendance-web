@@ -2,8 +2,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
+import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -32,19 +32,19 @@ type PeriodRow = {
   id: string;
   year: number;
   month: number;
-  status: 'OPEN' | 'LOCKED' | 'FINALIZED' | string;
+  status: 'OPEN' | 'LOCKED' | 'FINALIZED' | null; // keep narrow (no arbitrary string)
   locked_at: string | null;
-  // optional columns; shown if you later add them
+  // optional fields if you add them later
   finalized_at?: string | null;
   pdf_summary_path?: string | null;
   pdf_payslips_prefix?: string | null;
 };
 
 export default function PayrollV2Page() {
-  const [isAdmin, setIsAdmin] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
-  // default to KL year/month
+  // default Year/Month in KL
   const nowKL = useMemo(() => {
     const d = new Date(
       new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' })
@@ -59,19 +59,23 @@ export default function PayrollV2Page() {
   const [summary, setSummary] = useState<SummaryRow[]>([]);
   const [absent, setAbsent] = useState<Record<string, number>>({});
   const [period, setPeriod] = useState<PeriodRow | null>(null);
+
+  // ui feedback
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
+  // auth + admin check
   useEffect(() => {
     let unsub: { unsubscribe: () => void } | null = null;
 
     const init = async () => {
-      const { data: u } = await supabase.auth.getUser();
-      const me = u.user?.email ?? null;
+      const { data } = await supabase.auth.getUser();
+      const me = data.user?.email ?? null;
       setEmail(me);
+
       if (me) {
-        const { data, error } = await supabase.rpc('is_admin');
-        setIsAdmin(Boolean(data) && !error);
+        const { data: isAdm, error } = await supabase.rpc('is_admin');
+        setIsAdmin(Boolean(isAdm) && !error);
       } else {
         setIsAdmin(false);
       }
@@ -79,7 +83,7 @@ export default function PayrollV2Page() {
 
     init();
 
-    const { data } = supabase.auth.onAuthStateChange((_e, session) => {
+    const sub = supabase.auth.onAuthStateChange((_e, session) => {
       const me = session?.user?.email ?? null;
       setEmail(me);
       if (me) {
@@ -90,7 +94,7 @@ export default function PayrollV2Page() {
         setIsAdmin(false);
       }
     });
-    unsub = data?.subscription ?? null;
+    unsub = sub.data?.subscription ?? null;
 
     return () => unsub?.unsubscribe();
   }, []);
@@ -109,7 +113,7 @@ export default function PayrollV2Page() {
       if (perr) throw perr;
       setPeriod(periods?.[0] ?? null);
 
-      // 2) summary grid
+      // 2) summary rows
       const { data: rows, error: sErr } = await supabase
         .from('pay_v2.v_payslip_admin_summary')
         .select('*')
@@ -119,14 +123,14 @@ export default function PayrollV2Page() {
       if (sErr) throw sErr;
       setSummary(rows ?? []);
 
-      // 3) absent days per staff (from report)
-      const { data: absData, error: aErr } = await supabase.rpc(
+      // 3) absent days per staff (from Report via RPC)
+      const { data: absRows, error: aErr } = await supabase.rpc(
         'absent_days_from_report',
         { p_year: year, p_month: month }
       );
       if (aErr) throw aErr;
       const map: Record<string, number> = {};
-      (absData ?? []).forEach(
+      (absRows ?? []).forEach(
         (r: { staff_email: string; days_absent: number }) => {
           map[r.staff_email] = r.days_absent;
         }
@@ -144,14 +148,13 @@ export default function PayrollV2Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin, year, month]);
 
-  const disabledWrites = period?.status && period.status !== 'OPEN';
+  // strictly boolean for React disabled=
+  const disabledWrites: boolean = period?.status ? period.status !== 'OPEN' : false;
 
-  // actions
-  const actionWrap = async (label: string, fn: () => Promise<any>) => {
+  const withMsg = async (label: string, fn: () => Promise<void>) => {
+    setMsg(`${label}…`);
     setErr(null);
-    setMsg(null);
     try {
-      setMsg(`${label}…`);
       await fn();
       setMsg(`${label} done.`);
       await loadData();
@@ -160,8 +163,9 @@ export default function PayrollV2Page() {
     }
   };
 
+  // actions (reuse your existing RPCs)
   const build = () =>
-    actionWrap('Build period', async () => {
+    withMsg('Build period', async () => {
       const { error } = await supabase.rpc('build_period', {
         p_year: year,
         p_month: month,
@@ -170,7 +174,7 @@ export default function PayrollV2Page() {
     });
 
   const syncBase = () =>
-    actionWrap('Sync base items', async () => {
+    withMsg('Sync base items', async () => {
       const { error } = await supabase.rpc('sync_base_items', {
         p_year: year,
         p_month: month,
@@ -179,7 +183,7 @@ export default function PayrollV2Page() {
     });
 
   const syncAbsent = () =>
-    actionWrap('Sync absent deductions', async () => {
+    withMsg('Sync absent deductions', async () => {
       const { error } = await supabase.rpc('sync_absent_deductions', {
         p_year: year,
         p_month: month,
@@ -188,7 +192,7 @@ export default function PayrollV2Page() {
     });
 
   const recalc = () =>
-    actionWrap('Recalculate statutories', async () => {
+    withMsg('Recalculate statutories', async () => {
       const { error } = await supabase.rpc('recalc_statutories', {
         p_year: year,
         p_month: month,
@@ -197,7 +201,7 @@ export default function PayrollV2Page() {
     });
 
   const lock = () =>
-    actionWrap('Lock period', async () => {
+    withMsg('Lock period', async () => {
       const { error } = await supabase.rpc('lock_period', {
         p_year: year,
         p_month: month,
@@ -206,7 +210,7 @@ export default function PayrollV2Page() {
     });
 
   const unlock = () =>
-    actionWrap('Unlock period', async () => {
+    withMsg('Unlock period', async () => {
       const { error } = await supabase.rpc('unlock_period', {
         p_year: year,
         p_month: month,
@@ -215,8 +219,8 @@ export default function PayrollV2Page() {
     });
 
   const finalize = () =>
-    actionWrap('Finalize (generate PDFs)', async () => {
-      // Uses your existing API route that does PDFs + finalize
+    withMsg('Finalize (generate PDFs)', async () => {
+      // Your existing API should generate PDFs and update DB
       const res = await fetch('/api/payroll/finalize', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -249,6 +253,8 @@ export default function PayrollV2Page() {
   }
 
   const monthStr = String(month).padStart(2, '0');
+  const fmt = (v: any) =>
+    typeof v === 'number' ? v.toFixed(2) : Number(v ?? 0).toFixed(2);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
@@ -272,8 +278,10 @@ export default function PayrollV2Page() {
               min={1}
               max={12}
               value={month}
-              onChange={(e) =>
-                setMonth(Math.max(1, Math.min(12, parseInt(e.target.value || '0', 10))))}
+              onChange={(e) => {
+                const v = parseInt(e.target.value || '0', 10);
+                setMonth(Math.min(12, Math.max(1, isNaN(v) ? month : v)));
+              }}
               className="w-20 rounded-md border px-2 py-1 text-sm"
             />
           </div>
@@ -286,7 +294,7 @@ export default function PayrollV2Page() {
         </div>
       </div>
 
-      {/* Status & actions */}
+      {/* status + actions */}
       <div className="mb-4 flex items-center justify-between rounded-lg border p-3">
         <div className="flex items-center gap-3">
           <span className="text-sm text-gray-600">
@@ -294,57 +302,100 @@ export default function PayrollV2Page() {
           </span>
           <span className="text-sm">
             Status:{' '}
-            <span className={`inline-flex rounded-md px-2 py-0.5 text-xs font-semibold
-              ${period?.status === 'OPEN' ? 'bg-emerald-100 text-emerald-800'
-                : period?.status === 'LOCKED' ? 'bg-amber-100 text-amber-800'
-                : period?.status === 'FINALIZED' ? 'bg-blue-100 text-blue-800'
-                : 'bg-gray-100 text-gray-800'}`}>
+            <span
+              className={`inline-flex rounded-md px-2 py-0.5 text-xs font-semibold ${
+                period?.status === 'OPEN'
+                  ? 'bg-emerald-100 text-emerald-800'
+                  : period?.status === 'LOCKED'
+                  ? 'bg-amber-100 text-amber-800'
+                  : period?.status === 'FINALIZED'
+                  ? 'bg-blue-100 text-blue-800'
+                  : 'bg-gray-100 text-gray-800'
+              }`}
+            >
               {period?.status ?? '—'}
             </span>
           </span>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button onClick={build} disabled={disabledWrites}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium ${disabledWrites ? 'bg-gray-100 text-gray-400' : 'bg-white border hover:bg-gray-50'}`}>
+          <button
+            onClick={build}
+            disabled={disabledWrites}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+              disabledWrites
+                ? 'bg-gray-100 text-gray-400'
+                : 'bg-white border hover:bg-gray-50'
+            }`}
+          >
             Build
           </button>
-          <button onClick={syncBase} disabled={disabledWrites}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium ${disabledWrites ? 'bg-gray-100 text-gray-400' : 'bg-white border hover:bg-gray-50'}`}>
+          <button
+            onClick={syncBase}
+            disabled={disabledWrites}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+              disabledWrites
+                ? 'bg-gray-100 text-gray-400'
+                : 'bg-white border hover:bg-gray-50'
+            }`}
+          >
             Sync Base
           </button>
-          <button onClick={syncAbsent} disabled={disabledWrites}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium ${disabledWrites ? 'bg-gray-100 text-gray-400' : 'bg-white border hover:bg-gray-50'}`}>
+          <button
+            onClick={syncAbsent}
+            disabled={disabledWrites}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+              disabledWrites
+                ? 'bg-gray-100 text-gray-400'
+                : 'bg-white border hover:bg-gray-50'
+            }`}
+          >
             Sync Absent
           </button>
-          <button onClick={recalc} disabled={disabledWrites}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium ${disabledWrites ? 'bg-gray-100 text-gray-400' : 'bg-white border hover:bg-gray-50'}`}>
+          <button
+            onClick={recalc}
+            disabled={disabledWrites}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+              disabledWrites
+                ? 'bg-gray-100 text-gray-400'
+                : 'bg-white border hover:bg-gray-50'
+            }`}
+          >
             Recalc Statutories
           </button>
           <span className="mx-1 h-5 w-px bg-gray-300" />
-          <button onClick={lock}
-            className="rounded-md border bg-white px-3 py-1.5 text-sm font-medium hover:bg-gray-50">
+          <button
+            onClick={lock}
+            className="rounded-md border bg-white px-3 py-1.5 text-sm font-medium hover:bg-gray-50"
+          >
             Lock
           </button>
-          <button onClick={unlock}
-            className="rounded-md border bg-white px-3 py-1.5 text-sm font-medium hover:bg-gray-50">
+          <button
+            onClick={unlock}
+            className="rounded-md border bg-white px-3 py-1.5 text-sm font-medium hover:bg-gray-50"
+          >
             Unlock
           </button>
-          <button onClick={finalize}
-            className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700">
-            Finalize & Generate PDFs
+          <button
+            onClick={finalize}
+            className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            Finalize &amp; Generate PDFs
           </button>
         </div>
       </div>
 
-      {/* Notices */}
       {(msg || err) && (
-        <div className={`mb-4 rounded-md p-3 text-sm ${err ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'}`}>
+        <div
+          className={`mb-4 rounded-md p-3 text-sm ${
+            err ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'
+          }`}
+        >
           {err || msg}
         </div>
       )}
 
-      {/* Data table */}
+      {/* summary table */}
       <div className="overflow-x-auto rounded-lg border">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead className="bg-gray-50">
@@ -364,8 +415,6 @@ export default function PayrollV2Page() {
           <tbody className="divide-y divide-gray-100">
             {summary.map((r) => {
               const a = absent[r.staff_email] ?? 0;
-              const fmt = (v: any) =>
-                typeof v === 'number' ? v.toFixed(2) : Number(v ?? 0).toFixed(2);
               return (
                 <tr key={r.staff_email}>
                   <td className="px-3 py-2">{r.staff_name ?? r.staff_email}</td>
@@ -393,10 +442,9 @@ export default function PayrollV2Page() {
         </table>
       </div>
 
-      {/* Hint about PDFs (uses your existing bucket/UI) */}
       <p className="mt-3 text-xs text-gray-500">
-        The Finalize action uses your existing <code>/api/payroll/finalize</code> endpoint to generate and upload
-        a summary PDF and payslips to your Supabase Storage (<code>payroll</code> bucket).
+        Finalize uses your existing <code>/api/payroll/finalize</code> endpoint to generate and upload PDFs to
+        your Supabase Storage bucket.
       </p>
     </div>
   );
