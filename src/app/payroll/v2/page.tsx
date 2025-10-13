@@ -32,19 +32,34 @@ type PeriodRow = {
   id: string;
   year: number;
   month: number;
-  status: 'OPEN' | 'LOCKED' | 'FINALIZED' | null; // keep narrow (no arbitrary string)
+  status: 'OPEN' | 'LOCKED' | 'FINALIZED' | null;
   locked_at: string | null;
-  // optional fields if you add them later
   finalized_at?: string | null;
   pdf_summary_path?: string | null;
   pdf_payslips_prefix?: string | null;
+};
+
+type DebugEntry = {
+  id: string;
+  when: string;
+  kind: 'TABLE' | 'VIEW' | 'RPC' | 'HTTP';
+  label: string;              // human-friendly name e.g. "RPC absent_days_from_report"
+  profile?: string;           // postgrest profile/schema used by the client
+  endpoint?: string;          // /rest/v1/rpc/..., /rest/v1/...
+  params?: Record<string, any>;
+  httpStatus?: number;
+  errorCode?: string | null;
+  message?: string | null;
+  details?: string | null;
+  hint?: string | null;
+  raw?: any;                  // original error obj (safe to stringify)
 };
 
 export default function PayrollV2Page() {
   const [email, setEmail] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
 
-  // default Year/Month in KL
+  // KL default period
   const nowKL = useMemo(() => {
     const d = new Date(
       new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' })
@@ -60,11 +75,22 @@ export default function PayrollV2Page() {
   const [absent, setAbsent] = useState<Record<string, number>>({});
   const [period, setPeriod] = useState<PeriodRow | null>(null);
 
-  // ui feedback
+  // ui feedback + debug
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [debugOpen, setDebugOpen] = useState(false);
+  const [debug, setDebug] = useState<DebugEntry[]>([]);
 
-  // auth + admin check
+  const addDebug = (entry: Omit<DebugEntry, 'id' | 'when'>) => {
+    const e: DebugEntry = {
+      id: crypto.randomUUID(),
+      when: new Date().toISOString(),
+      ...entry,
+    };
+    setDebug((prev) => [e, ...prev].slice(0, 50)); // keep last 50
+  };
+
+  // auth + admin
   useEffect(() => {
     let unsub: { unsubscribe: () => void } | null = null;
 
@@ -72,7 +98,6 @@ export default function PayrollV2Page() {
       const { data } = await supabase.auth.getUser();
       const me = data.user?.email ?? null;
       setEmail(me);
-
       if (me) {
         const { data: isAdm, error } = await supabase.rpc('is_admin');
         setIsAdmin(Boolean(isAdm) && !error);
@@ -103,45 +128,107 @@ export default function PayrollV2Page() {
     setLoading(true);
     setErr(null);
     try {
-      // 1) period meta
-      const { data: periods, error: perr } = await supabase
-  .schema('pay_v2')
-  .from('periods')
-  .select('*')
-  .eq('year', year)
-  .eq('month', month)
-  .limit(1);
-      if (perr) throw perr;
-      setPeriod(periods?.[0] ?? null);
-
-      // 2) summary rows
-      const { data: rows, error: sErr } = await supabase
-  .schema('pay_v2')
-  .from('v_payslip_admin_summary')
-  .select('*')
-  .eq('year', year)
-  .eq('month', month)
-  .order('staff_name', { ascending: true });
-
-      if (sErr) throw sErr;
-      setSummary(rows ?? []);
-
-      // 3) absent days per staff (from Report via RPC)
-      const { data: absRows, error: aErr } = await supabase.rpc(
-  'absent_days_from_report',
-  { p_year: year, p_month: month }
-);
-
-      if (aErr) throw aErr;
-      const map: Record<string, number> = {};
-      (absRows ?? []).forEach(
-        (r: { staff_email: string; days_absent: number }) => {
-          map[r.staff_email] = r.days_absent;
+      // 1) period (TABLE) — profile: pay_v2
+      {
+        const profile = 'pay_v2';
+        const { data: periods, error } = await supabase
+          .schema(profile)
+          .from('periods')
+          .select('*')
+          .eq('year', year)
+          .eq('month', month)
+          .limit(1);
+        if (error) {
+          setPeriod(null);
+          addDebug({
+            kind: 'TABLE',
+            label: 'TABLE pay_v2.periods',
+            profile,
+            endpoint: '/rest/v1/periods',
+            params: { year, month },
+            errorCode: (error as any)?.code ?? null,
+            message: error.message ?? null,
+            details: (error as any)?.details ?? null,
+            hint: (error as any)?.hint ?? null,
+            raw: error,
+          });
+        } else {
+          setPeriod(periods?.[0] ?? null);
         }
-      );
-      setAbsent(map);
+      }
+
+      // 2) summary (VIEW) — profile: pay_v2
+      {
+        const profile = 'pay_v2';
+        const { data: rows, error } = await supabase
+          .schema(profile)
+          .from('v_payslip_admin_summary')
+          .select('*')
+          .eq('year', year)
+          .eq('month', month)
+          .order('staff_name', { ascending: true });
+        if (error) {
+          setSummary([]);
+          addDebug({
+            kind: 'VIEW',
+            label: 'VIEW pay_v2.v_payslip_admin_summary',
+            profile,
+            endpoint: '/rest/v1/v_payslip_admin_summary',
+            params: { year, month },
+            errorCode: (error as any)?.code ?? null,
+            message: error.message ?? null,
+            details: (error as any)?.details ?? null,
+            hint: (error as any)?.hint ?? null,
+            raw: error,
+          });
+        } else {
+          setSummary(rows ?? []);
+        }
+      }
+
+      // 3) absent days (RPC) — profile: public (default for rpc unless overridden)
+      {
+        const profile = 'public';
+        const fn = 'absent_days_from_report';
+        const { data: absRows, error } = await supabase.rpc(fn, {
+          p_year: year,
+          p_month: month,
+        });
+        if (error) {
+          setAbsent({});
+          addDebug({
+            kind: 'RPC',
+            label: `RPC ${fn}`,
+            profile,
+            endpoint: `/rest/v1/rpc/${fn}`,
+            params: { p_year: year, p_month: month },
+            errorCode: (error as any)?.code ?? null,
+            message: error.message ?? null,
+            details: (error as any)?.details ?? null,
+            hint: (error as any)?.hint ?? null,
+            raw: error,
+          });
+          // show short banner once
+          setErr(error.message ?? 'RPC failed');
+        } else {
+          const map: Record<string, number> = {};
+          (absRows ?? []).forEach(
+            (r: { staff_email: string; days_absent: number }) => {
+              map[r.staff_email] = r.days_absent;
+            }
+          );
+          setAbsent(map);
+        }
+      }
     } catch (e: any) {
+      // fallback catch
       setErr(e?.message ?? 'Failed to load data');
+      addDebug({
+        kind: 'HTTP',
+        label: 'loadData unknown error',
+        message: e?.message ?? String(e),
+        raw: e,
+      });
     } finally {
       setLoading(false);
     }
@@ -152,7 +239,6 @@ export default function PayrollV2Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin, year, month]);
 
-  // strictly boolean for React disabled=
   const disabledWrites: boolean = period?.status ? period.status !== 'OPEN' : false;
 
   const withMsg = async (label: string, fn: () => Promise<void>) => {
@@ -164,17 +250,37 @@ export default function PayrollV2Page() {
       await loadData();
     } catch (e: any) {
       setErr(`${label} failed: ${e?.message ?? e}`);
+      addDebug({
+        kind: 'HTTP',
+        label,
+        message: e?.message ?? String(e),
+        raw: e,
+      });
     }
   };
 
-  // actions (reuse your existing RPCs)
+  // actions
   const build = () =>
     withMsg('Build period', async () => {
       const { error } = await supabase.rpc('build_period', {
         p_year: year,
         p_month: month,
       });
-      if (error) throw error;
+      if (error) {
+        addDebug({
+          kind: 'RPC',
+          label: 'RPC build_period',
+          profile: 'public',
+          endpoint: '/rest/v1/rpc/build_period',
+          params: { p_year: year, p_month: month },
+          errorCode: (error as any)?.code ?? null,
+          message: error.message ?? null,
+          details: (error as any)?.details ?? null,
+          hint: (error as any)?.hint ?? null,
+          raw: error,
+        });
+        throw error;
+      }
     });
 
   const syncBase = () =>
@@ -183,7 +289,21 @@ export default function PayrollV2Page() {
         p_year: year,
         p_month: month,
       });
-      if (error) throw error;
+      if (error) {
+        addDebug({
+          kind: 'RPC',
+          label: 'RPC sync_base_items',
+          profile: 'public',
+          endpoint: '/rest/v1/rpc/sync_base_items',
+          params: { p_year: year, p_month: month },
+          errorCode: (error as any)?.code ?? null,
+          message: error.message ?? null,
+          details: (error as any)?.details ?? null,
+          hint: (error as any)?.hint ?? null,
+          raw: error,
+        });
+        throw error;
+      }
     });
 
   const syncAbsent = () =>
@@ -192,7 +312,21 @@ export default function PayrollV2Page() {
         p_year: year,
         p_month: month,
       });
-      if (error) throw error;
+      if (error) {
+        addDebug({
+          kind: 'RPC',
+          label: 'RPC sync_absent_deductions',
+          profile: 'public',
+          endpoint: '/rest/v1/rpc/sync_absent_deductions',
+          params: { p_year: year, p_month: month },
+          errorCode: (error as any)?.code ?? null,
+          message: error.message ?? null,
+          details: (error as any)?.details ?? null,
+          hint: (error as any)?.hint ?? null,
+          raw: error,
+        });
+        throw error;
+      }
     });
 
   const recalc = () =>
@@ -201,7 +335,21 @@ export default function PayrollV2Page() {
         p_year: year,
         p_month: month,
       });
-      if (error) throw error;
+      if (error) {
+        addDebug({
+          kind: 'RPC',
+          label: 'RPC recalc_statutories',
+          profile: 'public',
+          endpoint: '/rest/v1/rpc/recalc_statutories',
+          params: { p_year: year, p_month: month },
+          errorCode: (error as any)?.code ?? null,
+          message: error.message ?? null,
+          details: (error as any)?.details ?? null,
+          hint: (error as any)?.hint ?? null,
+          raw: error,
+        });
+        throw error;
+      }
     });
 
   const lock = () =>
@@ -210,7 +358,21 @@ export default function PayrollV2Page() {
         p_year: year,
         p_month: month,
       });
-      if (error) throw error;
+      if (error) {
+        addDebug({
+          kind: 'RPC',
+          label: 'RPC lock_period',
+          profile: 'public',
+          endpoint: '/rest/v1/rpc/lock_period',
+          params: { p_year: year, p_month: month },
+          errorCode: (error as any)?.code ?? null,
+          message: error.message ?? null,
+          details: (error as any)?.details ?? null,
+          hint: (error as any)?.hint ?? null,
+          raw: error,
+        });
+        throw error;
+      }
     });
 
   const unlock = () =>
@@ -219,12 +381,25 @@ export default function PayrollV2Page() {
         p_year: year,
         p_month: month,
       });
-      if (error) throw error;
+      if (error) {
+        addDebug({
+          kind: 'RPC',
+          label: 'RPC unlock_period',
+          profile: 'public',
+          endpoint: '/rest/v1/rpc/unlock_period',
+          params: { p_year: year, p_month: month },
+          errorCode: (error as any)?.code ?? null,
+          message: error.message ?? null,
+          details: (error as any)?.details ?? null,
+          hint: (error as any)?.hint ?? null,
+          raw: error,
+        });
+        throw error;
+      }
     });
 
   const finalize = () =>
     withMsg('Finalize (generate PDFs)', async () => {
-      // Your existing API should generate PDFs and update DB
       const res = await fetch('/api/payroll/finalize', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -232,6 +407,12 @@ export default function PayrollV2Page() {
       });
       if (!res.ok) {
         const t = await res.text().catch(() => '');
+        addDebug({
+          kind: 'HTTP',
+          label: 'POST /api/payroll/finalize',
+          httpStatus: res.status,
+          message: t || `HTTP ${res.status}`,
+        });
         throw new Error(t || `HTTP ${res.status}`);
       }
     });
@@ -389,13 +570,53 @@ export default function PayrollV2Page() {
         </div>
       </div>
 
+      {/* short banner + toggle */}
       {(msg || err) && (
-        <div
-          className={`mb-4 rounded-md p-3 text-sm ${
-            err ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'
-          }`}
-        >
-          {err || msg}
+        <div className={`mb-2 rounded-md p-3 text-sm ${err ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'}`}>
+          {err || msg}{' '}
+          {err && (
+            <button
+              onClick={() => setDebugOpen((v) => !v)}
+              className="ml-2 underline underline-offset-2"
+            >
+              {debugOpen ? 'Hide details' : 'Show details'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* debug panel */}
+      {debugOpen && debug.length > 0 && (
+        <div className="mb-4 rounded-md border bg-white p-3 text-xs">
+          <div className="mb-2 font-semibold text-gray-800">Debug details</div>
+          <ul className="space-y-2">
+            {debug.map((d) => (
+              <li key={d.id} className="rounded border bg-gray-50 p-2">
+                <div className="mb-1 font-medium text-gray-800">
+                  [{d.kind}] {d.label} — {new Date(d.when).toLocaleString()}
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-gray-700 sm:grid-cols-3">
+                  <div><span className="font-semibold">Profile:</span> {d.profile ?? '—'}</div>
+                  <div><span className="font-semibold">Endpoint:</span> {d.endpoint ?? '—'}</div>
+                  <div><span className="font-semibold">HTTP:</span> {d.httpStatus ?? '—'}</div>
+                  <div><span className="font-semibold">Code:</span> {d.errorCode ?? '—'}</div>
+                  <div className="col-span-2"><span className="font-semibold">Message:</span> {d.message ?? '—'}</div>
+                  {d.details && <div className="col-span-2"><span className="font-semibold">Details:</span> {d.details}</div>}
+                  {d.hint && <div className="col-span-2"><span className="font-semibold">Hint:</span> {d.hint}</div>}
+                </div>
+                {d.params && (
+                  <pre className="mt-2 overflow-x-auto rounded bg-white p-2 text-[11px] leading-snug text-gray-700">
+                    {JSON.stringify(d.params, null, 2)}
+                  </pre>
+                )}
+                {d.raw && (
+                  <pre className="mt-2 overflow-x-auto rounded bg-white p-2 text-[11px] leading-snug text-gray-700">
+                    {JSON.stringify(d.raw, null, 2)}
+                  </pre>
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
