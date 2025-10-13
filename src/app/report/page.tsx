@@ -6,9 +6,9 @@ import { supabase } from '@/lib/supabaseClient';
 
 type Row = {
   staff_name: string;
-  staff_email: string;const absentDays = group.rows.reduce((acc, r) => acc + (isAbsent(r) ? 1 : 0), 0);
+  staff_email: string;
   day: string;                 // yyyy-mm-dd
-  status: string | null;       // Present | Absent | OFFDAY | MC (ignored for final precedence)
+  status: string | null;       // Present | Absent | OFFDAY | MC | null (e.g., today before 10:30)
   check_in_kl: string | null;  // HH:MM or HH:MM:SS
   check_out_kl: string | null; // HH:MM or HH:MM:SS
   late_min: number | null;
@@ -63,10 +63,6 @@ function klTodayISO(): string {
   return `${y}-${m}-${d}`;
 }
 
-function isSunday(isoDay: string): boolean {
-  return new Date(`${isoDay}T00:00:00Z`).getUTCDay() === 0;
-}
-
 /* ---------- page ---------- */
 
 export default function ReportPage() {
@@ -116,7 +112,7 @@ export default function ReportPage() {
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      // Use the unified monthly dataset
+      // Use the unified monthly dataset from DB
       const { data, error } = await supabase.rpc('month_print_report', {
         p_year: Number(year),
         p_month: Number(month),
@@ -131,7 +127,7 @@ export default function ReportPage() {
         rws = rws.filter(r => r.day === iso);
       }
 
-      // ALWAYS recompute late from check-in (handles HH:MM:SS)
+      // normalize late from check-in (handles HH:MM:SS)
       rws = rws.map(r => ({
         ...r,
         late_min: minutesLateFrom930(r.check_in_kl),
@@ -305,12 +301,13 @@ export default function ReportPage() {
         )}
 
         {visibleGroups.map(group => {
-
+          // total late only for Present days with a check-in
           const lateTotal = group.rows.reduce((acc, r) => {
-  if (r.status !== 'Present' || !r.check_in_kl) return acc;
-  return acc + (minutesLateFrom930(r.check_in_kl) ?? 0);
-}, 0);
+            if (r.status !== 'Present' || !r.check_in_kl) return acc;
+            return acc + (minutesLateFrom930(r.check_in_kl) ?? 0);
+          }, 0);
 
+          // absent days strictly from DB status
           const absentDays = group.rows.reduce((acc, r) => acc + (r.status === 'Absent' ? 1 : 0), 0);
 
           return (
@@ -337,28 +334,27 @@ export default function ReportPage() {
                   <tbody>
                     {group.rows.map(r => {
                       const future = r.day > todayISO;
-                      const sunday = isSunday(r.day);
-                      const overrideOff = r.status === 'OFFDAY' || r.status === 'MC';
 
                       let statusEl: React.ReactNode;
                       if (r.status === 'OFFDAY' || r.status === 'MC') {
-  statusEl = <span style={grayPill}>{r.status}</span>;
-} else if (r.day > todayISO) {
-  statusEl = <span>—</span>;                 // future day
-} else if (r.status === 'Present') {
-  statusEl = <span style={greenPill}>Present</span>;
-} else if (r.status === 'Absent') {
-  statusEl = <span style={redCell}>Absent</span>;
-} else {
-  statusEl = <span>—</span>;                 // e.g., today before 10:30 -> null
-}
+                        statusEl = <span style={grayPill}>{r.status}</span>;
+                      } else if (future) {
+                        statusEl = <span>—</span>; // future day
+                      } else if (r.status === 'Present') {
+                        statusEl = <span style={greenPill}>Present</span>;
+                      } else if (r.status === 'Absent') {
+                        statusEl = <span style={redCell}>Absent</span>;
+                      } else {
+                        statusEl = <span>—</span>; // e.g., today before 10:30 -> null
+                      }
 
-                      const blockTimes = future || sunday;
+                      // Block showing times for future only (DB already handles Sundays as OFFDAY)
+                      const blockTimes = future;
                       const showIn  = blockTimes ? '—' : (r.check_in_kl  ?? '—');
                       const showOut = blockTimes ? '—' : (r.check_out_kl ?? '—');
 
                       const lateVal =
-                        blockTimes || overrideOff || !r.check_in_kl
+                        blockTimes || r.status !== 'Present' || !r.check_in_kl
                           ? null
                           : minutesLateFrom930(r.check_in_kl);
 
