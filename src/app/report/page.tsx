@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabaseClient';
 
 type Row = {
   staff_name: string;
-  staff_email: string;
+  staff_email: string;const absentDays = group.rows.reduce((acc, r) => acc + (isAbsent(r) ? 1 : 0), 0);
   day: string;                 // yyyy-mm-dd
   status: string | null;       // Present | Absent | OFFDAY | MC (ignored for final precedence)
   check_in_kl: string | null;  // HH:MM or HH:MM:SS
@@ -305,23 +305,13 @@ export default function ReportPage() {
         )}
 
         {visibleGroups.map(group => {
-          const isAbsent = (r: Row) => {
-            const overrideOff = r.status === 'OFFDAY' || r.status === 'MC';
-            if (overrideOff) return false;
-            if (r.day > todayISO) return false;
-            if (isSunday(r.day)) return false;
-            return !r.check_in_kl;
-          };
 
-          const lateTotal  = group.rows.reduce((acc, r) => {
-            const future = r.day > todayISO;
-            const sunday = isSunday(r.day);
-            const overrideOff = r.status === 'OFFDAY' || r.status === 'MC';
-            if (future || sunday || overrideOff || !r.check_in_kl) return acc;
-            return acc + (minutesLateFrom930(r.check_in_kl) ?? 0);
-          }, 0);
+          const lateTotal = group.rows.reduce((acc, r) => {
+  if (r.status !== 'Present' || !r.check_in_kl) return acc;
+  return acc + (minutesLateFrom930(r.check_in_kl) ?? 0);
+}, 0);
 
-          const absentDays = group.rows.reduce((acc, r) => acc + (isAbsent(r) ? 1 : 0), 0);
+          const absentDays = group.rows.reduce((acc, r) => acc + (r.status === 'Absent' ? 1 : 0), 0);
 
           return (
             <div key={group.key} style={{marginTop:24}}>
@@ -351,17 +341,17 @@ export default function ReportPage() {
                       const overrideOff = r.status === 'OFFDAY' || r.status === 'MC';
 
                       let statusEl: React.ReactNode;
-                      if (overrideOff) {
-                        statusEl = <span style={grayPill}>{r.status}</span>;
-                      } else if (future) {
-                        statusEl = <span>—</span>;
-                      } else if (sunday) {
-                        statusEl = <span style={grayPill}>Offday</span>;
-                      } else if (!r.check_in_kl) {
-                        statusEl = <span style={redCell}>Absent</span>;
-                      } else {
-                        statusEl = <span style={greenPill}>Present</span>;
-                      }
+                      if (r.status === 'OFFDAY' || r.status === 'MC') {
+  statusEl = <span style={grayPill}>{r.status}</span>;
+} else if (r.day > todayISO) {
+  statusEl = <span>—</span>;                 // future day
+} else if (r.status === 'Present') {
+  statusEl = <span style={greenPill}>Present</span>;
+} else if (r.status === 'Absent') {
+  statusEl = <span style={redCell}>Absent</span>;
+} else {
+  statusEl = <span>—</span>;                 // e.g., today before 10:30 -> null
+}
 
                       const blockTimes = future || sunday;
                       const showIn  = blockTimes ? '—' : (r.check_in_kl  ?? '—');
