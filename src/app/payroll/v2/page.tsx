@@ -40,6 +40,22 @@ type ItemRow = {
   amount: number | string;
 };
 
+/* ---------- presets for code dropdowns ---------- */
+const EARN_CODES: { code: string; label: string }[] = [
+  { code: 'COMM', label: 'Commission' },
+  { code: 'OT', label: 'Overtime' },
+  { code: 'BONUS', label: 'Bonus' },
+  { code: 'ALLOW', label: 'Allowance' },
+  { code: 'UNPAID_ADJ', label: 'Unpaid adjustment' }, // to offset auto UNPAID
+  { code: 'CUSTOM', label: 'Custom…' },
+];
+
+const DEDUCT_CODES: { code: string; label: string }[] = [
+  { code: 'ADVANCE', label: 'Advance' },
+  { code: 'PENALTY', label: 'Penalty' },
+  { code: 'CUSTOM', label: 'Custom…' },
+];
+
 /* ---------- helpers ---------- */
 function asNum(x: number | string | null | undefined): number {
   if (x == null) return 0;
@@ -138,10 +154,10 @@ export default function PayrollV2Page() {
 
       // 3) live absent days via Report wrapper
       {
-        const { data, error } = await supabase.rpc(
-          'absent_days_from_report',
-          { p_year: year, p_month: month }
-        );
+        const { data, error } = await supabase.rpc('absent_days_from_report', {
+          p_year: year,
+          p_month: month,
+        });
         if (!error && Array.isArray(data)) {
           const map: Record<string, number> = {};
           for (const r of data as {
@@ -231,10 +247,14 @@ export default function PayrollV2Page() {
   const [deductItems, setDeductItems] = useState<ItemRow[]>([]);
   // add form
   const [addType, setAddType] = useState<'EARN' | 'DEDUCT'>('EARN');
-  const [addCode, setAddCode] = useState<string>('COMM');
-  const [addLabel, setAddLabel] = useState<string>('');
+  const [addCode, setAddCode] = useState<string>('COMM'); // may be 'CUSTOM'
+  const [customCode, setCustomCode] = useState<string>(''); // when CUSTOM is chosen
+  const [addLabel, setAddLabel] = useState<string>('');    // optional
   const [addAmt, setAddAmt] = useState<string>('0.00');
   const [working, setWorking] = useState<boolean>(false);
+
+  // helpers for dropdown list
+  const codeOptions = addType === 'DEDUCT' ? DEDUCT_CODES : EARN_CODES;
 
   const openDetails = async (row: SummaryRow) => {
     setSel(row);
@@ -245,7 +265,6 @@ export default function PayrollV2Page() {
   const loadManualItems = useCallback(
     async (email: string) => {
       if (!period) return;
-      // read manual EARN/DEDUCT (exclude BASE, UNPAID, STAT_%)
       const { data, error } = await supabase
         .from('pay_v2.items')
         .select('id, kind, code, label, amount')
@@ -279,6 +298,22 @@ export default function PayrollV2Page() {
       alert('Amount must be > 0');
       return;
     }
+    const chosenCode = addCode === 'CUSTOM' ? customCode.trim().toUpperCase() : addCode;
+    if (!chosenCode) {
+      alert('Please provide a code.');
+      return;
+    }
+    // block system codes just in case
+    if (['BASE', 'UNPAID'].includes(chosenCode) || chosenCode.startsWith('STAT_')) {
+      alert('That code is system-managed and cannot be added.');
+      return;
+    }
+
+    const defaultLabel =
+      (addType === 'DEDUCT'
+        ? DEDUCT_CODES.find((c) => c.code === addCode)?.label
+        : EARN_CODES.find((c) => c.code === addCode)?.label) || chosenCode;
+
     setWorking(true);
     try {
       const { error } = await supabase.rpc('add_pay_item', {
@@ -286,15 +321,17 @@ export default function PayrollV2Page() {
         p_month: month,
         p_email: sel.staff_email,
         p_kind: addType,
-        p_code: addCode,
-        p_label: addLabel || addCode,
+        p_code: chosenCode,
+        p_label: addLabel || defaultLabel,
         p_amount: amt,
       });
       if (error) throw error;
       await refresh();
       await loadManualItems(sel.staff_email);
+      // reset partial form (keep type & code for faster entry)
       setAddLabel('');
       setAddAmt('0.00');
+      if (addCode === 'CUSTOM') setCustomCode('');
     } catch (e) {
       alert((e as Error).message);
     } finally {
@@ -343,6 +380,41 @@ export default function PayrollV2Page() {
     } finally {
       setWorking(false);
     }
+  };
+
+  // Quick helpers for UNPAID adjustments (to zero or target)
+  const cancelUnpaid = async () => {
+    if (!sel) return;
+    const auto = asNum(sel.unpaid_auto);
+    if (auto <= 0) {
+      alert('No auto UNPAID to cancel.');
+      return;
+    }
+    setAddType('EARN');
+    setAddCode('UNPAID_ADJ');
+    setAddLabel('Cancel unpaid (auto)');
+    setAddAmt(auto.toFixed(2));
+  };
+
+  const setUnpaidToTarget = async () => {
+    if (!sel) return;
+    const auto = asNum(sel.unpaid_auto);
+    const inp = prompt('Set total UNPAID to (RM):', '0.00');
+    if (!inp) return;
+    const target = Number(inp);
+    if (!Number.isFinite(target) || target < 0) {
+      alert('Invalid amount');
+      return;
+    }
+    const diff = auto - target;
+    if (diff <= 0) {
+      alert('Target is not less than current auto UNPAID.');
+      return;
+    }
+    setAddType('EARN');
+    setAddCode('UNPAID_ADJ');
+    setAddLabel(`Adjust unpaid to RM ${target.toFixed(2)}`);
+    setAddAmt(diff.toFixed(2));
   };
 
   /* ============================================================
@@ -598,6 +670,25 @@ export default function PayrollV2Page() {
               </span>
             </div>
 
+            <div className="flex flex-wrap items-center gap-2 px-4 pt-2">
+              <button
+                className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
+                onClick={cancelUnpaid}
+                disabled={!isAdmin || period?.status !== 'OPEN' || asNum(sel.unpaid_auto) <= 0}
+                title="Prepare an earning that offsets current auto UNPAID fully"
+              >
+                Cancel UNPAID (prepare)
+              </button>
+              <button
+                className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
+                onClick={setUnpaidToTarget}
+                disabled={!isAdmin || period?.status !== 'OPEN' || asNum(sel.unpaid_auto) <= 0}
+                title="Prepare an earning that adjusts UNPAID to your target amount"
+              >
+                Set UNPAID to…
+              </button>
+            </div>
+
             <div className="grid grid-cols-1 gap-3 px-4 py-3 md:grid-cols-2">
               {/* Manual Earnings */}
               <div className="rounded border">
@@ -737,7 +828,7 @@ export default function PayrollV2Page() {
             {/* Add item */}
             <div className="border-t px-4 py-3">
               <div className="mb-2 text-sm font-semibold">Add item</div>
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-5">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-6">
                 <select
                   className="rounded border px-2 py-1 text-sm"
                   value={addType}
@@ -748,12 +839,32 @@ export default function PayrollV2Page() {
                   <option value="EARN">Earning</option>
                   <option value="DEDUCT">Deduction</option>
                 </select>
-                <input
+
+                {/* Code dropdown */}
+                <select
                   className="rounded border px-2 py-1 text-sm"
-                  placeholder="Code (e.g. COMM, ALLOW, ADVANCE)"
                   value={addCode}
-                  onChange={(e) => setAddCode(e.target.value.toUpperCase())}
-                />
+                  onChange={(e) => setAddCode(e.target.value)}
+                >
+                  {(codeOptions).map((opt) => (
+                    <option key={opt.code} value={opt.code}>
+                      {opt.label} ({opt.code})
+                    </option>
+                  ))}
+                </select>
+
+                {/* Custom code input (only when CUSTOM) */}
+                {addCode === 'CUSTOM' && (
+                  <input
+                    className="rounded border px-2 py-1 text-sm"
+                    placeholder="Custom code (A–Z, 0–9, _ )"
+                    value={customCode}
+                    onChange={(e) =>
+                      setCustomCode(e.target.value.replace(/[^A-Za-z0-9_]/g, ''))
+                    }
+                  />
+                )}
+
                 <input
                   className="rounded border px-2 py-1 text-sm md:col-span-2"
                   placeholder="Display label"
@@ -779,7 +890,8 @@ export default function PayrollV2Page() {
               </div>
               <div className="mt-2 text-xs text-gray-500">
                 Period must be <b>OPEN</b> and you must be admin to edit.
-                System-managed codes (BASE, UNPAID, STAT_*) are blocked.
+                System-managed codes (<code>BASE</code>, <code>UNPAID</code>,{' '}
+                <code>STAT_* </code>) are blocked.
               </div>
             </div>
           </div>
