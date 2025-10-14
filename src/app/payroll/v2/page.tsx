@@ -100,6 +100,17 @@ export default function PayrollV2Page() {
   const [email, setEmail] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
 
+  // admin status toast
+  const [adminToast, setAdminToast] = useState<{ show: boolean; text: string }>({
+    show: false,
+    text: '',
+  });
+  const showAdminToastText = (flag: boolean) => {
+    setAdminToast({ show: true, text: flag ? 'You are Admin' : 'You are NOT Admin' });
+    // auto-hide
+    setTimeout(() => setAdminToast({ show: false, text: '' }), 2500);
+  };
+
   useEffect(() => {
     const init = async () => {
       const { data } = await supabase.auth.getUser();
@@ -107,18 +118,27 @@ export default function PayrollV2Page() {
       setEmail(em);
       if (em) {
         const { data: ok, error } = await supabase.rpc('is_admin', {});
-        setIsAdmin(!error && ok === true);
+        const flag = !error && ok === true;
+        setIsAdmin(flag);
+        showAdminToastText(flag);
       } else {
         setIsAdmin(false);
+        showAdminToastText(false);
       }
     };
     init();
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_e, session) => {
       const em = session?.user?.email ?? null;
       setEmail(em);
+      const { data: ok2, error: e2 } = await supabase.rpc('is_admin', {});
+      const flag = !e2 && ok2 === true;
+      setIsAdmin(flag);
+      showAdminToastText(flag);
     });
+
     return () => {
-      sub.subscription.unsubscribe();
+      sub?.subscription?.unsubscribe?.();
     };
   }, []);
 
@@ -263,13 +283,13 @@ export default function PayrollV2Page() {
   };
 
   const loadManualItems = useCallback(
-    async (email: string) => {
+    async (emailAddr: string) => {
       if (!period) return;
       const { data, error } = await supabase
         .from('pay_v2.items')
         .select('id, kind, code, label, amount')
         .eq('period_id', period.id)
-        .eq('staff_email', email.toLowerCase())
+        .eq('staff_email', emailAddr.toLowerCase())
         .or('kind.eq.EARN,kind.eq.DEDUCT');
 
       if (error) {
@@ -332,6 +352,7 @@ export default function PayrollV2Page() {
       setAddLabel('');
       setAddAmt('0.00');
       if (addCode === 'CUSTOM') setCustomCode('');
+      alert('Item added.');
     } catch (e) {
       alert((e as Error).message);
     } finally {
@@ -354,6 +375,7 @@ export default function PayrollV2Page() {
       if (error) throw error;
       await refresh();
       if (sel) await loadManualItems(sel.staff_email);
+      alert('Item updated.');
     } catch (e) {
       alert((e as Error).message);
     } finally {
@@ -375,6 +397,7 @@ export default function PayrollV2Page() {
       if (error) throw error;
       await refresh();
       if (sel) await loadManualItems(sel.staff_email);
+      alert('Item deleted.');
     } catch (e) {
       alert((e as Error).message);
     } finally {
@@ -382,8 +405,8 @@ export default function PayrollV2Page() {
     }
   };
 
-  // Quick helpers for UNPAID adjustments (to zero or target)
-  const cancelUnpaid = async () => {
+  // Quick helpers for UNPAID adjustments (just prefills the add form)
+  const cancelUnpaid = () => {
     if (!sel) return;
     const auto = asNum(sel.unpaid_auto);
     if (auto <= 0) {
@@ -392,13 +415,18 @@ export default function PayrollV2Page() {
     }
     setAddType('EARN');
     setAddCode('UNPAID_ADJ');
+    setCustomCode('');
     setAddLabel('Cancel unpaid (auto)');
     setAddAmt(auto.toFixed(2));
   };
 
-  const setUnpaidToTarget = async () => {
+  const setUnpaidToTarget = () => {
     if (!sel) return;
     const auto = asNum(sel.unpaid_auto);
+    if (auto <= 0) {
+      alert('No auto UNPAID to adjust.');
+      return;
+    }
     const inp = prompt('Set total UNPAID to (RM):', '0.00');
     if (!inp) return;
     const target = Number(inp);
@@ -406,13 +434,14 @@ export default function PayrollV2Page() {
       alert('Invalid amount');
       return;
     }
-    const diff = auto - target;
+    const diff = auto - target; // positive means we need to add an EARN to offset
     if (diff <= 0) {
-      alert('Target is not less than current auto UNPAID.');
+      alert('Target must be less than current auto UNPAID.');
       return;
     }
     setAddType('EARN');
     setAddCode('UNPAID_ADJ');
+    setCustomCode('');
     setAddLabel(`Adjust unpaid to RM ${target.toFixed(2)}`);
     setAddAmt(diff.toFixed(2));
   };
@@ -433,6 +462,14 @@ export default function PayrollV2Page() {
           <div className="flex items-center gap-2">
             <span className="text-gray-500">Status:</span>
             {statusPill}
+            <span
+              className={`ml-2 inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${
+                isAdmin ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+              }`}
+              title="Admin recognition"
+            >
+              {isAdmin ? 'Admin' : 'Not admin'}
+            </span>
           </div>
         </div>
 
@@ -462,6 +499,18 @@ export default function PayrollV2Page() {
             className="rounded border px-3 py-1.5 text-sm hover:bg-gray-50"
           >
             Refresh
+          </button>
+          <button
+            onClick={async () => {
+              const { data: ok3, error: e3 } = await supabase.rpc('is_admin', {});
+              const flag = !e3 && ok3 === true;
+              setIsAdmin(flag);
+              showAdminToastText(flag);
+            }}
+            className="rounded border px-2 py-1.5 text-xs hover:bg-gray-50"
+            title="Re-check admin status"
+          >
+            Check admin
           </button>
         </div>
       </div>
@@ -642,7 +691,7 @@ export default function PayrollV2Page() {
             if (e.target === e.currentTarget && !working) setShow(false);
           }}
         >
-          <div className="mx-auto w-full max-w-3xl rounded-lg bg-white shadow-xl">
+          <div className="mx-auto w/full max-w-3xl rounded-lg bg-white shadow-xl">
             <div className="flex items-center justify-between border-b px-4 py-3">
               <div className="font-semibold">
                 Edit items — {sel.staff_name ?? sel.staff_email}
@@ -670,20 +719,21 @@ export default function PayrollV2Page() {
               </span>
             </div>
 
+            {/* Unpaid helpers */}
             <div className="flex flex-wrap items-center gap-2 px-4 pt-2">
               <button
                 className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
                 onClick={cancelUnpaid}
                 disabled={!isAdmin || period?.status !== 'OPEN' || asNum(sel.unpaid_auto) <= 0}
-                title="Prepare an earning that offsets current auto UNPAID fully"
+                title="Prefills the form with an earning that offsets current auto UNPAID fully"
               >
-                Cancel UNPAID (prepare)
+                Cancel UNPAID (prefill)
               </button>
               <button
                 className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
                 onClick={setUnpaidToTarget}
                 disabled={!isAdmin || period?.status !== 'OPEN' || asNum(sel.unpaid_auto) <= 0}
-                title="Prepare an earning that adjusts UNPAID to your target amount"
+                title="Prefills the form with an earning that adjusts UNPAID to your target amount"
               >
                 Set UNPAID to…
               </button>
@@ -895,6 +945,13 @@ export default function PayrollV2Page() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Admin toast */}
+      {adminToast.show && (
+        <div className="fixed right-4 top-4 z-[60] rounded-md border border-gray-200 bg-white px-3 py-2 text-sm shadow-lg">
+          {adminToast.text}
         </div>
       )}
     </div>
