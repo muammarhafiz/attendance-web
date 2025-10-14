@@ -152,10 +152,11 @@ export default function PayrollV2Page() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      // 1) Period status
+      // 1) Period status (use your minimal view or the base table)
       {
         const { data, error } = await supabase
-          .from('v_periods_min').select('id, year, month, status')
+          .from('v_periods_min') // if you don't have this, swap to 'pay_v2.periods'
+          .select('id, year, month, status')
           .eq('year', year)
           .eq('month', month)
           .limit(1)
@@ -296,28 +297,29 @@ export default function PayrollV2Page() {
   };
 
   const loadManualItems = useCallback(
-  async (email: string) => {
-    if (!period) return;
+    async (email: string) => {
+      if (!period) return;
 
-    const { data, error } = await supabase.rpc('list_manual_items', {
-      p_year: year,
-      p_month: month,
-      p_email: email,
-    });
+      // your SQL function that returns ONLY manual (non-UNPAID/non-STAT/non-BASE)
+      const { data, error } = await supabase.rpc('list_manual_items', {
+        p_year: year,
+        p_month: month,
+        p_email: email,
+      });
 
-    if (error) {
-      console.error('list_manual_items error:', error);
-      setEarnItems([]);
-      setDeductItems([]);
-      return;
-    }
+      if (error) {
+        console.error('list_manual_items error:', error);
+        setEarnItems([]);
+        setDeductItems([]);
+        return;
+      }
 
-    const rows = (data as ItemRow[]) ?? [];
-    setEarnItems(rows.filter((r) => r.kind === 'EARN'));
-    setDeductItems(rows.filter((r) => r.kind === 'DEDUCT'));
-  },
-  [period, year, month]
-);
+      const rows = (data as ItemRow[]) ?? [];
+      setEarnItems(rows.filter((r) => r.kind === 'EARN'));
+      setDeductItems(rows.filter((r) => r.kind === 'DEDUCT'));
+    },
+    [period, year, month]
+  );
 
   // computed disable state + reason for the Add button
   const addDisabled = !isAdmin || period?.status !== 'OPEN' || working;
@@ -462,8 +464,8 @@ export default function PayrollV2Page() {
     }
   };
 
-  // Quick helpers to prefill UNPAID adjustment
-  const cancelUnpaid = () => {
+  // Quick helpers to prefill UNPAID adjustment (doesn't call DB by itself)
+  const cancelUnpaidPrefill = () => {
     setFormMsg({});
     if (!sel) return;
     const auto = asNum(sel.unpaid_auto);
@@ -478,7 +480,7 @@ export default function PayrollV2Page() {
     setAddAmt(auto.toFixed(2));
   };
 
-  const setUnpaidToTarget = () => {
+  const setUnpaidToTargetPrefill = () => {
     setFormMsg({});
     if (!sel) return;
     const auto = asNum(sel.unpaid_auto);
@@ -503,6 +505,49 @@ export default function PayrollV2Page() {
     setCustomCode('');
     setAddLabel(`Adjust unpaid to RM ${target.toFixed(2)}`);
     setAddAmt(diff.toFixed(2));
+  };
+
+  // NEW: Direct RPC to keep/cancel UNPAID using public.apply_unpaid
+  const applyUnpaid = async (apply: boolean) => {
+    setFormMsg({});
+    if (!sel) return;
+    if (!isAdmin || period?.status !== 'OPEN') {
+      setFormMsg({ err: 'Period must be OPEN and you must be admin.' });
+      return;
+    }
+    if (!apply && asNum(sel.unpaid_auto) <= 0) {
+      setFormMsg({ err: 'No auto UNPAID to cancel.' });
+      return;
+    }
+
+    setWorking(true);
+    setLastAction('apply_unpaid');
+    setLastPayload({ p_year: year, p_month: month, p_email: sel.staff_email, p_apply: apply });
+    setLastError('');
+    try {
+      const { data, error } = await supabase.rpc('apply_unpaid', {
+        p_year: year,
+        p_month: month,
+        p_email: sel.staff_email,
+        p_apply: apply,
+      });
+      if (error) {
+        setLastError(error.message ?? String(error));
+        setFormMsg({ err: error.message ?? 'Action failed' });
+      } else {
+        // show a small confirmation message
+        const act = Array.isArray(data) && data.length ? data[0].action : (apply ? 'kept' : 'offset_created');
+        setFormMsg({ ok: `UNPAID ${apply ? 'applied' : 'cancelled'} (${act}).` });
+        await refresh();
+        await loadManualItems(sel.staff_email);
+      }
+    } catch (e) {
+      const msg = (e as Error).message;
+      setLastError(msg);
+      setFormMsg({ err: msg });
+    } finally {
+      setWorking(false);
+    }
   };
 
   /* ============================================================
@@ -776,25 +821,48 @@ export default function PayrollV2Page() {
               <span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700">
                 Period status: {period?.status ?? '—'}
               </span>
+              <span className={`rounded-full px-3 py-1 text-xs ${isAdmin ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                {isAdmin ? 'Admin' : 'Not admin'}
+              </span>
             </div>
 
-            {/* Unpaid helpers */}
+            {/* UNPAID actions */}
             <div className="flex flex-wrap items-center gap-2 px-4 pt-2">
               <button
                 className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
-                onClick={cancelUnpaid}
-                disabled={!isAdmin || period?.status !== 'OPEN' || asNum(sel.unpaid_auto) <= 0}
-                title="Prefills the form with an earning that offsets current auto UNPAID fully"
+                onClick={() => applyUnpaid(true)}
+                disabled={!isAdmin || period?.status !== 'OPEN'}
+                title="Keep the auto UNPAID as-is (delete any offset adjustment)"
               >
-                Cancel UNPAID (prefill)
+                Apply UNPAID
+              </button>
+              <button
+                className="rounded border px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-50"
+                onClick={() => applyUnpaid(false)}
+                disabled={!isAdmin || period?.status !== 'OPEN' || asNum(sel.unpaid_auto) <= 0}
+                title="Cancel the auto UNPAID by creating/updating an EARN 'UNPAID_ADJ'"
+              >
+                Cancel UNPAID
+              </button>
+
+              <span className="mx-2 text-xs text-gray-400">·</span>
+
+              {/* (Optional) Prefill helpers if you prefer doing manual add instead of toggle */}
+              <button
+                className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
+                onClick={cancelUnpaidPrefill}
+                disabled={!isAdmin || period?.status !== 'OPEN' || asNum(sel.unpaid_auto) <= 0}
+                title="Prefill the Add form to fully offset the current auto UNPAID"
+              >
+                Prefill: Full offset
               </button>
               <button
                 className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
-                onClick={setUnpaidToTarget}
+                onClick={setUnpaidToTargetPrefill}
                 disabled={!isAdmin || period?.status !== 'OPEN' || asNum(sel.unpaid_auto) <= 0}
-                title="Prefills the form with an earning that adjusts UNPAID to your target amount"
+                title="Prefill the Add form to adjust UNPAID to a target amount"
               >
-                Set UNPAID to…
+                Prefill: Set to…
               </button>
             </div>
 
@@ -1019,8 +1087,7 @@ export default function PayrollV2Page() {
 
               <div className="mt-3 text-xs text-gray-500">
                 Period must be <b>OPEN</b> and you must be admin to edit.
-                System-managed codes (<code>BASE</code>, <code>UNPAID</code>,{' '}
-                <code>STAT_* </code>) are blocked.
+                System-managed codes (<code>BASE</code>, <code>UNPAID</code>, <code>STAT_*</code>) are blocked.
               </div>
 
               {/* Tiny debug box */}
