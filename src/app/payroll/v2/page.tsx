@@ -4,15 +4,21 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 // ---- types from v_payslip_admin_summary_v2 ----
+type BreakdownItem = {
+  code: string;
+  label: string | null;
+  amount: number | string;
+};
+
 type SummaryRow = {
   year: number;
   month: number;
   staff_name: string | null;
   staff_email: string;
-  total_earn: number | string;   // numeric comes as string sometimes
+  total_earn: number | string;
   base_wage: number | string;
-  manual_deduct: number | string; // NEW: manual only
-  unpaid_auto: number | string;   // NEW: auto UNPAID only
+  manual_deduct: number | string; // manual only (excludes UNPAID)
+  unpaid_auto: number | string;   // auto UNPAID only
   epf_emp: number | string;
   socso_emp: number | string;
   eis_emp: number | string;
@@ -21,9 +27,8 @@ type SummaryRow = {
   eis_er: number | string;
   total_deduct: number | string;
   net_pay: number | string;
-  // breakdown arrays exist but we won't render them in this step
-  earn_breakdown?: any;
-  deduct_breakdown?: any;
+  earn_breakdown?: BreakdownItem[];
+  deduct_breakdown?: BreakdownItem[]; // includes UNPAID; we’ll filter it out for the manual cell
 };
 
 type PeriodRow = { id: string; year: number; month: number; status: 'OPEN'|'LOCKED'|'FINALIZED'|string };
@@ -39,6 +44,55 @@ function fmt(n: number | string, currency = false): string {
   const v = asNum(n);
   if (currency) return v.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return v.toFixed(2);
+}
+
+/** Small popover for manual deductions */
+function ManualDeductCell({ row, openKey, setOpenKey }: {
+  row: SummaryRow;
+  openKey: string | null;
+  setOpenKey: (k: string | null) => void;
+}) {
+  const key = row.staff_email;
+  const isOpen = openKey === key;
+
+  // filter manual-only from the breakdown (exclude UNPAID)
+  const manualList: BreakdownItem[] = (row.deduct_breakdown || [])
+    .filter((d) => (d?.code ?? '').toUpperCase() !== 'UNPAID');
+
+  const hasManual = asNum(row.manual_deduct) > 0 && manualList.length > 0;
+
+  return (
+    <div className="relative inline-flex items-center gap-2">
+      <span className="tabular-nums">{fmt(row.manual_deduct, true)}</span>
+      {hasManual && (
+        <>
+          <button
+            type="button"
+            className="rounded border px-2 py-0.5 text-xs hover:bg-gray-50"
+            onClick={() => setOpenKey(isOpen ? null : key)}
+          >
+            View
+          </button>
+          {isOpen && (
+            <div
+              className="absolute left-0 z-20 mt-1 w-64 rounded-md border border-gray-200 bg-white p-2 shadow-lg"
+              onMouseLeave={() => setOpenKey(null)}
+            >
+              <div className="mb-1 text-xs font-semibold text-gray-600">Manual deductions</div>
+              <ul className="max-h-56 overflow-auto text-sm">
+                {manualList.map((d, idx) => (
+                  <li key={`${key}-md-${idx}`} className="flex items-center justify-between py-1">
+                    <span className="truncate pr-2">{d.label || d.code}</span>
+                    <span className="tabular-nums">{fmt(d.amount, true)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
 }
 
 export default function PayrollV2Page() {
@@ -58,6 +112,9 @@ export default function PayrollV2Page() {
   // auth/admin
   const [email, setEmail] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
+
+  // local UI state for the manual deduct popover
+  const [openManualFor, setOpenManualFor] = useState<string | null>(null);
 
   useEffect(() => {
     const init = async () => {
@@ -83,6 +140,7 @@ export default function PayrollV2Page() {
 
   const refresh = useCallback(async () => {
     setLoading(true);
+    setOpenManualFor(null);
     try {
       // 1) Period status
       {
@@ -97,7 +155,7 @@ export default function PayrollV2Page() {
         else setPeriod(null);
       }
 
-      // 2) summary view (NEW v2)
+      // 2) summary view (v2)
       {
         const { data, error } = await supabase
           .from('v_payslip_admin_summary_v2')
@@ -158,7 +216,6 @@ export default function PayrollV2Page() {
   const finalizeAndGenerate = async () => {
     if (disabledWrites) return;
     try {
-      // reuse your existing API endpoint contract
       const res = await fetch('/api/payroll/finalize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -249,7 +306,7 @@ export default function PayrollV2Page() {
 
       {/* Table */}
       <div className="overflow-x-auto rounded border">
-        <table className="min-w-[900px] w-full border-collapse text-sm">
+        <table className="min-w-[980px] w-full border-collapse text-sm">
           <thead className="bg-gray-50">
             <tr className="text-left">
               <th className="border-b px-3 py-2">Staff</th>
@@ -283,8 +340,15 @@ export default function PayrollV2Page() {
                     </td>
                     <td className="px-3 py-2 tabular-nums">{fmt(r.base_wage, true)}</td>
                     <td className="px-3 py-2 tabular-nums">{fmt(r.total_earn, true)}</td>
-                    <td className="px-3 py-2 tabular-nums">{fmt(r.manual_deduct, true)}</td>
-                    <td className="px-3 py-2 tabular-nums">{fmt(r.unpaid_auto, true)}</td>
+
+                    <td className="px-3 py-2">
+                      <ManualDeductCell row={r} openKey={openManualFor} setOpenKey={setOpenManualFor} />
+                    </td>
+
+                    <td className="px-3 py-2 tabular-nums">
+                      {fmt(r.unpaid_auto, true)}
+                    </td>
+
                     <td className="px-3 py-2 tabular-nums">{fmt(r.epf_emp, true)}</td>
                     <td className="px-3 py-2 tabular-nums">{fmt(r.socso_emp, true)}</td>
                     <td className="px-3 py-2 tabular-nums">{fmt(r.eis_emp, true)}</td>
@@ -300,7 +364,7 @@ export default function PayrollV2Page() {
       </div>
 
       <p className="mt-3 text-xs text-gray-500">
-        Finalize uses your existing <code>/api/payroll/finalize</code> endpoint to generate & upload PDFs to your
+        Finalize uses your existing <code>/api/payroll/finalize</code> endpoint to generate &amp; upload PDFs to your
         Supabase Storage bucket.
       </p>
     </div>
