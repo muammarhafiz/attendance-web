@@ -100,7 +100,7 @@ export default function PayrollV2Page() {
       // 2) summary view (NEW v2)
       {
         const { data, error } = await supabase
-          .from('pay_v2.v_payslip_admin_summary_v2')
+          .from('v_payslip_admin_summary_v2')
           .select('*')
           .eq('year', year)
           .eq('month', month)
