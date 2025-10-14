@@ -107,9 +107,14 @@ export default function PayrollV2Page() {
   });
   const showAdminToastText = (flag: boolean) => {
     setAdminToast({ show: true, text: flag ? 'You are Admin' : 'You are NOT Admin' });
-    // auto-hide
     setTimeout(() => setAdminToast({ show: false, text: '' }), 2500);
   };
+
+  // inline diagnostics for actions
+  const [lastAction, setLastAction] = useState<string>('');
+  const [lastPayload, setLastPayload] = useState<any>(null);
+  const [lastError, setLastError] = useState<string>('');
+  const [formMsg, setFormMsg] = useState<{ ok?: string; err?: string }>({});
 
   useEffect(() => {
     const init = async () => {
@@ -204,11 +209,15 @@ export default function PayrollV2Page() {
     refresh();
   }, [refresh]);
 
-  // actions (RPC)
+  // actions (RPC) with diagnostics
   const callRpc = async (fn: string) => {
     if (disabledWrites) return;
+    setLastAction(fn);
+    setLastPayload({ p_year: year, p_month: month });
+    setLastError('');
     const { error } = await supabase.rpc(fn, { p_year: year, p_month: month });
     if (error) {
+      setLastError(error.message ?? String(error));
       alert(`${fn} failed: ${error.message}`);
     } else {
       await refresh();
@@ -224,6 +233,9 @@ export default function PayrollV2Page() {
   const finalizeAndGenerate = async () => {
     if (disabledWrites) return;
     try {
+      setLastAction('finalize');
+      setLastPayload({ year, month });
+      setLastError('');
       const res = await fetch('/api/payroll/finalize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -231,6 +243,7 @@ export default function PayrollV2Page() {
       });
       if (!res.ok) {
         const t = await res.text();
+        setLastError(t);
         throw new Error(t);
       }
       alert('Finalize & PDF generation started/completed.');
@@ -279,6 +292,7 @@ export default function PayrollV2Page() {
   const openDetails = async (row: SummaryRow) => {
     setSel(row);
     setShow(true);
+    setFormMsg({});
     await loadManualItems(row.staff_email);
   };
 
@@ -307,25 +321,41 @@ export default function PayrollV2Page() {
     [period]
   );
 
+  // computed disable state + reason for the Add button
+  const addDisabled = !isAdmin || period?.status !== 'OPEN' || working;
+  const addDisabledReason =
+    !isAdmin ? 'Not admin'
+    : period?.status !== 'OPEN' ? `Period is ${period?.status || '—'}`
+    : working ? 'Working…'
+    : '';
+
   const addItem = async () => {
+    setFormMsg({});
+    setLastError('');
     if (!sel) return;
-    if (!isAdmin || period?.status !== 'OPEN') {
-      alert('Period must be OPEN and you must be admin.');
+
+    if (!isAdmin) {
+      setFormMsg({ err: 'You are not admin.' });
       return;
     }
+    if (period?.status !== 'OPEN') {
+      setFormMsg({ err: `Period must be OPEN (now ${period?.status || '—'})` });
+      return;
+    }
+
     const amt = Number(addAmt);
     if (!Number.isFinite(amt) || amt <= 0) {
-      alert('Amount must be > 0');
+      setFormMsg({ err: 'Amount must be > 0' });
       return;
     }
+
     const chosenCode = addCode === 'CUSTOM' ? customCode.trim().toUpperCase() : addCode;
     if (!chosenCode) {
-      alert('Please provide a code.');
+      setFormMsg({ err: 'Please provide a code.' });
       return;
     }
-    // block system codes just in case
     if (['BASE', 'UNPAID'].includes(chosenCode) || chosenCode.startsWith('STAT_')) {
-      alert('That code is system-managed and cannot be added.');
+      setFormMsg({ err: 'That code is system-managed and cannot be added.' });
       return;
     }
 
@@ -335,82 +365,112 @@ export default function PayrollV2Page() {
         : EARN_CODES.find((c) => c.code === addCode)?.label) || chosenCode;
 
     setWorking(true);
+    setLastAction('add_pay_item');
+    const payload = {
+      p_year: year,
+      p_month: month,
+      p_email: sel.staff_email,
+      p_kind: addType,
+      p_code: chosenCode,
+      p_label: addLabel || defaultLabel,
+      p_amount: amt,
+    };
+    setLastPayload(payload);
+
     try {
-      const { error } = await supabase.rpc('add_pay_item', {
-        p_year: year,
-        p_month: month,
-        p_email: sel.staff_email,
-        p_kind: addType,
-        p_code: chosenCode,
-        p_label: addLabel || defaultLabel,
-        p_amount: amt,
-      });
-      if (error) throw error;
-      await refresh();
-      await loadManualItems(sel.staff_email);
-      // reset partial form (keep type & code for faster entry)
-      setAddLabel('');
-      setAddAmt('0.00');
-      if (addCode === 'CUSTOM') setCustomCode('');
-      alert('Item added.');
+      const { error } = await supabase.rpc('add_pay_item', payload);
+      if (error) {
+        setLastError(error.message ?? String(error));
+        setFormMsg({ err: error.message ?? 'Add failed' });
+      } else {
+        await refresh();
+        await loadManualItems(sel.staff_email);
+        setAddLabel('');
+        setAddAmt('0.00');
+        if (addCode === 'CUSTOM') setCustomCode('');
+        setFormMsg({ ok: 'Item added.' });
+      }
     } catch (e) {
-      alert((e as Error).message);
+      const msg = (e as Error).message;
+      setLastError(msg);
+      setFormMsg({ err: msg });
     } finally {
       setWorking(false);
     }
   };
 
   const updateItem = async (itemId: string, amount: number, label?: string) => {
+    setFormMsg({});
     if (!isAdmin || period?.status !== 'OPEN') {
-      alert('Period must be OPEN and you must be admin.');
+      setFormMsg({ err: 'Period must be OPEN and you must be admin.' });
       return;
     }
     setWorking(true);
+    setLastAction('update_pay_item');
+    setLastPayload({ p_item_id: itemId, p_amount: amount, p_label: label ?? null });
+    setLastError('');
     try {
       const { error } = await supabase.rpc('update_pay_item', {
         p_item_id: itemId,
         p_amount: amount,
         p_label: label ?? null,
       });
-      if (error) throw error;
-      await refresh();
-      if (sel) await loadManualItems(sel.staff_email);
-      alert('Item updated.');
+      if (error) {
+        setLastError(error.message ?? String(error));
+        setFormMsg({ err: error.message ?? 'Update failed' });
+      } else {
+        await refresh();
+        if (sel) await loadManualItems(sel.staff_email);
+        setFormMsg({ ok: 'Item updated.' });
+      }
     } catch (e) {
-      alert((e as Error).message);
+      const msg = (e as Error).message;
+      setLastError(msg);
+      setFormMsg({ err: msg });
     } finally {
       setWorking(false);
     }
   };
 
   const deleteItem = async (itemId: string) => {
+    setFormMsg({});
     if (!isAdmin || period?.status !== 'OPEN') {
-      alert('Period must be OPEN and you must be admin.');
+      setFormMsg({ err: 'Period must be OPEN and you must be admin.' });
       return;
     }
     if (!confirm('Delete this item?')) return;
     setWorking(true);
+    setLastAction('delete_pay_item');
+    setLastPayload({ p_item_id: itemId });
+    setLastError('');
     try {
       const { error } = await supabase.rpc('delete_pay_item', {
         p_item_id: itemId,
       });
-      if (error) throw error;
-      await refresh();
-      if (sel) await loadManualItems(sel.staff_email);
-      alert('Item deleted.');
+      if (error) {
+        setLastError(error.message ?? String(error));
+        setFormMsg({ err: error.message ?? 'Delete failed' });
+      } else {
+        await refresh();
+        if (sel) await loadManualItems(sel.staff_email);
+        setFormMsg({ ok: 'Item deleted.' });
+      }
     } catch (e) {
-      alert((e as Error).message);
+      const msg = (e as Error).message;
+      setLastError(msg);
+      setFormMsg({ err: msg });
     } finally {
       setWorking(false);
     }
   };
 
-  // Quick helpers for UNPAID adjustments (just prefills the add form)
+  // Quick helpers to prefill UNPAID adjustment
   const cancelUnpaid = () => {
+    setFormMsg({});
     if (!sel) return;
     const auto = asNum(sel.unpaid_auto);
     if (auto <= 0) {
-      alert('No auto UNPAID to cancel.');
+      setFormMsg({ err: 'No auto UNPAID to cancel.' });
       return;
     }
     setAddType('EARN');
@@ -421,22 +481,23 @@ export default function PayrollV2Page() {
   };
 
   const setUnpaidToTarget = () => {
+    setFormMsg({});
     if (!sel) return;
     const auto = asNum(sel.unpaid_auto);
     if (auto <= 0) {
-      alert('No auto UNPAID to adjust.');
+      setFormMsg({ err: 'No auto UNPAID to adjust.' });
       return;
     }
     const inp = prompt('Set total UNPAID to (RM):', '0.00');
     if (!inp) return;
     const target = Number(inp);
     if (!Number.isFinite(target) || target < 0) {
-      alert('Invalid amount');
+      setFormMsg({ err: 'Invalid amount' });
       return;
     }
-    const diff = auto - target; // positive means we need to add an EARN to offset
+    const diff = auto - target;
     if (diff <= 0) {
-      alert('Target must be less than current auto UNPAID.');
+      setFormMsg({ err: 'Target must be less than current auto UNPAID.' });
       return;
     }
     setAddType('EARN');
@@ -691,7 +752,7 @@ export default function PayrollV2Page() {
             if (e.target === e.currentTarget && !working) setShow(false);
           }}
         >
-          <div className="mx-auto w/full max-w-3xl rounded-lg bg-white shadow-xl">
+          <div className="mx-auto w-full max-w-3xl rounded-lg bg-white shadow-xl">
             <div className="flex items-center justify-between border-b px-4 py-3">
               <div className="font-semibold">
                 Edit items — {sel.staff_name ?? sel.staff_email}
@@ -779,7 +840,7 @@ export default function PayrollV2Page() {
                                     if (!next) return;
                                     const n = Number(next);
                                     if (!Number.isFinite(n) || n <= 0) {
-                                      alert('Invalid amount');
+                                      setFormMsg({ err: 'Invalid amount' });
                                       return;
                                     }
                                     const newLabel = prompt(
@@ -846,7 +907,7 @@ export default function PayrollV2Page() {
                                     if (!next) return;
                                     const n = Number(next);
                                     if (!Number.isFinite(n) || n <= 0) {
-                                      alert('Invalid amount');
+                                      setFormMsg({ err: 'Invalid amount' });
                                       return;
                                     }
                                     const newLabel = prompt(
@@ -877,7 +938,14 @@ export default function PayrollV2Page() {
 
             {/* Add item */}
             <div className="border-t px-4 py-3">
-              <div className="mb-2 text-sm font-semibold">Add item</div>
+              <div className="mb-2 flex items-center justify-between">
+                <div className="text-sm font-semibold">Add item</div>
+                {addDisabled && (
+                  <span className="text-xs text-gray-500">
+                    (disabled: {addDisabledReason})
+                  </span>
+                )}
+              </div>
               <div className="grid grid-cols-1 gap-2 md:grid-cols-6">
                 <select
                   className="rounded border px-2 py-1 text-sm"
@@ -929,8 +997,8 @@ export default function PayrollV2Page() {
                     onChange={(e) => setAddAmt(e.target.value)}
                   />
                   <button
-                    className="rounded border px-3 py-1 text-sm hover:bg-gray-50"
-                    disabled={working || !isAdmin || period?.status !== 'OPEN'}
+                    className="rounded border px-3 py-1 text-sm hover:bg-gray-50 disabled:opacity-50"
+                    disabled={addDisabled}
                     onClick={addItem}
                     title="Period must be OPEN"
                   >
@@ -938,10 +1006,33 @@ export default function PayrollV2Page() {
                   </button>
                 </div>
               </div>
-              <div className="mt-2 text-xs text-gray-500">
+
+              {/* Inline result/error from Add/Update/Delete */}
+              {formMsg.err && (
+                <div className="mt-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {formMsg.err}
+                </div>
+              )}
+              {formMsg.ok && (
+                <div className="mt-2 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                  {formMsg.ok}
+                </div>
+              )}
+
+              <div className="mt-3 text-xs text-gray-500">
                 Period must be <b>OPEN</b> and you must be admin to edit.
                 System-managed codes (<code>BASE</code>, <code>UNPAID</code>,{' '}
                 <code>STAT_* </code>) are blocked.
+              </div>
+
+              {/* Tiny debug box */}
+              <div className="mt-3 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] text-gray-700">
+                <div><b>Debug (last action)</b></div>
+                <div>action: {lastAction || '—'}</div>
+                <div>payload: <code>{lastPayload ? JSON.stringify(lastPayload) : '—'}</code></div>
+                <div className={lastError ? 'text-red-700' : 'text-gray-500'}>
+                  error: {lastError || '—'}
+                </div>
               </div>
             </div>
           </div>
