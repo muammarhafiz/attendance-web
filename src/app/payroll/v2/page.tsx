@@ -296,29 +296,28 @@ export default function PayrollV2Page() {
   };
 
   const loadManualItems = useCallback(
-    async (emailAddr: string) => {
-      if (!period) return;
-      const { data, error } = await supabase
-        .from('pay_v2.items')
-        .select('id, kind, code, label, amount')
-        .eq('period_id', period.id)
-        .eq('staff_email', emailAddr.toLowerCase())
-        .or('kind.eq.EARN,kind.eq.DEDUCT');
+  async (email: string) => {
+    if (!period) return;
 
-      if (error) {
-        setEarnItems([]);
-        setDeductItems([]);
-        return;
-      }
-      const rows = (data as ItemRow[]).filter((r) => {
-        const code = (r.code ?? '').toUpperCase();
-        return code !== 'BASE' && code !== 'UNPAID' && !code.startsWith('STAT_');
-      });
-      setEarnItems(rows.filter((r) => r.kind === 'EARN'));
-      setDeductItems(rows.filter((r) => r.kind === 'DEDUCT'));
-    },
-    [period]
-  );
+    const { data, error } = await supabase.rpc('list_manual_items', {
+      p_year: year,
+      p_month: month,
+      p_email: email,
+    });
+
+    if (error) {
+      console.error('list_manual_items error:', error);
+      setEarnItems([]);
+      setDeductItems([]);
+      return;
+    }
+
+    const rows = (data as ItemRow[]) ?? [];
+    setEarnItems(rows.filter((r) => r.kind === 'EARN'));
+    setDeductItems(rows.filter((r) => r.kind === 'DEDUCT'));
+  },
+  [period, year, month]
+);
 
   // computed disable state + reason for the Add button
   const addDisabled = !isAdmin || period?.status !== 'OPEN' || working;
