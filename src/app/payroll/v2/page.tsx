@@ -155,8 +155,7 @@ export default function PayrollV2Page() {
       // 1) Period status
       {
         const { data, error } = await supabase
-          .from('pay_v2.periods')
-          .select('id, year, month, status')
+          .from('v_periods_min').select('id, year, month, status')
           .eq('year', year)
           .eq('month', month)
           .limit(1)
