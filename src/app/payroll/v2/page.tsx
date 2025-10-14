@@ -1,15 +1,11 @@
+// src/app/payroll/v2/page.tsx
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 // ---- types from v_payslip_admin_summary_v2 ----
-type BreakdownItem = {
-  code: string;
-  label: string | null;
-  amount: number | string;
-};
-
+type BreakdownItem = { code: string; label: string; amount: number };
 type SummaryRow = {
   year: number;
   month: number;
@@ -18,7 +14,7 @@ type SummaryRow = {
   total_earn: number | string;
   base_wage: number | string;
   manual_deduct: number | string; // manual only (excludes UNPAID)
-  unpaid_auto: number | string;   // auto UNPAID only
+  unpaid_auto: number | string;   // auto absence (UNPAID)
   epf_emp: number | string;
   socso_emp: number | string;
   eis_emp: number | string;
@@ -28,10 +24,15 @@ type SummaryRow = {
   total_deduct: number | string;
   net_pay: number | string;
   earn_breakdown?: BreakdownItem[];
-  deduct_breakdown?: BreakdownItem[]; // includes UNPAID; we’ll filter it out for the manual cell
+  deduct_breakdown?: BreakdownItem[];
 };
 
-type PeriodRow = { id: string; year: number; month: number; status: 'OPEN'|'LOCKED'|'FINALIZED'|string };
+type PeriodRow = {
+  id: string;
+  year: number;
+  month: number;
+  status: 'OPEN' | 'LOCKED' | 'FINALIZED' | string;
+};
 
 function asNum(x: number | string | null | undefined): number {
   if (x == null) return 0;
@@ -44,55 +45,6 @@ function fmt(n: number | string, currency = false): string {
   const v = asNum(n);
   if (currency) return v.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return v.toFixed(2);
-}
-
-/** Small popover for manual deductions */
-function ManualDeductCell({ row, openKey, setOpenKey }: {
-  row: SummaryRow;
-  openKey: string | null;
-  setOpenKey: (k: string | null) => void;
-}) {
-  const key = row.staff_email;
-  const isOpen = openKey === key;
-
-  // filter manual-only from the breakdown (exclude UNPAID)
-  const manualList: BreakdownItem[] = (row.deduct_breakdown || [])
-    .filter((d) => (d?.code ?? '').toUpperCase() !== 'UNPAID');
-
-  const hasManual = asNum(row.manual_deduct) > 0 && manualList.length > 0;
-
-  return (
-    <div className="relative inline-flex items-center gap-2">
-      <span className="tabular-nums">{fmt(row.manual_deduct, true)}</span>
-      {hasManual && (
-        <>
-          <button
-            type="button"
-            className="rounded border px-2 py-0.5 text-xs hover:bg-gray-50"
-            onClick={() => setOpenKey(isOpen ? null : key)}
-          >
-            View
-          </button>
-          {isOpen && (
-            <div
-              className="absolute left-0 z-20 mt-1 w-64 rounded-md border border-gray-200 bg-white p-2 shadow-lg"
-              onMouseLeave={() => setOpenKey(null)}
-            >
-              <div className="mb-1 text-xs font-semibold text-gray-600">Manual deductions</div>
-              <ul className="max-h-56 overflow-auto text-sm">
-                {manualList.map((d, idx) => (
-                  <li key={`${key}-md-${idx}`} className="flex items-center justify-between py-1">
-                    <span className="truncate pr-2">{d.label || d.code}</span>
-                    <span className="tabular-nums">{fmt(d.amount, true)}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
 }
 
 export default function PayrollV2Page() {
@@ -113,8 +65,9 @@ export default function PayrollV2Page() {
   const [email, setEmail] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
 
-  // local UI state for the manual deduct popover
-  const [openManualFor, setOpenManualFor] = useState<string | null>(null);
+  // modal state (new)
+  const [showDetail, setShowDetail] = useState<boolean>(false);
+  const [detailRow, setDetailRow] = useState<SummaryRow | null>(null);
 
   useEffect(() => {
     const init = async () => {
@@ -133,14 +86,15 @@ export default function PayrollV2Page() {
       const em = session?.user?.email ?? null;
       setEmail(em);
     });
-    return () => { sub.subscription.unsubscribe(); };
+    return () => {
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   const disabledWrites = !isAdmin;
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    setOpenManualFor(null);
     try {
       // 1) Period status
       {
@@ -151,7 +105,7 @@ export default function PayrollV2Page() {
           .eq('month', month)
           .limit(1)
           .maybeSingle();
-        if (!error) setPeriod(data as PeriodRow | null);
+        if (!error) setPeriod((data as PeriodRow) ?? null);
         else setPeriod(null);
       }
 
@@ -183,7 +137,6 @@ export default function PayrollV2Page() {
           setAbsentMap({});
         }
       }
-
     } catch (e) {
       console.error(e);
       alert(`Failed to load payroll data: ${(e as Error).message}`);
@@ -193,7 +146,9 @@ export default function PayrollV2Page() {
     }
   }, [year, month]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   // actions
   const callRpc = async (fn: string) => {
@@ -206,12 +161,12 @@ export default function PayrollV2Page() {
     }
   };
 
-  const build      = () => callRpc('build_period');
-  const syncBase   = () => callRpc('sync_base_items');
+  const build = () => callRpc('build_period');
+  const syncBase = () => callRpc('sync_base_items');
   const syncAbsent = () => callRpc('sync_absent_deductions');
-  const recalc     = () => callRpc('recalc_statutories');
-  const lock       = () => callRpc('lock_period');
-  const unlock     = () => callRpc('unlock_period');
+  const recalc = () => callRpc('recalc_statutories');
+  const lock = () => callRpc('lock_period');
+  const unlock = () => callRpc('unlock_period');
 
   const finalizeAndGenerate = async () => {
     if (disabledWrites) return;
@@ -236,11 +191,34 @@ export default function PayrollV2Page() {
   const statusPill = useMemo(() => {
     const st = period?.status ?? '';
     const cls =
-      st === 'LOCKED' ? 'bg-yellow-100 text-yellow-800'
-      : st === 'FINALIZED' ? 'bg-blue-100 text-blue-800'
-      : 'bg-green-100 text-green-800';
-    return <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${cls}`}>{st || '—'}</span>;
+      st === 'LOCKED'
+        ? 'bg-yellow-100 text-yellow-800'
+        : st === 'FINALIZED'
+        ? 'bg-blue-100 text-blue-800'
+        : 'bg-green-100 text-green-800';
+    return (
+      <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${cls}`}>
+        {st || '—'}
+      </span>
+    );
   }, [period]);
+
+  // modal helpers
+  const openDetail = (row: SummaryRow) => {
+    setDetailRow(row);
+    setShowDetail(true);
+  };
+  const closeDetail = () => {
+    setShowDetail(false);
+    setDetailRow(null);
+  };
+
+  const modalTotals = useMemo(() => {
+    if (!detailRow) return { earn: 0, deduct: 0 };
+    const earn = (detailRow.earn_breakdown ?? []).reduce((a, b) => a + asNum(b.amount), 0);
+    const deduct = (detailRow.deduct_breakdown ?? []).reduce((a, b) => a + asNum(b.amount), 0);
+    return { earn, deduct };
+  }, [detailRow]);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
@@ -249,9 +227,12 @@ export default function PayrollV2Page() {
       {/* Controls */}
       <div className="mb-3 flex flex-wrap items-end gap-3">
         <div className="text-sm text-gray-600">
-          <div className="mb-1">Period: <b>{`${year}-${String(month).padStart(2,'0')}`}</b></div>
+          <div className="mb-1">
+            Period: <b>{`${year}-${String(month).padStart(2, '0')}`}</b>
+          </div>
           <div className="flex items-center gap-2">
-            <span className="text-gray-500">Status:</span>{statusPill}
+            <span className="text-gray-500">Status:</span>
+            {statusPill}
           </div>
         </div>
 
@@ -276,22 +257,74 @@ export default function PayrollV2Page() {
               onChange={(e) => setMonth(Number(e.target.value))}
             />
           </div>
-          <button onClick={refresh} className="rounded border px-3 py-1.5 text-sm hover:bg-gray-50">Refresh</button>
+          <button onClick={refresh} className="rounded border px-3 py-1.5 text-sm hover:bg-gray-50">
+            Refresh
+          </button>
         </div>
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <button onClick={build}      disabled={disabledWrites} className={`rounded px-3 py-1.5 text-sm font-medium ${disabledWrites?'bg-gray-100 text-gray-400':'border bg-white hover:bg-gray-50'}`}>Build</button>
-        <button onClick={syncBase}   disabled={disabledWrites} className={`rounded px-3 py-1.5 text-sm font-medium ${disabledWrites?'bg-gray-100 text-gray-400':'border bg-white hover:bg-gray-50'}`}>Sync Base</button>
-        <button onClick={syncAbsent} disabled={disabledWrites} className={`rounded px-3 py-1.5 text-sm font-medium ${disabledWrites?'bg-gray-100 text-gray-400':'border bg-white hover:bg-gray-50'}`}>Sync Absent</button>
-        <button onClick={recalc}     disabled={disabledWrites} className={`rounded px-3 py-1.5 text-sm font-medium ${disabledWrites?'bg-gray-100 text-gray-400':'border bg-white hover:bg-gray-50'}`}>Recalc Statutories</button>
+        <button
+          onClick={build}
+          disabled={disabledWrites}
+          className={`rounded px-3 py-1.5 text-sm font-medium ${
+            disabledWrites ? 'bg-gray-100 text-gray-400' : 'border bg-white hover:bg-gray-50'
+          }`}
+        >
+          Build
+        </button>
+        <button
+          onClick={syncBase}
+          disabled={disabledWrites}
+          className={`rounded px-3 py-1.5 text-sm font-medium ${
+            disabledWrites ? 'bg-gray-100 text-gray-400' : 'border bg-white hover:bg-gray-50'
+          }`}
+        >
+          Sync Base
+        </button>
+        <button
+          onClick={syncAbsent}
+          disabled={disabledWrites}
+          className={`rounded px-3 py-1.5 text-sm font-medium ${
+            disabledWrites ? 'bg-gray-100 text-gray-400' : 'border bg-white hover:bg-gray-50'
+          }`}
+        >
+          Sync Absent
+        </button>
+        <button
+          onClick={recalc}
+          disabled={disabledWrites}
+          className={`rounded px-3 py-1.5 text-sm font-medium ${
+            disabledWrites ? 'bg-gray-100 text-gray-400' : 'border bg-white hover:bg-gray-50'
+          }`}
+        >
+          Recalc Statutories
+        </button>
         <span className="mx-1 text-gray-300">|</span>
-        <button onClick={lock}       disabled={disabledWrites} className={`rounded px-3 py-1.5 text-sm font-medium ${disabledWrites?'bg-gray-100 text-gray-400':'border bg-white hover:bg-gray-50'}`}>Lock</button>
-        <button onClick={unlock}     disabled={disabledWrites} className={`rounded px-3 py-1.5 text-sm font-medium ${disabledWrites?'bg-gray-100 text-gray-400':'border bg-white hover:bg-gray-50'}`}>Unlock</button>
+        <button
+          onClick={lock}
+          disabled={disabledWrites}
+          className={`rounded px-3 py-1.5 text-sm font-medium ${
+            disabledWrites ? 'bg-gray-100 text-gray-400' : 'border bg-white hover:bg-gray-50'
+          }`}
+        >
+          Lock
+        </button>
+        <button
+          onClick={unlock}
+          disabled={disabledWrites}
+          className={`rounded px-3 py-1.5 text-sm font-medium ${
+            disabledWrites ? 'bg-gray-100 text-gray-400' : 'border bg-white hover:bg-gray-50'
+          }`}
+        >
+          Unlock
+        </button>
         <button
           onClick={finalizeAndGenerate}
           disabled={disabledWrites}
-          className={`ml-2 rounded px-3 py-1.5 text-sm font-semibold ${disabledWrites?'bg-blue-200 text-white':'bg-blue-600 text-white hover:bg-blue-700'}`}
+          className={`ml-2 rounded px-3 py-1.5 text-sm font-semibold ${
+            disabledWrites ? 'bg-blue-200 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'
+          }`}
         >
           Finalize & Generate PDFs
         </button>
@@ -320,13 +353,14 @@ export default function PayrollV2Page() {
               <th className="border-b px-3 py-2">Total Deduct</th>
               <th className="border-b px-3 py-2">Net</th>
               <th className="border-b px-3 py-2">Absent (days)</th>
+              <th className="border-b px-3 py-2">Details</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={11} className="px-3 py-6 text-center text-gray-500">
-                  No data for {year}-{String(month).padStart(2,'0')}. Try Build/Sync.
+                <td colSpan={12} className="px-3 py-6 text-center text-gray-500">
+                  No data for {year}-{String(month).padStart(2, '0')}. Try Build/Sync.
                 </td>
               </tr>
             ) : (
@@ -340,21 +374,22 @@ export default function PayrollV2Page() {
                     </td>
                     <td className="px-3 py-2 tabular-nums">{fmt(r.base_wage, true)}</td>
                     <td className="px-3 py-2 tabular-nums">{fmt(r.total_earn, true)}</td>
-
-                    <td className="px-3 py-2">
-                      <ManualDeductCell row={r} openKey={openManualFor} setOpenKey={setOpenManualFor} />
-                    </td>
-
-                    <td className="px-3 py-2 tabular-nums">
-                      {fmt(r.unpaid_auto, true)}
-                    </td>
-
+                    <td className="px-3 py-2 tabular-nums">{fmt(r.manual_deduct, true)}</td>
+                    <td className="px-3 py-2 tabular-nums">{fmt(r.unpaid_auto, true)}</td>
                     <td className="px-3 py-2 tabular-nums">{fmt(r.epf_emp, true)}</td>
                     <td className="px-3 py-2 tabular-nums">{fmt(r.socso_emp, true)}</td>
                     <td className="px-3 py-2 tabular-nums">{fmt(r.eis_emp, true)}</td>
                     <td className="px-3 py-2 tabular-nums">{fmt(r.total_deduct, true)}</td>
                     <td className="px-3 py-2 tabular-nums font-semibold">{fmt(r.net_pay, true)}</td>
                     <td className="px-3 py-2 text-center">{absent}</td>
+                    <td className="px-3 py-2">
+                      <button
+                        className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
+                        onClick={() => openDetail(r)}
+                      >
+                        View
+                      </button>
+                    </td>
                   </tr>
                 );
               })
@@ -364,9 +399,129 @@ export default function PayrollV2Page() {
       </div>
 
       <p className="mt-3 text-xs text-gray-500">
-        Finalize uses your existing <code>/api/payroll/finalize</code> endpoint to generate &amp; upload PDFs to your
+        Finalize uses your existing <code>/api/payroll/finalize</code> endpoint to generate & upload PDFs to your
         Supabase Storage bucket.
       </p>
+
+      {/* Detail Modal */}
+      {showDetail && detailRow && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeDetail();
+          }}
+        >
+          <div className="w-[min(900px,96vw)] rounded-lg bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b p-3">
+              <div className="text-sm font-semibold">
+                Details — {detailRow.staff_name ?? detailRow.staff_email}{' '}
+                <span className="text-gray-500">({detailRow.staff_email})</span>
+              </div>
+              <button
+                onClick={closeDetail}
+                className="rounded px-2 py-1 text-sm text-gray-600 hover:bg-gray-100"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2">
+              {/* Earnings */}
+              <div>
+                <div className="mb-2 text-sm font-semibold">Earnings</div>
+                <div className="overflow-hidden rounded border">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="border-b px-3 py-2 text-left">Label</th>
+                        <th className="border-b px-3 py-2 text-right">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(detailRow.earn_breakdown ?? []).length === 0 ? (
+                        <tr>
+                          <td className="px-3 py-3 text-center text-gray-500" colSpan={2}>
+                            No items
+                          </td>
+                        </tr>
+                      ) : (
+                        (detailRow.earn_breakdown ?? []).map((it, idx) => (
+                          <tr key={`e-${idx}`} className="odd:bg-white even:bg-gray-50">
+                            <td className="px-3 py-1.5">{it.label}</td>
+                            <td className="px-3 py-1.5 text-right tabular-nums">
+                              {fmt(it.amount, true)}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                      <tr className="bg-gray-50">
+                        <td className="px-3 py-2 font-medium">Total</td>
+                        <td className="px-3 py-2 text-right font-medium tabular-nums">
+                          {fmt(modalTotals.earn, true)}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Deductions */}
+              <div>
+                <div className="mb-2 text-sm font-semibold">Deductions</div>
+                <div className="overflow-hidden rounded border">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="border-b px-3 py-2 text-left">Label</th>
+                        <th className="border-b px-3 py-2 text-right">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(detailRow.deduct_breakdown ?? []).length === 0 ? (
+                        <tr>
+                          <td className="px-3 py-3 text-center text-gray-500" colSpan={2}>
+                            No items
+                          </td>
+                        </tr>
+                      ) : (
+                        (detailRow.deduct_breakdown ?? []).map((it, idx) => (
+                          <tr key={`d-${idx}`} className="odd:bg-white even:bg-gray-50">
+                            <td className="px-3 py-1.5">{it.label}</td>
+                            <td className="px-3 py-1.5 text-right tabular-nums">
+                              {fmt(it.amount, true)}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                      <tr className="bg-gray-50">
+                        <td className="px-3 py-2 font-medium">Total</td>
+                        <td className="px-3 py-2 text-right font-medium tabular-nums">
+                          {fmt(modalTotals.deduct, true)}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-3 border-t p-3 text-sm">
+              <div className="mr-auto text-gray-600">
+                Net pay:&nbsp;
+                <b className="tabular-nums">{fmt(detailRow.net_pay, true)}</b>
+              </div>
+              <button
+                onClick={closeDetail}
+                className="rounded border px-3 py-1.5 hover:bg-gray-50"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
