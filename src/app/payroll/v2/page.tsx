@@ -249,8 +249,6 @@ export default function PayrollV2Page() {
 
   /* ============================================================
      DETAILS MODAL
-     - Deduction list includes UNPAID as first-class row.
-     - Add-form bug fixed: switching type sets a sensible default code.
   ============================================================ */
   const [show, setShow] = useState<boolean>(false);
   const [sel, setSel] = useState<SummaryRow | null>(null);
@@ -427,7 +425,6 @@ export default function PayrollV2Page() {
     if (!isAdmin) { setFormMsg({ err: 'You are not admin.' }); return; }
     if (period?.status !== 'OPEN') { setFormMsg({ err: `Period must be OPEN (now ${period?.status || '—'})` }); return; }
 
-    // Prompt current final value as default (RM)
     const current = unpaidFinal || 0;
     const raw = prompt('Set final Unpaid Leave (RM):', fmt(current, false));
     if (raw == null) return; // cancelled
@@ -454,7 +451,6 @@ export default function PayrollV2Page() {
         setLastError(error.message ?? String(error));
         setFormMsg({ err: error.message ?? 'Update unpaid failed' });
       } else {
-        // Reload page + modal data to reflect new UNPAID components
         await refresh();
         await loadManualAndUnpaid(sel.staff_email);
         setFormMsg({ ok: 'Unpaid total updated.' });
@@ -466,6 +462,17 @@ export default function PayrollV2Page() {
     } finally {
       setWorking(false);
     }
+  };
+
+  /** PRINT PAYSLIP (opens new tab) */
+  const openPayslip = () => {
+    if (!sel) return;
+    const q = new URLSearchParams({
+      year: String(year),
+      month: String(month),
+      email: sel.staff_email.toLowerCase(),
+    }).toString();
+    window.open(`/payroll/slip?${q}`, '_blank', 'noopener,noreferrer');
   };
 
   /* ============================================================
@@ -618,9 +625,22 @@ export default function PayrollV2Page() {
                 Edit items — {sel.staff_name ?? sel.staff_email}
                 <div className="text-xs text-gray-500">{sel.staff_email}</div>
               </div>
-              <button className="rounded border px-2 py-1 text-xs hover:bg-gray-50" onClick={() => !working && setShow(false)}>
-                Close
-              </button>
+              <div className="flex items-center gap-2">
+                {/* NEW: Print payslip */}
+                <button
+                  className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
+                  onClick={openPayslip}
+                  title="Open printable payslip in a new tab"
+                >
+                  Print payslip
+                </button>
+                <button
+                  className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
+                  onClick={() => !working && setShow(false)}
+                >
+                  Close
+                </button>
+              </div>
             </div>
 
             {/* Summary chips */}
