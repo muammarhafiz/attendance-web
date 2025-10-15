@@ -141,14 +141,13 @@ export default function PayrollV2Page() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      // 1) Period status
+      // 1) Period status — use public view to avoid RLS surprises
       {
         const { data, error } = await supabase
-          .from('pay_v2.periods')
+          .from('v_periods_min')
           .select('id, year, month, status')
           .eq('year', year)
           .eq('month', month)
-          .limit(1)
           .maybeSingle();
         if (!error) setPeriod((data as PeriodRow) ?? null);
         else setPeriod(null);
@@ -275,13 +274,9 @@ export default function PayrollV2Page() {
   const [addAmt, setAddAmt] = useState<string>('0.00');
   const [working, setWorking] = useState<boolean>(false);
 
-  // IMPORTANT FIX #1: when type changes, set a sane default code
+  // When type changes, reset to a sane default code and clear CUSTOM
   useEffect(() => {
-    if (addType === 'DEDUCT') {
-      setAddCode('ADVANCE');
-    } else {
-      setAddCode('COMM');
-    }
+    if (addType === 'DEDUCT') setAddCode('ADVANCE'); else setAddCode('COMM');
     setCustomCode('');
   }, [addType]);
 
@@ -344,7 +339,7 @@ export default function PayrollV2Page() {
       return;
     }
 
-    // IMPORTANT FIX #2: default label from the FINAL chosenCode
+    // default label from the FINAL chosenCode, respecting CUSTOM
     const list = addType === 'DEDUCT' ? DEDUCT_CODES : EARN_CODES;
     const defaultLabel = (list.find(c => c.code === chosenCode)?.label) || chosenCode;
 
