@@ -40,7 +40,7 @@ type ItemRow = {
   amount: number | string;
 };
 
-/* ---------- Dropdown Presets ---------- */
+/* ---------- presets for dropdowns ---------- */
 const EARN_CODES: { code: string; label: string }[] = [
   { code: 'COMM',  label: 'Commission' },
   { code: 'OT',    label: 'Overtime' },
@@ -55,7 +55,7 @@ const DEDUCT_CODES: { code: string; label: string }[] = [
   { code: 'CUSTOM',  label: 'Custom…' },
 ];
 
-/* ---------- Helpers ---------- */
+/* ---------- helpers ---------- */
 function asNum(x: number | string | null | undefined): number {
   if (x == null) return 0;
   if (typeof x === 'number') return x;
@@ -64,13 +64,17 @@ function asNum(x: number | string | null | undefined): number {
 }
 function fmt(n: number | string, currency = false): string {
   const v = asNum(n);
-  return currency
-    ? v.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    : v.toFixed(2);
+  if (currency) {
+    return v.toLocaleString('en-MY', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+  return v.toFixed(2);
 }
 
 /* ============================================================
-   PAYROLL v2 PAGE
+   PAGE
 ============================================================ */
 export default function PayrollV2Page() {
   // KL time defaults
@@ -81,31 +85,28 @@ export default function PayrollV2Page() {
   const [year, setYear] = useState<number>(klNow.getFullYear());
   const [month, setMonth] = useState<number>(klNow.getMonth() + 1);
 
-  // Data
   const [period, setPeriod] = useState<PeriodRow | null>(null);
   const [rows, setRows] = useState<SummaryRow[]>([]);
   const [absentMap, setAbsentMap] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState<boolean>(false);
 
-  // Auth/admin
+  // auth/admin
   const [email, setEmail] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
-  const disabledWrites = !isAdmin;
 
-  // Inline diagnostics + form feedback
+  // admin status toast
+  const [adminToast, setAdminToast] = useState<{ show: boolean; text: string }>({ show: false, text: '' });
+  const showAdminToastText = (flag: boolean) => {
+    setAdminToast({ show: true, text: flag ? 'You are Admin' : 'You are NOT Admin' });
+    setTimeout(() => setAdminToast({ show: false, text: '' }), 2000);
+  };
+
+  // inline diagnostics
   const [lastAction, setLastAction] = useState<string>('');
   const [lastPayload, setLastPayload] = useState<any>(null);
   const [lastError, setLastError] = useState<string>('');
   const [formMsg, setFormMsg] = useState<{ ok?: string; err?: string }>({});
 
-  // Admin toast
-  const [adminToast, setAdminToast] = useState<{ show: boolean; text: string }>({ show: false, text: '' });
-  const showAdminToastText = (flag: boolean) => {
-    setAdminToast({ show: true, text: flag ? 'You are Admin' : 'You are NOT Admin' });
-    setTimeout(() => setAdminToast({ show: false, text: '' }), 2500);
-  };
-
-  /* ---------- Auth init ---------- */
   useEffect(() => {
     const init = async () => {
       const { data } = await supabase.auth.getUser();
@@ -135,54 +136,48 @@ export default function PayrollV2Page() {
     return () => { sub?.subscription?.unsubscribe?.(); };
   }, []);
 
-  /* ---------- Refresh data ---------- */
+  const disabledWrites = !isAdmin;
+
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      // 1) Period status (prefer light view if present)
-      let per: PeriodRow | null = null;
-      const p1 = await supabase
-        .from('v_periods_min')
-        .select('id, year, month, status')
-        .eq('year', year)
-        .eq('month', month)
-        .maybeSingle();
-
-      if (p1.error && p1.error.message?.toLowerCase?.().includes('relation "v_periods_min"')) {
-        const p2 = await supabase
+      // 1) Period status
+      {
+        const { data, error } = await supabase
           .from('pay_v2.periods')
           .select('id, year, month, status')
           .eq('year', year)
           .eq('month', month)
+          .limit(1)
           .maybeSingle();
-        per = p2.data ?? null;
-      } else {
-        per = p1.data ?? null;
+        if (!error) setPeriod((data as PeriodRow) ?? null);
+        else setPeriod(null);
       }
-      setPeriod(per);
 
-      // 2) Summary (v2)
-      const { data: vData, error: vErr } = await supabase
-        .from('v_payslip_admin_summary_v2')
-        .select('*')
-        .eq('year', year)
-        .eq('month', month)
-        .order('staff_name', { ascending: true });
-      if (vErr) throw vErr;
-      setRows(vData ?? []);
+      // 2) summary view (v2)
+      {
+        const { data, error } = await supabase
+          .from('v_payslip_admin_summary_v2')
+          .select('*')
+          .eq('year', year)
+          .eq('month', month)
+          .order('staff_name', { ascending: true });
+        if (error) throw error;
+        setRows((data as SummaryRow[]) ?? []);
+      }
 
-      // 3) Absent (normalize to lowercase keys)
-      const { data: abs, error: absErr } = await supabase.rpc('absent_days_from_report', {
-        p_year: year, p_month: month,
-      });
-      if (!absErr && Array.isArray(abs)) {
-        const map: Record<string, number> = {};
-        for (const r of abs as { staff_email: string; days_absent: number }[]) {
-          map[(r.staff_email || '').toLowerCase()] = r.days_absent ?? 0;
+      // 3) live absent days via Report wrapper
+      {
+        const { data, error } = await supabase.rpc('absent_days_from_report', { p_year: year, p_month: month });
+        if (!error && Array.isArray(data)) {
+          const map: Record<string, number> = {};
+          for (const r of data as { staff_email: string; days_absent: number }[]) {
+            map[r.staff_email] = r.days_absent ?? 0;
+          }
+          setAbsentMap(map);
+        } else {
+          setAbsentMap({});
         }
-        setAbsentMap(map);
-      } else {
-        setAbsentMap({});
       }
     } catch (e) {
       console.error(e);
@@ -195,7 +190,7 @@ export default function PayrollV2Page() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  /* ---------- Admin-only RPC helpers ---------- */
+  // actions (RPC) with diagnostics
   const callRpc = async (fn: string) => {
     if (disabledWrites) return;
     setLastAction(fn);
@@ -209,12 +204,12 @@ export default function PayrollV2Page() {
       await refresh();
     }
   };
-  const build      = () => callRpc('build_period');
-  const syncBase   = () => callRpc('sync_base_items');
+  const build    = () => callRpc('build_period');
+  const syncBase = () => callRpc('sync_base_items');
   const syncAbsent = () => callRpc('sync_absent_deductions');
-  const recalc     = () => callRpc('recalc_statutories');
-  const lock       = () => callRpc('lock_period');
-  const unlock     = () => callRpc('unlock_period');
+  const recalc   = () => callRpc('recalc_statutories');
+  const lock     = () => callRpc('lock_period');
+  const unlock   = () => callRpc('unlock_period');
 
   const finalizeAndGenerate = async () => {
     if (disabledWrites) return;
@@ -239,13 +234,13 @@ export default function PayrollV2Page() {
     }
   };
 
-  /* ---------- Status pill ---------- */
+  /* ---------- status pill ---------- */
   const statusPill = useMemo(() => {
     const st = period?.status ?? '';
     const cls =
-      st === 'LOCKED'    ? 'bg-yellow-100 text-yellow-800' :
-      st === 'FINALIZED' ? 'bg-blue-100 text-blue-800' :
-                           'bg-green-100 text-green-800';
+      st === 'LOCKED'   ? 'bg-yellow-100 text-yellow-800' :
+      st === 'FINALIZED'? 'bg-blue-100 text-blue-800' :
+                          'bg-green-100 text-green-800';
     return (
       <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${cls}`}>
         {st || '—'}
@@ -254,30 +249,41 @@ export default function PayrollV2Page() {
   }, [period]);
 
   /* ============================================================
-     DETAILS MODAL (UNPAID lives in DEDUCTIONS and is editable)
+     DETAILS MODAL
+     - Deduction list includes UNPAID as first-class row.
+     - Add-form bug fixed: switching type sets a sensible default code.
   ============================================================ */
   const [show, setShow] = useState<boolean>(false);
   const [sel, setSel] = useState<SummaryRow | null>(null);
+
   const [earnItems, setEarnItems] = useState<ItemRow[]>([]);
   const [deductItems, setDeductItems] = useState<ItemRow[]>([]);
-  const [unpaidAdjAmt, setUnpaidAdjAmt] = useState<number>(0);    // EARN/UNPAID_ADJ
-  const [unpaidExtraAmt, setUnpaidExtraAmt] = useState<number>(0); // DEDUCT/UNPAID_EXTRA
 
-  // Single editable UNPAID number shown in the Deductions panel
+  // UNPAID plumbing (for final unpaid line)
+  const [unpaidAdjAmt, setUnpaidAdjAmt] = useState<number>(0);     // EARN/UNPAID_ADJ
+  const [unpaidExtraAmt, setUnpaidExtraAmt] = useState<number>(0); // DEDUCT/UNPAID_EXTRA
   const unpaidFinal = useMemo(() => {
     if (!sel) return 0;
     return Math.max(0, asNum(sel.unpaid_auto) + unpaidExtraAmt - unpaidAdjAmt);
   }, [sel, unpaidAdjAmt, unpaidExtraAmt]);
 
-  const [unpaidEditing, setUnpaidEditing] = useState<boolean>(false);
-  const [unpaidDraft, setUnpaidDraft] = useState<string>('0.00');
+  // add form state
+  const [addType, setAddType] = useState<'EARN' | 'DEDUCT'>('EARN');
+  const [addCode, setAddCode] = useState<string>('COMM'); // changes with type
+  const [customCode, setCustomCode] = useState<string>('');
+  const [addLabel, setAddLabel] = useState<string>('');
+  const [addAmt, setAddAmt] = useState<string>('0.00');
+  const [working, setWorking] = useState<boolean>(false);
 
+  // IMPORTANT FIX #1: when type changes, set a sane default code
   useEffect(() => {
-    if (show && sel) {
-      setUnpaidDraft(unpaidFinal.toFixed(2));
-      setUnpaidEditing(false);
+    if (addType === 'DEDUCT') {
+      setAddCode('ADVANCE');
+    } else {
+      setAddCode('COMM');
     }
-  }, [show, sel, unpaidFinal]);
+    setCustomCode('');
+  }, [addType]);
 
   const openDetails = async (row: SummaryRow) => {
     setSel(row);
@@ -290,31 +296,29 @@ export default function PayrollV2Page() {
     async (emailAddr: string) => {
       if (!period) return;
 
-      // 1) Manual items (exclude BASE/UNPAID/STAT_*)
-      const { data, error } = await supabase.rpc('list_manual_items', {
+      // Manual items (exclude BASE/UNPAID/STAT_*) via function
+      const { data: listData } = await supabase.rpc('list_manual_items', {
         p_year: year, p_month: month, p_email: emailAddr,
       });
-      if (!error) {
-        const rows = (data as ItemRow[]) ?? [];
-        setEarnItems(rows.filter(r => r.kind === 'EARN'));
-        setDeductItems(rows.filter(r => r.kind === 'DEDUCT'));
-      } else {
-        setEarnItems([]); setDeductItems([]);
-      }
 
-      // 2) Plumbing for UNPAID (ADJ & EXTRA)
+      const rows = (listData as ItemRow[]) ?? [];
+      setEarnItems(rows.filter(r => r.kind === 'EARN'));
+      setDeductItems(rows.filter(r => r.kind === 'DEDUCT'));
+
+      // UNPAID plumbing items for final total (EARN/UNPAID_ADJ & DEDUCT/UNPAID_EXTRA)
       if (period?.id) {
         const { data: plumb } = await supabase
           .from('pay_v2.items')
-          .select('code, amount')
+          .select('kind, code, amount')
           .eq('period_id', period.id)
           .eq('staff_email', emailAddr.toLowerCase())
           .in('code', ['UNPAID_ADJ','UNPAID_EXTRA']);
+
         let adj = 0, extra = 0;
-        (plumb ?? []).forEach(r => {
-          const c = (r.code ?? '').toUpperCase();
-          if (c === 'UNPAID_ADJ')   adj = asNum(r.amount);
-          if (c === 'UNPAID_EXTRA') extra = asNum(r.amount);
+        (plumb ?? []).forEach((r: any) => {
+          const code = (r.code ?? '').toUpperCase();
+          if (code === 'UNPAID_ADJ')   adj = asNum(r.amount);
+          if (code === 'UNPAID_EXTRA') extra = asNum(r.amount);
         });
         setUnpaidAdjAmt(adj);
         setUnpaidExtraAmt(extra);
@@ -322,49 +326,6 @@ export default function PayrollV2Page() {
     },
     [period, year, month]
   );
-
-  // Save final UNPAID via single number setter
-  const saveUnpaidTotal = async () => {
-    if (!sel) return;
-    if (!isAdmin || period?.status !== 'OPEN') {
-      setFormMsg({ err: 'Period must be OPEN and you must be admin.' });
-      return;
-    }
-    const target = Number(unpaidDraft);
-    if (!Number.isFinite(target) || target < 0) {
-      setFormMsg({ err: 'Invalid unpaid amount' });
-      return;
-    }
-    setLastAction('set_unpaid_total');
-    setLastPayload({ p_year: year, p_month: month, p_email: sel.staff_email, p_target: target });
-    setLastError('');
-    try {
-      const { error } = await supabase.rpc('set_unpaid_total', {
-        p_year: year, p_month: month, p_email: sel.staff_email, p_target: target,
-      });
-      if (error) {
-        setLastError(error.message ?? String(error));
-        setFormMsg({ err: error.message ?? 'Save failed' });
-      } else {
-        await refresh();
-        await loadManualAndUnpaid(sel.staff_email);
-        setFormMsg({ ok: 'Unpaid updated.' });
-        setUnpaidEditing(false);
-      }
-    } catch (e) {
-      const msg = (e as Error).message;
-      setLastError(msg);
-      setFormMsg({ err: msg });
-    }
-  };
-
-  // Manual Add / Update / Delete
-  const [addType, setAddType] = useState<'EARN' | 'DEDUCT'>('EARN');
-  const [addCode, setAddCode] = useState<string>('COMM');
-  const [customCode, setCustomCode] = useState<string>('');
-  const [addLabel, setAddLabel] = useState<string>('');
-  const [addAmt, setAddAmt] = useState<string>('0.00');
-  const [working, setWorking] = useState<boolean>(false);
 
   const addItem = async () => {
     setFormMsg({}); setLastError('');
@@ -383,10 +344,9 @@ export default function PayrollV2Page() {
       return;
     }
 
-    const defaultLabel =
-      (addType === 'DEDUCT'
-        ? DEDUCT_CODES.find(c => c.code === addCode)?.label
-        : EARN_CODES.find(c => c.code === addCode)?.label) || chosenCode;
+    // IMPORTANT FIX #2: default label from the FINAL chosenCode
+    const list = addType === 'DEDUCT' ? DEDUCT_CODES : EARN_CODES;
+    const defaultLabel = (list.find(c => c.code === chosenCode)?.label) || chosenCode;
 
     setWorking(true);
     setLastAction('add_pay_item');
@@ -412,17 +372,12 @@ export default function PayrollV2Page() {
       const msg = (e as Error).message;
       setLastError(msg);
       setFormMsg({ err: msg });
-    } finally {
-      setWorking(false);
-    }
+    } finally { setWorking(false); }
   };
 
   const updateItem = async (itemId: string, amount: number, label?: string) => {
     setFormMsg({});
-    if (!isAdmin || period?.status !== 'OPEN') {
-      setFormMsg({ err: 'Period must be OPEN and you must be admin.' });
-      return;
-    }
+    if (!isAdmin || period?.status !== 'OPEN') { setFormMsg({ err: 'Period must be OPEN and you must be admin.' }); return; }
     setWorking(true);
     setLastAction('update_pay_item');
     setLastPayload({ p_item_id: itemId, p_amount: amount, p_label: label ?? null });
@@ -443,17 +398,12 @@ export default function PayrollV2Page() {
       const msg = (e as Error).message;
       setLastError(msg);
       setFormMsg({ err: msg });
-    } finally {
-      setWorking(false);
-    }
+    } finally { setWorking(false); }
   };
 
   const deleteItem = async (itemId: string) => {
     setFormMsg({});
-    if (!isAdmin || period?.status !== 'OPEN') {
-      setFormMsg({ err: 'Period must be OPEN and you must be admin.' });
-      return;
-    }
+    if (!isAdmin || period?.status !== 'OPEN') { setFormMsg({ err: 'Period must be OPEN and you must be admin.' }); return; }
     if (!confirm('Delete this item?')) return;
     setWorking(true);
     setLastAction('delete_pay_item');
@@ -473,9 +423,7 @@ export default function PayrollV2Page() {
       const msg = (e as Error).message;
       setLastError(msg);
       setFormMsg({ err: msg });
-    } finally {
-      setWorking(false);
-    }
+    } finally { setWorking(false); }
   };
 
   /* ============================================================
@@ -488,24 +436,40 @@ export default function PayrollV2Page() {
       {/* Controls */}
       <div className="mb-3 flex flex-wrap items-end gap-3">
         <div className="text-sm text-gray-600">
-          <div className="mb-1">Period: <b>{year}-{String(month).padStart(2,'0')}</b></div>
+          <div className="mb-1">Period: <b>{`${year}-${String(month).padStart(2, '0')}`}</b></div>
           <div className="flex items-center gap-2">
             <span className="text-gray-500">Status:</span>{statusPill}
-            <span className={`ml-2 inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${isAdmin ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+            <span
+              className={`ml-2 inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${isAdmin ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}
+              title="Admin recognition"
+            >
               {isAdmin ? 'Admin' : 'Not admin'}
             </span>
           </div>
         </div>
+
         <div className="ml-auto flex items-end gap-2">
           <div>
             <div className="text-xs text-gray-500">Year</div>
-            <input type="number" className="w-24 rounded border px-2 py-1" value={year} onChange={e=>setYear(Number(e.target.value))}/>
+            <input type="number" className="w-24 rounded border px-2 py-1" value={year} onChange={(e) => setYear(Number(e.target.value))} />
           </div>
           <div>
             <div className="text-xs text-gray-500">Month</div>
-            <input type="number" min={1} max={12} className="w-20 rounded border px-2 py-1" value={month} onChange={e=>setMonth(Number(e.target.value))}/>
+            <input type="number" min={1} max={12} className="w-20 rounded border px-2 py-1" value={month} onChange={(e) => setMonth(Number(e.target.value))} />
           </div>
           <button onClick={refresh} className="rounded border px-3 py-1.5 text-sm hover:bg-gray-50">Refresh</button>
+          <button
+            onClick={async () => {
+              const { data: ok3, error: e3 } = await supabase.rpc('is_admin', {});
+              const flag = !e3 && ok3 === true;
+              setIsAdmin(flag);
+              showAdminToastText(flag);
+            }}
+            className="rounded border px-2 py-1.5 text-xs hover:bg-gray-50"
+            title="Re-check admin status"
+          >
+            Check admin
+          </button>
         </div>
       </div>
 
@@ -542,6 +506,9 @@ export default function PayrollV2Page() {
               <th className="border-b px-3 py-2">Earn</th>
               <th className="border-b px-3 py-2">Manual Deduct</th>
               <th className="border-b px-3 py-2">Unpaid (auto)</th>
+              <th className="border-b px-3 py-2">EPF (Emp)</th>
+              <th className="border-b px-3 py-2">SOCSO (Emp)</th>
+              <th className="border-b px-3 py-2">EIS (Emp)</th>
               <th className="border-b px-3 py-2">Total Deduct</th>
               <th className="border-b px-3 py-2">Net</th>
               <th className="border-b px-3 py-2">Absent (days)</th>
@@ -551,26 +518,33 @@ export default function PayrollV2Page() {
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-3 py-6 text-center text-gray-500">
+                <td colSpan={12} className="px-3 py-6 text-center text-gray-500">
                   No data for {year}-{String(month).padStart(2, '0')}. Try Build/Sync.
                 </td>
               </tr>
             ) : (
               rows.map((r) => {
-                const abs = absentMap[(r.staff_email || '').toLowerCase()] ?? 0;
+                const absentDays = absentMap[r.staff_email] ?? 0;
                 return (
                   <tr key={r.staff_email} className="odd:bg-white even:bg-gray-50">
                     <td className="px-3 py-2 font-medium text-gray-900">
                       {r.staff_name ?? r.staff_email}
                       <div className="text-xs font-normal text-gray-500">{r.staff_email}</div>
                     </td>
-                    <td className="px-3 py-2 tabular-nums text-right">RM {fmt(r.base_wage)}</td>
-                    <td className="px-3 py-2 tabular-nums text-right">RM {fmt(r.total_earn)}</td>
-                    <td className="px-3 py-2 tabular-nums text-right">RM {fmt(r.manual_deduct)}</td>
-                    <td className="px-3 py-2 tabular-nums text-right">RM {fmt(r.unpaid_auto)} <span className="text-xs text-gray-500">· {abs}d</span></td>
-                    <td className="px-3 py-2 tabular-nums text-right">RM {fmt(r.total_deduct)}</td>
-                    <td className="px-3 py-2 tabular-nums text-right font-semibold">RM {fmt(r.net_pay)}</td>
-                    <td className="px-3 py-2 text-center">{abs}</td>
+                    <td className="px-3 py-2 tabular-nums">{fmt(r.base_wage, true)}</td>
+                    <td className="px-3 py-2 tabular-nums">{fmt(r.total_earn, true)}</td>
+                    <td className="px-3 py-2 tabular-nums">{fmt(r.manual_deduct, true)}</td>
+                    <td className="px-3 py-2 tabular-nums">
+                      {fmt(r.unpaid_auto, true)} <span className="text-xs text-gray-500">· {absentDays}d</span>
+                    </td>
+                    <td className="px-3 py-2 tabular-nums">{fmt(r.epf_emp, true)}</td>
+                    <td className="px-3 py-2 tabular-nums">{fmt(r.socso_emp, true)}</td>
+                    <td className="px-3 py-2 tabular-nums">{fmt(r.eis_emp, true)}</td>
+                    <td className="px-3 py-2 tabular-nums">{fmt(r.total_deduct, true)}</td>
+                    <td className="px-3 py-2 tabular-nums font-semibold">{fmt(r.net_pay, true)}</td>
+                    <td className="px-3 py-2 text-center" title="Live absent from Report (OFFDAY/MC excluded; future dates ignored).">
+                      {absentDays}
+                    </td>
                     <td className="px-3 py-2">
                       <button className="rounded border px-2 py-1 text-xs hover:bg-gray-50" onClick={() => openDetails(r)}>
                         Details
@@ -602,26 +576,15 @@ export default function PayrollV2Page() {
                 Edit items — {sel.staff_name ?? sel.staff_email}
                 <div className="text-xs text-gray-500">{sel.staff_email}</div>
               </div>
-              <div className="flex items-center gap-2">
-                <a
-                  href={`/payroll/slip?year=${year}&month=${month}&email=${encodeURIComponent(sel.staff_email)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
-                  title="Open printable payslip in a new tab"
-                >
-                  Print payslip
-                </a>
-                <button className="rounded border px-2 py-1 text-xs hover:bg-gray-50" onClick={() => !working && setShow(false)}>
-                  Close
-                </button>
-              </div>
+              <button className="rounded border px-2 py-1 text-xs hover:bg-gray-50" onClick={() => !working && setShow(false)}>
+                Close
+              </button>
             </div>
 
             {/* Summary chips */}
             <div className="flex flex-wrap gap-2 px-4 pt-3">
               <span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700">
-                Auto UNPAID: RM {fmt(sel.unpaid_auto)} · {(absentMap[sel.staff_email.toLowerCase()] ?? 0)}d
+                Auto UNPAID: RM {fmt(sel.unpaid_auto, false)}
               </span>
               <span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700">
                 Period status: {period?.status ?? '—'}
@@ -644,13 +607,13 @@ export default function PayrollV2Page() {
                             <div className="text-xs text-gray-500">code: {(it.code ?? '').toString()}</div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="tabular-nums">RM {fmt(it.amount)}</span>
+                            <span className="tabular-nums">RM {fmt(it.amount, false)}</span>
                             {isAdmin && period?.status === 'OPEN' && (
                               <>
                                 <button
                                   className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
                                   onClick={async () => {
-                                    const next = prompt('New amount (RM)', fmt(it.amount));
+                                    const next = prompt('New amount (RM)', fmt(it.amount, false));
                                     if (!next) return;
                                     const n = Number(next);
                                     if (!Number.isFinite(n) || n <= 0) { setFormMsg({ err: 'Invalid amount' }); return; }
@@ -673,59 +636,24 @@ export default function PayrollV2Page() {
                 </div>
               </div>
 
-              {/* Deductions (UNPAID as first-class row) */}
+              {/* Deductions (includes UNPAID as first-class row) */}
               <div className="rounded border">
                 <div className="border-b bg-gray-50 px-3 py-2 text-sm font-semibold">Deductions</div>
 
-                {/* UNPAID row (edit final total) */}
+                {/* UNPAID row */}
                 <div className="flex items-center justify-between gap-3 px-3 py-2 text-sm border-b">
                   <div>
                     <div className="font-medium">Unpaid leave</div>
                     <div className="text-xs text-gray-500">
-                      Final = auto ({fmt(sel.unpaid_auto)}) + extra ({fmt(unpaidExtraAmt)}) – adj ({fmt(unpaidAdjAmt)})
+                      Final total = auto ({fmt(sel.unpaid_auto, false)}) + extra ({fmt(unpaidExtraAmt, false)}) – adj ({fmt(unpaidAdjAmt, false)})
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {unpaidEditing ? (
-                      <>
-                        <input
-                          className="w-28 rounded border px-2 py-1 text-right tabular-nums"
-                          value={unpaidDraft}
-                          onChange={(e) => setUnpaidDraft(e.target.value)}
-                        />
-                        <button
-                          className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
-                          onClick={saveUnpaidTotal}
-                          disabled={!isAdmin || period?.status !== 'OPEN' || working}
-                          title="Save final Unpaid total"
-                        >
-                          Save
-                        </button>
-                        <button
-                          className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
-                          onClick={() => { setUnpaidDraft(unpaidFinal.toFixed(2)); setUnpaidEditing(false); }}
-                        >
-                          Cancel
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <span className="tabular-nums">RM {fmt(unpaidFinal)}</span>
-                        {isAdmin && period?.status === 'OPEN' && (
-                          <button
-                            className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
-                            onClick={() => { setUnpaidDraft(unpaidFinal.toFixed(2)); setUnpaidEditing(true); }}
-                            title="Edit final Unpaid amount (single number)"
-                          >
-                            Edit
-                          </button>
-                        )}
-                      </>
-                    )}
+                    <span className="tabular-nums">RM {fmt(unpaidFinal, false)}</span>
                   </div>
                 </div>
 
-                {/* Other manual deductions */}
+                {/* Manual deductions (excluding system UNPAID & statutories) */}
                 <div className="max-h-60 overflow-auto px-3 py-2 text-sm">
                   {deductItems.length === 0 ? (
                     <div className="text-gray-500">No other manual deductions.</div>
@@ -738,13 +666,13 @@ export default function PayrollV2Page() {
                             <div className="text-xs text-gray-500">code: {(it.code ?? '').toString()}</div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="tabular-nums">RM {fmt(it.amount)}</span>
+                            <span className="tabular-nums">RM {fmt(it.amount, false)}</span>
                             {isAdmin && period?.status === 'OPEN' && (
                               <>
                                 <button
                                   className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
                                   onClick={async () => {
-                                    const next = prompt('New amount (RM)', fmt(it.amount));
+                                    const next = prompt('New amount (RM)', fmt(it.amount, false));
                                     if (!next) return;
                                     const n = Number(next);
                                     if (!Number.isFinite(n) || n <= 0) { setFormMsg({ err: 'Invalid amount' }); return; }
@@ -772,9 +700,9 @@ export default function PayrollV2Page() {
             <div className="border-t px-4 py-3">
               <div className="mb-2 flex items-center justify-between">
                 <div className="text-sm font-semibold">Add item</div>
-                {!isAdmin || period?.status !== 'OPEN' ? (
-                  <span className="text-xs text-gray-500">(disabled: { !isAdmin ? 'Not admin' : `Period is ${period?.status || '—'}` })</span>
-                ) : null}
+                <div className="text-[11px] text-gray-500">
+                  Add as: <b>{addType}</b> · <b>{addCode === 'CUSTOM' ? (customCode || '—') : addCode}</b>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 gap-2 md:grid-cols-6">
