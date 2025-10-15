@@ -421,6 +421,53 @@ export default function PayrollV2Page() {
     } finally { setWorking(false); }
   };
 
+  /** EDIT UNPAID (admin-only) */
+  const setFinalUnpaid = async () => {
+    if (!sel) return;
+    if (!isAdmin) { setFormMsg({ err: 'You are not admin.' }); return; }
+    if (period?.status !== 'OPEN') { setFormMsg({ err: `Period must be OPEN (now ${period?.status || '—'})` }); return; }
+
+    // Prompt current final value as default (RM)
+    const current = unpaidFinal || 0;
+    const raw = prompt('Set final Unpaid Leave (RM):', fmt(current, false));
+    if (raw == null) return; // cancelled
+    const target = Number(raw);
+    if (!Number.isFinite(target) || target < 0) {
+      setFormMsg({ err: 'Please enter a valid non-negative number.' });
+      return;
+    }
+
+    try {
+      setWorking(true);
+      setLastAction('set_unpaid_total');
+      setLastPayload({ p_year: year, p_month: month, p_email: sel.staff_email, p_target: target });
+      setLastError('');
+
+      const { error } = await supabase.rpc('set_unpaid_total', {
+        p_year: year,
+        p_month: month,
+        p_email: sel.staff_email,
+        p_target: target,
+      });
+
+      if (error) {
+        setLastError(error.message ?? String(error));
+        setFormMsg({ err: error.message ?? 'Update unpaid failed' });
+      } else {
+        // Reload page + modal data to reflect new UNPAID components
+        await refresh();
+        await loadManualAndUnpaid(sel.staff_email);
+        setFormMsg({ ok: 'Unpaid total updated.' });
+      }
+    } catch (e) {
+      const msg = (e as Error).message;
+      setLastError(msg);
+      setFormMsg({ err: msg });
+    } finally {
+      setWorking(false);
+    }
+  };
+
   /* ============================================================
      RENDER
   ============================================================ */
@@ -635,10 +682,23 @@ export default function PayrollV2Page() {
               <div className="rounded border">
                 <div className="border-b bg-gray-50 px-3 py-2 text-sm font-semibold">Deductions</div>
 
-                {/* UNPAID row */}
-                <div className="flex items-center justify-between gap-3 px-3 py-2 text-sm border-b">
+                {/* UNPAID row with EDIT button */}
+                <div className="flex items-center justify-between gap-3 border-b px-3 py-2 text-sm">
                   <div>
-                    <div className="font-medium">Unpaid leave</div>
+                    <div className="font-medium">
+                      Unpaid leave
+                      {isAdmin && period?.status === 'OPEN' && (
+                        <button
+                          type="button"
+                          className="ml-2 rounded border px-2 py-0.5 text-xs hover:bg-gray-50"
+                          title="Set final Unpaid Leave total"
+                          onClick={setFinalUnpaid}
+                          disabled={working}
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </div>
                     <div className="text-xs text-gray-500">
                       Final total = auto ({fmt(sel.unpaid_auto, false)}) + extra ({fmt(unpaidExtraAmt, false)}) – adj ({fmt(unpaidAdjAmt, false)})
                     </div>
