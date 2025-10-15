@@ -46,7 +46,6 @@ const EARN_CODES: { code: string; label: string }[] = [
   { code: 'OT', label: 'Overtime' },
   { code: 'BONUS', label: 'Bonus' },
   { code: 'ALLOW', label: 'Allowance' },
-  { code: 'UNPAID_ADJ', label: 'Unpaid adjustment' }, // to offset auto UNPAID
   { code: 'CUSTOM', label: 'Custom…' },
 ];
 
@@ -100,21 +99,15 @@ export default function PayrollV2Page() {
   const [email, setEmail] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
 
-  // admin status toast
+  // tiny toast
   const [adminToast, setAdminToast] = useState<{ show: boolean; text: string }>({
     show: false,
     text: '',
   });
   const showAdminToastText = (flag: boolean) => {
     setAdminToast({ show: true, text: flag ? 'You are Admin' : 'You are NOT Admin' });
-    setTimeout(() => setAdminToast({ show: false, text: '' }), 2500);
+    setTimeout(() => setAdminToast({ show: false, text: '' }), 2000);
   };
-
-  // inline diagnostics for actions
-  const [lastAction, setLastAction] = useState<string>('');
-  const [lastPayload, setLastPayload] = useState<any>(null);
-  const [lastError, setLastError] = useState<string>('');
-  const [formMsg, setFormMsg] = useState<{ ok?: string; err?: string }>({});
 
   useEffect(() => {
     const init = async () => {
@@ -152,10 +145,10 @@ export default function PayrollV2Page() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      // 1) Period status (use your minimal view or the base table)
+      // 1) Period status (use a light view if you have one; else table)
       {
         const { data, error } = await supabase
-          .from('v_periods_min') // if you don't have this, swap to 'pay_v2.periods'
+          .from('v_periods_min')
           .select('id, year, month, status')
           .eq('year', year)
           .eq('month', month)
@@ -209,15 +202,11 @@ export default function PayrollV2Page() {
     refresh();
   }, [refresh]);
 
-  // actions (RPC) with diagnostics
+  // actions (RPC)
   const callRpc = async (fn: string) => {
     if (disabledWrites) return;
-    setLastAction(fn);
-    setLastPayload({ p_year: year, p_month: month });
-    setLastError('');
     const { error } = await supabase.rpc(fn, { p_year: year, p_month: month });
     if (error) {
-      setLastError(error.message ?? String(error));
       alert(`${fn} failed: ${error.message}`);
     } else {
       await refresh();
@@ -233,9 +222,6 @@ export default function PayrollV2Page() {
   const finalizeAndGenerate = async () => {
     if (disabledWrites) return;
     try {
-      setLastAction('finalize');
-      setLastPayload({ year, month });
-      setLastError('');
       const res = await fetch('/api/payroll/finalize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -243,7 +229,6 @@ export default function PayrollV2Page() {
       });
       if (!res.ok) {
         const t = await res.text();
-        setLastError(t);
         throw new Error(t);
       }
       alert('Finalize & PDF generation started/completed.');
@@ -272,13 +257,13 @@ export default function PayrollV2Page() {
   }, [period]);
 
   /* ============================================================
-     DETAILS MODAL (manual items + auto & live counters)
+     DETAILS MODAL (now shows UNPAID inside Deductions)
   ============================================================ */
   const [show, setShow] = useState<boolean>(false);
   const [sel, setSel] = useState<SummaryRow | null>(null);
   const [earnItems, setEarnItems] = useState<ItemRow[]>([]);
   const [deductItems, setDeductItems] = useState<ItemRow[]>([]);
-  // add form
+  // add form (for manual adds)
   const [addType, setAddType] = useState<'EARN' | 'DEDUCT'>('EARN');
   const [addCode, setAddCode] = useState<string>('COMM'); // may be 'CUSTOM'
   const [customCode, setCustomCode] = useState<string>(''); // when CUSTOM is chosen
@@ -286,34 +271,33 @@ export default function PayrollV2Page() {
   const [addAmt, setAddAmt] = useState<string>('0.00');
   const [working, setWorking] = useState<boolean>(false);
 
+  // NEW: editable target UNPAID (shows in deduction list)
+  const [unpaidTarget, setUnpaidTarget] = useState<string>('0.00');
+  const unpaidSaveDisabled = !isAdmin || period?.status !== 'OPEN' || working;
+
   // helpers for dropdown list
   const codeOptions = addType === 'DEDUCT' ? DEDUCT_CODES : EARN_CODES;
 
   const openDetails = async (row: SummaryRow) => {
     setSel(row);
     setShow(true);
-    setFormMsg({});
+    setUnpaidTarget(fmt(row.unpaid_auto)); // prefill with auto; admin can change and Save
     await loadManualItems(row.staff_email);
   };
 
   const loadManualItems = useCallback(
     async (email: string) => {
       if (!period) return;
-
-      // your SQL function that returns ONLY manual (non-UNPAID/non-STAT/non-BASE)
       const { data, error } = await supabase.rpc('list_manual_items', {
         p_year: year,
         p_month: month,
         p_email: email,
       });
-
       if (error) {
-        console.error('list_manual_items error:', error);
         setEarnItems([]);
         setDeductItems([]);
         return;
       }
-
       const rows = (data as ItemRow[]) ?? [];
       setEarnItems(rows.filter((r) => r.kind === 'EARN'));
       setDeductItems(rows.filter((r) => r.kind === 'DEDUCT'));
@@ -321,230 +305,125 @@ export default function PayrollV2Page() {
     [period, year, month]
   );
 
-  // computed disable state + reason for the Add button
-  const addDisabled = !isAdmin || period?.status !== 'OPEN' || working;
-  const addDisabledReason =
-    !isAdmin ? 'Not admin'
-    : period?.status !== 'OPEN' ? `Period is ${period?.status || '—'}`
-    : working ? 'Working…'
-    : '';
-
   const addItem = async () => {
-    setFormMsg({});
-    setLastError('');
     if (!sel) return;
-
-    if (!isAdmin) {
-      setFormMsg({ err: 'You are not admin.' });
+    if (!isAdmin || period?.status !== 'OPEN') {
+      alert('Period must be OPEN and you must be admin.');
       return;
     }
-    if (period?.status !== 'OPEN') {
-      setFormMsg({ err: `Period must be OPEN (now ${period?.status || '—'})` });
-      return;
-    }
-
     const amt = Number(addAmt);
     if (!Number.isFinite(amt) || amt <= 0) {
-      setFormMsg({ err: 'Amount must be > 0' });
+      alert('Amount must be > 0');
       return;
     }
-
     const chosenCode = addCode === 'CUSTOM' ? customCode.trim().toUpperCase() : addCode;
     if (!chosenCode) {
-      setFormMsg({ err: 'Please provide a code.' });
+      alert('Please provide a code.');
       return;
     }
     if (['BASE', 'UNPAID'].includes(chosenCode) || chosenCode.startsWith('STAT_')) {
-      setFormMsg({ err: 'That code is system-managed and cannot be added.' });
+      alert('That code is system-managed and cannot be added.');
       return;
     }
-
     const defaultLabel =
       (addType === 'DEDUCT'
         ? DEDUCT_CODES.find((c) => c.code === addCode)?.label
         : EARN_CODES.find((c) => c.code === addCode)?.label) || chosenCode;
 
     setWorking(true);
-    setLastAction('add_pay_item');
-    const payload = {
-      p_year: year,
-      p_month: month,
-      p_email: sel.staff_email,
-      p_kind: addType,
-      p_code: chosenCode,
-      p_label: addLabel || defaultLabel,
-      p_amount: amt,
-    };
-    setLastPayload(payload);
-
     try {
-      const { error } = await supabase.rpc('add_pay_item', payload);
-      if (error) {
-        setLastError(error.message ?? String(error));
-        setFormMsg({ err: error.message ?? 'Add failed' });
-      } else {
-        await refresh();
-        await loadManualItems(sel.staff_email);
-        setAddLabel('');
-        setAddAmt('0.00');
-        if (addCode === 'CUSTOM') setCustomCode('');
-        setFormMsg({ ok: 'Item added.' });
-      }
+      const { error } = await supabase.rpc('add_pay_item', {
+        p_year: year,
+        p_month: month,
+        p_email: sel.staff_email,
+        p_kind: addType,
+        p_code: chosenCode,
+        p_label: addLabel || defaultLabel,
+        p_amount: amt,
+      });
+      if (error) throw error;
+      await refresh();
+      await loadManualItems(sel.staff_email);
+      setAddLabel('');
+      setAddAmt('0.00');
+      if (addCode === 'CUSTOM') setCustomCode('');
     } catch (e) {
-      const msg = (e as Error).message;
-      setLastError(msg);
-      setFormMsg({ err: msg });
+      alert((e as Error).message);
     } finally {
       setWorking(false);
     }
   };
 
   const updateItem = async (itemId: string, amount: number, label?: string) => {
-    setFormMsg({});
     if (!isAdmin || period?.status !== 'OPEN') {
-      setFormMsg({ err: 'Period must be OPEN and you must be admin.' });
+      alert('Period must be OPEN and you must be admin.');
       return;
     }
     setWorking(true);
-    setLastAction('update_pay_item');
-    setLastPayload({ p_item_id: itemId, p_amount: amount, p_label: label ?? null });
-    setLastError('');
     try {
       const { error } = await supabase.rpc('update_pay_item', {
         p_item_id: itemId,
         p_amount: amount,
         p_label: label ?? null,
       });
-      if (error) {
-        setLastError(error.message ?? String(error));
-        setFormMsg({ err: error.message ?? 'Update failed' });
-      } else {
-        await refresh();
-        if (sel) await loadManualItems(sel.staff_email);
-        setFormMsg({ ok: 'Item updated.' });
-      }
+      if (error) throw error;
+      await refresh();
+      if (sel) await loadManualItems(sel.staff_email);
     } catch (e) {
-      const msg = (e as Error).message;
-      setLastError(msg);
-      setFormMsg({ err: msg });
+      alert((e as Error).message);
     } finally {
       setWorking(false);
     }
   };
 
   const deleteItem = async (itemId: string) => {
-    setFormMsg({});
     if (!isAdmin || period?.status !== 'OPEN') {
-      setFormMsg({ err: 'Period must be OPEN and you must be admin.' });
+      alert('Period must be OPEN and you must be admin.');
       return;
     }
     if (!confirm('Delete this item?')) return;
     setWorking(true);
-    setLastAction('delete_pay_item');
-    setLastPayload({ p_item_id: itemId });
-    setLastError('');
     try {
       const { error } = await supabase.rpc('delete_pay_item', {
         p_item_id: itemId,
       });
-      if (error) {
-        setLastError(error.message ?? String(error));
-        setFormMsg({ err: error.message ?? 'Delete failed' });
-      } else {
-        await refresh();
-        if (sel) await loadManualItems(sel.staff_email);
-        setFormMsg({ ok: 'Item deleted.' });
-      }
+      if (error) throw error;
+      await refresh();
+      if (sel) await loadManualItems(sel.staff_email);
     } catch (e) {
-      const msg = (e as Error).message;
-      setLastError(msg);
-      setFormMsg({ err: msg });
+      alert((e as Error).message);
     } finally {
       setWorking(false);
     }
   };
 
-  // Quick helpers to prefill UNPAID adjustment (doesn't call DB by itself)
-  const cancelUnpaidPrefill = () => {
-    setFormMsg({});
-    if (!sel) return;
-    const auto = asNum(sel.unpaid_auto);
-    if (auto <= 0) {
-      setFormMsg({ err: 'No auto UNPAID to cancel.' });
-      return;
-    }
-    setAddType('EARN');
-    setAddCode('UNPAID_ADJ');
-    setCustomCode('');
-    setAddLabel('Cancel unpaid (auto)');
-    setAddAmt(auto.toFixed(2));
-  };
-
-  const setUnpaidToTargetPrefill = () => {
-    setFormMsg({});
-    if (!sel) return;
-    const auto = asNum(sel.unpaid_auto);
-    if (auto <= 0) {
-      setFormMsg({ err: 'No auto UNPAID to adjust.' });
-      return;
-    }
-    const inp = prompt('Set total UNPAID to (RM):', '0.00');
-    if (!inp) return;
-    const target = Number(inp);
-    if (!Number.isFinite(target) || target < 0) {
-      setFormMsg({ err: 'Invalid amount' });
-      return;
-    }
-    const diff = auto - target;
-    if (diff <= 0) {
-      setFormMsg({ err: 'Target must be less than current auto UNPAID.' });
-      return;
-    }
-    setAddType('EARN');
-    setAddCode('UNPAID_ADJ');
-    setCustomCode('');
-    setAddLabel(`Adjust unpaid to RM ${target.toFixed(2)}`);
-    setAddAmt(diff.toFixed(2));
-  };
-
-  // NEW: Direct RPC to keep/cancel UNPAID using public.apply_unpaid
-  const applyUnpaid = async (apply: boolean) => {
-    setFormMsg({});
+  // Save UNPAID target using the new SQL
+  const saveUnpaidTarget = async () => {
     if (!sel) return;
     if (!isAdmin || period?.status !== 'OPEN') {
-      setFormMsg({ err: 'Period must be OPEN and you must be admin.' });
+      alert('Period must be OPEN and you must be admin.');
       return;
     }
-    if (!apply && asNum(sel.unpaid_auto) <= 0) {
-      setFormMsg({ err: 'No auto UNPAID to cancel.' });
+    const t = Number(unpaidTarget);
+    if (!Number.isFinite(t) || t < 0) {
+      alert('Amount must be a number ≥ 0');
       return;
     }
-
     setWorking(true);
-    setLastAction('apply_unpaid');
-    setLastPayload({ p_year: year, p_month: month, p_email: sel.staff_email, p_apply: apply });
-    setLastError('');
     try {
-      const { data, error } = await supabase.rpc('apply_unpaid', {
+      const { error } = await supabase.rpc('set_unpaid_total', {
         p_year: year,
         p_month: month,
         p_email: sel.staff_email,
-        p_apply: apply,
+        p_target: t,
       });
-      if (error) {
-        setLastError(error.message ?? String(error));
-        setFormMsg({ err: error.message ?? 'Action failed' });
-      } else {
-        // show a small confirmation message
-        const act = Array.isArray(data) && data.length ? data[0].action : (apply ? 'kept' : 'offset_created');
-        setFormMsg({ ok: `UNPAID ${apply ? 'applied' : 'cancelled'} (${act}).` });
-        await refresh();
-        await loadManualItems(sel.staff_email);
-      }
+      if (error) throw error;
+      await refresh();
+      await loadManualItems(sel.staff_email);
+      // refresh the “auto unpaid” chip in modal header
+      setSel((prev) => (prev ? { ...prev, unpaid_auto: prev.unpaid_auto } : prev));
     } catch (e) {
-      const msg = (e as Error).message;
-      setLastError(msg);
-      setFormMsg({ err: msg });
+      alert((e as Error).message);
     } finally {
       setWorking(false);
     }
@@ -606,8 +485,8 @@ export default function PayrollV2Page() {
           </button>
           <button
             onClick={async () => {
-              const { data: ok3, error: e3 } = await supabase.rpc('is_admin', {});
-              const flag = !e3 && ok3 === true;
+              const { data: ok, error } = await supabase.rpc('is_admin', {});
+              const flag = !error && ok === true;
               setIsAdmin(flag);
               showAdminToastText(flag);
             }}
@@ -620,81 +499,17 @@ export default function PayrollV2Page() {
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <button
-          onClick={build}
-          disabled={disabledWrites}
-          className={`rounded px-3 py-1.5 text-sm font-medium ${
-            disabledWrites
-              ? 'bg-gray-100 text-gray-400'
-              : 'border bg-white hover:bg-gray-50'
-          }`}
-        >
-          Build
-        </button>
-        <button
-          onClick={syncBase}
-          disabled={disabledWrites}
-          className={`rounded px-3 py-1.5 text-sm font-medium ${
-            disabledWrites
-              ? 'bg-gray-100 text-gray-400'
-              : 'border bg-white hover:bg-gray-50'
-          }`}
-        >
-          Sync Base
-        </button>
-        <button
-          onClick={syncAbsent}
-          disabled={disabledWrites}
-          className={`rounded px-3 py-1.5 text-sm font-medium ${
-            disabledWrites
-              ? 'bg-gray-100 text-gray-400'
-              : 'border bg-white hover:bg-gray-50'
-          }`}
-        >
-          Sync Absent
-        </button>
-        <button
-          onClick={recalc}
-          disabled={disabledWrites}
-          className={`rounded px-3 py-1.5 text-sm font-medium ${
-            disabledWrites
-              ? 'bg-gray-100 text-gray-400'
-              : 'border bg-white hover:bg-gray-50'
-          }`}
-        >
-          Recalc Statutories
-        </button>
+        <button onClick={build}      disabled={disabledWrites} className={`rounded px-3 py-1.5 text-sm font-medium ${disabledWrites?'bg-gray-100 text-gray-400':'border bg-white hover:bg-gray-50'}`}>Build</button>
+        <button onClick={syncBase}   disabled={disabledWrites} className={`rounded px-3 py-1.5 text-sm font-medium ${disabledWrites?'bg-gray-100 text-gray-400':'border bg-white hover:bg-gray-50'}`}>Sync Base</button>
+        <button onClick={syncAbsent} disabled={disabledWrites} className={`rounded px-3 py-1.5 text-sm font-medium ${disabledWrites?'bg-gray-100 text-gray-400':'border bg-white hover:bg-gray-50'}`}>Sync Absent</button>
+        <button onClick={recalc}     disabled={disabledWrites} className={`rounded px-3 py-1.5 text-sm font-medium ${disabledWrites?'bg-gray-100 text-gray-400':'border bg-white hover:bg-gray-50'}`}>Recalc Statutories</button>
         <span className="mx-1 text-gray-300">|</span>
-        <button
-          onClick={lock}
-          disabled={disabledWrites}
-          className={`rounded px-3 py-1.5 text-sm font-medium ${
-            disabledWrites
-              ? 'bg-gray-100 text-gray-400'
-              : 'border bg-white hover:bg-gray-50'
-          }`}
-        >
-          Lock
-        </button>
-        <button
-          onClick={unlock}
-          disabled={disabledWrites}
-          className={`rounded px-3 py-1.5 text-sm font-medium ${
-            disabledWrites
-              ? 'bg-gray-100 text-gray-400'
-              : 'border bg-white hover:bg-gray-50'
-          }`}
-        >
-          Unlock
-        </button>
+        <button onClick={lock}       disabled={disabledWrites} className={`rounded px-3 py-1.5 text-sm font-medium ${disabledWrites?'bg-gray-100 text-gray-400':'border bg-white hover:bg-gray-50'}`}>Lock</button>
+        <button onClick={unlock}     disabled={disabledWrites} className={`rounded px-3 py-1.5 text-sm font-medium ${disabledWrites?'bg-gray-100 text-gray-400':'border bg-white hover:bg-gray-50'}`}>Unlock</button>
         <button
           onClick={finalizeAndGenerate}
           disabled={disabledWrites}
-          className={`ml-2 rounded px-3 py-1.5 text-sm font-semibold ${
-            disabledWrites
-              ? 'bg-blue-200 text-white'
-              : 'bg-blue-600 text-white hover:bg-blue-700'
-          }`}
+          className={`ml-2 rounded px-3 py-1.5 text-sm font-semibold ${disabledWrites?'bg-blue-200 text-white':'bg-blue-600 text-white hover:bg-blue-700'}`}
         >
           Finalize & Generate PDFs
         </button>
@@ -728,12 +543,8 @@ export default function PayrollV2Page() {
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td
-                  colSpan={12}
-                  className="px-3 py-6 text-center text-gray-500"
-                >
-                  No data for {year}-{String(month).padStart(2, '0')}. Try
-                  Build/Sync.
+                <td colSpan={12} className="px-3 py-6 text-center text-gray-500">
+                  No data for {year}-{String(month).padStart(2,'0')}. Try Build/Sync.
                 </td>
               </tr>
             ) : (
@@ -743,9 +554,7 @@ export default function PayrollV2Page() {
                   <tr key={r.staff_email} className="odd:bg-white even:bg-gray-50">
                     <td className="px-3 py-2 font-medium text-gray-900">
                       {r.staff_name ?? r.staff_email}
-                      <div className="text-xs font-normal text-gray-500">
-                        {r.staff_email}
-                      </div>
+                      <div className="text-xs font-normal text-gray-500">{r.staff_email}</div>
                     </td>
                     <td className="px-3 py-2 tabular-nums">{fmt(r.base_wage, true)}</td>
                     <td className="px-3 py-2 tabular-nums">{fmt(r.total_earn, true)}</td>
@@ -758,9 +567,7 @@ export default function PayrollV2Page() {
                     <td className="px-3 py-2 tabular-nums">{fmt(r.socso_emp, true)}</td>
                     <td className="px-3 py-2 tabular-nums">{fmt(r.eis_emp, true)}</td>
                     <td className="px-3 py-2 tabular-nums">{fmt(r.total_deduct, true)}</td>
-                    <td className="px-3 py-2 tabular-nums font-semibold">
-                      {fmt(r.net_pay, true)}
-                    </td>
+                    <td className="px-3 py-2 tabular-nums font-semibold">{fmt(r.net_pay, true)}</td>
                     <td className="px-3 py-2 text-center" title="Live absent from Report (OFFDAY/MC excluded; future dates ignored).">
                       {absentDays}
                     </td>
@@ -781,8 +588,7 @@ export default function PayrollV2Page() {
       </div>
 
       <p className="mt-3 text-xs text-gray-500">
-        Finalize uses your existing <code>/api/payroll/finalize</code> endpoint to
-        generate & upload PDFs to your Supabase Storage bucket.
+        Finalize uses your existing <code>/api/payroll/finalize</code> endpoint to generate & upload PDFs.
       </p>
 
       {/* ---------- DETAILS MODAL ---------- */}
@@ -812,62 +618,15 @@ export default function PayrollV2Page() {
             {/* Summary chips */}
             <div className="flex flex-wrap gap-2 px-4 pt-3">
               <span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700">
-                Auto UNPAID: RM {fmt(sel.unpaid_auto, false)} ·{' '}
-                {absentMap[sel.staff_email] ?? 0}d
-              </span>
-              <span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700">
-                Live Absent (Report): {absentMap[sel.staff_email] ?? 0} days
+                Unpaid (auto): RM {fmt(sel.unpaid_auto)} · {absentMap[sel.staff_email] ?? 0}d
               </span>
               <span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700">
                 Period status: {period?.status ?? '—'}
               </span>
-              <span className={`rounded-full px-3 py-1 text-xs ${isAdmin ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
-                {isAdmin ? 'Admin' : 'Not admin'}
-              </span>
-            </div>
-
-            {/* UNPAID actions */}
-            <div className="flex flex-wrap items-center gap-2 px-4 pt-2">
-              <button
-                className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
-                onClick={() => applyUnpaid(true)}
-                disabled={!isAdmin || period?.status !== 'OPEN'}
-                title="Keep the auto UNPAID as-is (delete any offset adjustment)"
-              >
-                Apply UNPAID
-              </button>
-              <button
-                className="rounded border px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-50"
-                onClick={() => applyUnpaid(false)}
-                disabled={!isAdmin || period?.status !== 'OPEN' || asNum(sel.unpaid_auto) <= 0}
-                title="Cancel the auto UNPAID by creating/updating an EARN 'UNPAID_ADJ'"
-              >
-                Cancel UNPAID
-              </button>
-
-              <span className="mx-2 text-xs text-gray-400">·</span>
-
-              {/* (Optional) Prefill helpers if you prefer doing manual add instead of toggle */}
-              <button
-                className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
-                onClick={cancelUnpaidPrefill}
-                disabled={!isAdmin || period?.status !== 'OPEN' || asNum(sel.unpaid_auto) <= 0}
-                title="Prefill the Add form to fully offset the current auto UNPAID"
-              >
-                Prefill: Full offset
-              </button>
-              <button
-                className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
-                onClick={setUnpaidToTargetPrefill}
-                disabled={!isAdmin || period?.status !== 'OPEN' || asNum(sel.unpaid_auto) <= 0}
-                title="Prefill the Add form to adjust UNPAID to a target amount"
-              >
-                Prefill: Set to…
-              </button>
             </div>
 
             <div className="grid grid-cols-1 gap-3 px-4 py-3 md:grid-cols-2">
-              {/* Manual Earnings */}
+              {/* Manual Earnings (no unpaid helpers here anymore) */}
               <div className="rounded border">
                 <div className="border-b bg-gray-50 px-3 py-2 text-sm font-semibold">
                   Earnings (manual)
@@ -878,41 +637,23 @@ export default function PayrollV2Page() {
                   ) : (
                     <ul className="space-y-2">
                       {earnItems.map((it) => (
-                        <li
-                          key={it.id}
-                          className="flex items-center justify-between gap-2"
-                        >
+                        <li key={it.id} className="flex items-center justify-between gap-2">
                           <div>
-                            <div className="font-medium">
-                              {(it.label ?? it.code ?? '').toString()}
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              code: {(it.code ?? '').toString()}
-                            </div>
+                            <div className="font-medium">{(it.label ?? it.code ?? '').toString()}</div>
+                            <div className="text-xs text-gray-500">code: {(it.code ?? '').toString()}</div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="tabular-nums">
-                              RM {fmt(it.amount, false)}
-                            </span>
+                            <span className="tabular-nums">RM {fmt(it.amount)}</span>
                             {isAdmin && period?.status === 'OPEN' && (
                               <>
                                 <button
                                   className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
                                   onClick={async () => {
-                                    const next = prompt(
-                                      'New amount (RM)',
-                                      fmt(it.amount, false)
-                                    );
+                                    const next = prompt('New amount (RM)', fmt(it.amount));
                                     if (!next) return;
                                     const n = Number(next);
-                                    if (!Number.isFinite(n) || n <= 0) {
-                                      setFormMsg({ err: 'Invalid amount' });
-                                      return;
-                                    }
-                                    const newLabel = prompt(
-                                      'New label (optional)',
-                                      it.label ?? ''
-                                    ) ?? undefined;
+                                    if (!Number.isFinite(n) || n <= 0) { alert('Invalid amount'); return; }
+                                    const newLabel = prompt('New label (optional)', it.label ?? '') ?? undefined;
                                     await updateItem(it.id, n, newLabel);
                                   }}
                                 >
@@ -934,52 +675,63 @@ export default function PayrollV2Page() {
                 </div>
               </div>
 
-              {/* Manual Deductions */}
+              {/* Deductions — includes UNPAID line at the top */}
               <div className="rounded border">
                 <div className="border-b bg-gray-50 px-3 py-2 text-sm font-semibold">
-                  Deductions (manual)
+                  Deductions
                 </div>
-                <div className="max-h-64 overflow-auto px-3 py-2 text-sm">
+
+                {/* UNPAID editable row */}
+                <div className="flex items-center justify-between gap-2 border-b px-3 py-2 text-sm">
+                  <div>
+                    <div className="font-medium">Unpaid leave</div>
+                    <div className="text-xs text-gray-500">
+                      Auto: RM {fmt(sel.unpaid_auto)} (system). Edit to set final total.
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      className="w-32 rounded border px-2 py-1 text-right tabular-nums"
+                      value={unpaidTarget}
+                      onChange={(e) => setUnpaidTarget(e.target.value)}
+                      disabled={!isAdmin || period?.status !== 'OPEN' || working}
+                      title="Final UNPAID total (RM)"
+                    />
+                    <button
+                      className="rounded border px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-50"
+                      onClick={saveUnpaidTarget}
+                      disabled={unpaidSaveDisabled}
+                      title="Save final UNPAID total"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+
+                {/* Manual deduction items */}
+                <div className="max-h-56 overflow-auto px-3 py-2 text-sm">
                   {deductItems.length === 0 ? (
                     <div className="text-gray-500">No manual deductions.</div>
                   ) : (
                     <ul className="space-y-2">
                       {deductItems.map((it) => (
-                        <li
-                          key={it.id}
-                          className="flex items-center justify-between gap-2"
-                        >
+                        <li key={it.id} className="flex items-center justify-between gap-2">
                           <div>
-                            <div className="font-medium">
-                              {(it.label ?? it.code ?? '').toString()}
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              code: {(it.code ?? '').toString()}
-                            </div>
+                            <div className="font-medium">{(it.label ?? it.code ?? '').toString()}</div>
+                            <div className="text-xs text-gray-500">code: {(it.code ?? '').toString()}</div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="tabular-nums">
-                              RM {fmt(it.amount, false)}
-                            </span>
+                            <span className="tabular-nums">RM {fmt(it.amount)}</span>
                             {isAdmin && period?.status === 'OPEN' && (
                               <>
                                 <button
                                   className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
                                   onClick={async () => {
-                                    const next = prompt(
-                                      'New amount (RM)',
-                                      fmt(it.amount, false)
-                                    );
+                                    const next = prompt('New amount (RM)', fmt(it.amount));
                                     if (!next) return;
                                     const n = Number(next);
-                                    if (!Number.isFinite(n) || n <= 0) {
-                                      setFormMsg({ err: 'Invalid amount' });
-                                      return;
-                                    }
-                                    const newLabel = prompt(
-                                      'New label (optional)',
-                                      it.label ?? ''
-                                    ) ?? undefined;
+                                    if (!Number.isFinite(n) || n <= 0) { alert('Invalid amount'); return; }
+                                    const newLabel = prompt('New label (optional)', it.label ?? '') ?? undefined;
                                     await updateItem(it.id, n, newLabel);
                                   }}
                                 >
@@ -1002,50 +754,37 @@ export default function PayrollV2Page() {
               </div>
             </div>
 
-            {/* Add item */}
+            {/* Add manual item (earn/deduct) */}
             <div className="border-t px-4 py-3">
-              <div className="mb-2 flex items-center justify-between">
-                <div className="text-sm font-semibold">Add item</div>
-                {addDisabled && (
-                  <span className="text-xs text-gray-500">
-                    (disabled: {addDisabledReason})
-                  </span>
-                )}
-              </div>
+              <div className="mb-2 text-sm font-semibold">Add item</div>
               <div className="grid grid-cols-1 gap-2 md:grid-cols-6">
                 <select
                   className="rounded border px-2 py-1 text-sm"
                   value={addType}
-                  onChange={(e) =>
-                    setAddType(e.target.value === 'DEDUCT' ? 'DEDUCT' : 'EARN')
-                  }
+                  onChange={(e) => setAddType(e.target.value === 'DEDUCT' ? 'DEDUCT' : 'EARN')}
                 >
                   <option value="EARN">Earning</option>
                   <option value="DEDUCT">Deduction</option>
                 </select>
 
-                {/* Code dropdown */}
                 <select
                   className="rounded border px-2 py-1 text-sm"
                   value={addCode}
                   onChange={(e) => setAddCode(e.target.value)}
                 >
-                  {(codeOptions).map((opt) => (
+                  {(addType === 'DEDUCT' ? DEDUCT_CODES : EARN_CODES).map((opt) => (
                     <option key={opt.code} value={opt.code}>
                       {opt.label} ({opt.code})
                     </option>
                   ))}
                 </select>
 
-                {/* Custom code input (only when CUSTOM) */}
                 {addCode === 'CUSTOM' && (
                   <input
                     className="rounded border px-2 py-1 text-sm"
                     placeholder="Custom code (A–Z, 0–9, _ )"
                     value={customCode}
-                    onChange={(e) =>
-                      setCustomCode(e.target.value.replace(/[^A-Za-z0-9_]/g, ''))
-                    }
+                    onChange={(e) => setCustomCode(e.target.value.replace(/[^A-Za-z0-9_]/g, ''))}
                   />
                 )}
 
@@ -1064,7 +803,7 @@ export default function PayrollV2Page() {
                   />
                   <button
                     className="rounded border px-3 py-1 text-sm hover:bg-gray-50 disabled:opacity-50"
-                    disabled={addDisabled}
+                    disabled={!isAdmin || period?.status !== 'OPEN' || working}
                     onClick={addItem}
                     title="Period must be OPEN"
                   >
@@ -1073,31 +812,8 @@ export default function PayrollV2Page() {
                 </div>
               </div>
 
-              {/* Inline result/error from Add/Update/Delete */}
-              {formMsg.err && (
-                <div className="mt-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                  {formMsg.err}
-                </div>
-              )}
-              {formMsg.ok && (
-                <div className="mt-2 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-                  {formMsg.ok}
-                </div>
-              )}
-
               <div className="mt-3 text-xs text-gray-500">
-                Period must be <b>OPEN</b> and you must be admin to edit.
-                System-managed codes (<code>BASE</code>, <code>UNPAID</code>, <code>STAT_*</code>) are blocked.
-              </div>
-
-              {/* Tiny debug box */}
-              <div className="mt-3 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] text-gray-700">
-                <div><b>Debug (last action)</b></div>
-                <div>action: {lastAction || '—'}</div>
-                <div>payload: <code>{lastPayload ? JSON.stringify(lastPayload) : '—'}</code></div>
-                <div className={lastError ? 'text-red-700' : 'text-gray-500'}>
-                  error: {lastError || '—'}
-                </div>
+                Statutory items (EPF, SOCSO, EIS) and system codes (<code>BASE</code>, <code>UNPAID</code>, <code>STAT_* </code>) are not editable here.
               </div>
             </div>
           </div>
