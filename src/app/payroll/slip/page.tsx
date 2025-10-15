@@ -189,8 +189,9 @@ export default function PayslipPage() {
           Payslip preview {sum ? `· ${sum.year}-${String(sum.month).padStart(2, '0')}` : ''}
         </div>
         <div className="flex gap-2">
+          {/* FIXED: Back to /payroll/v2 to avoid 404 */}
           <a
-            href={`/payroll?year=${year}&month=${month}`}
+            href={`/payroll/v2?year=${year}&month=${month}`}
             className="rounded border bg-white px-3 py-1.5 text-sm hover:bg-gray-50"
           >Back</a>
           <button
