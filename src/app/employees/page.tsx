@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
+/* ---------- Types ---------- */
 type StaffBrief = {
   display_name: string | null;
   email: string;
-  salary_basic: number | null;
+  salary_basic: number | null;   // from v_staff_brief (public.staff.basic_salary)
   position: string | null;
   start_date: string | null;
   year_join: number | null;
@@ -44,11 +45,18 @@ type StaffFull = {
   socso_no: string | null;
   eis_no: string | null;
 
-  basic_salary: number | null;
-
-  employment_end_date?: string | null;
-  employment_end_reason?: string | null;
+  basic_salary: number | null;   // single salary field
 };
+
+type NewEmployee = {
+  email: string;
+  full_name: string;
+  position: string;
+  start_date: string;
+  basic_salary: string; // keep as string for input; convert on save
+};
+
+const POSITION_OPTIONS = ['Manager','Supervisor','Mechanic','Admin'];
 
 function rm(n?: number | null) {
   const v = Number(n ?? 0);
@@ -57,16 +65,9 @@ function rm(n?: number | null) {
 
 export default function EmployeesPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
-
-  // Active list
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<StaffBrief[]>([]);
   const [q, setQ] = useState('');
-
-  // Archived list
-  const [showArchived, setShowArchived] = useState(false);
-  const [archivedLoading, setArchivedLoading] = useState(false);
-  const [archivedRows, setArchivedRows] = useState<StaffBrief[]>([]);
 
   // editor
   const [openEmail, setOpenEmail] = useState<string | null>(null);
@@ -74,12 +75,20 @@ export default function EmployeesPage() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  // ARCHIVE dialog state
-  const [archiveOpen, setArchiveOpen] = useState(false);
-  const [archiveDate, setArchiveDate] = useState<string>('');
-  const [archiveReason, setArchiveReason] = useState<'Terminated'|'Resigned'|'Other'>('Resigned');
-  const [archiveReasonOther, setArchiveReasonOther] = useState<string>('');
+  // add-employee drawer
+  const [addOpen, setAddOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [addMsg, setAddMsg] = useState<string | null>(null);
+  const today = new Date().toISOString().slice(0,10);
+  const [newEmp, setNewEmp] = useState<NewEmployee>({
+    email: '',
+    full_name: '',
+    position: '',
+    start_date: today,
+    basic_salary: '0.00',
+  });
 
+  // auth
   useEffect(() => {
     let cleanup: (() => void) | undefined;
     (async () => {
@@ -93,11 +102,11 @@ export default function EmployeesPage() {
     return () => cleanup && cleanup();
   }, []);
 
-  const loadActive = async () => {
+  const load = async () => {
     setLoading(true);
     setMsg(null);
     const { data, error } = await supabase
-      .from('v_staff_brief_active')
+      .from('v_staff_brief')
       .select('*')
       .order('display_name', { ascending: true });
     if (error) setMsg(`Load failed: ${error.message}`);
@@ -105,23 +114,7 @@ export default function EmployeesPage() {
     setLoading(false);
   };
 
-  const loadArchived = async () => {
-    setArchivedLoading(true);
-    const { data, error } = await supabase
-      .from('v_staff_brief_archived')
-      .select('*')
-      .order('display_name', { ascending: true });
-    if (error) setMsg(`Load archived failed: ${error.message}`);
-    setArchivedRows((data ?? []) as StaffBrief[]);
-    setArchivedLoading(false);
-  };
-
-  useEffect(() => { if (authed) loadActive(); }, [authed]);
-  useEffect(() => {
-    if (showArchived && archivedRows.length === 0) {
-      loadArchived();
-    }
-  }, [showArchived]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (authed) load(); }, [authed]);
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -142,13 +135,15 @@ export default function EmployeesPage() {
       .eq('email', email)
       .maybeSingle();
     if (error) { setMsg(`Load employee failed: ${error.message}`); setModel(null); return; }
-    setModel(data as StaffFull);
+    const row = data as StaffFull;
+    setModel(row);
   };
 
   const save = async () => {
     if (!model) return;
     setSaving(true); setMsg(null);
     try {
+      // Normalize whitespace → nulls where appropriate
       const payload = {
         ...model,
         full_name: emptyToNull(model.full_name) ?? emptyToNull(model.name),
@@ -171,18 +166,18 @@ export default function EmployeesPage() {
         eis_no: emptyToNull(model.eis_no),
       };
 
-      // 1) Save to staff
+      // 1) Save to staff (single source of truth)
       const { error: upErr } = await supabase
         .from('staff')
         .update(payload)
         .eq('email', model.email);
       if (upErr) throw upErr;
 
-      // 2) Latest OPEN period
+      // 2) Find latest OPEN payroll period
       const { data: period, error: perErr } = await supabase
         .schema('pay_v2')
         .from('periods')
-        .select('year, month')
+        .select('year, month, status')
         .eq('status', 'OPEN')
         .order('year', { ascending: false })
         .order('month', { ascending: false })
@@ -190,18 +185,15 @@ export default function EmployeesPage() {
         .maybeSingle();
       if (perErr) throw perErr;
 
-      // 3) Re-sync base (archive-aware)
+      // 3) Push BASE + recalc for latest OPEN period so payroll reflects the change
       if (period?.year && period?.month) {
-        const s1 = await supabase.schema('pay_v2').rpc('sync_base_items_respect_archive', {
-          p_year: period.year,
-          p_month: period.month,
-        });
+        const s1 = await supabase.schema('pay_v2').rpc('sync_base_items_respect_archive', { p_year: period.year, p_month: period.month });
         if (s1.error) throw s1.error;
         await supabase.schema('pay_v2').rpc('recalc_statutories', { p_year: period.year, p_month: period.month });
       }
 
       setMsg('Saved and payroll updated.');
-      await loadActive();
+      await load();
     } catch (e: any) {
       setMsg(`Save failed: ${e.message ?? e}`);
     } finally {
@@ -209,106 +201,61 @@ export default function EmployeesPage() {
     }
   };
 
-  // Open the Archive dialog
-  const startArchive = () => {
-    if (!model) return;
-    // Pre-fill with today
-    const today = new Date();
-    const yyyy = today.getFullYear();
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const dd = String(today.getDate()).padStart(2, '0');
-    setArchiveDate(`${yyyy}-${mm}-${dd}`);
-    setArchiveReason('Resigned');
-    setArchiveReasonOther('');
-    setArchiveOpen(true);
+  // ------- Add employee -------
+  const openAdd = () => {
+    setAddMsg(null);
+    setNewEmp({ email: '', full_name: '', position: '', start_date: today, basic_salary: '0.00' });
+    setAddOpen(true);
   };
 
-  const submitArchive = async () => {
-    if (!model) return;
-    if (!archiveDate) { setMsg('Please choose a last working day.'); return; }
-    const finalReason = archiveReason === 'Other' ? (archiveReasonOther.trim() || 'Other') : archiveReason;
+  const createEmployee = async () => {
+    setAddMsg(null);
+    const email = newEmp.email.trim().toLowerCase();
+    const name  = newEmp.full_name.trim();
+    const pos   = newEmp.position || null;
+    const start = newEmp.start_date || null;
+    const salaryNum = Number(newEmp.basic_salary || 0);
 
-    setSaving(true); setMsg(null);
+    if (!email || !email.includes('@')) { setAddMsg('Please enter a valid email.'); return; }
+    if (!name) { setAddMsg('Please enter full name.'); return; }
+
+    setAdding(true);
     try {
-      // 1) Archive via RPC (with reason)
-      const { error } = await supabase.rpc('archive_staff', {
-        p_email: model.email,
-        p_last_day: archiveDate,
-        p_reason: finalReason,
-      });
-      if (error) throw error;
+      // upsert so re-adding a previously-archived employee just reactivates them
+      const payload = {
+        email,
+        full_name: name,
+        position: pos,
+        start_date: start,
+        basic_salary: Number.isFinite(salaryNum) ? salaryNum : 0,
+        archived_at: null,
+        employment_end_date: null,
+      };
+      const res = await supabase.from('staff').upsert(payload, { onConflict: 'email' }).select('email').maybeSingle();
+      if (res.error) throw res.error;
 
-      // 2) Re-sync current OPEN period
-      const { data: period } = await supabase
-        .schema('pay_v2')
+      // sync BASE for latest OPEN period (if any)
+      const { data: per } = await supabase.schema('pay_v2')
         .from('periods')
-        .select('year, month')
-        .eq('status', 'OPEN')
-        .order('year', { ascending: false })
-        .order('month', { ascending: false })
+        .select('year,month,status')
+        .eq('status','OPEN')
+        .order('year',{ascending:false})
+        .order('month',{ascending:false})
         .limit(1)
         .maybeSingle();
 
-      if (period?.year && period?.month) {
-        await supabase.schema('pay_v2').rpc('sync_base_items_respect_archive', {
-          p_year: period.year,
-          p_month: period.month,
-        });
-        await supabase.schema('pay_v2').rpc('recalc_statutories', {
-          p_year: period.year,
-          p_month: period.month,
-        });
+      if (per?.year && per?.month) {
+        await supabase.schema('pay_v2').rpc('sync_base_items_respect_archive', { p_year: per.year, p_month: per.month });
+        await supabase.schema('pay_v2').rpc('recalc_statutories', { p_year: per.year, p_month: per.month });
       }
 
-      setMsg('Employee archived.');
-      setArchiveOpen(false);
-      setOpenEmail(null);
-      setModel(null);
-      await loadActive();
-      if (showArchived) await loadArchived();
+      setAddMsg('Employee added.');
+      setAddOpen(false);
+      await load();
     } catch (e: any) {
-      setMsg(`Archive failed: ${e.message ?? e}`);
+      setAddMsg(`Add failed: ${e.message ?? e}`);
     } finally {
-      setSaving(false);
-    }
-  };
-
-  const restoreArchived = async (email: string) => {
-    if (!confirm('Restore this employee? They will reappear in active list.')) return;
-    setMsg(null);
-    try {
-      const { error } = await supabase
-        .from('staff')
-        .update({ archived_at: null, employment_end_date: null, employment_end_reason: null })
-        .eq('email', email);
-      if (error) throw error;
-
-      const { data: period } = await supabase
-        .schema('pay_v2')
-        .from('periods')
-        .select('year, month')
-        .eq('status', 'OPEN')
-        .order('year', { ascending: false })
-        .order('month', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (period?.year && period?.month) {
-        await supabase.schema('pay_v2').rpc('sync_base_items_respect_archive', {
-          p_year: period.year,
-          p_month: period.month,
-        });
-        await supabase.schema('pay_v2').rpc('recalc_statutories', {
-          p_year: period.year,
-          p_month: period.month,
-        });
-      }
-
-      setMsg('Employee restored.');
-      await loadActive();
-      await loadArchived();
-    } catch (e: any) {
-      setMsg(`Restore failed: ${e.message ?? e}`);
+      setAdding(false);
     }
   };
 
@@ -327,19 +274,26 @@ export default function EmployeesPage() {
     <main className="mx-auto max-w-7xl p-6">
       <header className="mb-4 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold">Employees</h1>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
           <input
             className="rounded border px-3 py-2 w-72"
             placeholder="Search name / email / position"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
+          {/* Admin-only Add employee */}
+          <button
+            className="rounded bg-emerald-600 px-3 py-2 text-white hover:bg-emerald-700"
+            onClick={openAdd}
+            title="Add new employee"
+          >
+            + Add employee
+          </button>
         </div>
       </header>
 
       {msg && <div className="mb-3 rounded border border-sky-200 bg-sky-50 p-2 text-sm text-sky-800">{msg}</div>}
 
-      {/* Active employees */}
       <section className="overflow-x-auto">
         {loading ? (
           <div className="text-sm text-gray-600">Loading…</div>
@@ -382,79 +336,13 @@ export default function EmployeesPage() {
         )}
       </section>
 
-      {/* Toggle archived */}
-      <div className="mt-4">
-        <button
-          className="rounded border px-3 py-1.5 text-sm hover:bg-gray-50"
-          onClick={() => setShowArchived(v => !v)}
-        >
-          {showArchived ? 'Hide archived' : 'Show archived'}
-        </button>
-      </div>
-
-      {/* Archived employees (collapsible) */}
-      {showArchived && (
-        <section className="mt-3 overflow-x-auto rounded border">
-          <div className="border-b bg-gray-50 px-3 py-2 text-sm font-semibold">
-            Archived employees
-          </div>
-          {archivedLoading ? (
-            <div className="p-3 text-sm text-gray-600">Loading…</div>
-          ) : (
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="bg-gray-50 text-left">
-                  <th className="border-b px-3 py-2">Name</th>
-                  <th className="border-b px-3 py-2">Email</th>
-                  <th className="border-b px-3 py-2 text-right">Last known Basic</th>
-                  <th className="border-b px-3 py-2">Position</th>
-                  <th className="border-b px-3 py-2">Year Join</th>
-                  <th className="border-b px-3 py-2"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {archivedRows.length === 0 ? (
-                  <tr><td className="px-3 py-4 text-gray-600" colSpan={6}>No archived employees.</td></tr>
-                ) : archivedRows.map(r => (
-                  <tr key={r.email} className="hover:bg-gray-50">
-                    <td className="border-b px-3 py-2">{r.display_name ?? r.email}</td>
-                    <td className="border-b px-3 py-2">{r.email}</td>
-                    <td className="border-b px-3 py-2 text-right">{rm(r.salary_basic)}</td>
-                    <td className="border-b px-3 py-2">{r.position ?? '—'}</td>
-                    <td className="border-b px-3 py-2">{r.year_join ?? (r.start_date?.slice(0,4) ?? '—')}</td>
-                    <td className="border-b px-3 py-2 text-right">
-                      <button
-                        className="rounded border px-3 py-1.5 hover:bg-gray-50"
-                        onClick={() => restoreArchived(r.email)}
-                      >
-                        Restore
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
-      )}
-
-      {/* Drawer / Modal editor */}
+      {/* Drawer / Modal editor (existing) */}
       {openEmail && model && (
         <div className="fixed inset-0 z-40 bg-black/40" onClick={(e) => { if (e.target === e.currentTarget) closeEditor(); }}>
           <div className="absolute right-0 top-0 h-full w-[min(720px,92vw)] overflow-y-auto bg-white shadow-xl">
             <div className="flex items-center justify-between border-b px-4 py-3">
               <div className="font-semibold">Edit employee — {model.email}</div>
-              <div className="flex items-center gap-2">
-                <button className="rounded border px-2 py-1" onClick={closeEditor} disabled={saving}>Close</button>
-                <button
-                  className="rounded border px-2 py-1 text-red-700 hover:bg-red-50"
-                  onClick={startArchive}
-                  disabled={saving}
-                  title="Archive this employee (choose last working day & reason)"
-                >
-                  Archive
-                </button>
-              </div>
+              <button className="rounded border px-2 py-1" onClick={closeEditor}>Close</button>
             </div>
 
             <div className="grid gap-6 p-4">
@@ -507,7 +395,7 @@ export default function EmployeesPage() {
               {/* Employment */}
               <Section title="Employment">
                 <Grid3>
-                  <Text label="Position" value={model.position ?? ''} onChange={v => setModel(m => ({...m!, position: v}))} />
+                  <Select label="Position" value={model.position ?? ''} onChange={v => setModel(m => ({...m!, position: v}))} options={POSITION_OPTIONS} />
                   <DateInput label="Start date" value={model.start_date ?? ''} onChange={v => setModel(m => ({...m!, start_date: v}))} />
                   <Money label="Basic salary" value={num(model.basic_salary)} onChange={v => setModel(m => ({...m!, basic_salary: v}))} />
                 </Grid3>
@@ -537,58 +425,36 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* ARCHIVE dialog */}
-      {archiveOpen && model && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3"
-             onClick={(e)=>{ if (e.target === e.currentTarget && !saving) setArchiveOpen(false); }}>
-          <div className="w-full max-w-md rounded-lg bg-white shadow-xl">
-            <div className="border-b px-4 py-3 text-sm font-semibold">
-              Archive employee — {model.email}
+      {/* Add Employee drawer */}
+      {addOpen && (
+        <div className="fixed inset-0 z-40 bg-black/40" onClick={(e)=>{ if (e.target===e.currentTarget) setAddOpen(false); }}>
+          <div className="absolute right-0 top-0 h-full w-[min(560px,92vw)] overflow-y-auto bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <div className="font-semibold">Add employee</div>
+              <button className="rounded border px-2 py-1" onClick={()=>setAddOpen(false)}>Close</button>
             </div>
-            <div className="space-y-3 p-4 text-sm">
-              <div>
-                <label className="mb-1 block text-xs text-gray-600">Last working day</label>
-                <input
-                  type="date"
-                  className="w-full rounded border px-2 py-1"
-                  value={archiveDate}
-                  onChange={(e)=>setArchiveDate(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-gray-600">Reason</label>
-                <select
-                  className="w-full rounded border px-2 py-1"
-                  value={archiveReason}
-                  onChange={(e)=>setArchiveReason(e.target.value as any)}
-                >
-                  <option value="Terminated">Terminated</option>
-                  <option value="Resigned">Resigned</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-              {archiveReason === 'Other' && (
-                <div>
-                  <label className="mb-1 block text-xs text-gray-600">Specify reason</label>
-                  <input
-                    className="w-full rounded border px-2 py-1"
-                    placeholder="Enter reason"
-                    value={archiveReasonOther}
-                    onChange={(e)=>setArchiveReasonOther(e.target.value)}
-                  />
-                </div>
-              )}
 
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button className="rounded border px-3 py-1.5" onClick={()=>setArchiveOpen(false)} disabled={saving}>
-                  Cancel
-                </button>
+            <div className="grid gap-6 p-4">
+              {addMsg && <div className="rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">{addMsg}</div>}
+
+              <Section title="Basic details">
+                <Grid2>
+                  <Text label="Email" value={newEmp.email} onChange={v=>setNewEmp(e=>({...e,email:v.toLowerCase()}))} />
+                  <Text label="Full name" value={newEmp.full_name} onChange={v=>setNewEmp(e=>({...e,full_name:v}))} />
+                  <Select label="Position" value={newEmp.position} onChange={v=>setNewEmp(e=>({...e,position:v}))} options={POSITION_OPTIONS} />
+                  <DateInput label="Start date" value={newEmp.start_date} onChange={v=>setNewEmp(e=>({...e,start_date:v}))} />
+                  <Money label="Basic salary" value={Number(newEmp.basic_salary)} onChange={v=>setNewEmp(e=>({...e,basic_salary:String(v)}))} />
+                </Grid2>
+              </Section>
+
+              <div className="flex justify-end gap-2">
+                <button className="rounded border px-3 py-2" onClick={()=>setAddOpen(false)} disabled={adding}>Cancel</button>
                 <button
-                  className="rounded bg-red-600 px-3 py-1.5 text-white hover:bg-red-700 disabled:opacity-50"
-                  onClick={submitArchive}
-                  disabled={saving || !archiveDate}
+                  className="rounded bg-emerald-600 px-3 py-2 text-white hover:bg-emerald-700 disabled:opacity-50"
+                  onClick={createEmployee}
+                  disabled={adding}
                 >
-                  Archive
+                  {adding ? 'Adding…' : 'Add employee'}
                 </button>
               </div>
             </div>
