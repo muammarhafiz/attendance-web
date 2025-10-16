@@ -140,6 +140,7 @@ export default function PayrollV2Page() {
 
   const refresh = useCallback(async () => {
     setLoading(true);
+    setAbsentMap({}); // reset to avoid stale values during reload
     try {
       // 1) Period status — use public view to avoid RLS surprises
       {
@@ -165,13 +166,21 @@ export default function PayrollV2Page() {
         setRows((data as SummaryRow[]) ?? []);
       }
 
-      // 3) live absent days via Report wrapper
+      // 3) live absent days OFF THE REPORT SOURCE (derived from month_print_report)
+      //    This RPC must return rows: { staff_email, days_absent } computed by:
+      //      with r as (select staff_email, day, status from public.month_print_report(p_year,p_month))
+      //      select staff_email, count(*) as days_absent
+      //      from r where status = 'Absent' group by staff_email
       {
-        const { data, error } = await supabase.rpc('absent_days_from_report', { p_year: year, p_month: month });
+        const { data, error } = await supabase.rpc('report_absent_days_from_print', {
+          p_year: year,
+          p_month: month,
+        });
+
         if (!error && Array.isArray(data)) {
           const map: Record<string, number> = {};
           for (const r of data as { staff_email: string; days_absent: number }[]) {
-            map[r.staff_email] = r.days_absent ?? 0;
+            map[(r.staff_email || '').toLowerCase()] = r.days_absent ?? 0; // normalize key
           }
           setAbsentMap(map);
         } else {
@@ -573,7 +582,7 @@ export default function PayrollV2Page() {
               </tr>
             ) : (
               rows.map((r) => {
-                const absentDays = absentMap[r.staff_email] ?? 0;
+                const absentDays = absentMap[(r.staff_email || '').toLowerCase()] ?? 0;
                 return (
                   <tr key={r.staff_email} className="odd:bg-white even:bg-gray-50">
                     <td className="px-3 py-2 font-medium text-gray-900">
@@ -591,7 +600,7 @@ export default function PayrollV2Page() {
                     <td className="px-3 py-2 tabular-nums">{fmt(r.eis_emp, true)}</td>
                     <td className="px-3 py-2 tabular-nums">{fmt(r.total_deduct, true)}</td>
                     <td className="px-3 py-2 tabular-nums font-semibold">{fmt(r.net_pay, true)}</td>
-                    <td className="px-3 py-2 text-center" title="Live absent from Report (OFFDAY/MC excluded; future dates ignored).">
+                    <td className="px-3 py-2 text-center" title="Live absent from Report (from month_print_report with status='Absent').">
                       {absentDays}
                     </td>
                     <td className="px-3 py-2">
