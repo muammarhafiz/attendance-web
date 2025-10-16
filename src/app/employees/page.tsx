@@ -54,9 +54,16 @@ function rm(n?: number | null) {
 
 export default function EmployeesPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
+
+  // Active list
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<StaffBrief[]>([]);
   const [q, setQ] = useState('');
+
+  // Archived list
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivedLoading, setArchivedLoading] = useState(false);
+  const [archivedRows, setArchivedRows] = useState<StaffBrief[]>([]);
 
   // editor
   const [openEmail, setOpenEmail] = useState<string | null>(null);
@@ -77,10 +84,9 @@ export default function EmployeesPage() {
     return () => cleanup && cleanup();
   }, []);
 
-  const load = async () => {
+  const loadActive = async () => {
     setLoading(true);
     setMsg(null);
-    // Active only
     const { data, error } = await supabase
       .from('v_staff_brief_active')
       .select('*')
@@ -90,7 +96,23 @@ export default function EmployeesPage() {
     setLoading(false);
   };
 
-  useEffect(() => { if (authed) load(); }, [authed]);
+  const loadArchived = async () => {
+    setArchivedLoading(true);
+    const { data, error } = await supabase
+      .from('v_staff_brief_archived')
+      .select('*')
+      .order('display_name', { ascending: true });
+    if (error) setMsg(`Load archived failed: ${error.message}`);
+    setArchivedRows((data ?? []) as StaffBrief[]);
+    setArchivedLoading(false);
+  };
+
+  useEffect(() => { if (authed) loadActive(); }, [authed]);
+  useEffect(() => {
+    if (showArchived && archivedRows.length === 0) {
+      loadArchived();
+    }
+  }, [showArchived]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -159,7 +181,7 @@ export default function EmployeesPage() {
         .maybeSingle();
       if (perErr) throw perErr;
 
-      // 3) Re-sync BASE with archive-aware function
+      // 3) Re-sync base with archive-aware function
       if (period?.year && period?.month) {
         const s1 = await supabase.schema('pay_v2').rpc('sync_base_items_respect_archive', {
           p_year: period.year,
@@ -170,7 +192,7 @@ export default function EmployeesPage() {
       }
 
       setMsg('Saved and payroll updated.');
-      await load();
+      await loadActive();
     } catch (e: any) {
       setMsg(`Save failed: ${e.message ?? e}`);
     } finally {
@@ -187,14 +209,14 @@ export default function EmployeesPage() {
 
     setSaving(true); setMsg(null);
     try {
-      // 1) Archive in DB
+      // 1) Archive via RPC
       const { error } = await supabase.rpc('archive_staff', {
         p_email: model.email,
         p_last_day: last,
       });
       if (error) throw error;
 
-      // 2) Latest OPEN period -> re-sync base (so current month cleans up if needed)
+      // 2) Re-sync current OPEN period
       const { data: period } = await supabase
         .schema('pay_v2')
         .from('periods')
@@ -219,11 +241,53 @@ export default function EmployeesPage() {
       setMsg('Employee archived.');
       setOpenEmail(null);
       setModel(null);
-      await load(); // falls off the list (active-only view)
+      await loadActive();
+      if (showArchived) await loadArchived();
     } catch (e: any) {
       setMsg(`Archive failed: ${e.message ?? e}`);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const restoreArchived = async (email: string) => {
+    if (!confirm('Restore this employee? They will reappear in active list.')) return;
+    setMsg(null);
+    try {
+      // Clear archive flags
+      const { error } = await supabase
+        .from('staff')
+        .update({ archived_at: null, employment_end_date: null })
+        .eq('email', email);
+      if (error) throw error;
+
+      // Bring them back into current OPEN period if applicable
+      const { data: period } = await supabase
+        .schema('pay_v2')
+        .from('periods')
+        .select('year, month')
+        .eq('status', 'OPEN')
+        .order('year', { ascending: false })
+        .order('month', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (period?.year && period?.month) {
+        await supabase.schema('pay_v2').rpc('sync_base_items_respect_archive', {
+          p_year: period.year,
+          p_month: period.month,
+        });
+        await supabase.schema('pay_v2').rpc('recalc_statutories', {
+          p_year: period.year,
+          p_month: period.month,
+        });
+      }
+
+      setMsg('Employee restored.');
+      await loadActive();
+      await loadArchived();
+    } catch (e: any) {
+      setMsg(`Restore failed: ${e.message ?? e}`);
     }
   };
 
@@ -254,6 +318,7 @@ export default function EmployeesPage() {
 
       {msg && <div className="mb-3 rounded border border-sky-200 bg-sky-50 p-2 text-sm text-sky-800">{msg}</div>}
 
+      {/* Active employees */}
       <section className="overflow-x-auto">
         {loading ? (
           <div className="text-sm text-gray-600">Loading…</div>
@@ -295,6 +360,62 @@ export default function EmployeesPage() {
           </table>
         )}
       </section>
+
+      {/* Toggle archived */}
+      <div className="mt-4">
+        <button
+          className="rounded border px-3 py-1.5 text-sm hover:bg-gray-50"
+          onClick={() => setShowArchived(v => !v)}
+        >
+          {showArchived ? 'Hide archived' : 'Show archived'}
+        </button>
+      </div>
+
+      {/* Archived employees (collapsible) */}
+      {showArchived && (
+        <section className="mt-3 overflow-x-auto rounded border">
+          <div className="border-b bg-gray-50 px-3 py-2 text-sm font-semibold">
+            Archived employees
+          </div>
+          {archivedLoading ? (
+            <div className="p-3 text-sm text-gray-600">Loading…</div>
+          ) : (
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="bg-gray-50 text-left">
+                  <th className="border-b px-3 py-2">Name</th>
+                  <th className="border-b px-3 py-2">Email</th>
+                  <th className="border-b px-3 py-2 text-right">Last known Basic</th>
+                  <th className="border-b px-3 py-2">Position</th>
+                  <th className="border-b px-3 py-2">Year Join</th>
+                  <th className="border-b px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {archivedRows.length === 0 ? (
+                  <tr><td className="px-3 py-4 text-gray-600" colSpan={6}>No archived employees.</td></tr>
+                ) : archivedRows.map(r => (
+                  <tr key={r.email} className="hover:bg-gray-50">
+                    <td className="border-b px-3 py-2">{r.display_name ?? r.email}</td>
+                    <td className="border-b px-3 py-2">{r.email}</td>
+                    <td className="border-b px-3 py-2 text-right">{rm(r.salary_basic)}</td>
+                    <td className="border-b px-3 py-2">{r.position ?? '—'}</td>
+                    <td className="border-b px-3 py-2">{r.year_join ?? (r.start_date?.slice(0,4) ?? '—')}</td>
+                    <td className="border-b px-3 py-2 text-right">
+                      <button
+                        className="rounded border px-3 py-1.5 hover:bg-gray-50"
+                        onClick={() => restoreArchived(r.email)}
+                      >
+                        Restore
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+      )}
 
       {/* Drawer / Modal editor */}
       {openEmail && model && (
