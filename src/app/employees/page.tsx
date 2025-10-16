@@ -74,7 +74,6 @@ const MALAYSIA_BANKS = [
 
 /* Parse NRIC -> DOB (YYYY-MM-DD). YY 00–24 => 2000s, else 1900s. */
 function dobFromNric(nric: string): string | null {
-  // Expect YYMMDD-PP-#### (we only need first 6 digits)
   const m = nric.replace(/\D/g, '').match(/^(\d{2})(\d{2})(\d{2})/);
   if (!m) return null;
   const [_, yy, mm, dd] = m;
@@ -102,6 +101,83 @@ function dateToMonth(val: string | null): string {
   return m ? m[1] : '';
 }
 
+/* tiny helpers */
+function emptyToNull(v: any) { return v === '' ? null : v; }
+function num(v: any): number { return typeof v === 'number' ? v : (v ? Number(v) : 0); }
+
+/* ---------- UI wrappers ---------- */
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded border bg-white">
+      <div className="border-b px-4 py-2 text-sm font-semibold">{title}</div>
+      <div className="p-4">{children}</div>
+    </div>
+  );
+}
+function Grid2({ children }: { children: React.ReactNode }) {
+  return <div className="grid gap-3 md:grid-cols-2">{children}</div>;
+}
+function Grid3({ children }: { children: React.ReactNode }) {
+  return <div className="grid gap-3 md:grid-cols-3">{children}</div>;
+}
+function Text({ label, value, onChange, type = 'text' }:{
+  label:string; value:string; onChange:(v:string)=>void; type?:string
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-xs text-gray-600">{label}</label>
+      <input type={type} className="w-full rounded border px-2 py-1" value={value} onChange={e=>onChange(e.target.value)} />
+    </div>
+  );
+}
+function DateInput({ label, value, onChange }:{ label:string; value:string; onChange:(v:string)=>void }) {
+  return (
+    <div>
+      <label className="mb-1 block text-xs text-gray-600">{label}</label>
+      <input type="date" className="w-full rounded border px-2 py-1" value={value || ''} onChange={e=>onChange(e.target.value)} />
+    </div>
+  );
+}
+function Select({ label, value, options, onChange }:{
+  label:string; value:string; options:string[]; onChange:(v:string)=>void
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-xs text-gray-600">{label}</label>
+      <select className="w-full rounded border px-2 py-1" value={value || ''} onChange={e=>onChange(e.target.value)}>
+        <option value="">—</option>
+        {options.map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+    </div>
+  );
+}
+/* Month/year input (stores YYYY-MM; caller converts to date) */
+function MonthInput({ label, value, onChange }:{
+  label:string; value:string; onChange:(v:string)=>void
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-xs text-gray-600">{label}</label>
+      <input type="month" className="w-full rounded border px-2 py-1"
+             value={value || ''} onChange={(e)=>onChange(e.target.value || '')}/>
+    </div>
+  );
+}
+function Money({ label, value, onChange }:{ label:string; value:number; onChange:(v:number)=>void }) {
+  return (
+    <div>
+      <label className="mb-1 block text-xs text-gray-600">{label}</label>
+      <input
+        inputMode="decimal"
+        className="w-full rounded border px-2 py-1 text-right"
+        value={Number.isFinite(value) ? String(value) : ''}
+        onChange={(e)=>onChange(Number(e.target.value || 0))}
+        placeholder="0.00"
+      />
+    </div>
+  );
+}
+
 export default function EmployeesPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
@@ -109,7 +185,7 @@ export default function EmployeesPage() {
   const [q, setQ] = useState('');
 
   // editor
-  const [openEmail, setOpenEmail] = useState<string | null>(null);
+  const [openEmail, setOpenEmail] = useState<string | null>(null); // 'NEW' for create
   const [model, setModel] = useState<StaffFull | null>(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -159,6 +235,53 @@ export default function EmployeesPage() {
     );
   }, [rows, q]);
 
+  const isNew = openEmail === 'NEW';
+
+  const openCreate = () => {
+    setMsg(null);
+    setOpenEmail('NEW');
+    const blank: StaffFull = {
+      email: '',
+      full_name: '',
+      name: '',
+
+      nationality: null,
+      nric: '',
+      dob: '',
+
+      gender: null,
+      race: null,
+      ability_status: null,
+      marital_status: null,
+
+      phone: '',
+      address: '',
+
+      emergency_name: '',
+      emergency_phone: '',
+      emergency_relationship: null,
+
+      salary_payment_method: null,
+      bank_name: null,
+      bank_account_name: '',
+      bank_account_no: '',
+
+      position: '',
+      start_date: null,
+      epf_no: '',
+      socso_no: '',
+      eis_no: '',
+
+      basic_salary: 0,
+    };
+    setModel(blank);
+
+    // reset helper selects
+    setNatChoice(''); setNatOther('');
+    setRelChoice(''); setRelOther('');
+    setBankChoice(''); setBankOther('');
+  };
+
   const openEditor = async (email: string) => {
     setMsg(null);
     setOpenEmail(email);
@@ -172,7 +295,6 @@ export default function EmployeesPage() {
     setModel(row);
 
     // hydrate select+other state from current row
-    // Nationality
     if ((row.nationality ?? '').toLowerCase() === 'malaysia') {
       setNatChoice('Malaysia'); setNatOther('');
     } else if (row.nationality && row.nationality.trim() !== '') {
@@ -180,7 +302,7 @@ export default function EmployeesPage() {
     } else {
       setNatChoice(''); setNatOther('');
     }
-    // Relationship
+
     if (RELATIONSHIP_OPTIONS.includes((row.emergency_relationship ?? '') as any)) {
       setRelChoice(row.emergency_relationship as any); setRelOther('');
     } else if (row.emergency_relationship) {
@@ -188,7 +310,7 @@ export default function EmployeesPage() {
     } else {
       setRelChoice(''); setRelOther('');
     }
-    // Bank
+
     if (row.bank_name && MALAYSIA_BANKS.includes(row.bank_name)) {
       setBankChoice(row.bank_name); setBankOther('');
     } else if (row.bank_name) {
@@ -210,15 +332,16 @@ export default function EmployeesPage() {
 
       const emergency_relationship =
         relChoice === 'Other' ? (relOther.trim() || null) :
-        relChoice || null;
+        (relChoice || null);
 
       const bank_name =
         bankChoice === 'Other' ? (bankOther.trim() || null) :
-        bankChoice || null;
+        (bankChoice || null);
 
-      // Normalize whitespace → nulls
+      // Normalize whitespace → nulls; ensure email lowercased
       const payload = {
         ...model,
+        email: (model.email || '').trim().toLowerCase(),
         full_name: emptyToNull(model.full_name) ?? emptyToNull(model.name),
         nationality,
         nric: emptyToNull(model.nric),
@@ -239,12 +362,21 @@ export default function EmployeesPage() {
         eis_no: emptyToNull(model.eis_no),
       };
 
-      // 1) Save to staff
-      const { error: upErr } = await supabase
-        .from('staff')
-        .update(payload)
-        .eq('email', model.email);
-      if (upErr) throw upErr;
+      // basic checks for create
+      if (isNew) {
+        if (!payload.email) throw new Error('Email is required.');
+        // rudimentary email check
+        if (!/^\S+@\S+\.\S+$/.test(payload.email)) throw new Error('Please enter a valid email.');
+      }
+
+      // 1) Save to staff (insert or update)
+      if (isNew) {
+        const { error: insErr } = await supabase.from('staff').insert(payload as any);
+        if (insErr) throw insErr;
+      } else {
+        const { error: upErr } = await supabase.from('staff').update(payload as any).eq('email', model.email);
+        if (upErr) throw upErr;
+      }
 
       // 2) Latest OPEN period
       const { data: period, error: perErr } = await supabase
@@ -265,8 +397,12 @@ export default function EmployeesPage() {
         await supabase.schema('pay_v2').rpc('recalc_statutories', { p_year: period.year, p_month: period.month });
       }
 
-      setMsg('Saved and payroll updated.');
+      setMsg(isNew ? 'Employee added and payroll updated.' : 'Saved and payroll updated.');
       await load();
+      // after adding, keep editor open on the new employee so you can continue filling details
+      if (isNew) {
+        setOpenEmail(payload.email);
+      }
     } catch (e: any) {
       setMsg(`Save failed: ${e.message ?? e}`);
     } finally {
@@ -292,13 +428,19 @@ export default function EmployeesPage() {
     <main className="mx-auto max-w-7xl p-6">
       <header className="mb-4 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold">Employees</h1>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
           <input
             className="rounded border px-3 py-2 w-72"
             placeholder="Search name / email / position"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
+          <button
+            className="rounded bg-emerald-600 px-3 py-2 text-white hover:bg-emerald-700"
+            onClick={openCreate}
+          >
+            Add employee
+          </button>
         </div>
       </header>
 
@@ -351,11 +493,29 @@ export default function EmployeesPage() {
         <div className="fixed inset-0 z-40 bg-black/40" onClick={(e) => { if (e.target === e.currentTarget) closeEditor(); }}>
           <div className="absolute right-0 top-0 h-full w-[min(720px,92vw)] overflow-y-auto bg-white shadow-xl">
             <div className="flex items-center justify-between border-b px-4 py-3">
-              <div className="font-semibold">Edit employee — {model.email}</div>
+              <div className="font-semibold">
+                {isNew ? 'Add employee' : `Edit employee — ${model.email}`}
+              </div>
               <button className="rounded border px-2 py-1" onClick={closeEditor}>Close</button>
             </div>
 
             <div className="grid gap-6 p-4">
+              {/* For NEW: capture Email early */}
+              {isNew && (
+                <Section title="Account">
+                  <Grid3>
+                    <Text
+                      label="Email (required)"
+                      value={model.email}
+                      onChange={(v)=>setModel(m => ({...m!, email: v.toLowerCase().trim()}))}
+                      type="email"
+                    />
+                    <div />
+                    <div />
+                  </Grid3>
+                </Section>
+              )}
+
               {/* Personal */}
               <Section title="Personal information">
                 <Grid2>
@@ -524,7 +684,7 @@ export default function EmployeesPage() {
                   onClick={save}
                   disabled={saving}
                 >
-                  {saving ? 'Saving…' : 'Save'}
+                  {saving ? (isNew ? 'Adding…' : 'Saving…') : (isNew ? 'Add employee' : 'Save')}
                 </button>
               </div>
             </div>
@@ -532,84 +692,5 @@ export default function EmployeesPage() {
         </div>
       )}
     </main>
-  );
-}
-
-/* ---------- tiny UI helpers ---------- */
-function emptyToNull(v: any) { return v === '' ? null : v; }
-function num(v: any): number { return typeof v === 'number' ? v : (v ? Number(v) : 0); }
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded border bg-white">
-      <div className="border-b px-4 py-2 text-sm font-semibold">{title}</div>
-      <div className="p-4">{children}</div>
-    </div>
-  );
-}
-function Grid2({ children }: { children: React.ReactNode }) {
-  return <div className="grid gap-3 md:grid-cols-2">{children}</div>;
-}
-function Grid3({ children }: { children: React.ReactNode }) {
-  return <div className="grid gap-3 md:grid-cols-3">{children}</div>;
-}
-function Text({ label, value, onChange }: { label:string; value:string; onChange:(v:string)=>void }) {
-  return (
-    <div>
-      <label className="mb-1 block text-xs text-gray-600">{label}</label>
-      <input className="w-full rounded border px-2 py-1" value={value} onChange={e=>onChange(e.target.value)} />
-    </div>
-  );
-}
-function DateInput({ label, value, onChange }: { label:string; value:string; onChange:(v:string)=>void }) {
-  return (
-    <div>
-      <label className="mb-1 block text-xs text-gray-600">{label}</label>
-      <input type="date" className="w-full rounded border px-2 py-1"
-             value={value || ''} onChange={e=>onChange(e.target.value)} />
-    </div>
-  );
-}
-function Select({ label, value, options, onChange }:{
-  label:string; value:string; options:string[]; onChange:(v:string)=>void
-}) {
-  return (
-    <div>
-      <label className="mb-1 block text-xs text-gray-600">{label}</label>
-      <select className="w-full rounded border px-2 py-1" value={value || ''} onChange={e=>onChange(e.target.value)}>
-        <option value="">—</option>
-        {options.map(o => <option key={o} value={o}>{o}</option>)}
-      </select>
-    </div>
-  );
-}
-/* Month/year input (stores YYYY-MM; caller converts to date) */
-function MonthInput({ label, value, onChange }:{
-  label:string; value:string; onChange:(v:string)=>void
-}) {
-  return (
-    <div>
-      <label className="mb-1 block text-xs text-gray-600">{label}</label>
-      <input
-        type="month"
-        className="w-full rounded border px-2 py-1"
-        value={value || ''}
-        onChange={(e)=>onChange(e.target.value || '')}
-      />
-    </div>
-  );
-}
-function Money({ label, value, onChange }:{ label:string; value:number; onChange:(v:number)=>void }) {
-  return (
-    <div>
-      <label className="mb-1 block text-xs text-gray-600">{label}</label>
-      <input
-        inputMode="decimal"
-        className="w-full rounded border px-2 py-1 text-right"
-        value={Number.isFinite(value) ? String(value) : ''}
-        onChange={(e)=>onChange(Number(e.target.value || 0))}
-        placeholder="0.00"
-      />
-    </div>
   );
 }
