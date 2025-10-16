@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
+/* ---------- Types ---------- */
 type StaffBrief = {
   display_name: string | null;
   email: string;
@@ -52,14 +53,18 @@ function rm(n?: number | null) {
   return `RM ${v.toFixed(2)}`;
 }
 
+/* ============================================================
+   PAGE
+============================================================ */
 export default function EmployeesPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<StaffBrief[]>([]);
   const [q, setQ] = useState('');
 
-  // editor
+  // editor state
   const [openEmail, setOpenEmail] = useState<string | null>(null);
+  const [creating, setCreating] = useState<boolean>(false);
   const [model, setModel] = useState<StaffFull | null>(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -103,6 +108,7 @@ export default function EmployeesPage() {
 
   const openEditor = async (email: string) => {
     setMsg(null);
+    setCreating(false);
     setOpenEmail(email);
     const { data, error } = await supabase
       .from('staff')
@@ -114,14 +120,60 @@ export default function EmployeesPage() {
     setModel(row);
   };
 
+  // NEW: open create drawer with blank model
+  const openCreate = () => {
+    setMsg(null);
+    setCreating(true);
+    setOpenEmail('__new__');
+    setModel({
+      email: '',
+      full_name: '',
+      name: '',
+      nationality: null,
+      nric: null,
+      dob: null,
+      gender: null,
+      race: null,
+      ability_status: null,
+      marital_status: null,
+      phone: null,
+      address: null,
+      emergency_name: null,
+      emergency_phone: null,
+      emergency_relationship: null,
+      salary_payment_method: null,
+      bank_name: null,
+      bank_account_name: null,
+      bank_account_no: null,
+      position: null,
+      start_date: null,
+      epf_no: null,
+      socso_no: null,
+      eis_no: null,
+      basic_salary: 0,
+    });
+  };
+
   const save = async () => {
     if (!model) return;
     setSaving(true); setMsg(null);
     try {
-      // Normalize whitespace → nulls where appropriate
+      // —— Validation ——
+      const email = (model.email ?? '').trim().toLowerCase();
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        throw new Error('Please provide a valid email address.');
+      }
+      const basic = Number(model.basic_salary ?? 0);
+      if (!Number.isFinite(basic) || basic < 0) {
+        throw new Error('Basic salary must be a non-negative number.');
+      }
+
+      // Normalize whitespace → nulls
       const payload = {
         ...model,
+        email,
         full_name: emptyToNull(model.full_name) ?? emptyToNull(model.name),
+        name: emptyToNull(model.name),
         nationality: emptyToNull(model.nationality),
         nric: emptyToNull(model.nric),
         dob: emptyToNull(model.dob),
@@ -139,14 +191,23 @@ export default function EmployeesPage() {
         epf_no: emptyToNull(model.epf_no),
         socso_no: emptyToNull(model.socso_no),
         eis_no: emptyToNull(model.eis_no),
+        basic_salary: basic,
       };
 
-      // 1) Save to staff (single source of truth)
-      const { error: upErr } = await supabase
-        .from('staff')
-        .update(payload)
-        .eq('email', model.email);
-      if (upErr) throw upErr;
+      if (creating) {
+        // 1) INSERT to public.staff (single source of truth)
+        const { error: insErr } = await supabase
+          .from('staff')
+          .insert([payload]);
+        if (insErr) throw insErr;
+      } else {
+        // 1) UPDATE existing staff
+        const { error: upErr } = await supabase
+          .from('staff')
+          .update(payload)
+          .eq('email', email);
+        if (upErr) throw upErr;
+      }
 
       // 2) Find latest OPEN payroll period
       const { data: period, error: perErr } = await supabase
@@ -160,16 +221,19 @@ export default function EmployeesPage() {
         .maybeSingle();
       if (perErr) throw perErr;
 
-      // 3) Push BASE + recalc for latest OPEN period so payroll reflects the change
+      // 3) Push BASE + recalc so Payroll v2 reflects changes immediately
       if (period?.year && period?.month) {
         const s1 = await supabase.schema('pay_v2').rpc('sync_base_items', { p_year: period.year, p_month: period.month });
         if (s1.error) throw s1.error;
-        // recalc is called inside sync_base_items; calling again is harmless
         await supabase.schema('pay_v2').rpc('recalc_statutories', { p_year: period.year, p_month: period.month });
+        // (Optional) If you also want UNPAID to reflect new hires immediately, call:
+        // await supabase.rpc('sync_absent_deductions', { p_year: period.year, p_month: period.month });
       }
 
-      setMsg('Saved and payroll updated.');
-      await load();
+      setMsg(creating ? 'Employee added and payroll updated.' : 'Saved and payroll updated.');
+      setCreating(false);
+      setOpenEmail(email);
+      await load(); // refresh list
     } catch (e: any) {
       setMsg(`Save failed: ${e.message ?? e}`);
     } finally {
@@ -181,6 +245,7 @@ export default function EmployeesPage() {
     if (saving) return;
     setOpenEmail(null);
     setModel(null);
+    setCreating(false);
     setMsg(null);
   }
 
@@ -192,13 +257,21 @@ export default function EmployeesPage() {
     <main className="mx-auto max-w-7xl p-6">
       <header className="mb-4 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold">Employees</h1>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
           <input
             className="rounded border px-3 py-2 w-72"
             placeholder="Search name / email / position"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
+          {/* NEW: Add employee */}
+          <button
+            className="rounded bg-emerald-600 px-3 py-2 text-white hover:bg-emerald-700"
+            onClick={openCreate}
+            title="Add a new employee"
+          >
+            Add employee
+          </button>
         </div>
       </header>
 
@@ -246,20 +319,40 @@ export default function EmployeesPage() {
         )}
       </section>
 
-      {/* Drawer / Modal editor */}
+      {/* Drawer / Modal editor — used for both new and existing */}
       {openEmail && model && (
         <div className="fixed inset-0 z-40 bg-black/40" onClick={(e) => { if (e.target === e.currentTarget) closeEditor(); }}>
           <div className="absolute right-0 top-0 h-full w-[min(720px,92vw)] overflow-y-auto bg-white shadow-xl">
             <div className="flex items-center justify-between border-b px-4 py-3">
-              <div className="font-semibold">Edit employee — {model.email}</div>
+              <div className="font-semibold">
+                {creating ? 'Add new employee' : `Edit employee — ${model.email}`}
+              </div>
               <button className="rounded border px-2 py-1" onClick={closeEditor}>Close</button>
             </div>
 
             <div className="grid gap-6 p-4">
+              {/* Account (email + name shown first when creating) */}
+              <Section title="Account">
+                <Grid3>
+                  <Text label="Email (login identifier)" value={model.email} onChange={v => setModel(m => ({...m!, email: v.trim()}))} />
+                  <Text label="Full name" value={model.full_name ?? model.name ?? ''} onChange={v => setModel(m => ({...m!, full_name: v}))} />
+                  <Text label="Position" value={model.position ?? ''} onChange={v => setModel(m => ({...m!, position: v}))} />
+                </Grid3>
+              </Section>
+
+              {/* Employment */}
+              <Section title="Employment">
+                <Grid3>
+                  <DateInput label="Start date" value={model.start_date ?? ''} onChange={v => setModel(m => ({...m!, start_date: v}))} />
+                  <Money label="Basic salary" value={num(model.basic_salary)} onChange={v => setModel(m => ({...m!, basic_salary: v}))} />
+                  <Select label="Salary payment method" value={model.salary_payment_method ?? ''} onChange={v => setModel(m => ({...m!, salary_payment_method: (v||null) as any}))}
+                          options={['Cheque','Bank Transfer','Cash']} />
+                </Grid3>
+              </Section>
+
               {/* Personal */}
               <Section title="Personal information">
                 <Grid2>
-                  <Text label="Full name" value={model.full_name ?? model.name ?? ''} onChange={v => setModel(m => ({...m!, full_name: v}))} />
                   <Text label="Nationality" value={model.nationality ?? ''} onChange={v => setModel(m => ({...m!, nationality: v}))} />
                   <Text label="NRIC" value={model.nric ?? ''} onChange={v => setModel(m => ({...m!, nric: v}))} />
                   <DateInput label="Date of birth" value={model.dob ?? ''} onChange={v => setModel(m => ({...m!, dob: v}))} />
@@ -274,7 +367,7 @@ export default function EmployeesPage() {
                 </Grid2>
               </Section>
 
-              {/* Contacts */}
+              {/* Contact */}
               <Section title="Contact">
                 <Grid2>
                   <Text label="Phone" value={model.phone ?? ''} onChange={v => setModel(m => ({...m!, phone: v}))} />
@@ -291,23 +384,12 @@ export default function EmployeesPage() {
                 </Grid3>
               </Section>
 
-              {/* Payment */}
-              <Section title="Salary payment">
+              {/* Banking */}
+              <Section title="Banking">
                 <Grid3>
-                  <Select label="Method" value={model.salary_payment_method ?? ''} onChange={v => setModel(m => ({...m!, salary_payment_method: (v||null) as any}))}
-                          options={['Cheque','Bank Transfer','Cash']} />
                   <Text label="Bank name" value={model.bank_name ?? ''} onChange={v => setModel(m => ({...m!, bank_name: v}))} />
                   <Text label="Account holder" value={model.bank_account_name ?? ''} onChange={v => setModel(m => ({...m!, bank_account_name: v}))} />
                   <Text label="Account no." value={model.bank_account_no ?? ''} onChange={v => setModel(m => ({...m!, bank_account_no: v}))} />
-                </Grid3>
-              </Section>
-
-              {/* Employment */}
-              <Section title="Employment">
-                <Grid3>
-                  <Text label="Position" value={model.position ?? ''} onChange={v => setModel(m => ({...m!, position: v}))} />
-                  <DateInput label="Start date" value={model.start_date ?? ''} onChange={v => setModel(m => ({...m!, start_date: v}))} />
-                  <Money label="Basic salary" value={num(model.basic_salary)} onChange={v => setModel(m => ({...m!, basic_salary: v}))} />
                 </Grid3>
               </Section>
 
@@ -316,7 +398,8 @@ export default function EmployeesPage() {
                 <Grid3>
                   <Text label="EPF No" value={model.epf_no ?? ''} onChange={v => setModel(m => ({...m!, epf_no: v}))} />
                   <Text label="SOCSO No" value={model.socso_no ?? ''} onChange={v => setModel(m => ({...m!, socso_no: v}))} />
-                  <Text label="EIS No" value={model.eis_no ?? ''} onChange={v => setModel(m => setModel(m => ({...m!, eis_no: v})) as any)} />
+                  {/* FIXED handler for EIS */}
+                  <Text label="EIS No" value={model.eis_no ?? ''} onChange={v => setModel(m => ({...m!, eis_no: v}))} />
                 </Grid3>
               </Section>
 
@@ -327,7 +410,7 @@ export default function EmployeesPage() {
                   onClick={save}
                   disabled={saving}
                 >
-                  {saving ? 'Saving…' : 'Save'}
+                  {saving ? (creating ? 'Adding…' : 'Saving…') : (creating ? 'Add employee' : 'Save')}
                 </button>
               </div>
             </div>
