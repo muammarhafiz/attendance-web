@@ -45,6 +45,9 @@ type StaffFull = {
   eis_no: string | null;
 
   basic_salary: number | null;
+
+  employment_end_date?: string | null;
+  employment_end_reason?: string | null;
 };
 
 function rm(n?: number | null) {
@@ -70,6 +73,12 @@ export default function EmployeesPage() {
   const [model, setModel] = useState<StaffFull | null>(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+
+  // ARCHIVE dialog state
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [archiveDate, setArchiveDate] = useState<string>('');
+  const [archiveReason, setArchiveReason] = useState<'Terminated'|'Resigned'|'Other'>('Resigned');
+  const [archiveReasonOther, setArchiveReasonOther] = useState<string>('');
 
   useEffect(() => {
     let cleanup: (() => void) | undefined;
@@ -181,7 +190,7 @@ export default function EmployeesPage() {
         .maybeSingle();
       if (perErr) throw perErr;
 
-      // 3) Re-sync base with archive-aware function
+      // 3) Re-sync base (archive-aware)
       if (period?.year && period?.month) {
         const s1 = await supabase.schema('pay_v2').rpc('sync_base_items_respect_archive', {
           p_year: period.year,
@@ -200,19 +209,32 @@ export default function EmployeesPage() {
     }
   };
 
-  const archiveEmployee = async () => {
+  // Open the Archive dialog
+  const startArchive = () => {
     if (!model) return;
-    const last = prompt('Last working day (YYYY-MM-DD):');
-    if (last == null) return;
-    const okDate = /^\d{4}-\d{2}-\d{2}$/.test(last);
-    if (!okDate) { setMsg('Invalid date format. Use YYYY-MM-DD.'); return; }
+    // Pre-fill with today
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    setArchiveDate(`${yyyy}-${mm}-${dd}`);
+    setArchiveReason('Resigned');
+    setArchiveReasonOther('');
+    setArchiveOpen(true);
+  };
+
+  const submitArchive = async () => {
+    if (!model) return;
+    if (!archiveDate) { setMsg('Please choose a last working day.'); return; }
+    const finalReason = archiveReason === 'Other' ? (archiveReasonOther.trim() || 'Other') : archiveReason;
 
     setSaving(true); setMsg(null);
     try {
-      // 1) Archive via RPC
+      // 1) Archive via RPC (with reason)
       const { error } = await supabase.rpc('archive_staff', {
         p_email: model.email,
-        p_last_day: last,
+        p_last_day: archiveDate,
+        p_reason: finalReason,
       });
       if (error) throw error;
 
@@ -239,6 +261,7 @@ export default function EmployeesPage() {
       }
 
       setMsg('Employee archived.');
+      setArchiveOpen(false);
       setOpenEmail(null);
       setModel(null);
       await loadActive();
@@ -254,14 +277,12 @@ export default function EmployeesPage() {
     if (!confirm('Restore this employee? They will reappear in active list.')) return;
     setMsg(null);
     try {
-      // Clear archive flags
       const { error } = await supabase
         .from('staff')
-        .update({ archived_at: null, employment_end_date: null })
+        .update({ archived_at: null, employment_end_date: null, employment_end_reason: null })
         .eq('email', email);
       if (error) throw error;
 
-      // Bring them back into current OPEN period if applicable
       const { data: period } = await supabase
         .schema('pay_v2')
         .from('periods')
@@ -427,9 +448,9 @@ export default function EmployeesPage() {
                 <button className="rounded border px-2 py-1" onClick={closeEditor} disabled={saving}>Close</button>
                 <button
                   className="rounded border px-2 py-1 text-red-700 hover:bg-red-50"
-                  onClick={archiveEmployee}
+                  onClick={startArchive}
                   disabled={saving}
-                  title="Archive this employee (will ask for last working day)"
+                  title="Archive this employee (choose last working day & reason)"
                 >
                   Archive
                 </button>
@@ -509,6 +530,65 @@ export default function EmployeesPage() {
                   disabled={saving}
                 >
                   {saving ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ARCHIVE dialog */}
+      {archiveOpen && model && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3"
+             onClick={(e)=>{ if (e.target === e.currentTarget && !saving) setArchiveOpen(false); }}>
+          <div className="w-full max-w-md rounded-lg bg-white shadow-xl">
+            <div className="border-b px-4 py-3 text-sm font-semibold">
+              Archive employee — {model.email}
+            </div>
+            <div className="space-y-3 p-4 text-sm">
+              <div>
+                <label className="mb-1 block text-xs text-gray-600">Last working day</label>
+                <input
+                  type="date"
+                  className="w-full rounded border px-2 py-1"
+                  value={archiveDate}
+                  onChange={(e)=>setArchiveDate(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-gray-600">Reason</label>
+                <select
+                  className="w-full rounded border px-2 py-1"
+                  value={archiveReason}
+                  onChange={(e)=>setArchiveReason(e.target.value as any)}
+                >
+                  <option value="Terminated">Terminated</option>
+                  <option value="Resigned">Resigned</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              {archiveReason === 'Other' && (
+                <div>
+                  <label className="mb-1 block text-xs text-gray-600">Specify reason</label>
+                  <input
+                    className="w-full rounded border px-2 py-1"
+                    placeholder="Enter reason"
+                    value={archiveReasonOther}
+                    onChange={(e)=>setArchiveReasonOther(e.target.value)}
+                  />
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button className="rounded border px-3 py-1.5" onClick={()=>setArchiveOpen(false)} disabled={saving}>
+                  Cancel
+                </button>
+                <button
+                  className="rounded bg-red-600 px-3 py-1.5 text-white hover:bg-red-700 disabled:opacity-50"
+                  onClick={submitArchive}
+                  disabled={saving || !archiveDate}
+                >
+                  Archive
                 </button>
               </div>
             </div>
