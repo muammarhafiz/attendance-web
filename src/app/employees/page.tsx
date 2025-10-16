@@ -46,7 +46,7 @@ type StaffFull = {
 
   basic_salary: number | null;
 
-  archived_at?: string | null;   // <-- for Archive/Restore
+  archived_at?: string | null;
 };
 
 function rm(n?: number | null) {
@@ -146,7 +146,7 @@ export default function EmployeesPage() {
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<StaffBrief[]>([]);
   const [q, setQ] = useState('');
-  const [view, setView] = useState<'active'|'archived'>('active'); // <-- toggle list
+  const [view, setView] = useState<'active'|'archived'>('active');
 
   // editor
   const [openEmail, setOpenEmail] = useState<string | null>(null); // 'NEW' for create
