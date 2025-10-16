@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabaseClient';
 type StaffBrief = {
   display_name: string | null;
   email: string;
-  salary_basic: number | null;   // from v_staff_brief (public.staff.basic_salary)
+  salary_basic: number | null;
   position: string | null;
   start_date: string | null;
   year_join: number | null;
@@ -44,7 +44,7 @@ type StaffFull = {
   socso_no: string | null;
   eis_no: string | null;
 
-  basic_salary: number | null;   // single salary field
+  basic_salary: number | null;
 };
 
 function rm(n?: number | null) {
@@ -80,8 +80,9 @@ export default function EmployeesPage() {
   const load = async () => {
     setLoading(true);
     setMsg(null);
+    // Active only
     const { data, error } = await supabase
-      .from('v_staff_brief')
+      .from('v_staff_brief_active')
       .select('*')
       .order('display_name', { ascending: true });
     if (error) setMsg(`Load failed: ${error.message}`);
@@ -110,15 +111,13 @@ export default function EmployeesPage() {
       .eq('email', email)
       .maybeSingle();
     if (error) { setMsg(`Load employee failed: ${error.message}`); setModel(null); return; }
-    const row = data as StaffFull;
-    setModel(row);
+    setModel(data as StaffFull);
   };
 
   const save = async () => {
     if (!model) return;
     setSaving(true); setMsg(null);
     try {
-      // Normalize whitespace → nulls where appropriate
       const payload = {
         ...model,
         full_name: emptyToNull(model.full_name) ?? emptyToNull(model.name),
@@ -141,14 +140,14 @@ export default function EmployeesPage() {
         eis_no: emptyToNull(model.eis_no),
       };
 
-      // 1) Save to staff (single source of truth)
+      // 1) Save to staff
       const { error: upErr } = await supabase
         .from('staff')
         .update(payload)
         .eq('email', model.email);
       if (upErr) throw upErr;
 
-      // 2) Find latest OPEN payroll period
+      // 2) Latest OPEN period
       const { data: period, error: perErr } = await supabase
         .schema('pay_v2')
         .from('periods')
@@ -160,23 +159,69 @@ export default function EmployeesPage() {
         .maybeSingle();
       if (perErr) throw perErr;
 
-      // 3) Push BASE + recalc for latest OPEN period so payroll reflects the change
+      // 3) Re-sync BASE with archive-aware function
       if (period?.year && period?.month) {
-        const s1 = await supabase
-          .schema('pay_v2')
-          .rpc('sync_base_items_respect_archive', { p_year: period.year, p_month: period.month }); // << fixed
+        const s1 = await supabase.schema('pay_v2').rpc('sync_base_items_respect_archive', {
+          p_year: period.year,
+          p_month: period.month,
+        });
         if (s1.error) throw s1.error;
-
-        // recalc is called inside; calling again is harmless
-        await supabase
-          .schema('pay_v2')
-          .rpc('recalc_statutories', { p_year: period.year, p_month: period.month });
+        await supabase.schema('pay_v2').rpc('recalc_statutories', { p_year: period.year, p_month: period.month });
       }
 
       setMsg('Saved and payroll updated.');
       await load();
     } catch (e: any) {
       setMsg(`Save failed: ${e.message ?? e}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const archiveEmployee = async () => {
+    if (!model) return;
+    const last = prompt('Last working day (YYYY-MM-DD):');
+    if (last == null) return;
+    const okDate = /^\d{4}-\d{2}-\d{2}$/.test(last);
+    if (!okDate) { setMsg('Invalid date format. Use YYYY-MM-DD.'); return; }
+
+    setSaving(true); setMsg(null);
+    try {
+      // 1) Archive in DB
+      const { error } = await supabase.rpc('archive_staff', {
+        p_email: model.email,
+        p_last_day: last,
+      });
+      if (error) throw error;
+
+      // 2) Latest OPEN period -> re-sync base (so current month cleans up if needed)
+      const { data: period } = await supabase
+        .schema('pay_v2')
+        .from('periods')
+        .select('year, month')
+        .eq('status', 'OPEN')
+        .order('year', { ascending: false })
+        .order('month', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (period?.year && period?.month) {
+        await supabase.schema('pay_v2').rpc('sync_base_items_respect_archive', {
+          p_year: period.year,
+          p_month: period.month,
+        });
+        await supabase.schema('pay_v2').rpc('recalc_statutories', {
+          p_year: period.year,
+          p_month: period.month,
+        });
+      }
+
+      setMsg('Employee archived.');
+      setOpenEmail(null);
+      setModel(null);
+      await load(); // falls off the list (active-only view)
+    } catch (e: any) {
+      setMsg(`Archive failed: ${e.message ?? e}`);
     } finally {
       setSaving(false);
     }
@@ -257,7 +302,17 @@ export default function EmployeesPage() {
           <div className="absolute right-0 top-0 h-full w-[min(720px,92vw)] overflow-y-auto bg-white shadow-xl">
             <div className="flex items-center justify-between border-b px-4 py-3">
               <div className="font-semibold">Edit employee — {model.email}</div>
-              <button className="rounded border px-2 py-1" onClick={closeEditor}>Close</button>
+              <div className="flex items-center gap-2">
+                <button className="rounded border px-2 py-1" onClick={closeEditor} disabled={saving}>Close</button>
+                <button
+                  className="rounded border px-2 py-1 text-red-700 hover:bg-red-50"
+                  onClick={archiveEmployee}
+                  disabled={saving}
+                  title="Archive this employee (will ask for last working day)"
+                >
+                  Archive
+                </button>
+              </div>
             </div>
 
             <div className="grid gap-6 p-4">
