@@ -3,11 +3,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-/* ---------- Types ---------- */
 type StaffBrief = {
   display_name: string | null;
   email: string;
-  salary_basic: number | null;   // from v_staff_brief (public.staff.basic_salary)
+  salary_basic: number | null;
   position: string | null;
   start_date: string | null;
   year_join: number | null;
@@ -45,7 +44,7 @@ type StaffFull = {
   socso_no: string | null;
   eis_no: string | null;
 
-  basic_salary: number | null;   // single salary field
+  basic_salary: number | null;
 };
 
 function rm(n?: number | null) {
@@ -53,21 +52,75 @@ function rm(n?: number | null) {
   return `RM ${v.toFixed(2)}`;
 }
 
-/* ============================================================
-   PAGE
-============================================================ */
+/* ======== constants / options ======== */
+const POSITION_OPTIONS = ['Manager', 'Supervisor', 'Mechanic', 'Admin'] as const;
+const RELATIONSHIP_OPTIONS = ['Sibling', 'Spouse', 'Parents'] as const;
+const MALAYSIA_BANKS = [
+  'Maybank',
+  'CIMB',
+  'Public Bank',
+  'RHB',
+  'Hong Leong Bank',
+  'AmBank',
+  'Bank Islam',
+  'Bank Rakyat',
+  'UOB',
+  'OCBC',
+  'HSBC',
+  'Standard Chartered',
+  'Affin Bank',
+  'Alliance Bank',
+];
+
+/* Parse NRIC -> DOB (YYYY-MM-DD). YY 00–24 => 2000s, else 1900s. */
+function dobFromNric(nric: string): string | null {
+  // Expect YYMMDD-PP-#### (we only need first 6 digits)
+  const m = nric.replace(/\D/g, '').match(/^(\d{2})(\d{2})(\d{2})/);
+  if (!m) return null;
+  const [_, yy, mm, dd] = m;
+  const year2 = Number(yy);
+  const month = Number(mm);
+  const day = Number(dd);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const year = year2 <= 24 ? 2000 + year2 : 1900 + year2;
+  const mmPad = String(month).padStart(2, '0');
+  const ddPad = String(day).padStart(2, '0');
+  return `${year}-${mmPad}-${ddPad}`;
+}
+
+/* Convert YYYY-MM to YYYY-MM-01 for DB date */
+function monthToDate(val: string | null): string | null {
+  if (!val) return null;
+  if (!/^\d{4}-\d{2}$/.test(val)) return null;
+  return `${val}-01`;
+}
+
+/* Extract YYYY-MM from YYYY-MM-DD (or return '') */
+function dateToMonth(val: string | null): string {
+  if (!val) return '';
+  const m = val.match(/^(\d{4}-\d{2})-\d{2}$/);
+  return m ? m[1] : '';
+}
+
 export default function EmployeesPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<StaffBrief[]>([]);
   const [q, setQ] = useState('');
 
-  // editor state
+  // editor
   const [openEmail, setOpenEmail] = useState<string | null>(null);
-  const [creating, setCreating] = useState<boolean>(false);
   const [model, setModel] = useState<StaffFull | null>(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+
+  // helpers for “Other + textbox”
+  const [natChoice, setNatChoice] = useState<'Malaysia' | 'Other' | ''>('');
+  const [natOther, setNatOther] = useState('');
+  const [relChoice, setRelChoice] = useState<'Sibling' | 'Spouse' | 'Parents' | 'Other' | ''>('');
+  const [relOther, setRelOther] = useState('');
+  const [bankChoice, setBankChoice] = useState<string | ''>('');
+  const [bankOther, setBankOther] = useState('');
 
   useEffect(() => {
     let cleanup: (() => void) | undefined;
@@ -108,7 +161,6 @@ export default function EmployeesPage() {
 
   const openEditor = async (email: string) => {
     setMsg(null);
-    setCreating(false);
     setOpenEmail(email);
     const { data, error } = await supabase
       .from('staff')
@@ -118,72 +170,66 @@ export default function EmployeesPage() {
     if (error) { setMsg(`Load employee failed: ${error.message}`); setModel(null); return; }
     const row = data as StaffFull;
     setModel(row);
-  };
 
-  // NEW: open create drawer with blank model
-  const openCreate = () => {
-    setMsg(null);
-    setCreating(true);
-    setOpenEmail('__new__');
-    setModel({
-      email: '',
-      full_name: '',
-      name: '',
-      nationality: null,
-      nric: null,
-      dob: null,
-      gender: null,
-      race: null,
-      ability_status: null,
-      marital_status: null,
-      phone: null,
-      address: null,
-      emergency_name: null,
-      emergency_phone: null,
-      emergency_relationship: null,
-      salary_payment_method: null,
-      bank_name: null,
-      bank_account_name: null,
-      bank_account_no: null,
-      position: null,
-      start_date: null,
-      epf_no: null,
-      socso_no: null,
-      eis_no: null,
-      basic_salary: 0,
-    });
+    // hydrate select+other state from current row
+    // Nationality
+    if ((row.nationality ?? '').toLowerCase() === 'malaysia') {
+      setNatChoice('Malaysia'); setNatOther('');
+    } else if (row.nationality && row.nationality.trim() !== '') {
+      setNatChoice('Other'); setNatOther(row.nationality);
+    } else {
+      setNatChoice(''); setNatOther('');
+    }
+    // Relationship
+    if (RELATIONSHIP_OPTIONS.includes((row.emergency_relationship ?? '') as any)) {
+      setRelChoice(row.emergency_relationship as any); setRelOther('');
+    } else if (row.emergency_relationship) {
+      setRelChoice('Other'); setRelOther(row.emergency_relationship);
+    } else {
+      setRelChoice(''); setRelOther('');
+    }
+    // Bank
+    if (row.bank_name && MALAYSIA_BANKS.includes(row.bank_name)) {
+      setBankChoice(row.bank_name); setBankOther('');
+    } else if (row.bank_name) {
+      setBankChoice('Other'); setBankOther(row.bank_name);
+    } else {
+      setBankChoice(''); setBankOther('');
+    }
   };
 
   const save = async () => {
     if (!model) return;
     setSaving(true); setMsg(null);
     try {
-      // —— Validation ——
-      const email = (model.email ?? '').trim().toLowerCase();
-      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        throw new Error('Please provide a valid email address.');
-      }
-      const basic = Number(model.basic_salary ?? 0);
-      if (!Number.isFinite(basic) || basic < 0) {
-        throw new Error('Basic salary must be a non-negative number.');
-      }
+      // fold “Other” fields back into model
+      const nationality =
+        natChoice === 'Malaysia' ? 'Malaysia' :
+        natChoice === 'Other'    ? (natOther.trim() || null) :
+        null;
+
+      const emergency_relationship =
+        relChoice === 'Other' ? (relOther.trim() || null) :
+        relChoice || null;
+
+      const bank_name =
+        bankChoice === 'Other' ? (bankOther.trim() || null) :
+        bankChoice || null;
 
       // Normalize whitespace → nulls
       const payload = {
         ...model,
-        email,
         full_name: emptyToNull(model.full_name) ?? emptyToNull(model.name),
-        name: emptyToNull(model.name),
-        nationality: emptyToNull(model.nationality),
+        nationality,
         nric: emptyToNull(model.nric),
         dob: emptyToNull(model.dob),
         phone: emptyToNull(model.phone),
         address: emptyToNull(model.address),
         emergency_name: emptyToNull(model.emergency_name),
         emergency_phone: emptyToNull(model.emergency_phone),
-        emergency_relationship: emptyToNull(model.emergency_relationship),
+        emergency_relationship,
         salary_payment_method: emptyToNull(model.salary_payment_method),
-        bank_name: emptyToNull(model.bank_name),
+        bank_name,
         bank_account_name: emptyToNull(model.bank_account_name),
         bank_account_no: emptyToNull(model.bank_account_no),
         position: emptyToNull(model.position),
@@ -191,25 +237,16 @@ export default function EmployeesPage() {
         epf_no: emptyToNull(model.epf_no),
         socso_no: emptyToNull(model.socso_no),
         eis_no: emptyToNull(model.eis_no),
-        basic_salary: basic,
       };
 
-      if (creating) {
-        // 1) INSERT to public.staff (single source of truth)
-        const { error: insErr } = await supabase
-          .from('staff')
-          .insert([payload]);
-        if (insErr) throw insErr;
-      } else {
-        // 1) UPDATE existing staff
-        const { error: upErr } = await supabase
-          .from('staff')
-          .update(payload)
-          .eq('email', email);
-        if (upErr) throw upErr;
-      }
+      // 1) Save to staff
+      const { error: upErr } = await supabase
+        .from('staff')
+        .update(payload)
+        .eq('email', model.email);
+      if (upErr) throw upErr;
 
-      // 2) Find latest OPEN payroll period
+      // 2) Latest OPEN period
       const { data: period, error: perErr } = await supabase
         .schema('pay_v2')
         .from('periods')
@@ -221,19 +258,15 @@ export default function EmployeesPage() {
         .maybeSingle();
       if (perErr) throw perErr;
 
-      // 3) Push BASE + recalc so Payroll v2 reflects changes immediately
+      // 3) Reflect salary in Payroll v2 (if any OPEN)
       if (period?.year && period?.month) {
         const s1 = await supabase.schema('pay_v2').rpc('sync_base_items', { p_year: period.year, p_month: period.month });
         if (s1.error) throw s1.error;
         await supabase.schema('pay_v2').rpc('recalc_statutories', { p_year: period.year, p_month: period.month });
-        // (Optional) If you also want UNPAID to reflect new hires immediately, call:
-        // await supabase.rpc('sync_absent_deductions', { p_year: period.year, p_month: period.month });
       }
 
-      setMsg(creating ? 'Employee added and payroll updated.' : 'Saved and payroll updated.');
-      setCreating(false);
-      setOpenEmail(email);
-      await load(); // refresh list
+      setMsg('Saved and payroll updated.');
+      await load();
     } catch (e: any) {
       setMsg(`Save failed: ${e.message ?? e}`);
     } finally {
@@ -245,8 +278,10 @@ export default function EmployeesPage() {
     if (saving) return;
     setOpenEmail(null);
     setModel(null);
-    setCreating(false);
     setMsg(null);
+    setNatChoice(''); setNatOther('');
+    setRelChoice(''); setRelOther('');
+    setBankChoice(''); setBankOther('');
   }
 
   if (authed === false) {
@@ -257,21 +292,13 @@ export default function EmployeesPage() {
     <main className="mx-auto max-w-7xl p-6">
       <header className="mb-4 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold">Employees</h1>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto">
           <input
             className="rounded border px-3 py-2 w-72"
             placeholder="Search name / email / position"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
-          {/* NEW: Add employee */}
-          <button
-            className="rounded bg-emerald-600 px-3 py-2 text-white hover:bg-emerald-700"
-            onClick={openCreate}
-            title="Add a new employee"
-          >
-            Add employee
-          </button>
         </div>
       </header>
 
@@ -319,43 +346,57 @@ export default function EmployeesPage() {
         )}
       </section>
 
-      {/* Drawer / Modal editor — used for both new and existing */}
+      {/* Drawer / Modal editor */}
       {openEmail && model && (
         <div className="fixed inset-0 z-40 bg-black/40" onClick={(e) => { if (e.target === e.currentTarget) closeEditor(); }}>
           <div className="absolute right-0 top-0 h-full w-[min(720px,92vw)] overflow-y-auto bg-white shadow-xl">
             <div className="flex items-center justify-between border-b px-4 py-3">
-              <div className="font-semibold">
-                {creating ? 'Add new employee' : `Edit employee — ${model.email}`}
-              </div>
+              <div className="font-semibold">Edit employee — {model.email}</div>
               <button className="rounded border px-2 py-1" onClick={closeEditor}>Close</button>
             </div>
 
             <div className="grid gap-6 p-4">
-              {/* Account (email + name shown first when creating) */}
-              <Section title="Account">
-                <Grid3>
-                  <Text label="Email (login identifier)" value={model.email} onChange={v => setModel(m => ({...m!, email: v.trim()}))} />
-                  <Text label="Full name" value={model.full_name ?? model.name ?? ''} onChange={v => setModel(m => ({...m!, full_name: v}))} />
-                  <Text label="Position" value={model.position ?? ''} onChange={v => setModel(m => ({...m!, position: v}))} />
-                </Grid3>
-              </Section>
-
-              {/* Employment */}
-              <Section title="Employment">
-                <Grid3>
-                  <DateInput label="Start date" value={model.start_date ?? ''} onChange={v => setModel(m => ({...m!, start_date: v}))} />
-                  <Money label="Basic salary" value={num(model.basic_salary)} onChange={v => setModel(m => ({...m!, basic_salary: v}))} />
-                  <Select label="Salary payment method" value={model.salary_payment_method ?? ''} onChange={v => setModel(m => ({...m!, salary_payment_method: (v||null) as any}))}
-                          options={['Cheque','Bank Transfer','Cash']} />
-                </Grid3>
-              </Section>
-
               {/* Personal */}
               <Section title="Personal information">
                 <Grid2>
-                  <Text label="Nationality" value={model.nationality ?? ''} onChange={v => setModel(m => ({...m!, nationality: v}))} />
-                  <Text label="NRIC" value={model.nric ?? ''} onChange={v => setModel(m => ({...m!, nric: v}))} />
+                  <Text label="Full name" value={model.full_name ?? model.name ?? ''} onChange={v => setModel(m => ({...m!, full_name: v}))} />
+
+                  {/* Nationality: Malaysia / Other */}
+                  <div>
+                    <label className="mb-1 block text-xs text-gray-600">Nationality</label>
+                    <div className="flex gap-2">
+                      <select
+                        className="rounded border px-2 py-1"
+                        value={natChoice}
+                        onChange={(e) => setNatChoice(e.target.value as any)}
+                      >
+                        <option value="">—</option>
+                        <option value="Malaysia">Malaysia</option>
+                        <option value="Other">Other</option>
+                      </select>
+                      {natChoice === 'Other' && (
+                        <input
+                          className="flex-1 rounded border px-2 py-1"
+                          placeholder="Enter nationality"
+                          value={natOther}
+                          onChange={(e) => setNatOther(e.target.value)}
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* NRIC with DOB auto-fill */}
+                  <Text
+                    label="NRIC (YYMMDD-PP-####)"
+                    value={model.nric ?? ''}
+                    onChange={v => {
+                      setModel(m => ({...m!, nric: v}));
+                      const dob = dobFromNric(v);
+                      if (dob) setModel(m => ({...m!, dob}));
+                    }}
+                  />
                   <DateInput label="Date of birth" value={model.dob ?? ''} onChange={v => setModel(m => ({...m!, dob: v}))} />
+
                   <Select label="Gender" value={model.gender ?? ''} onChange={v => setModel(m => ({...m!, gender: (v||null) as any}))}
                           options={['Male','Female']} />
                   <Select label="Race" value={model.race ?? ''} onChange={v => setModel(m => ({...m!, race: (v||null) as any}))}
@@ -367,7 +408,7 @@ export default function EmployeesPage() {
                 </Grid2>
               </Section>
 
-              {/* Contact */}
+              {/* Contacts */}
               <Section title="Contact">
                 <Grid2>
                   <Text label="Phone" value={model.phone ?? ''} onChange={v => setModel(m => ({...m!, phone: v}))} />
@@ -380,16 +421,90 @@ export default function EmployeesPage() {
                 <Grid3>
                   <Text label="Name" value={model.emergency_name ?? ''} onChange={v => setModel(m => ({...m!, emergency_name: v}))} />
                   <Text label="Phone" value={model.emergency_phone ?? ''} onChange={v => setModel(m => ({...m!, emergency_phone: v}))} />
-                  <Text label="Relationship" value={model.emergency_relationship ?? ''} onChange={v => setModel(m => ({...m!, emergency_relationship: v}))} />
+                  <div>
+                    <label className="mb-1 block text-xs text-gray-600">Relationship</label>
+                    <div className="flex gap-2">
+                      <select
+                        className="rounded border px-2 py-1"
+                        value={relChoice}
+                        onChange={(e) => setRelChoice(e.target.value as any)}
+                      >
+                        <option value="">—</option>
+                        {RELATIONSHIP_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                        <option value="Other">Other</option>
+                      </select>
+                      {relChoice === 'Other' && (
+                        <input
+                          className="flex-1 rounded border px-2 py-1"
+                          placeholder="Specify relationship"
+                          value={relOther}
+                          onChange={(e) => setRelOther(e.target.value)}
+                        />
+                      )}
+                    </div>
+                  </div>
                 </Grid3>
               </Section>
 
-              {/* Banking */}
-              <Section title="Banking">
+              {/* Salary payment */}
+              <Section title="Salary payment">
                 <Grid3>
-                  <Text label="Bank name" value={model.bank_name ?? ''} onChange={v => setModel(m => ({...m!, bank_name: v}))} />
+                  <Select label="Method" value={model.salary_payment_method ?? ''} onChange={v => setModel(m => ({...m!, salary_payment_method: (v||null) as any}))}
+                          options={['Cheque','Bank Transfer','Cash']} />
+
+                  {/* Bank name: list + Other */}
+                  <div>
+                    <label className="mb-1 block text-xs text-gray-600">Bank name</label>
+                    <div className="flex gap-2">
+                      <select
+                        className="rounded border px-2 py-1"
+                        value={bankChoice}
+                        onChange={(e) => setBankChoice(e.target.value)}
+                      >
+                        <option value="">—</option>
+                        {MALAYSIA_BANKS.map(b => <option key={b} value={b}>{b}</option>)}
+                        <option value="Other">Other</option>
+                      </select>
+                      {bankChoice === 'Other' && (
+                        <input
+                          className="flex-1 rounded border px-2 py-1"
+                          placeholder="Enter bank name"
+                          value={bankOther}
+                          onChange={(e) => setBankOther(e.target.value)}
+                        />
+                      )}
+                    </div>
+                  </div>
+
                   <Text label="Account holder" value={model.bank_account_name ?? ''} onChange={v => setModel(m => ({...m!, bank_account_name: v}))} />
                   <Text label="Account no." value={model.bank_account_no ?? ''} onChange={v => setModel(m => ({...m!, bank_account_no: v}))} />
+                </Grid3>
+              </Section>
+
+              {/* Employment */}
+              <Section title="Employment">
+                <Grid3>
+                  {/* Position dropdown */}
+                  <div>
+                    <label className="mb-1 block text-xs text-gray-600">Position</label>
+                    <select
+                      className="w-full rounded border px-2 py-1"
+                      value={model.position ?? ''}
+                      onChange={(e) => setModel(m => ({...m!, position: e.target.value || null}))}
+                    >
+                      <option value="">—</option>
+                      {POSITION_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </div>
+
+                  {/* Start date: month/year only (save as YYYY-MM-01) */}
+                  <MonthInput
+                    label="Start date (month/year)"
+                    value={dateToMonth(model.start_date ?? null)}
+                    onChange={(v) => setModel(m => ({...m!, start_date: monthToDate(v)}))}
+                  />
+
+                  <Money label="Basic salary" value={num(model.basic_salary)} onChange={v => setModel(m => ({...m!, basic_salary: v}))} />
                 </Grid3>
               </Section>
 
@@ -398,7 +513,6 @@ export default function EmployeesPage() {
                 <Grid3>
                   <Text label="EPF No" value={model.epf_no ?? ''} onChange={v => setModel(m => ({...m!, epf_no: v}))} />
                   <Text label="SOCSO No" value={model.socso_no ?? ''} onChange={v => setModel(m => ({...m!, socso_no: v}))} />
-                  {/* FIXED handler for EIS */}
                   <Text label="EIS No" value={model.eis_no ?? ''} onChange={v => setModel(m => ({...m!, eis_no: v}))} />
                 </Grid3>
               </Section>
@@ -410,7 +524,7 @@ export default function EmployeesPage() {
                   onClick={save}
                   disabled={saving}
                 >
-                  {saving ? (creating ? 'Adding…' : 'Saving…') : (creating ? 'Add employee' : 'Save')}
+                  {saving ? 'Saving…' : 'Save'}
                 </button>
               </div>
             </div>
@@ -466,6 +580,22 @@ function Select({ label, value, options, onChange }:{
         <option value="">—</option>
         {options.map(o => <option key={o} value={o}>{o}</option>)}
       </select>
+    </div>
+  );
+}
+/* Month/year input (stores YYYY-MM; caller converts to date) */
+function MonthInput({ label, value, onChange }:{
+  label:string; value:string; onChange:(v:string)=>void
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-xs text-gray-600">{label}</label>
+      <input
+        type="month"
+        className="w-full rounded border px-2 py-1"
+        value={value || ''}
+        onChange={(e)=>onChange(e.target.value || '')}
+      />
     </div>
   );
 }
