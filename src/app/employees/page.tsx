@@ -54,6 +54,7 @@ type NewEmployee = {
   position: string;
   start_date: string;
   basic_salary: string; // keep as string for input; convert on save
+  is_admin: boolean;
 };
 
 const POSITION_OPTIONS = ['Manager','Supervisor','Mechanic','Admin'];
@@ -75,6 +76,10 @@ export default function EmployeesPage() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
+  // admin flag for the user being edited
+  const [editIsAdmin, setEditIsAdmin] = useState<boolean>(false);
+  const [editIsAdminLoaded, setEditIsAdminLoaded] = useState<boolean>(false);
+
   // add-employee drawer
   const [addOpen, setAddOpen] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -86,6 +91,7 @@ export default function EmployeesPage() {
     position: '',
     start_date: today,
     basic_salary: '0.00',
+    is_admin: false,
   });
 
   // auth
@@ -129,6 +135,10 @@ export default function EmployeesPage() {
   const openEditor = async (email: string) => {
     setMsg(null);
     setOpenEmail(email);
+    setEditIsAdmin(false);
+    setEditIsAdminLoaded(false);
+
+    // Staff row
     const { data, error } = await supabase
       .from('staff')
       .select('*')
@@ -137,6 +147,17 @@ export default function EmployeesPage() {
     if (error) { setMsg(`Load employee failed: ${error.message}`); setModel(null); return; }
     const row = data as StaffFull;
     setModel(row);
+
+    // Admin flag for this user (public.admins)
+    try {
+      const { data: adminRow, error: adminErr } = await supabase
+        .from('admins')
+        .select('email')
+        .eq('email', email.toLowerCase())
+        .maybeSingle();
+      if (!adminErr) setEditIsAdmin(!!adminRow);
+    } catch { /* ignore */ }
+    setEditIsAdminLoaded(true);
   };
 
   const save = async () => {
@@ -173,6 +194,17 @@ export default function EmployeesPage() {
         .eq('email', model.email);
       if (upErr) throw upErr;
 
+      // 1b) Apply admin flag for this user
+      if (editIsAdminLoaded) {
+        if (editIsAdmin) {
+          const up = await supabase.from('admins').upsert({ email: model.email.toLowerCase() }, { onConflict: 'email' });
+          if (up.error) throw up.error;
+        } else {
+          const del = await supabase.from('admins').delete().eq('email', model.email.toLowerCase());
+          if (del.error) throw del.error;
+        }
+      }
+
       // 2) Find latest OPEN payroll period
       const { data: period, error: perErr } = await supabase
         .schema('pay_v2')
@@ -192,7 +224,7 @@ export default function EmployeesPage() {
         await supabase.schema('pay_v2').rpc('recalc_statutories', { p_year: period.year, p_month: period.month });
       }
 
-      setMsg('Saved and payroll updated.');
+      setMsg('Saved, admin flag applied, and payroll updated.');
       await load();
     } catch (e: any) {
       setMsg(`Save failed: ${e.message ?? e}`);
@@ -204,7 +236,7 @@ export default function EmployeesPage() {
   // ------- Add employee -------
   const openAdd = () => {
     setAddMsg(null);
-    setNewEmp({ email: '', full_name: '', position: '', start_date: today, basic_salary: '0.00' });
+    setNewEmp({ email: '', full_name: '', position: '', start_date: today, basic_salary: '0.00', is_admin: false });
     setAddOpen(true);
   };
 
@@ -233,6 +265,15 @@ export default function EmployeesPage() {
       };
       const res = await supabase.from('staff').upsert(payload, { onConflict: 'email' }).select('email').maybeSingle();
       if (res.error) throw res.error;
+
+      // set admin flag if requested
+      if (newEmp.is_admin) {
+        const up = await supabase.from('admins').upsert({ email }, { onConflict: 'email' });
+        if (up.error) throw up.error;
+      } else {
+        // ensure not admin if box unchecked
+        await supabase.from('admins').delete().eq('email', email);
+      }
 
       // sync BASE for latest OPEN period (if any)
       const { data: per } = await supabase.schema('pay_v2')
@@ -336,7 +377,7 @@ export default function EmployeesPage() {
         )}
       </section>
 
-      {/* Drawer / Modal editor (existing) */}
+      {/* Drawer / Modal editor */}
       {openEmail && model && (
         <div className="fixed inset-0 z-40 bg-black/40" onClick={(e) => { if (e.target === e.currentTarget) closeEditor(); }}>
           <div className="absolute right-0 top-0 h-full w-[min(720px,92vw)] overflow-y-auto bg-white shadow-xl">
@@ -346,6 +387,20 @@ export default function EmployeesPage() {
             </div>
 
             <div className="grid gap-6 p-4">
+              {/* Access controls */}
+              <Section title="Access">
+                <div className="flex items-center gap-2">
+                  <input
+                    id="admin-flag"
+                    type="checkbox"
+                    checked={editIsAdmin}
+                    onChange={(e)=>setEditIsAdmin(e.target.checked)}
+                  />
+                  <label htmlFor="admin-flag" className="text-sm">Admin (can manage payroll, periods, employees)</label>
+                </div>
+                {!editIsAdminLoaded && <div className="mt-1 text-xs text-gray-500">Checking current admin status…</div>}
+              </Section>
+
               {/* Personal */}
               <Section title="Personal information">
                 <Grid2>
@@ -364,7 +419,7 @@ export default function EmployeesPage() {
                 </Grid2>
               </Section>
 
-              {/* Contacts */}
+              {/* Contact */}
               <Section title="Contact">
                 <Grid2>
                   <Text label="Phone" value={model.phone ?? ''} onChange={v => setModel(m => ({...m!, phone: v}))} />
@@ -444,6 +499,10 @@ export default function EmployeesPage() {
                   <Select label="Position" value={newEmp.position} onChange={v=>setNewEmp(e=>({...e,position:v}))} options={POSITION_OPTIONS} />
                   <DateInput label="Start date" value={newEmp.start_date} onChange={v=>setNewEmp(e=>({...e,start_date:v}))} />
                   <Money label="Basic salary" value={Number(newEmp.basic_salary)} onChange={v=>setNewEmp(e=>({...e,basic_salary:String(v)}))} />
+                  <div className="flex items-center gap-2">
+                    <input id="new-is-admin" type="checkbox" checked={newEmp.is_admin} onChange={(e)=>setNewEmp(s=>({...s,is_admin:e.target.checked}))} />
+                    <label htmlFor="new-is-admin" className="text-sm">Set as admin</label>
+                  </div>
                 </Grid2>
               </Section>
 
