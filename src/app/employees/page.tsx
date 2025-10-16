@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabaseClient';
 type StaffBrief = {
   display_name: string | null;
   email: string;
-  salary_basic: number | null;   // from v_staff_brief_active (public.staff.basic_salary)
+  salary_basic: number | null;   // from v_staff_brief (public.staff.basic_salary)
   position: string | null;
   start_date: string | null;
   year_join: number | null;
@@ -44,10 +44,7 @@ type StaffFull = {
   socso_no: string | null;
   eis_no: string | null;
 
-  basic_salary: number | null;
-
-  employment_end_date?: string | null; // added for archive UX (optional to display)
-  archived_at?: string | null;
+  basic_salary: number | null;   // single salary field
 };
 
 function rm(n?: number | null) {
@@ -83,9 +80,8 @@ export default function EmployeesPage() {
   const load = async () => {
     setLoading(true);
     setMsg(null);
-    // Active-only list
     const { data, error } = await supabase
-      .from('v_staff_brief_active')
+      .from('v_staff_brief')
       .select('*')
       .order('display_name', { ascending: true });
     if (error) setMsg(`Load failed: ${error.message}`);
@@ -145,14 +141,14 @@ export default function EmployeesPage() {
         eis_no: emptyToNull(model.eis_no),
       };
 
-      // 1) Save to staff
+      // 1) Save to staff (single source of truth)
       const { error: upErr } = await supabase
         .from('staff')
         .update(payload)
         .eq('email', model.email);
       if (upErr) throw upErr;
 
-      // 2) Update latest OPEN payroll period base & statutories (optional convenience)
+      // 2) Find latest OPEN payroll period
       const { data: period, error: perErr } = await supabase
         .schema('pay_v2')
         .from('periods')
@@ -164,45 +160,23 @@ export default function EmployeesPage() {
         .maybeSingle();
       if (perErr) throw perErr;
 
+      // 3) Push BASE + recalc for latest OPEN period so payroll reflects the change
       if (period?.year && period?.month) {
-        const s1 = await supabase.schema('pay_v2').rpc('sync_base_items_respect_archive', { p_year, p_month });
+        const s1 = await supabase
+          .schema('pay_v2')
+          .rpc('sync_base_items_respect_archive', { p_year: period.year, p_month: period.month }); // << fixed
         if (s1.error) throw s1.error;
-        await supabase.schema('pay_v2').rpc('recalc_statutories', { p_year: period.year, p_month: period.month });
+
+        // recalc is called inside; calling again is harmless
+        await supabase
+          .schema('pay_v2')
+          .rpc('recalc_statutories', { p_year: period.year, p_month: period.month });
       }
 
       setMsg('Saved and payroll updated.');
       await load();
     } catch (e: any) {
       setMsg(`Save failed: ${e.message ?? e}`);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // ARCHIVE flow
-  const archiveStaff = async () => {
-    if (!model) return;
-    const dflt = new Date().toISOString().slice(0,10);
-    const lastDay = prompt('Last working day (YYYY-MM-DD):', dflt);
-    if (lastDay == null) return; // cancelled
-    const yyyy_mm_dd = lastDay.trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(yyyy_mm_dd)) { setMsg('Invalid date format (use YYYY-MM-DD)'); return; }
-
-    try {
-      setSaving(true); setMsg(null);
-      // Call RPC that sets employment_end_date + archived_at, and removes FUTURE items
-      const { error } = await supabase.rpc('archive_staff', {
-        p_email: model.email,
-        p_last_day: yyyy_mm_dd,
-      });
-      if (error) throw error;
-
-      setMsg('Archived. They will not appear in next month’s payroll.');
-      setOpenEmail(null);
-      setModel(null);
-      await load();
-    } catch (e: any) {
-      setMsg(`Archive failed: ${e.message ?? e}`);
     } finally {
       setSaving(false);
     }
@@ -283,17 +257,7 @@ export default function EmployeesPage() {
           <div className="absolute right-0 top-0 h-full w-[min(720px,92vw)] overflow-y-auto bg-white shadow-xl">
             <div className="flex items-center justify-between border-b px-4 py-3">
               <div className="font-semibold">Edit employee — {model.email}</div>
-              <div className="flex items-center gap-2">
-                {/* ARCHIVE button */}
-                <button
-                  className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
-                  onClick={archiveStaff}
-                  title="Archive this employee (set last working day & remove from future payroll)"
-                >
-                  Archive
-                </button>
-                <button className="rounded border px-2 py-1" onClick={closeEditor}>Close</button>
-              </div>
+              <button className="rounded border px-2 py-1" onClick={closeEditor}>Close</button>
             </div>
 
             <div className="grid gap-6 p-4">
