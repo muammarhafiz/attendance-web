@@ -166,11 +166,7 @@ export default function PayrollV2Page() {
         setRows((data as SummaryRow[]) ?? []);
       }
 
-      // 3) live absent days OFF THE REPORT SOURCE (derived from month_print_report)
-      //    This RPC must return rows: { staff_email, days_absent } computed by:
-      //      with r as (select staff_email, day, status from public.month_print_report(p_year,p_month))
-      //      select staff_email, count(*) as days_absent
-      //      from r where status = 'Absent' group by staff_email
+      // 3) live absent days from the Report source (month_print_report-based)
       {
         const { data, error } = await supabase.rpc('report_absent_days_from_print', {
           p_year: year,
