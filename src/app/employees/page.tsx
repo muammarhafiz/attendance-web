@@ -46,6 +46,7 @@ type StaffFull = {
   eis_no: string | null;
 
   basic_salary: number | null;   // single salary field
+  is_admin?: boolean | null;     // <-- align with Manager (same column)
 };
 
 type NewEmployee = {
@@ -76,9 +77,8 @@ export default function EmployeesPage() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  // admin flag for the user being edited
+  // admin flag for the user being edited (source of truth: staff.is_admin)
   const [editIsAdmin, setEditIsAdmin] = useState<boolean>(false);
-  const [editIsAdminLoaded, setEditIsAdminLoaded] = useState<boolean>(false);
 
   // add-employee drawer
   const [addOpen, setAddOpen] = useState(false);
@@ -135,29 +135,17 @@ export default function EmployeesPage() {
   const openEditor = async (email: string) => {
     setMsg(null);
     setOpenEmail(email);
-    setEditIsAdmin(false);
-    setEditIsAdminLoaded(false);
 
-    // Staff row
+    // Staff row (includes is_admin)
     const { data, error } = await supabase
       .from('staff')
       .select('*')
       .eq('email', email)
       .maybeSingle();
     if (error) { setMsg(`Load employee failed: ${error.message}`); setModel(null); return; }
-    const row = data as StaffFull;
+    const row = (data ?? null) as StaffFull | null;
     setModel(row);
-
-    // Admin flag for this user (public.admins)
-    try {
-      const { data: adminRow, error: adminErr } = await supabase
-        .from('admins')
-        .select('email')
-        .eq('email', email.toLowerCase())
-        .maybeSingle();
-      if (!adminErr) setEditIsAdmin(!!adminRow);
-    } catch { /* ignore */ }
-    setEditIsAdminLoaded(true);
+    setEditIsAdmin(!!row?.is_admin);
   };
 
   const save = async () => {
@@ -185,6 +173,7 @@ export default function EmployeesPage() {
         epf_no: emptyToNull(model.epf_no),
         socso_no: emptyToNull(model.socso_no),
         eis_no: emptyToNull(model.eis_no),
+        is_admin: editIsAdmin, // <-- write to staff.is_admin
       };
 
       // 1) Save to staff (single source of truth)
@@ -193,17 +182,6 @@ export default function EmployeesPage() {
         .update(payload)
         .eq('email', model.email);
       if (upErr) throw upErr;
-
-      // 1b) Apply admin flag for this user
-      if (editIsAdminLoaded) {
-        if (editIsAdmin) {
-          const up = await supabase.from('admins').upsert({ email: model.email.toLowerCase() }, { onConflict: 'email' });
-          if (up.error) throw up.error;
-        } else {
-          const del = await supabase.from('admins').delete().eq('email', model.email.toLowerCase());
-          if (del.error) throw del.error;
-        }
-      }
 
       // 2) Find latest OPEN payroll period
       const { data: period, error: perErr } = await supabase
@@ -262,18 +240,10 @@ export default function EmployeesPage() {
         basic_salary: Number.isFinite(salaryNum) ? salaryNum : 0,
         archived_at: null,
         employment_end_date: null,
+        is_admin: !!newEmp.is_admin, // <-- set admin at creation (same column)
       };
       const res = await supabase.from('staff').upsert(payload, { onConflict: 'email' }).select('email').maybeSingle();
       if (res.error) throw res.error;
-
-      // set admin flag if requested
-      if (newEmp.is_admin) {
-        const up = await supabase.from('admins').upsert({ email }, { onConflict: 'email' });
-        if (up.error) throw up.error;
-      } else {
-        // ensure not admin if box unchecked
-        await supabase.from('admins').delete().eq('email', email);
-      }
 
       // sync BASE for latest OPEN period (if any)
       const { data: per } = await supabase.schema('pay_v2')
@@ -322,7 +292,7 @@ export default function EmployeesPage() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
-          {/* Admin-only Add employee */}
+          {/* Add employee */}
           <button
             className="rounded bg-emerald-600 px-3 py-2 text-white hover:bg-emerald-700"
             onClick={openAdd}
@@ -398,7 +368,6 @@ export default function EmployeesPage() {
                   />
                   <label htmlFor="admin-flag" className="text-sm">Admin (can manage payroll, periods, employees)</label>
                 </div>
-                {!editIsAdminLoaded && <div className="mt-1 text-xs text-gray-500">Checking current admin status…</div>}
               </Section>
 
               {/* Personal */}
