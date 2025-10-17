@@ -135,7 +135,7 @@ export default function PayrollV2Page() {
 
   const disabledWrites = !isAdmin;
 
-  /* ---------- smart RPC (tries pay_v2 then public) ---------- */
+  /* ---------- smart RPC (pay_v2 first, then public fallback) ---------- */
   const callRpcSmart = async (fn: string, args: Record<string, any>) => {
     setLastAction(fn);
     setLastPayload(args);
@@ -145,7 +145,7 @@ export default function PayrollV2Page() {
     const r1 = await supabase.schema('pay_v2').rpc(fn, args);
     if (!r1.error) return true;
 
-    // Always fall back to public if pay_v2 failed (covers "schema cache" errors, etc.)
+    // Always fall back to public (covers function-not-found or schema cache hiccups)
     const r2 = await supabase.rpc(fn, args);
     if (r2.error) {
       const msg = `${r1.error.message} | fallback: ${r2.error.message}`;
