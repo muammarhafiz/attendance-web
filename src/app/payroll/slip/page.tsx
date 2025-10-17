@@ -67,7 +67,13 @@ export default function PayslipPage() {
       setManualDeduct(items.filter(r=>r.kind==='DEDUCT'));
 
       if(per?.id){
-        const {data:plumb}=await supabase.from('pay_v2.items').select('code,amount').eq('period_id',per.id).eq('staff_email',email).in('code',['UNPAID_ADJ','UNPAID_EXTRA']);
+        const {data:plumb}=await supabase
+          .schema('pay_v2')
+          .from('items')
+          .select('code,amount')
+          .eq('period_id',per.id)
+          .eq('staff_email',email)
+          .in('code',['UNPAID_ADJ','UNPAID_EXTRA']);
         let adj=0,extra=0;
         (plumb||[]).forEach((r:any)=>{ const c=(r.code||'').toUpperCase(); if(c==='UNPAID_ADJ') adj=asNum(r.amount); if(c==='UNPAID_EXTRA') extra=asNum(r.amount); });
         setUnpaidAdj(adj); setUnpaidExtra(extra);
@@ -99,10 +105,18 @@ export default function PayslipPage() {
 
       <div className="sheet rounded-md border p-8">
         {/* Company header (centered) */}
-        <div className="mb-4 text-center">
-          <div className="text-lg font-bold tracking-wide">ZORDAQ AUTO SERVICES</div>
+        <div className="mb-4 text-center leading-tight">
+          <div className="text-lg font-semibold">
+            Zordaq Auto Services{' '}
+            <span className="align-top text-[10px] font-normal tracking-wide">(KT0429673-U)</span>
+          </div>
           <div className="text-xs text-gray-600">
             NO 1, JALAN INDUSTRI PUTRA 1, PRESINT 14. 62050 WILAYAH PERSEKUTUAN PUTRAJAYA
+          </div>
+          <div className="mt-1 text-xs text-gray-700">
+            <span className="font-medium">Phone:</span> 017-9333995
+            <span className="mx-2">·</span>
+            <span className="font-medium">Email:</span> zordaqputrajaya@gmail.com
           </div>
         </div>
 
@@ -255,7 +269,7 @@ export default function PayslipPage() {
           </div>
         </div>
 
-        {/* Employer contributions (unchanged) */}
+        {/* Employer contributions */}
         {sum && (
           <div className="mt-6 grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
             <div className="text-gray-500">Employer EPF: <b className="mono">RM {cur(sum.epf_er)}</b></div>
