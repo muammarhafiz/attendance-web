@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabaseClient';
 type StaffBrief = {
   display_name: string | null;
   email: string;
-  salary_basic: number | null;   // from v_staff_brief (public.staff.basic_salary)
+  salary_basic: number | null;
   position: string | null;
   start_date: string | null;
   year_join: number | null;
@@ -45,8 +45,8 @@ type StaffFull = {
   socso_no: string | null;
   eis_no: string | null;
 
-  basic_salary: number | null;   // single salary field
-  is_admin?: boolean | null;     // <-- align with Manager (same column)
+  basic_salary: number | null;
+  is_admin?: boolean | null; // single source of truth
 };
 
 type NewEmployee = {
@@ -54,11 +54,12 @@ type NewEmployee = {
   full_name: string;
   position: string;
   start_date: string;
-  basic_salary: string; // keep as string for input; convert on save
+  basic_salary: string;
   is_admin: boolean;
 };
 
-const POSITION_OPTIONS = ['Manager','Supervisor','Mechanic','Admin'];
+/* Add Temporary + Trainer so exemptions can kick in */
+const POSITION_OPTIONS = ['Manager','Supervisor','Mechanic','Admin','Temporary','Trainer'];
 
 function rm(n?: number | null) {
   const v = Number(n ?? 0);
@@ -77,7 +78,7 @@ export default function EmployeesPage() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  // admin flag for the user being edited (source of truth: staff.is_admin)
+  // admin flag for the user being edited
   const [editIsAdmin, setEditIsAdmin] = useState<boolean>(false);
 
   // add-employee drawer
@@ -136,7 +137,6 @@ export default function EmployeesPage() {
     setMsg(null);
     setOpenEmail(email);
 
-    // Staff row (includes is_admin)
     const { data, error } = await supabase
       .from('staff')
       .select('*')
@@ -152,7 +152,6 @@ export default function EmployeesPage() {
     if (!model) return;
     setSaving(true); setMsg(null);
     try {
-      // Normalize whitespace → nulls where appropriate
       const payload = {
         ...model,
         full_name: emptyToNull(model.full_name) ?? emptyToNull(model.name),
@@ -173,17 +172,17 @@ export default function EmployeesPage() {
         epf_no: emptyToNull(model.epf_no),
         socso_no: emptyToNull(model.socso_no),
         eis_no: emptyToNull(model.eis_no),
-        is_admin: editIsAdmin, // <-- write to staff.is_admin
+        is_admin: editIsAdmin,
       };
 
-      // 1) Save to staff (single source of truth)
+      // Save to staff
       const { error: upErr } = await supabase
         .from('staff')
         .update(payload)
         .eq('email', model.email);
       if (upErr) throw upErr;
 
-      // 2) Find latest OPEN payroll period
+      // Find latest OPEN period
       const { data: period, error: perErr } = await supabase
         .schema('pay_v2')
         .from('periods')
@@ -195,11 +194,11 @@ export default function EmployeesPage() {
         .maybeSingle();
       if (perErr) throw perErr;
 
-      // 3) Push BASE + recalc for latest OPEN period so payroll reflects the change
+      // Sync Base + Recalc (respect archive & temporary exemptions)
       if (period?.year && period?.month) {
         const s1 = await supabase.schema('pay_v2').rpc('sync_base_items_respect_archive', { p_year: period.year, p_month: period.month });
         if (s1.error) throw s1.error;
-        await supabase.schema('pay_v2').rpc('recalc_statutories', { p_year: period.year, p_month: period.month });
+        await supabase.schema('pay_v2').rpc('recalc_statutories_respect_temp', { p_year: period.year, p_month: period.month });
       }
 
       setMsg('Saved, admin flag applied, and payroll updated.');
@@ -231,7 +230,6 @@ export default function EmployeesPage() {
 
     setAdding(true);
     try {
-      // upsert so re-adding a previously-archived employee just reactivates them
       const payload = {
         email,
         full_name: name,
@@ -240,12 +238,12 @@ export default function EmployeesPage() {
         basic_salary: Number.isFinite(salaryNum) ? salaryNum : 0,
         archived_at: null,
         employment_end_date: null,
-        is_admin: !!newEmp.is_admin, // <-- set admin at creation (same column)
+        is_admin: !!newEmp.is_admin,
       };
       const res = await supabase.from('staff').upsert(payload, { onConflict: 'email' }).select('email').maybeSingle();
       if (res.error) throw res.error;
 
-      // sync BASE for latest OPEN period (if any)
+      // Sync Base + Recalc (respect archive & temporary exemptions)
       const { data: per } = await supabase.schema('pay_v2')
         .from('periods')
         .select('year,month,status')
@@ -257,7 +255,7 @@ export default function EmployeesPage() {
 
       if (per?.year && per?.month) {
         await supabase.schema('pay_v2').rpc('sync_base_items_respect_archive', { p_year: per.year, p_month: per.month });
-        await supabase.schema('pay_v2').rpc('recalc_statutories', { p_year: per.year, p_month: per.month });
+        await supabase.schema('pay_v2').rpc('recalc_statutories_respect_temp', { p_year: per.year, p_month: per.month });
       }
 
       setAddMsg('Employee added.');
@@ -292,7 +290,6 @@ export default function EmployeesPage() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
-          {/* Add employee */}
           <button
             className="rounded bg-emerald-600 px-3 py-2 text-white hover:bg-emerald-700"
             onClick={openAdd}
