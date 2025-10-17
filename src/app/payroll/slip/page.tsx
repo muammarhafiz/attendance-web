@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
-/** ===== Types (match your existing shapes) ===== */
+/* ===== Types ===== */
 type SummaryRow = {
   year: number;
   month: number;
@@ -39,6 +39,13 @@ type ItemRow = {
   amount: number | string;
 };
 
+type StaffInfo = {
+  full_name: string | null;
+  position: string | null;
+  nric: string | null;
+  phone: string | null;
+};
+
 function asNum(x: number | string | null | undefined) {
   if (x == null) return 0;
   if (typeof x === 'number') return x;
@@ -50,14 +57,9 @@ function cur(n: number | string) {
   return v.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-/** ============================================================
+/* ============================================================
  *  Printable Payslip
  *  URL: /payroll/slip?year=YYYY&month=M&email=someone@example.com
- *  Data sources:
- *   - v_periods_min (or pay_v2.periods) => status / period id
- *   - v_payslip_admin_summary_v2        => main totals
- *   - list_manual_items()               => manual EARN/DEDUCT (excludes BASE/UNPAID/STAT_*)
- *   - pay_v2.items (UNPAID_ADJ/UNPAID_EXTRA) to compute Unpaid (final)
  * ============================================================ */
 export default function PayslipPage() {
   const params = useSearchParams();
@@ -71,8 +73,9 @@ export default function PayslipPage() {
   const [sum, setSum] = useState<SummaryRow | null>(null);
   const [manualEarn, setManualEarn] = useState<ItemRow[]>([]);
   const [manualDeduct, setManualDeduct] = useState<ItemRow[]>([]);
-  const [unpaidAdj, setUnpaidAdj] = useState<number>(0);   // EARN/UNPAID_ADJ
+  const [unpaidAdj, setUnpaidAdj] = useState<number>(0);     // EARN/UNPAID_ADJ
   const [unpaidExtra, setUnpaidExtra] = useState<number>(0); // DEDUCT/UNPAID_EXTRA
+  const [staff, setStaff] = useState<StaffInfo | null>(null); // NEW
 
   const unpaidFinal = useMemo(() => {
     if (!sum) return 0;
@@ -119,7 +122,18 @@ export default function PayslipPage() {
         setSum(summaryData);
       }
 
-      // 3) Manual items (EARN/DEDUCT only; excludes BASE/UNPAID/STAT_*)
+      // 3) Staff info (for NAME / POSITION / NRIC / PHONE)
+      {
+        const { data, error } = await supabase
+          .from('staff')
+          .select('full_name, position, nric, phone')
+          .eq('email', email)
+          .maybeSingle();
+        if (error) throw error;
+        setStaff((data as StaffInfo) ?? null);
+      }
+
+      // 4) Manual items (EARN/DEDUCT only; excludes BASE/UNPAID/STAT_*)
       {
         const { data, error } = await supabase.rpc('list_manual_items', {
           p_year: year,
@@ -132,7 +146,7 @@ export default function PayslipPage() {
         setManualDeduct(rows.filter((r) => r.kind === 'DEDUCT'));
       }
 
-      // 4) UNPAID plumbing
+      // 5) UNPAID plumbing
       if (periodData?.id) {
         const { data, error } = await supabase
           .from('pay_v2.items')
@@ -162,11 +176,12 @@ export default function PayslipPage() {
     load();
   }, [load]);
 
-  const staffName = sum?.staff_name || email;
+  // Prefer staff.full_name → summary name → email
+  const staffName = (staff?.full_name || sum?.staff_name || email).toString();
+  const nameUpper = staffName ? staffName.toUpperCase() : '';
 
   return (
     <div className="min-h-screen bg-neutral-50 p-4 print:bg-white">
-      {/* Inline styles for print */}
       <style>{`
         @media print {
           .no-print { display: none !important; }
@@ -189,7 +204,6 @@ export default function PayslipPage() {
           Payslip preview {sum ? `· ${sum.year}-${String(sum.month).padStart(2, '0')}` : ''}
         </div>
         <div className="flex gap-2">
-          {/* FIXED: Back to /payroll/v2 to avoid 404 */}
           <a
             href={`/payroll/v2?year=${year}&month=${month}`}
             className="rounded border bg-white px-3 py-1.5 text-sm hover:bg-gray-50"
@@ -223,9 +237,15 @@ export default function PayslipPage() {
         <div className="mb-6 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
           <div>
             <div className="text-gray-500">Employee</div>
-            <div className="font-medium">{staffName}</div>
-            <div className="text-gray-600">{email}</div>
+            <div className="mt-1 space-y-0.5">
+              <div><span className="text-gray-600">NAME :</span> <span className="font-medium">{nameUpper}</span></div>
+              <div><span className="text-gray-600">POSITION :</span> <span>{staff?.position || '—'}</span></div>
+              <div><span className="text-gray-600">NRIC :</span> <span>{staff?.nric || '—'}</span></div>
+              <div><span className="text-gray-600">PHONE :</span> <span>{staff?.phone || '—'}</span></div>
+              <div className="text-gray-500">{email}</div>
+            </div>
           </div>
+
           <div>
             <div className="text-gray-500">Summary</div>
             {sum ? (
@@ -254,14 +274,12 @@ export default function PayslipPage() {
                 </tr>
               </thead>
               <tbody>
-                {/* Base salary */}
                 {sum && (
                   <tr className="border-b">
                     <td className="px-2 py-1">Base salary</td>
                     <td className="mono px-2 py-1 text-right">{cur(sum.base_wage)}</td>
                   </tr>
                 )}
-                {/* Manual earnings */}
                 {manualEarn.length === 0 ? (
                   <tr className="border-b">
                     <td className="px-2 py-1 text-gray-500">—</td>
@@ -273,7 +291,6 @@ export default function PayslipPage() {
                     <td className="mono px-2 py-1 text-right">{cur(e.amount)}</td>
                   </tr>
                 ))}
-                {/* Earnings subtotal (from summary) */}
                 {sum && (
                   <tr>
                     <td className="px-2 py-2 font-medium">Total earnings</td>
@@ -295,7 +312,6 @@ export default function PayslipPage() {
                 </tr>
               </thead>
               <tbody>
-                {/* Unpaid (final) */}
                 {sum && (
                   <tr className="border-b">
                     <td className="px-2 py-1">
@@ -307,8 +323,6 @@ export default function PayslipPage() {
                     <td className="mono px-2 py-1 text-right">{cur(unpaidFinal)}</td>
                   </tr>
                 )}
-
-                {/* Manual deductions */}
                 {manualDeduct.length === 0 ? (
                   <tr className="border-b">
                     <td className="px-2 py-1 text-gray-500">—</td>
@@ -320,8 +334,6 @@ export default function PayslipPage() {
                     <td className="mono px-2 py-1 text-right">{cur(d.amount)}</td>
                   </tr>
                 ))}
-
-                {/* Statutory (employee) */}
                 {sum && (
                   <>
                     <tr className="border-b">
@@ -357,7 +369,7 @@ export default function PayslipPage() {
           </div>
         </div>
 
-        {/* Employer contributions (optional show) */}
+        {/* Employer contributions */}
         {sum && (
           <div className="mt-6 grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
             <div className="text-gray-500">Employer EPF: <b className="mono">RM {cur(sum.epf_er)}</b></div>
@@ -366,7 +378,6 @@ export default function PayslipPage() {
           </div>
         )}
 
-        {/* Footer */}
         <div className="mt-10 text-center text-xs text-gray-500">
           This is a computer-generated payslip. No signature is required.
         </div>
