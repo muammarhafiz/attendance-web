@@ -241,7 +241,7 @@ export default function PayrollV2Page() {
     const epf   = { er: sum('epf_er'),   emp: sum('epf_emp') };
     const socso = { er: sum('socso_er'), emp: sum('socso_emp') };
     const eis   = { er: sum('eis_er'),   emp: sum('eis_emp') };
-    const staffNet = sum('net_pay'); // total payout to staff (cash to employees)
+    const staffNet = sum('net_pay'); // cash to employees
     return { epf, socso, eis, staffNet };
   }, [rows]);
 
@@ -283,15 +283,24 @@ export default function PayrollV2Page() {
       const { data: listData } = await supabase.rpc('list_manual_items', {
         p_year: year, p_month: month, p_email: emailAddr,
       });
-      const _rows = (listData as ItemRow[]) ?? [];
-      setEarnItems(_rows.filter(r => r.kind === 'EARN'));
-      setDeductItems(_rows.filter(r => r.kind === 'DEDUCT'));
 
+      const rowsList = (listData as ItemRow[]) ?? [];
+      const isPlumbing = (c?: string | null) => {
+        const code = (c || '').toUpperCase();
+        return code === 'UNPAID_ADJ' || code === 'UNPAID_EXTRA';
+        // We hide these from the lists below
+      };
+
+      // Hide plumbing items from both lists
+      setEarnItems(rowsList.filter(r => r.kind === 'EARN'   && !isPlumbing(r.code)));
+      setDeductItems(rowsList.filter(r => r.kind === 'DEDUCT'&& !isPlumbing(r.code)));
+
+      // Read plumbing values to compute final unpaid
       if (period?.id) {
         const { data: plumb, error } = await supabase
           .schema('pay_v2')
           .from('items')
-          .select('kind, code, amount')
+          .select('code, amount')
           .eq('period_id', period.id)
           .eq('staff_email', emailAddr.toLowerCase())
           .in('code', ['UNPAID_ADJ','UNPAID_EXTRA']);
@@ -320,10 +329,17 @@ export default function PayrollV2Page() {
     const amt = Number(addAmt);
     if (!Number.isFinite(amt) || amt <= 0) { setFormMsg({ err: 'Amount must be > 0' }); return; }
 
-    const chosenCode = addCode === 'CUSTOM' ? customCode.trim().toUpperCase() : addCode;
+    const chosenCode = (addCode === 'CUSTOM' ? customCode.trim().toUpperCase() : addCode).toUpperCase();
     if (!chosenCode) { setFormMsg({ err: 'Please provide a code.' }); return; }
-    if (['BASE','UNPAID'].includes(chosenCode) || chosenCode.startsWith('STAT_')) {
-      setFormMsg({ err: 'That code is system-managed and cannot be added.' }); return;
+    if (
+      chosenCode === 'BASE' ||
+      chosenCode === 'UNPAID' ||
+      chosenCode === 'UNPAID_ADJ' ||
+      chosenCode === 'UNPAID_EXTRA' ||
+      chosenCode.startsWith('STAT_')
+    ) {
+      setFormMsg({ err: 'That code is system-managed and cannot be added.' });
+      return;
     }
 
     const list = addType === 'DEDUCT' ? DEDUCT_CODES : EARN_CODES;
