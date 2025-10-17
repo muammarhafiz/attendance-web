@@ -9,7 +9,7 @@ type SummaryRow = {
   month: number;
   staff_name: string | null;
   staff_email: string;
-  total_earn: number | string;     // <- fixed stray 'a'
+  total_earn: number | string;     // fixed
   base_wage: number | string;
   manual_deduct: number | string;  // manual DEDUCT only (excludes UNPAID)
   unpaid_auto: number | string;    // auto UNPAID only
@@ -69,10 +69,6 @@ function fmt(n: number | string, currency = false): string {
   }
   return v.toFixed(2);
 }
-
-// Detect “function not found” to try the public schema as a fallback
-const isFnNotFound = (err?: { message?: string; code?: string } | null) =>
-  !!err && (err.code === '42883' || /could not find function/i.test(err.message || ''));
 
 /* ============================================================
    PAGE
@@ -144,16 +140,17 @@ export default function PayrollV2Page() {
     setLastAction(fn);
     setLastPayload(args);
     setLastError('');
-    // try pay_v2 first
-    let { error } = await supabase.schema('pay_v2').rpc(fn, args);
-    if (isFnNotFound(error)) {
-      // fall back to public
-      const res = await supabase.rpc(fn, args);
-      error = res.error ?? null;
-    }
-    if (error) {
-      setLastError(error.message ?? String(error));
-      alert(`${fn} failed: ${error.message}`);
+
+    // Try pay_v2 first
+    const r1 = await supabase.schema('pay_v2').rpc(fn, args);
+    if (!r1.error) return true;
+
+    // Always fall back to public if pay_v2 failed (covers "schema cache" errors, etc.)
+    const r2 = await supabase.rpc(fn, args);
+    if (r2.error) {
+      const msg = `${r1.error.message} | fallback: ${r2.error.message}`;
+      setLastError(msg);
+      alert(`${fn} failed: ${r2.error.message}`);
       return false;
     }
     return true;
@@ -226,7 +223,7 @@ export default function PayrollV2Page() {
   const build      = () => callPeriodFn('build_period');                     // pay_v2
   const syncBase   = () => callPeriodFn('sync_base_items_respect_archive');  // pay_v2
   const syncAbsent = () => callPeriodFn('sync_absent_deductions');           // wherever it lives
-  const recalc     = () => callPeriodFn('recalc_statutories_respect_temp');  // pay_v2 wrapper we created
+  const recalc     = () => callPeriodFn('recalc_statutories_respect_temp');  // pay_v2 wrapper
   const lock       = () => callPeriodFn('lock_period');                      // pay_v2
   const unlock     = () => callPeriodFn('unlock_period');                    // pay_v2
 
