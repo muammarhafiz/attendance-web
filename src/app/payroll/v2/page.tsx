@@ -136,7 +136,7 @@ export default function PayrollV2Page() {
   const disabledWrites = !isAdmin;
 
   /* ---------- smart RPC (pay_v2 first, then public fallback) ---------- */
-  const callRpcSmart = async (fn: string, args: Record<string, any>) => {
+  const callRpcSmart = async (fn: string, args: Record<string, any>, quiet = false) => {
     setLastAction(fn);
     setLastPayload(args);
     setLastError('');
@@ -145,15 +145,24 @@ export default function PayrollV2Page() {
     const r1 = await supabase.schema('pay_v2').rpc(fn, args);
     if (!r1.error) return true;
 
-    // Always fall back to public (covers function-not-found or schema cache hiccups)
+    // Fall back to public (covers function-not-found or schema cache hiccups)
     const r2 = await supabase.rpc(fn, args);
     if (r2.error) {
       const msg = `${r1.error.message} | fallback: ${r2.error.message}`;
       setLastError(msg);
-      alert(`${fn} failed: ${r2.error.message}`);
+      if (!quiet) alert(`${fn} failed: ${r2.error.message}`);
       return false;
     }
     return true;
+  };
+
+  // Try several possible function names, quiet on intermediate failures
+  const callRpcAny = async (names: string[], args: Record<string, any>) => {
+    for (const name of names) {
+      const ok = await callRpcSmart(name, args, true);
+      if (ok) return { ok: true, used: name };
+    }
+    return { ok: false, used: null as string | null };
   };
 
   const refresh = useCallback(async () => {
@@ -212,7 +221,7 @@ export default function PayrollV2Page() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  // actions (RPC) with diagnostics
+  // Simple period fn (single exact name)
   const callPeriodFn = async (fn: string) => {
     if (disabledWrites) return;
     const ok = await callRpcSmart(fn, { p_year: year, p_month: month });
@@ -220,22 +229,66 @@ export default function PayrollV2Page() {
   };
 
   // Map buttons to the right functions
-  const build      = () => callPeriodFn('build_period');                     // pay_v2
-  const syncBase   = () => callPeriodFn('sync_base_items_respect_archive');  // pay_v2
-  const syncAbsent = () => callPeriodFn('sync_absent_deductions');           // wherever it lives
-  const recalc     = () => callPeriodFn('recalc_statutories_respect_temp');  // pay_v2 wrapper
-  const lock       = () => callPeriodFn('lock_period');                      // pay_v2
-  const unlock     = () => callPeriodFn('unlock_period');                    // pay_v2
+  const build = () => callPeriodFn('build_period'); // pay_v2
 
-  
+  // Resilient “Sync Base” (tries several candidates)
+  const syncBase = async () => {
+    if (disabledWrites) return;
+    const { ok } = await callRpcAny(
+      ['sync_base_items_respect_archive', 'sync_base_items', 'sync_base'],
+      { p_year: year, p_month: month }
+    );
+    if (ok) {
+      await refresh();
+    } else {
+      alert(
+        'Could not find any sync-base function: ' +
+        'sync_base_items_respect_archive / sync_base_items / sync_base'
+      );
+    }
+  };
+
+  // Resilient “Sync Absent/Unpaid” (tries several candidates)
+  const syncAbsent = async () => {
+    if (disabledWrites) return;
+    const { ok } = await callRpcAny(
+      ['sync_absent_deductions', 'sync_unpaid_deductions', 'sync_unpaid_items'],
+      { p_year: year, p_month: month }
+    );
+    if (ok) {
+      await refresh();
+    } else {
+      alert(
+        'Could not find any sync-absent function: ' +
+        'sync_absent_deductions / sync_unpaid_deductions / sync_unpaid_items'
+      );
+    }
+  };
+
+  // Resilient recalc (wrapper first, then generic)
+  const recalc = async () => {
+    if (disabledWrites) return;
+    const { ok } = await callRpcAny(
+      ['recalc_statutories_respect_temp', 'recalc_statutories'],
+      { p_year: year, p_month: month }
+    );
+    if (ok) {
+      await refresh();
+    } else {
+      alert('Could not find recalc function: recalc_statutories_respect_temp / recalc_statutories');
+    }
+  };
+
+  const lock   = () => callPeriodFn('lock_period');   // pay_v2
+  const unlock = () => callPeriodFn('unlock_period'); // pay_v2
 
   /* ---------- status pill ---------- */
   const statusPill = useMemo(() => {
     const st = period?.status ?? '';
     const cls =
-      st === 'LOCKED'   ? 'bg-yellow-100 text-yellow-800' :
-      st === 'FINALIZED'? 'bg-blue-100 text-blue-800' :
-                          'bg-green-100 text-green-800';
+      st === 'LOCKED'    ? 'bg-yellow-100 text-yellow-800' :
+      st === 'FINALIZED' ? 'bg-blue-100 text-blue-800' :
+                           'bg-green-100 text-green-800';
     return (
       <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${cls}`}>
         {st || '—'}
@@ -520,7 +573,6 @@ export default function PayrollV2Page() {
         <span className="mx-1 text-gray-300">|</span>
         <button onClick={lock}       disabled={disabledWrites} className={`rounded px-3 py-1.5 text-sm font-medium ${disabledWrites?'bg-gray-100 text-gray-400':'border bg-white hover:bg-gray-50'}`}>Lock</button>
         <button onClick={unlock}     disabled={disabledWrites} className={`rounded px-3 py-1.5 text-sm font-medium ${disabledWrites?'bg-gray-100 text-gray-400':'border bg-white hover:bg-gray-50'}`}>Unlock</button>
-        
       </div>
 
       {loading && (
@@ -590,8 +642,6 @@ export default function PayrollV2Page() {
           </tbody>
         </table>
       </div>
-
-      
 
       {/* ---------- DETAILS MODAL ---------- */}
       {show && sel && (
