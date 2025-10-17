@@ -227,28 +227,7 @@ export default function PayrollV2Page() {
   const lock       = () => callPeriodFn('lock_period');                      // pay_v2
   const unlock     = () => callPeriodFn('unlock_period');                    // pay_v2
 
-  const finalizeAndGenerate = async () => {
-    if (disabledWrites) return;
-    try {
-      setLastAction('finalize');
-      setLastPayload({ year, month });
-      setLastError('');
-      const res = await fetch('/api/payroll/finalize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ year, month }),
-      });
-      if (!res.ok) {
-        const t = await res.text();
-        setLastError(t);
-        throw new Error(t);
-      }
-      alert('Finalize & PDF generation started/completed.');
-      await refresh();
-    } catch (e) {
-      alert(`Finalize failed: ${(e as Error).message}`);
-    }
-  };
+  
 
   /* ---------- status pill ---------- */
   const statusPill = useMemo(() => {
@@ -541,13 +520,7 @@ export default function PayrollV2Page() {
         <span className="mx-1 text-gray-300">|</span>
         <button onClick={lock}       disabled={disabledWrites} className={`rounded px-3 py-1.5 text-sm font-medium ${disabledWrites?'bg-gray-100 text-gray-400':'border bg-white hover:bg-gray-50'}`}>Lock</button>
         <button onClick={unlock}     disabled={disabledWrites} className={`rounded px-3 py-1.5 text-sm font-medium ${disabledWrites?'bg-gray-100 text-gray-400':'border bg-white hover:bg-gray-50'}`}>Unlock</button>
-        <button
-          onClick={finalizeAndGenerate}
-          disabled={disabledWrites}
-          className={`ml-2 rounded px-3 py-1.5 text-sm font-semibold ${disabledWrites?'bg-blue-200 text-white':'bg-blue-600 text-white hover:bg-blue-700'}`}
-        >
-          Finalize & Generate PDFs
-        </button>
+        
       </div>
 
       {loading && (
@@ -618,9 +591,7 @@ export default function PayrollV2Page() {
         </table>
       </div>
 
-      <p className="mt-3 text-xs text-gray-500">
-        Finalize uses your existing <code>/api/payroll/finalize</code> endpoint to generate & upload PDFs.
-      </p>
+      
 
       {/* ---------- DETAILS MODAL ---------- */}
       {show && sel && (
