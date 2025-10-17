@@ -9,10 +9,10 @@ type SummaryRow = {
   month: number;
   staff_name: string | null;
   staff_email: string;
-  total_earn: number | string;     // fixed
+  total_earn: number | string;
   base_wage: number | string;
-  manual_deduct: number | string;  // manual DEDUCT only (excludes UNPAID)
-  unpaid_auto: number | string;    // auto UNPAID only
+  manual_deduct: number | string;
+  unpaid_auto: number | string;
   epf_emp: number | string;
   socso_emp: number | string;
   eis_emp: number | string;
@@ -25,31 +25,18 @@ type SummaryRow = {
   deduct_breakdown?: any;
 };
 
-type PeriodRow = {
-  id: string;
-  year: number;
-  month: number;
-  status: 'OPEN' | 'LOCKED' | 'FINALIZED' | string;
-};
-
-type ItemRow = {
-  id: string;
-  kind: 'EARN' | 'DEDUCT' | string;
-  code: string | null;
-  label: string | null;
-  amount: number | string;
-};
+type PeriodRow = { id: string; year: number; month: number; status: 'OPEN'|'LOCKED'|'FINALIZED'|string; };
+type ItemRow = { id: string; kind: 'EARN'|'DEDUCT'|string; code: string|null; label: string|null; amount: number|string };
 
 /* ---------- presets for dropdowns ---------- */
-const EARN_CODES: { code: string; label: string }[] = [
+const EARN_CODES = [
   { code: 'COMM',  label: 'Commission' },
   { code: 'OT',    label: 'Overtime' },
   { code: 'BONUS', label: 'Bonus' },
   { code: 'ALLOW', label: 'Allowance' },
   { code: 'CUSTOM',label: 'Custom…' },
 ];
-
-const DEDUCT_CODES: { code: string; label: string }[] = [
+const DEDUCT_CODES = [
   { code: 'ADVANCE', label: 'Advance' },
   { code: 'PENALTY', label: 'Penalty' },
   { code: 'CUSTOM',  label: 'Custom…' },
@@ -64,9 +51,7 @@ function asNum(x: number | string | null | undefined): number {
 }
 function fmt(n: number | string, currency = false): string {
   const v = asNum(n);
-  if (currency) {
-    return v.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  }
+  if (currency) return v.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return v.toFixed(2);
 }
 
@@ -141,11 +126,9 @@ export default function PayrollV2Page() {
     setLastPayload(args);
     setLastError('');
 
-    // Try pay_v2 first
     const r1 = await supabase.schema('pay_v2').rpc(fn, args);
     if (!r1.error) return true;
 
-    // Fall back to public (covers function-not-found or schema cache hiccups)
     const r2 = await supabase.rpc(fn, args);
     if (r2.error) {
       const msg = `${r1.error.message} | fallback: ${r2.error.message}`;
@@ -156,20 +139,19 @@ export default function PayrollV2Page() {
     return true;
   };
 
-  // Try several possible function names, quiet on intermediate failures
   const callRpcAny = async (names: string[], args: Record<string, any>) => {
     for (const name of names) {
       const ok = await callRpcSmart(name, args, true);
-      if (ok) return { ok: true, used: name };
+      if (ok) return true;
     }
-    return { ok: false, used: null as string | null };
+    return false;
   };
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    setAbsentMap({}); // reset to avoid stale values during reload
+    setAbsentMap({});
     try {
-      // 1) Period status — use public view to avoid RLS surprises
+      // 1) Period status
       {
         const { data, error } = await supabase
           .from('v_periods_min')
@@ -181,7 +163,7 @@ export default function PayrollV2Page() {
         else setPeriod(null);
       }
 
-      // 2) summary view (v2, public)
+      // 2) summary view
       {
         const { data, error } = await supabase
           .from('v_payslip_admin_summary_v2')
@@ -193,13 +175,11 @@ export default function PayrollV2Page() {
         setRows((data as SummaryRow[]) ?? []);
       }
 
-      // 3) live absent days from Report source
+      // 3) live absent from report
       {
         const { data, error } = await supabase.rpc('report_absent_days_from_print', {
-          p_year: year,
-          p_month: month,
+          p_year: year, p_month: month,
         });
-
         if (!error && Array.isArray(data)) {
           const map: Record<string, number> = {};
           for (const r of data as { staff_email: string; days_absent: number }[]) {
@@ -221,74 +201,33 @@ export default function PayrollV2Page() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  // Simple period fn (single exact name)
-  const callPeriodFn = async (fn: string) => {
-    if (disabledWrites) return;
-    const ok = await callRpcSmart(fn, { p_year: year, p_month: month });
-    if (ok) await refresh();
-  };
-
-  // Map buttons to the right functions
-  const build = () => callPeriodFn('build_period'); // pay_v2
-
-  // Resilient “Sync Base” (tries several candidates)
+  // Period actions
+  const build   = async () => { if (!disabledWrites && await callRpcSmart('build_period', { p_year: year, p_month: month })) refresh(); };
   const syncBase = async () => {
     if (disabledWrites) return;
-    const { ok } = await callRpcAny(
-      ['sync_base_items_respect_archive', 'sync_base_items', 'sync_base'],
-      { p_year: year, p_month: month }
-    );
-    if (ok) {
-      await refresh();
-    } else {
-      alert(
-        'Could not find any sync-base function: ' +
-        'sync_base_items_respect_archive / sync_base_items / sync_base'
-      );
-    }
+    const ok = await callRpcAny(['sync_base_items_respect_archive','sync_base_items','sync_base'], { p_year: year, p_month: month });
+    if (ok) refresh(); else alert('Could not find any sync-base function.');
   };
-
-  // Resilient “Sync Absent/Unpaid” (tries several candidates)
   const syncAbsent = async () => {
     if (disabledWrites) return;
-    const { ok } = await callRpcAny(
-      ['sync_absent_deductions', 'sync_unpaid_deductions', 'sync_unpaid_items'],
-      { p_year: year, p_month: month }
-    );
-    if (ok) {
-      await refresh();
-    } else {
-      alert(
-        'Could not find any sync-absent function: ' +
-        'sync_absent_deductions / sync_unpaid_deductions / sync_unpaid_items'
-      );
-    }
+    const ok = await callRpcAny(['sync_absent_deductions','sync_unpaid_deductions','sync_unpaid_items'], { p_year: year, p_month: month });
+    if (ok) refresh(); else alert('Could not find any sync-absent function.');
   };
-
-  // Resilient recalc (wrapper first, then generic)
-  const recalc = async () => {
+  const recalc  = async () => {
     if (disabledWrites) return;
-    const { ok } = await callRpcAny(
-      ['recalc_statutories_respect_temp', 'recalc_statutories'],
-      { p_year: year, p_month: month }
-    );
-    if (ok) {
-      await refresh();
-    } else {
-      alert('Could not find recalc function: recalc_statutories_respect_temp / recalc_statutories');
-    }
+    const ok = await callRpcAny(['recalc_statutories_respect_temp','recalc_statutories'], { p_year: year, p_month: month });
+    if (ok) refresh(); else alert('Could not find recalc function.');
   };
-
-  const lock   = () => callPeriodFn('lock_period');   // pay_v2
-  const unlock = () => callPeriodFn('unlock_period'); // pay_v2
+  const lock    = async () => { if (!disabledWrites && await callRpcSmart('lock_period',   { p_year: year, p_month: month })) refresh(); };
+  const unlock  = async () => { if (!disabledWrites && await callRpcSmart('unlock_period', { p_year: year, p_month: month })) refresh(); };
 
   /* ---------- status pill ---------- */
   const statusPill = useMemo(() => {
     const st = period?.status ?? '';
     const cls =
-      st === 'LOCKED'    ? 'bg-yellow-100 text-yellow-800' :
-      st === 'FINALIZED' ? 'bg-blue-100 text-blue-800' :
-                           'bg-green-100 text-green-800';
+      st === 'LOCKED'   ? 'bg-yellow-100 text-yellow-800' :
+      st === 'FINALIZED'? 'bg-blue-100 text-blue-800' :
+                          'bg-green-100 text-green-800';
     return (
       <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${cls}`}>
         {st || '—'}
@@ -296,32 +235,44 @@ export default function PayrollV2Page() {
     );
   }, [period]);
 
+  /* ---------- Payment Summary (new) ---------- */
+  const paymentSummary = useMemo(() => {
+    const sum = (k: keyof SummaryRow) => rows.reduce((a, r) => a + asNum(r[k]), 0);
+    const epfEmp   = sum('epf_emp');
+    const epfEr    = sum('epf_er');
+    const socsoEmp = sum('socso_emp');
+    const socsoEr  = sum('socso_er');
+    const eisEmp   = sum('eis_emp');
+    const eisEr    = sum('eis_er');
+    const netAll   = sum('net_pay'); // total payout to staff
+
+    return {
+      epf: epfEmp + epfEr,
+      socso: socsoEmp + socsoEr,
+      eis: eisEmp + eisEr,
+      totalStaffNet: netAll,
+    };
+  }, [rows]);
+
   /* ============================================================
      DETAILS MODAL
   ============================================================ */
   const [show, setShow] = useState<boolean>(false);
   const [sel, setSel] = useState<SummaryRow | null>(null);
-
   const [earnItems, setEarnItems] = useState<ItemRow[]>([]);
   const [deductItems, setDeductItems] = useState<ItemRow[]>([]);
-
-  // UNPAID plumbing (for final unpaid line)
-  const [unpaidAdjAmt, setUnpaidAdjAmt] = useState<number>(0);     // EARN/UNPAID_ADJ
-  const [unpaidExtraAmt, setUnpaidExtraAmt] = useState<number>(0); // DEDUCT/UNPAID_EXTRA
-  const unpaidFinal = useMemo(() => {
-    if (!sel) return 0;
-    return Math.max(0, asNum(sel.unpaid_auto) + unpaidExtraAmt - unpaidAdjAmt);
-  }, [sel, unpaidAdjAmt, unpaidExtraAmt]);
+  const [unpaidAdjAmt, setUnpaidAdjAmt] = useState<number>(0);
+  const [unpaidExtraAmt, setUnpaidExtraAmt] = useState<number>(0);
+  const unpaidFinal = useMemo(() => (!sel ? 0 : Math.max(0, asNum(sel.unpaid_auto) + unpaidExtraAmt - unpaidAdjAmt)), [sel, unpaidAdjAmt, unpaidExtraAmt]);
 
   // add form state
   const [addType, setAddType] = useState<'EARN' | 'DEDUCT'>('EARN');
-  const [addCode, setAddCode] = useState<string>('COMM'); // changes with type
+  const [addCode, setAddCode] = useState<string>('COMM');
   const [customCode, setCustomCode] = useState<string>('');
   const [addLabel, setAddLabel] = useState<string>('');
   const [addAmt, setAddAmt] = useState<string>('0.00');
   const [working, setWorking] = useState<boolean>(false);
 
-  // When type changes, reset to a sane default code and clear CUSTOM
   useEffect(() => {
     if (addType === 'DEDUCT') setAddCode('ADVANCE'); else setAddCode('COMM');
     setCustomCode('');
@@ -331,27 +282,20 @@ export default function PayrollV2Page() {
     setSel(row);
     setShow(true);
     setFormMsg({});
-    try {
-      await loadManualAndUnpaid(row.staff_email);
-    } catch (e) {
-      console.error(e); // don't block modal from showing
-    }
+    try { await loadManualAndUnpaid(row.staff_email); } catch {}
   };
 
   const loadManualAndUnpaid = useCallback(
     async (emailAddr: string) => {
       if (!period) return;
 
-      // Manual items (exclude BASE/UNPAID/STAT_*) via function
       const { data: listData } = await supabase.rpc('list_manual_items', {
         p_year: year, p_month: month, p_email: emailAddr,
       });
+      const _rows = (listData as ItemRow[]) ?? [];
+      setEarnItems(_rows.filter(r => r.kind === 'EARN'));
+      setDeductItems(_rows.filter(r => r.kind === 'DEDUCT'));
 
-      const rows = (listData as ItemRow[]) ?? [];
-      setEarnItems(rows.filter(r => r.kind === 'EARN'));
-      setDeductItems(rows.filter(r => r.kind === 'DEDUCT'));
-
-      // UNPAID plumbing items for final total (EARN/UNPAID_ADJ & DEDUCT/UNPAID_EXTRA)
       if (period?.id) {
         const { data: plumb, error } = await supabase
           .schema('pay_v2')
@@ -388,20 +332,15 @@ export default function PayrollV2Page() {
     const chosenCode = addCode === 'CUSTOM' ? customCode.trim().toUpperCase() : addCode;
     if (!chosenCode) { setFormMsg({ err: 'Please provide a code.' }); return; }
     if (['BASE','UNPAID'].includes(chosenCode) || chosenCode.startsWith('STAT_')) {
-      setFormMsg({ err: 'That code is system-managed and cannot be added.' });
-      return;
+      setFormMsg({ err: 'That code is system-managed and cannot be added.' }); return;
     }
 
-    // default label from the FINAL chosenCode, respecting CUSTOM
     const list = addType === 'DEDUCT' ? DEDUCT_CODES : EARN_CODES;
     const defaultLabel = (list.find(c => c.code === chosenCode)?.label) || chosenCode;
 
     setWorking(true);
     setLastAction('add_pay_item');
-    const payload = {
-      p_year: year, p_month: month, p_email: sel.staff_email,
-      p_kind: addType, p_code: chosenCode, p_label: addLabel || defaultLabel, p_amount: amt,
-    };
+    const payload = { p_year: year, p_month: month, p_email: sel.staff_email, p_kind: addType, p_code: chosenCode, p_label: addLabel || defaultLabel, p_amount: amt };
     setLastPayload(payload);
 
     try {
@@ -409,8 +348,7 @@ export default function PayrollV2Page() {
       if (ok) {
         await refresh();
         await loadManualAndUnpaid(sel.staff_email);
-        setAddLabel(''); setAddAmt('0.00');
-        if (addCode === 'CUSTOM') setCustomCode('');
+        setAddLabel(''); setAddAmt('0.00'); if (addCode === 'CUSTOM') setCustomCode('');
         setFormMsg({ ok: 'Item added.' });
       }
     } catch (e) {
@@ -428,9 +366,7 @@ export default function PayrollV2Page() {
     setLastPayload({ p_item_id: itemId, p_amount: amount, p_label: label ?? null });
     setLastError('');
     try {
-      const ok = await callRpcSmart('update_pay_item', {
-        p_item_id: itemId, p_amount: amount, p_label: label ?? null,
-      });
+      const ok = await callRpcSmart('update_pay_item', { p_item_id: itemId, p_amount: amount, p_label: label ?? null });
       if (ok) {
         await refresh();
         if (sel) await loadManualAndUnpaid(sel.staff_email);
@@ -473,12 +409,9 @@ export default function PayrollV2Page() {
 
     const current = unpaidFinal || 0;
     const raw = prompt('Set final Unpaid Leave (RM):', fmt(current, false));
-    if (raw == null) return; // cancelled
+    if (raw == null) return;
     const target = Number(raw);
-    if (!Number.isFinite(target) || target < 0) {
-      setFormMsg({ err: 'Please enter a valid non-negative number.' });
-      return;
-    }
+    if (!Number.isFinite(target) || target < 0) { setFormMsg({ err: 'Please enter a valid non-negative number.' }); return; }
 
     try {
       setWorking(true);
@@ -487,10 +420,7 @@ export default function PayrollV2Page() {
       setLastError('');
 
       const ok = await callRpcSmart('set_unpaid_total', {
-        p_year: year,
-        p_month: month,
-        p_email: sel.staff_email,
-        p_target: target,
+        p_year: year, p_month: month, p_email: sel.staff_email, p_target: target,
       });
 
       if (ok) {
@@ -502,19 +432,13 @@ export default function PayrollV2Page() {
       const msg = (e as Error).message;
       setLastError(msg);
       setFormMsg({ err: msg });
-    } finally {
-      setWorking(false);
-    }
+    } finally { setWorking(false); }
   };
 
   /** PRINT PAYSLIP (opens new tab) */
   const openPayslip = () => {
     if (!sel) return;
-    const q = new URLSearchParams({
-      year: String(year),
-      month: String(month),
-      email: sel.staff_email.toLowerCase(),
-    }).toString();
+    const q = new URLSearchParams({ year: String(year), month: String(month), email: sel.staff_email.toLowerCase() }).toString();
     window.open(`/payroll/slip?${q}`, '_blank', 'noopener,noreferrer');
   };
 
@@ -531,10 +455,7 @@ export default function PayrollV2Page() {
           <div className="mb-1">Period: <b>{`${year}-${String(month).padStart(2, '0')}`}</b></div>
           <div className="flex items-center gap-2">
             <span className="text-gray-500">Status:</span>{statusPill}
-            <span
-              className={`ml-2 inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${isAdmin ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}
-              title="Admin recognition"
-            >
+            <span className={`ml-2 inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${isAdmin ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`} title="Admin recognition">
               {isAdmin ? 'Admin' : 'Not admin'}
             </span>
           </div>
@@ -643,6 +564,36 @@ export default function PayrollV2Page() {
         </table>
       </div>
 
+      {/* Payment summary (new) */}
+      <div className="mt-6 overflow-x-auto rounded border">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="bg-gray-50">
+              <th className="border-b px-3 py-2 text-left">Payment summary</th>
+              <th className="border-b px-3 py-2 text-right">Amount (RM)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td className="px-3 py-2">EPF (Employee + Employer)</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmt(paymentSummary.epf, true)}</td>
+            </tr>
+            <tr>
+              <td className="px-3 py-2">SOCSO (Employee + Employer)</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmt(paymentSummary.socso, true)}</td>
+            </tr>
+            <tr>
+              <td className="px-3 py-2">EIS (Employee + Employer)</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmt(paymentSummary.eis, true)}</td>
+            </tr>
+            <tr className="bg-gray-50 font-medium">
+              <td className="px-3 py-2">Total payment to all staff (Net Pay)</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmt(paymentSummary.totalStaffNet, true)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
       {/* ---------- DETAILS MODAL ---------- */}
       {show && sel && (
         <div
@@ -658,17 +609,10 @@ export default function PayrollV2Page() {
                 <div className="text-xs text-gray-500">{sel.staff_email}</div>
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
-                  onClick={openPayslip}
-                  title="Open printable payslip in a new tab"
-                >
+                <button className="rounded border px-2 py-1 text-xs hover:bg-gray-50" onClick={openPayslip} title="Open printable payslip in a new tab">
                   Print payslip
                 </button>
-                <button
-                  className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
-                  onClick={() => !working && setShow(false)}
-                >
+                <button className="rounded border px-2 py-1 text-xs hover:bg-gray-50" onClick={() => !working && setShow(false)}>
                   Close
                 </button>
               </div>
@@ -676,12 +620,8 @@ export default function PayrollV2Page() {
 
             {/* Summary chips */}
             <div className="flex flex-wrap gap-2 px-4 pt-3">
-              <span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700">
-                Auto UNPAID: RM {fmt(sel.unpaid_auto, false)}
-              </span>
-              <span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700">
-                Period status: {period?.status ?? '—'}
-              </span>
+              <span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700">Auto UNPAID: RM {fmt(sel.unpaid_auto, false)}</span>
+              <span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700">Period status: {period?.status ?? '—'}</span>
             </div>
 
             <div className="grid grid-cols-1 gap-3 px-4 py-3 md:grid-cols-2">
@@ -729,7 +669,7 @@ export default function PayrollV2Page() {
                 </div>
               </div>
 
-              {/* Deductions (includes UNPAID as first-class row) */}
+              {/* Deductions */}
               <div className="rounded border">
                 <div className="border-b bg-gray-50 px-3 py-2 text-sm font-semibold">Deductions</div>
 
@@ -812,20 +752,12 @@ export default function PayrollV2Page() {
               </div>
 
               <div className="grid grid-cols-1 gap-2 md:grid-cols-6">
-                <select
-                  className="rounded border px-2 py-1 text-sm"
-                  value={addType}
-                  onChange={(e) => setAddType(e.target.value === 'DEDUCT' ? 'DEDUCT' : 'EARN')}
-                >
+                <select className="rounded border px-2 py-1 text-sm" value={addType} onChange={(e) => setAddType(e.target.value === 'DEDUCT' ? 'DEDUCT' : 'EARN')}>
                   <option value="EARN">Earning</option>
                   <option value="DEDUCT">Deduction</option>
                 </select>
 
-                <select
-                  className="rounded border px-2 py-1 text-sm"
-                  value={addCode}
-                  onChange={(e) => setAddCode(e.target.value)}
-                >
+                <select className="rounded border px-2 py-1 text-sm" value={addCode} onChange={(e) => setAddCode(e.target.value)}>
                   {(addType === 'DEDUCT' ? DEDUCT_CODES : EARN_CODES).map((opt) => (
                     <option key={opt.code} value={opt.code}>{opt.label} ({opt.code})</option>
                   ))}
@@ -840,39 +772,20 @@ export default function PayrollV2Page() {
                   />
                 )}
 
-                <input
-                  className="rounded border px-2 py-1 text-sm md:col-span-2"
-                  placeholder="Display label"
-                  value={addLabel}
-                  onChange={(e) => setAddLabel(e.target.value)}
-                />
+                <input className="rounded border px-2 py-1 text-sm md:col-span-2" placeholder="Display label" value={addLabel} onChange={(e) => setAddLabel(e.target.value)} />
                 <div className="flex items-center gap-2">
-                  <input
-                    className="w-full rounded border px-2 py-1 text-right text-sm tabular-nums"
-                    placeholder="0.00"
-                    value={addAmt}
-                    onChange={(e) => setAddAmt(e.target.value)}
-                  />
-                  <button
-                    className="rounded border px-3 py-1 text-sm hover:bg-gray-50 disabled:opacity-50"
-                    disabled={!isAdmin || period?.status !== 'OPEN' || working}
-                    onClick={addItem}
-                    title="Period must be OPEN"
-                  >
+                  <input className="w-full rounded border px-2 py-1 text-right text-sm tabular-nums" placeholder="0.00" value={addAmt} onChange={(e) => setAddAmt(e.target.value)} />
+                  <button className="rounded border px-3 py-1 text-sm hover:bg-gray-50 disabled:opacity-50" disabled={!isAdmin || period?.status !== 'OPEN' || working} onClick={addItem} title="Period must be OPEN">
                     Add
                   </button>
                 </div>
               </div>
 
-              {/* Inline result/error from actions */}
-              {formMsg.err && (
-                <div className="mt-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{formMsg.err}</div>
-              )}
-              {formMsg.ok && (
-                <div className="mt-2 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">{formMsg.ok}</div>
-              )}
+              {/* messages */}
+              {formMsg.err && <div className="mt-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{formMsg.err}</div>}
+              {formMsg.ok  && <div className="mt-2 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">{formMsg.ok}</div>}
 
-              {/* Tiny debug box */}
+              {/* debug */}
               <div className="mt-3 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] text-gray-700">
                 <div><b>Debug (last action)</b></div>
                 <div>action: {lastAction || '—'}</div>
