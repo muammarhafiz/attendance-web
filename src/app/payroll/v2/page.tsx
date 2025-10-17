@@ -235,23 +235,14 @@ export default function PayrollV2Page() {
     );
   }, [period]);
 
-  /* ---------- Payment Summary (new) ---------- */
+  /* ---------- Payment Summary (ER/EMP split) ---------- */
   const paymentSummary = useMemo(() => {
     const sum = (k: keyof SummaryRow) => rows.reduce((a, r) => a + asNum(r[k]), 0);
-    const epfEmp   = sum('epf_emp');
-    const epfEr    = sum('epf_er');
-    const socsoEmp = sum('socso_emp');
-    const socsoEr  = sum('socso_er');
-    const eisEmp   = sum('eis_emp');
-    const eisEr    = sum('eis_er');
-    const netAll   = sum('net_pay'); // total payout to staff
-
-    return {
-      epf: epfEmp + epfEr,
-      socso: socsoEmp + socsoEr,
-      eis: eisEmp + eisEr,
-      totalStaffNet: netAll,
-    };
+    const epf   = { er: sum('epf_er'),   emp: sum('epf_emp') };
+    const socso = { er: sum('socso_er'), emp: sum('socso_emp') };
+    const eis   = { er: sum('eis_er'),   emp: sum('eis_emp') };
+    const staffNet = sum('net_pay'); // total payout to staff (cash to employees)
+    return { epf, socso, eis, staffNet };
   }, [rows]);
 
   /* ============================================================
@@ -432,7 +423,9 @@ export default function PayrollV2Page() {
       const msg = (e as Error).message;
       setLastError(msg);
       setFormMsg({ err: msg });
-    } finally { setWorking(false); }
+    } finally {
+      setWorking(false);
+    }
   };
 
   /** PRINT PAYSLIP (opens new tab) */
@@ -564,31 +557,48 @@ export default function PayrollV2Page() {
         </table>
       </div>
 
-      {/* Payment summary (new) */}
+      {/* Payment summary (ER/EMP/Total) */}
       <div className="mt-6 overflow-x-auto rounded border">
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="bg-gray-50">
               <th className="border-b px-3 py-2 text-left">Payment summary</th>
-              <th className="border-b px-3 py-2 text-right">Amount (RM)</th>
+              <th className="border-b px-3 py-2 text-right">Employer (ER)</th>
+              <th className="border-b px-3 py-2 text-right">Employee (EMP)</th>
+              <th className="border-b px-3 py-2 text-right">Total</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td className="px-3 py-2">EPF (Employee + Employer)</td>
-              <td className="px-3 py-2 text-right tabular-nums">{fmt(paymentSummary.epf, true)}</td>
+              <td className="px-3 py-2">EPF</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmt(paymentSummary.epf.er, true)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmt(paymentSummary.epf.emp, true)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">
+                {fmt(paymentSummary.epf.er + paymentSummary.epf.emp, true)}
+              </td>
             </tr>
             <tr>
-              <td className="px-3 py-2">SOCSO (Employee + Employer)</td>
-              <td className="px-3 py-2 text-right tabular-nums">{fmt(paymentSummary.socso, true)}</td>
+              <td className="px-3 py-2">SOCSO</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmt(paymentSummary.socso.er, true)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmt(paymentSummary.socso.emp, true)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">
+                {fmt(paymentSummary.socso.er + paymentSummary.socso.emp, true)}
+              </td>
             </tr>
             <tr>
-              <td className="px-3 py-2">EIS (Employee + Employer)</td>
-              <td className="px-3 py-2 text-right tabular-nums">{fmt(paymentSummary.eis, true)}</td>
+              <td className="px-3 py-2">EIS</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmt(paymentSummary.eis.er, true)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmt(paymentSummary.eis.emp, true)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">
+                {fmt(paymentSummary.eis.er + paymentSummary.eis.emp, true)}
+              </td>
             </tr>
+
             <tr className="bg-gray-50 font-medium">
               <td className="px-3 py-2">Total payment to all staff (Net Pay)</td>
-              <td className="px-3 py-2 text-right tabular-nums">{fmt(paymentSummary.totalStaffNet, true)}</td>
+              <td className="px-3 py-2 text-right text-gray-400">—</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmt(paymentSummary.staffNet, true)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{fmt(paymentSummary.staffNet, true)}</td>
             </tr>
           </tbody>
         </table>
