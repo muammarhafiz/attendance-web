@@ -9,10 +9,10 @@ type SummaryRow = {
   month: number;
   staff_name: string | null;
   staff_email: string;
-  total_earn: number | string;
+  total_earn: number | string;     // <- fixed stray 'a'
   base_wage: number | string;
-  manual_deduct: number | string; // manual DEDUCT only (excludes UNPAID)
-  unpaid_auto: number | string;   // auto UNPAID only
+  manual_deduct: number | string;  // manual DEDUCT only (excludes UNPAID)
+  unpaid_auto: number | string;    // auto UNPAID only
   epf_emp: number | string;
   socso_emp: number | string;
   eis_emp: number | string;
@@ -187,7 +187,7 @@ export default function PayrollV2Page() {
         setRows((data as SummaryRow[]) ?? []);
       }
 
-      // 3) live absent days OFF THE REPORT SOURCE (derived from month_print_report)
+      // 3) live absent days from Report source
       {
         const { data, error } = await supabase.rpc('report_absent_days_from_print', {
           p_year: year,
@@ -197,7 +197,7 @@ export default function PayrollV2Page() {
         if (!error && Array.isArray(data)) {
           const map: Record<string, number> = {};
           for (const r of data as { staff_email: string; days_absent: number }[]) {
-            map[(r.staff_email || '').toLowerCase()] = r.days_absent ?? 0; // normalize key
+            map[(r.staff_email || '').toLowerCase()] = r.days_absent ?? 0;
           }
           setAbsentMap(map);
         } else {
@@ -223,12 +223,12 @@ export default function PayrollV2Page() {
   };
 
   // Map buttons to the right functions
-  const build      = () => callPeriodFn('build_period');                       // pay_v2
-  const syncBase   = () => callPeriodFn('sync_base_items_respect_archive');    // pay_v2
-  const syncAbsent = () => callPeriodFn('sync_absent_deductions');             // (wherever it lives)
-  const recalc     = () => callPeriodFn('recalc_statutories_respect_temp');    // pay_v2 wrapper we created
-  const lock       = () => callPeriodFn('lock_period');                        // pay_v2
-  const unlock     = () => callPeriodFn('unlock_period');                      // pay_v2
+  const build      = () => callPeriodFn('build_period');                     // pay_v2
+  const syncBase   = () => callPeriodFn('sync_base_items_respect_archive');  // pay_v2
+  const syncAbsent = () => callPeriodFn('sync_absent_deductions');           // wherever it lives
+  const recalc     = () => callPeriodFn('recalc_statutories_respect_temp');  // pay_v2 wrapper we created
+  const lock       = () => callPeriodFn('lock_period');                      // pay_v2
+  const unlock     = () => callPeriodFn('unlock_period');                    // pay_v2
 
   const finalizeAndGenerate = async () => {
     if (disabledWrites) return;
@@ -376,7 +376,6 @@ export default function PayrollV2Page() {
     setLastPayload(payload);
 
     try {
-      // add_pay_item lives in public in your setup; smart call just in case.
       const ok = await callRpcSmart('add_pay_item', payload);
       if (ok) {
         await refresh();
@@ -641,7 +640,6 @@ export default function PayrollV2Page() {
                 <div className="text-xs text-gray-500">{sel.staff_email}</div>
               </div>
               <div className="flex items-center gap-2">
-                {/* NEW: Print payslip */}
                 <button
                   className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
                   onClick={openPayslip}
