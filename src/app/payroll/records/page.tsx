@@ -4,14 +4,13 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 /* -------------------------------- Types -------------------------------- */
-
 type Row = {
   year: number;
   month: number;
   staff_name: string | null;
   staff_email: string;
-  total_earn: string | number; // display gross (all EARN)
-  base_wage: string | number;  // BASE-only (statutory wage)
+  total_earn: string | number;
+  base_wage: string | number;
   epf_emp: string | number;
   socso_emp: string | number;
   eis_emp: string | number;
@@ -23,25 +22,28 @@ type Row = {
 };
 
 type PayslipFile = { name: string; url: string };
+type PeriodRow = { id: string; year: number; month: number; status: 'OPEN' | 'LOCKED' | 'FINALIZED' | string };
 
 /* ------------------------------- Helpers ------------------------------- */
+const n = (x: string | number | null | undefined) =>
+  Number.isFinite(typeof x === 'string' ? Number(x) : (x ?? 0)) ? Number(x) : 0;
 
-function n(x: string | number | null | undefined) {
-  const v = typeof x === 'string' ? Number(x) : x ?? 0;
-  return Number.isFinite(v as number) ? (v as number) : 0;
-}
-function rm(x: number) {
-  return `RM ${x.toFixed(2)}`;
-}
-function pad2(m: number) {
-  return String(m).padStart(2, '0');
+const rm = (x: number) =>
+  `RM ${x.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const pad2 = (m: number) => String(m).padStart(2, '0');
+
+function addMonths(d: Date, delta: number) {
+  const nd = new Date(d);
+  nd.setMonth(nd.getMonth() + delta);
+  return nd;
 }
 
 /* -------------------------------- Page -------------------------------- */
-
 export default function PayrollRecordsPage() {
   const now = useMemo(() => new Date(), []);
   const [authed, setAuthed] = useState<boolean | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -59,30 +61,71 @@ export default function PayrollRecordsPage() {
   const [summaryUrl, setSummaryUrl] = useState<string | null>(null);
   const [payslips, setPayslips] = useState<PayslipFile[]>([]);
 
-  // auth
+  // period status
+  const [period, setPeriod] = useState<PeriodRow | null>(null);
+
+  /* ------------------------------- Auth/Role ------------------------------ */
   useEffect(() => {
     let unsub: { data: { subscription: { unsubscribe: () => void } } } | null = null;
     (async () => {
       const { data } = await supabase.auth.getSession();
       setAuthed(!!data.session);
-      const ret = supabase.auth.onAuthStateChange((_e, session) => setAuthed(!!session));
-      unsub = ret;
+      if (data.session?.user) {
+        const { data: ok } = await supabase.rpc('is_admin');
+        setIsAdmin(ok === true);
+      } else {
+        setIsAdmin(false);
+      }
+      unsub = supabase.auth.onAuthStateChange(async (_e, session) => {
+        setAuthed(!!session);
+        if (session?.user) {
+          const { data: ok2 } = await supabase.rpc('is_admin');
+          setIsAdmin(ok2 === true);
+        } else {
+          setIsAdmin(false);
+        }
+      }) as any;
     })();
     return () => unsub?.data.subscription.unsubscribe();
   }, []);
 
   /* ------------------------------ Data loads ---------------------------- */
 
+  const loadPeriod = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('v_periods_min')
+      .select('id,year,month,status')
+      .eq('year', year)
+      .eq('month', month)
+      .maybeSingle();
+    setPeriod(error ? null : (data as PeriodRow));
+  }, [year, month]);
+
+  // Prefer public v2 view; fall back to pay_v2 old view if needed.
   const loadSummary = useCallback(async () => {
     setLoading(true);
     setMsg(null);
-    const { data, error } = await supabase
-      .schema('pay_v2')
-      .from('v_payslip_admin_summary')
+
+    // try public v2 first
+    let { data, error } = await supabase
+      .from('v_payslip_admin_summary_v2')
       .select('*')
       .eq('year', year)
       .eq('month', month)
       .order('staff_name', { ascending: true });
+
+    // fallback to old pay_v2 view if needed
+    if (error) {
+      const fallback = await supabase
+        .schema('pay_v2')
+        .from('v_payslip_admin_summary')
+        .select('*')
+        .eq('year', year)
+        .eq('month', month)
+        .order('staff_name', { ascending: true });
+      data = fallback.data as any;
+      error = fallback.error as any;
+    }
 
     if (error) {
       setRows([]);
@@ -98,13 +141,13 @@ export default function PayrollRecordsPage() {
     setFinErr(null);
     setFinMsg('Loading generated PDFs…');
     try {
-      // Summary name is deterministic
+      // Summary (deterministic name)
       const summaryName = `Payroll_Summary_${basePath}.pdf`;
       const { data: lsSummary, error: lsSErr } = await supabase.storage
         .from('payroll')
         .list(basePath, { limit: 100, search: 'Payroll_Summary_' });
       if (lsSErr) throw lsSErr;
-      const hasSummary = (lsSummary ?? []).some(f => f.name === summaryName);
+      const hasSummary = (lsSummary ?? []).some((f) => f.name === summaryName);
       if (hasSummary) {
         const { data: pub } = supabase.storage.from('payroll').getPublicUrl(`${basePath}/${summaryName}`);
         setSummaryUrl(pub.publicUrl);
@@ -118,8 +161,8 @@ export default function PayrollRecordsPage() {
         .list(`${basePath}/payslips`, { limit: 1000, sortBy: { column: 'name', order: 'asc' } });
       if (lsErr) throw lsErr;
 
-      const files = (ls ?? []).filter(f => f.name.toLowerCase().endsWith('.pdf'));
-      const withUrls: PayslipFile[] = files.map(f => {
+      const files = (ls ?? []).filter((f) => f.name.toLowerCase().endsWith('.pdf'));
+      const withUrls: PayslipFile[] = files.map((f) => {
         const { data: pub } = supabase.storage.from('payroll').getPublicUrl(`${basePath}/payslips/${f.name}`);
         return { name: f.name, url: pub.publicUrl };
       });
@@ -133,15 +176,16 @@ export default function PayrollRecordsPage() {
     }
   }, [basePath]);
 
+  // Load whenever authed + period changes
   useEffect(() => {
     if (authed) {
+      loadPeriod();
       loadSummary();
       loadPdfLinks();
     }
-  }, [authed, loadSummary, loadPdfLinks]);
+  }, [authed, year, month, loadPeriod, loadSummary, loadPdfLinks]);
 
   /* ------------------------------ Finalize ------------------------------ */
-
   async function finalizeAndGenerate() {
     setBusy(true);
     setFinErr(null);
@@ -161,7 +205,7 @@ export default function PayrollRecordsPage() {
         })
       );
       setFinMsg('Done. Period is now LOCKED.');
-      // refresh table to reflect LOCK status effects (if you add any UI lock later)
+      await loadPeriod();
       await loadSummary();
     } catch (e: any) {
       setFinErr(e.message ?? String(e));
@@ -172,7 +216,6 @@ export default function PayrollRecordsPage() {
   }
 
   /* -------------------------------- Totals ------------------------------ */
-
   const totals = useMemo(() => {
     const sum = (k: keyof Row) => rows.reduce((a, r) => a + n(r[k]), 0);
     const gross = sum('total_earn');
@@ -190,7 +233,6 @@ export default function PayrollRecordsPage() {
   }, [rows]);
 
   /* ------------------------------- Rendering ---------------------------- */
-
   if (authed === false) {
     return (
       <main className="mx-auto max-w-6xl p-6">
@@ -207,20 +249,47 @@ export default function PayrollRecordsPage() {
     );
   }
 
+  const onPrevMonth = () => {
+    const d = addMonths(new Date(year, month - 1, 1), -1);
+    setYear(d.getFullYear());
+    setMonth(d.getMonth() + 1);
+  };
+  const onNextMonth = () => {
+    const d = addMonths(new Date(year, month - 1, 1), 1);
+    setYear(d.getFullYear());
+    setMonth(d.getMonth() + 1);
+  };
+
   return (
-    <main className="mx-auto max-w-7xl p-6">
+    <main className="mx-auto max-w-6xl p-6">
       {/* Header */}
       <header className="mb-6 flex flex-wrap items-end gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Payroll Records</h1>
-          <p className="text-sm text-gray-500">Period {yyyymm}</p>
+          <div className="flex items-center gap-2 text-sm text-gray-500">
+            <span>Period {yyyymm}</span>
+            {period?.status && (
+              <span
+                className={`ml-1 inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${
+                  period.status === 'LOCKED'
+                    ? 'bg-yellow-100 text-yellow-800'
+                    : period.status === 'FINALIZED'
+                    ? 'bg-blue-100 text-blue-800'
+                    : 'bg-green-100 text-green-800'
+                }`}
+              >
+                {period.status}
+              </span>
+            )}
+          </div>
         </div>
-        <div className="ml-auto flex items-end gap-3">
+        <div className="ml-auto flex items-end gap-2 sm:gap-3">
+          <button onClick={onPrevMonth} className="rounded border px-2 py-1.5 text-sm hover:bg-gray-50">◀</button>
           <div>
             <label className="block text-xs font-medium text-gray-600">Year</label>
             <input
               type="number"
-              className="rounded border px-2 py-1"
+              className="w-24 rounded border px-2 py-1"
               min={2020}
               max={2100}
               value={year}
@@ -231,17 +300,18 @@ export default function PayrollRecordsPage() {
             <label className="block text-xs font-medium text-gray-600">Month</label>
             <input
               type="number"
-              className="rounded border px-2 py-1"
+              className="w-20 rounded border px-2 py-1"
               min={1}
               max={12}
               value={month}
               onChange={(e) => setMonth(Number(e.target.value))}
             />
           </div>
+          <button onClick={onNextMonth} className="rounded border px-2 py-1.5 text-sm hover:bg-gray-50">▶</button>
           <button
-            onClick={() => { loadSummary(); loadPdfLinks(); }}
+            onClick={() => { loadPeriod(); loadSummary(); loadPdfLinks(); }}
             disabled={loading || busy}
-            className="rounded border px-3 py-1.5 hover:bg-gray-50 disabled:opacity-50"
+            className="rounded border px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
           >
             Refresh
           </button>
@@ -251,24 +321,28 @@ export default function PayrollRecordsPage() {
       {/* Finalize & PDFs panel */}
       <section className="mb-6 rounded border bg-white p-4">
         <div className="mb-3 flex items-center gap-3">
-          <h2 className="text-lg font-semibold">Finalize & PDFs</h2>
+          <h2 className="text-lg font-semibold">Generated Files</h2>
           <span className="text-sm text-gray-500">Period {basePath}</span>
           <div className="ml-auto flex gap-2">
             <button
               onClick={loadPdfLinks}
               disabled={busy}
-              className="rounded border px-3 py-1.5 hover:bg-gray-50 disabled:opacity-50"
+              className="rounded border px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
             >
               Refresh list
             </button>
-            <button
-              onClick={finalizeAndGenerate}
-              disabled={busy}
-              className="rounded bg-black px-3 py-1.5 text-white hover:bg-gray-800 disabled:opacity-50"
-              title="Generate Summary + Payslips (and LOCK the period)"
-            >
-              {busy ? 'Working…' : 'Finalize & Generate PDFs'}
-            </button>
+
+            {/* Finalize is ADMIN-ONLY and only when OPEN */}
+            {isAdmin && period?.status === 'OPEN' && (
+              <button
+                onClick={finalizeAndGenerate}
+                disabled={busy}
+                className="rounded bg-black px-3 py-1.5 text-sm text-white hover:bg-gray-800 disabled:opacity-50"
+                title="Generate Summary + Payslips (and LOCK the period)"
+              >
+                {busy ? 'Working…' : 'Finalize & Generate PDFs'}
+              </button>
+            )}
           </div>
         </div>
 
@@ -336,38 +410,30 @@ export default function PayrollRecordsPage() {
             <table className="w-full min-w-[1100px] border-collapse text-sm">
               <thead>
                 <tr>
-                  <th className="border-b px-3 py-2 bg-white text-left">Employee</th>
-                  <th className="border-b px-3 py-2 text-right bg-white">Gross (All EARN)</th>
-                  <th className="border-b px-3 py-2 text-right bg-white">Base (Statutory)</th>
-
-                  <th className="border-b px-3 py-2 text-center bg-rose-50 text-rose-700 font-semibold" colSpan={4}>
+                  <th className="border-b bg-white px-3 py-2 text-left">Employee</th>
+                  <th className="border-b bg-white px-3 py-2 text-right">Gross (All EARN)</th>
+                  <th className="border-b bg-white px-3 py-2 text-right">Base (Statutory)</th>
+                  <th className="border-b bg-rose-50 px-3 py-2 text-center font-semibold text-rose-700" colSpan={4}>
                     Employee Deductions
                   </th>
-
-                  <th className="border-b px-3 py-2 text-right bg-white">Net Pay</th>
-
-                  <th className="border-b px-3 py-2 text-center bg-emerald-50 text-emerald-700 font-semibold" colSpan={3}>
+                  <th className="border-b bg-white px-3 py-2 text-right">Net Pay</th>
+                  <th className="border-b bg-emerald-50 px-3 py-2 text-center font-semibold text-emerald-700" colSpan={3}>
                     Employer Contributions
                   </th>
-
-                  <th className="border-b px-3 py-2 text-right bg-white">Employer Cost</th>
+                  <th className="border-b bg-white px-3 py-2 text-right">Employer Cost</th>
                 </tr>
                 <tr className="bg-gray-50 text-left">
                   <th className="border-b px-3 py-2">Employee</th>
                   <th className="border-b px-3 py-2 text-right">Gross</th>
                   <th className="border-b px-3 py-2 text-right">Base</th>
-
-                  <th className="border-b px-3 py-2 text-right bg-rose-50">EPF (Emp)</th>
-                  <th className="border-b px-3 py-2 text-right bg-rose-50">SOCSO (Emp)</th>
-                  <th className="border-b px-3 py-2 text-right bg-rose-50">EIS (Emp)</th>
-                  <th className="border-b px-3 py-2 text-right bg-rose-50">Manual Deduct</th>
-
+                  <th className="border-b bg-rose-50 px-3 py-2 text-right">EPF (Emp)</th>
+                  <th className="border-b bg-rose-50 px-3 py-2 text-right">SOCSO (Emp)</th>
+                  <th className="border-b bg-rose-50 px-3 py-2 text-right">EIS (Emp)</th>
+                  <th className="border-b bg-rose-50 px-3 py-2 text-right">Manual Deduct</th>
                   <th className="border-b px-3 py-2 text-right">Net</th>
-
-                  <th className="border-b px-3 py-2 text-right bg-emerald-50">EPF (Er)</th>
-                  <th className="border-b px-3 py-2 text-right bg-emerald-50">SOCSO (Er)</th>
-                  <th className="border-b px-3 py-2 text-right bg-emerald-50">EIS (Er)</th>
-
+                  <th className="border-b bg-emerald-50 px-3 py-2 text-right">EPF (Er)</th>
+                  <th className="border-b bg-emerald-50 px-3 py-2 text-right">SOCSO (Er)</th>
+                  <th className="border-b bg-emerald-50 px-3 py-2 text-right">EIS (Er)</th>
                   <th className="border-b px-3 py-2 text-right">Total Cost</th>
                 </tr>
               </thead>
@@ -390,18 +456,14 @@ export default function PayrollRecordsPage() {
                       <td className="border-b px-3 py-2">{r.staff_name ?? r.staff_email}</td>
                       <td className="border-b px-3 py-2 text-right">{rm(gross)}</td>
                       <td className="border-b px-3 py-2 text-right">{rm(base)}</td>
-
-                      <td className="border-b px-3 py-2 text-right bg-rose-50">{rm(epfEmp)}</td>
-                      <td className="border-b px-3 py-2 text-right bg-rose-50">{rm(socsoEmp)}</td>
-                      <td className="border-b px-3 py-2 text-right bg-rose-50">{rm(eisEmp)}</td>
-                      <td className="border-b px-3 py-2 text-right bg-rose-50">{rm(manual)}</td>
-
+                      <td className="border-b bg-rose-50 px-3 py-2 text-right">{rm(epfEmp)}</td>
+                      <td className="border-b bg-rose-50 px-3 py-2 text-right">{rm(socsoEmp)}</td>
+                      <td className="border-b bg-rose-50 px-3 py-2 text-right">{rm(eisEmp)}</td>
+                      <td className="border-b bg-rose-50 px-3 py-2 text-right">{rm(manual)}</td>
                       <td className="border-b px-3 py-2 text-right font-medium">{rm(net)}</td>
-
-                      <td className="border-b px-3 py-2 text-right bg-emerald-50">{rm(epfEr)}</td>
-                      <td className="border-b px-3 py-2 text-right bg-emerald-50">{rm(socsoEr)}</td>
-                      <td className="border-b px-3 py-2 text-right bg-emerald-50">{rm(eisEr)}</td>
-
+                      <td className="border-b bg-emerald-50 px-3 py-2 text-right">{rm(epfEr)}</td>
+                      <td className="border-b bg-emerald-50 px-3 py-2 text-right">{rm(socsoEr)}</td>
+                      <td className="border-b bg-emerald-50 px-3 py-2 text-right">{rm(eisEr)}</td>
                       <td className="border-b px-3 py-2 text-right">{rm(employerCost)}</td>
                     </tr>
                   );
@@ -412,18 +474,14 @@ export default function PayrollRecordsPage() {
                   <td className="border-t px-3 py-2 text-right">Totals:</td>
                   <td className="border-t px-3 py-2 text-right">{rm(totals.gross)}</td>
                   <td className="border-t px-3 py-2 text-right">{rm(totals.baseWage)}</td>
-
-                  <td className="border-t px-3 py-2 text-right bg-rose-50">{rm(totals.epfEmp)}</td>
-                  <td className="border-t px-3 py-2 text-right bg-rose-50">{rm(totals.socsoEmp)}</td>
-                  <td className="border-t px-3 py-2 text-right bg-rose-50">{rm(totals.eisEmp)}</td>
-                  <td className="border-t px-3 py-2 text-right bg-rose-50">{rm(totals.manual)}</td>
-
+                  <td className="border-t bg-rose-50 px-3 py-2 text-right">{rm(totals.epfEmp)}</td>
+                  <td className="border-t bg-rose-50 px-3 py-2 text-right">{rm(totals.socsoEmp)}</td>
+                  <td className="border-t bg-rose-50 px-3 py-2 text-right">{rm(totals.eisEmp)}</td>
+                  <td className="border-t bg-rose-50 px-3 py-2 text-right">{rm(totals.manual)}</td>
                   <td className="border-t px-3 py-2 text-right">{rm(totals.net)}</td>
-
-                  <td className="border-t px-3 py-2 text-right bg-emerald-50">{rm(totals.epfEr)}</td>
-                  <td className="border-t px-3 py-2 text-right bg-emerald-50">{rm(totals.socsoEr)}</td>
-                  <td className="border-t px-3 py-2 text-right bg-emerald-50">{rm(totals.eisEr)}</td>
-
+                  <td className="border-t bg-emerald-50 px-3 py-2 text-right">{rm(totals.epfEr)}</td>
+                  <td className="border-t bg-emerald-50 px-3 py-2 text-right">{rm(totals.socsoEr)}</td>
+                  <td className="border-t bg-emerald-50 px-3 py-2 text-right">{rm(totals.eisEr)}</td>
                   <td className="border-t px-3 py-2 text-right">{rm(totals.employerCost)}</td>
                 </tr>
               </tfoot>
