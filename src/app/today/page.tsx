@@ -1,19 +1,19 @@
 'use client';
 
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 type DayRow = {
-  staff_name: string;
   staff_email: string;
+  staff_name: string;
   check_in_kl: string | null;
   check_out_kl: string | null;
   late_min: number | null;
-  status?: string | null; // MC / Offday / etc
+  status: string | null;
+  no_check_in?: boolean | null;
+  is_past_1030_kl?: boolean | null;
+  auto_absent?: boolean | null;
 };
-
-type StaffRow = { email: string; name: string | null };
-type StatusRow = { staff_email: string; status: string | null };
 
 function klTodayISO(): string {
   const klNow = new Date(
@@ -41,7 +41,7 @@ function isAfter930(checkInKL: string | null): boolean {
   const t = extractHHMM(checkInKL);
   if (!t) return false;
   const minutes = t.hh * 60 + t.mm;
-  return minutes > (9 * 60 + 30);
+  return minutes > 9 * 60 + 30;
 }
 
 /** True if *now* in KL is >= 10:30 */
@@ -61,9 +61,10 @@ export default function TodayPage() {
   const [errorText, setErrorText] = useState<string>('');
   const [notice, setNotice] = useState<string>('');
 
-  // tick every 30s so "auto Absent after 10:30" flips without reload
   const [, setTick] = useState(0);
   const [past1030, setPast1030] = useState<boolean>(computePast1030());
+
+  // Tick every 30s so "auto Absent after 10:30" flips without reload
   useEffect(() => {
     const id = setInterval(() => {
       setPast1030(computePast1030());
@@ -72,92 +73,50 @@ export default function TodayPage() {
     return () => clearInterval(id);
   }, []);
 
+  // Basic client-side guard (real fix is middleware later)
+  useEffect(() => {
+    (async () => {
+      const { data, error } = await supabase.rpc('is_admin');
+      if (error || data !== true) {
+        window.location.href = '/';
+      }
+    })();
+  }, []);
+
   const reload = useCallback(async () => {
     setLoading(true);
     setErrorText('');
     setNotice('');
 
-    // 1) today’s attendance (function you already have)
-    const { data: attData, error: attError } = await supabase
-      .rpc('day_attendance_v2', { p_date: dateISO });
+    // Admin-only RPC: returns rows only if public.is_admin() is true
+    const { data, error } = await supabase.rpc('get_today_ui_v1');
 
-    // 2) all staff (requires sign-in)
-    const { data: staffData, error: staffError } = await supabase
-      .from('staff')
-      .select('email,name')
-      .order('name', { ascending: true });
-
-    // 3) today statuses (MC/Offday/etc) — use the effective view (Sundays = OFFDAY)
-    const { data: statData, error: statError } = await supabase
-      .from('v_day_status_effective')
-      .select('staff_email,status')
-      .eq('day', dateISO);
-
-    if (attError) {
-      setErrorText(attError.message);
+    if (error) {
+      setErrorText(error.message);
       setRows([]);
       setLoading(false);
       return;
     }
 
-    const dayRows = (attData as DayRow[]) ?? [];
-
-    // fallback if staff blocked by RLS
-    if (staffError || !staffData || staffData.length === 0) {
-      if (staffError) {
-        setNotice('Showing only checked-in staff. Sign in to view all staff & statuses.');
-      }
-      const statusMap = new Map<string, string | null>();
-      if (!statError && statData) {
-        for (const s of statData as StatusRow[]) {
-          statusMap.set(s.staff_email.toLowerCase(), s.status);
-        }
-      }
-      const mergedFallback = dayRows.map(r => ({
-        ...r,
-        status: statusMap.get(r.staff_email.toLowerCase()) ?? null,
-      }));
-      setRows(mergedFallback);
-      setLoading(false);
-      return;
+    const out = (data as DayRow[]) ?? [];
+    if (!out.length) {
+      setNotice('No rows returned. If you are not admin, access is blocked.');
     }
 
-    // build maps for merge
-    const byEmail = new Map<string, DayRow>();
-    for (const r of dayRows) byEmail.set(r.staff_email.toLowerCase(), r);
-
-    const statusMap = new Map<string, string | null>();
-    if (!statError && statData) {
-      for (const s of statData as StatusRow[]) {
-        statusMap.set(s.staff_email.toLowerCase(), s.status);
-      }
-    }
-
-    // left-join staff with attendance, then attach status
-    const merged: DayRow[] = (staffData as StaffRow[]).map((s) => {
-      const key = s.email.toLowerCase();
-      const hit = byEmail.get(key);
-      return {
-        staff_name: s.name ?? s.email.split('@')[0],
-        staff_email: s.email,
-        check_in_kl: hit?.check_in_kl ?? null,
-        check_out_kl: hit?.check_out_kl ?? null,
-        late_min: hit?.late_min ?? null,
-        status: statusMap.get(key) ?? null,
-      };
-    });
-
-    setRows(merged);
+    setRows(out);
     setLoading(false);
-  }, [dateISO]);
+  }, []);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    reload();
+  }, [reload]);
 
   const hasData = useMemo(() => (rows?.length ?? 0) > 0, [rows]);
 
   return (
     <main style={{ padding: 16, fontFamily: 'system-ui' }}>
       <h2>Today</h2>
+
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12 }}>
         <button onClick={reload} style={{ padding: '8px 12px' }}>
           Reload
@@ -166,13 +125,20 @@ export default function TodayPage() {
       </div>
 
       {notice && (
-        <p style={{ color: '#374151', background:'#f3f4f6', padding:'8px 10px', borderRadius:8, marginBottom:12 }}>
+        <p
+          style={{
+            color: '#374151',
+            background: '#f3f4f6',
+            padding: '8px 10px',
+            borderRadius: 8,
+            marginBottom: 12,
+          }}
+        >
           {notice}
         </p>
       )}
-      {errorText && (
-        <p style={{ color: '#b00020', marginBottom: 12 }}>{errorText}</p>
-      )}
+
+      {errorText && <p style={{ color: '#b00020', marginBottom: 12 }}>{errorText}</p>}
 
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -194,15 +160,17 @@ export default function TodayPage() {
                 </td>
               </tr>
             )}
+
             {(rows ?? []).map((r) => {
-              const hasAdminStatus = r.status && r.status.trim() !== '';
+              const hasAdminStatus = !!(r.status && r.status.trim() !== '');
               const after930 = isAfter930(r.check_in_kl);
+
+              // Your original behavior: auto-mark absent after 10:30 if no status and no check-in
               const autoAbsent = !hasAdminStatus && past1030 && !r.check_in_kl;
 
               // Grey-out times whenever status exists (MC/OFFDAY) or we auto-mark Absent
               const blockTimes = hasAdminStatus || autoAbsent;
 
-              // Late(min) display rule (same as before)
               const isLateMin = typeof r.late_min === 'number' && r.late_min > 0;
 
               return (
@@ -210,35 +178,32 @@ export default function TodayPage() {
                   <td style={{ padding: 8 }}>{dateISO}</td>
                   <td style={{ padding: 8 }}>{r.staff_name}</td>
 
-                  {/* Status column: admin status > auto Absent > em dash */}
                   <td style={{ padding: 8, fontWeight: 600 }}>
-                    {hasAdminStatus ? r.status : (autoAbsent ? 'Absent' : '—')}
+                    {hasAdminStatus ? r.status : autoAbsent ? 'Absent' : '—'}
                   </td>
 
-                  {/* Check-in: red if after 09:30, unless blocked */}
                   <td
                     style={{
                       padding: 8,
-                      color: blockTimes ? '#9CA3AF' : (after930 ? '#dc2626' : 'inherit'),
+                      color: blockTimes ? '#9CA3AF' : after930 ? '#dc2626' : 'inherit',
                       fontWeight: 400,
                     }}
                   >
-                    {blockTimes ? '—' : (r.check_in_kl ?? '—')}
+                    {blockTimes ? '—' : r.check_in_kl ?? '—'}
                   </td>
 
                   <td style={{ padding: 8, color: blockTimes ? '#9CA3AF' : 'inherit' }}>
-                    {blockTimes ? '—' : (r.check_out_kl ?? '—')}
+                    {blockTimes ? '—' : r.check_out_kl ?? '—'}
                   </td>
 
-                  {/* Late(min): unchanged; red/bold when >0, unless blocked */}
                   <td
                     style={{
                       padding: 8,
-                      color: blockTimes ? '#9CA3AF' : (isLateMin ? '#dc2626' : 'inherit'),
+                      color: blockTimes ? '#9CA3AF' : isLateMin ? '#dc2626' : 'inherit',
                       fontWeight: isLateMin ? 700 : 400,
                     }}
                   >
-                    {blockTimes ? '—' : (typeof r.late_min === 'number' ? r.late_min : '—')}
+                    {blockTimes ? '—' : typeof r.late_min === 'number' ? r.late_min : '—'}
                   </td>
                 </tr>
               );
