@@ -49,16 +49,16 @@ type StaffFull = {
 
   basic_salary: number | null;
 
-  // access/admin
-  is_admin?: boolean | null;
-
-  // payroll controls
   archived_at?: string | null;
+
   include_in_payroll?: boolean | null;
+  skip_payroll?: boolean | null;
 
   epf_enabled?: boolean | null;
   socso_enabled?: boolean | null;
   eis_enabled?: boolean | null;
+
+  is_admin?: boolean | null;
 };
 
 type NewEmployee = {
@@ -67,16 +67,7 @@ type NewEmployee = {
   position: string;
   start_date: string;
   basic_salary: string;
-
   is_admin: boolean;
-
-  archived: boolean;
-  include_in_payroll: boolean;
-
-  deductions_enabled: boolean;
-  epf_enabled: boolean;
-  socso_enabled: boolean;
-  eis_enabled: boolean;
 };
 
 const POSITION_OPTIONS = ['Manager', 'Supervisor', 'Mechanic', 'Admin', 'Temporary', 'Trainer'];
@@ -86,12 +77,11 @@ function rm(n?: number | null) {
   return `RM ${v.toFixed(2)}`;
 }
 
-function klTodayISO() {
-  const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' }));
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+function emptyToNull(v: any) {
+  return v === '' ? null : v;
+}
+function num(v: any): number {
+  return typeof v === 'number' ? v : v ? Number(v) : 0;
 }
 
 export default function EmployeesPage() {
@@ -110,40 +100,31 @@ export default function EmployeesPage() {
 
   const [editIsAdmin, setEditIsAdmin] = useState<boolean>(false);
 
-  // NEW toggles (editor)
-  const [editArchived, setEditArchived] = useState<boolean>(false);
+  // payroll + statutory toggles
   const [editIncludePayroll, setEditIncludePayroll] = useState<boolean>(true);
-
-  const [editDeductionsEnabled, setEditDeductionsEnabled] = useState<boolean>(true);
   const [editEpfEnabled, setEditEpfEnabled] = useState<boolean>(true);
   const [editSocsoEnabled, setEditSocsoEnabled] = useState<boolean>(true);
   const [editEisEnabled, setEditEisEnabled] = useState<boolean>(true);
+
+  // archive toggle
+  const [editArchived, setEditArchived] = useState<boolean>(false);
 
   // add employee drawer
   const [addOpen, setAddOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [addMsg, setAddMsg] = useState<string | null>(null);
 
-  const today = klTodayISO();
+  const today = new Date().toISOString().slice(0, 10);
   const [newEmp, setNewEmp] = useState<NewEmployee>({
     email: '',
     full_name: '',
     position: '',
     start_date: today,
     basic_salary: '0.00',
-
     is_admin: false,
-
-    archived: false,
-    include_in_payroll: true,
-
-    deductions_enabled: true,
-    epf_enabled: true,
-    socso_enabled: true,
-    eis_enabled: true,
   });
 
-  /* ---------------- Auth + admin gate ---------------- */
+  // Auth + admin gate
   useEffect(() => {
     let cleanup: (() => void) | undefined;
 
@@ -186,12 +167,10 @@ export default function EmployeesPage() {
     return () => cleanup && cleanup();
   }, []);
 
-  /* ---------------- Data load ---------------- */
   const load = async () => {
     setLoading(true);
     setMsg(null);
 
-    // ✅ Admin list via RPC
     const { data, error } = await supabase.rpc('get_staff_brief_active');
 
     if (error) {
@@ -226,13 +205,17 @@ export default function EmployeesPage() {
     );
   }, [rows, q]);
 
-  /* ---------------- Open editor ---------------- */
   const openEditor = async (email: string) => {
     if (!isAdmin) return;
     setMsg(null);
     setOpenEmail(email);
 
-    const { data, error } = await supabase.from('staff').select('*').eq('email', email).maybeSingle();
+    const { data, error } = await supabase
+      .from('staff')
+      .select('*')
+      .eq('email', email)
+      .maybeSingle();
+
     if (error) {
       setMsg(`Load employee failed: ${error.message}`);
       setModel(null);
@@ -244,59 +227,66 @@ export default function EmployeesPage() {
 
     setEditIsAdmin(!!row?.is_admin);
 
-    // archived
-    setEditArchived(!!row?.archived_at);
-
-    // include payroll
     setEditIncludePayroll(row?.include_in_payroll ?? true);
+    setEditEpfEnabled(row?.epf_enabled ?? true);
+    setEditSocsoEnabled(row?.socso_enabled ?? true);
+    setEditEisEnabled(row?.eis_enabled ?? true);
 
-    // deductions master + per-flag
-    const epf = row?.epf_enabled ?? true;
-    const socso = row?.socso_enabled ?? true;
-    const eis = row?.eis_enabled ?? true;
-
-    setEditEpfEnabled(epf);
-    setEditSocsoEnabled(socso);
-    setEditEisEnabled(eis);
-    setEditDeductionsEnabled(epf || socso || eis);
+    setEditArchived(!!row?.archived_at);
   };
 
-  function closeEditor() {
-    if (saving) return;
-    setOpenEmail(null);
-    setModel(null);
+  async function changeEmail() {
+    if (!model) return;
+    if (!isAdmin) return;
+
+    const oldEmail = model.email.toLowerCase();
+    const next = prompt(`Change email for:\n${oldEmail}\n\nEnter new email:`, '');
+    if (!next) return;
+
+    const newEmail = next.trim().toLowerCase();
+    if (!newEmail.includes('@')) {
+      alert('Invalid email.');
+      return;
+    }
+
+    if (!confirm(`Confirm change:\n${oldEmail}  →  ${newEmail}\n\nThis will change LOGIN + attendance + payroll links.`)) {
+      return;
+    }
+
+    setSaving(true);
     setMsg(null);
+
+    try {
+      const session = await supabase.auth.getSession();
+      const token = session.data.session?.access_token;
+      if (!token) throw new Error('No session token');
+
+      const res = await fetch('/api/admin/change-email', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ oldEmail, newEmail }),
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json?.error || 'Change email failed');
+      }
+
+      setMsg('Email changed. Employee must login using the new email.');
+      setOpenEmail(newEmail);
+      // reload editor row
+      await openEditor(newEmail);
+      await load();
+    } catch (e: any) {
+      setMsg(`Change email failed: ${e.message ?? e}`);
+    } finally {
+      setSaving(false);
+    }
   }
 
-  /* ---------------- Payroll refresh for latest OPEN period ---------------- */
-  const refreshOpenPeriodPayroll = async () => {
-    const { data: period, error: perErr } = await supabase
-      .schema('pay_v2')
-      .from('periods')
-      .select('year, month, status')
-      .eq('status', 'OPEN')
-      .order('year', { ascending: false })
-      .order('month', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (perErr) throw perErr;
-
-    if (period?.year && period?.month) {
-      const s1 = await supabase.schema('pay_v2').rpc('sync_base_items_respect_archive', {
-        p_year: period.year,
-        p_month: period.month,
-      });
-      if (s1.error) throw s1.error;
-
-      const s2 = await supabase.schema('pay_v2').rpc('recalc_statutories_respect_temp', {
-        p_year: period.year,
-        p_month: period.month,
-      });
-      if (s2.error) throw s2.error;
-    }
-  };
-
-  /* ---------------- Save editor ---------------- */
   const save = async () => {
     if (!model) return;
     if (!isAdmin) {
@@ -308,20 +298,9 @@ export default function EmployeesPage() {
     setMsg(null);
 
     try {
-      // deductions: if master off -> all false
-      const nextEpf = editDeductionsEnabled ? editEpfEnabled : false;
-      const nextSocso = editDeductionsEnabled ? editSocsoEnabled : false;
-      const nextEis = editDeductionsEnabled ? editEisEnabled : false;
-
-      const payload: Partial<StaffFull> & {
-        archived_at: string | null;
-        include_in_payroll: boolean;
-        epf_enabled: boolean;
-        socso_enabled: boolean;
-        eis_enabled: boolean;
-        is_admin: boolean;
-      } = {
+      const payload: any = {
         ...model,
+
         full_name: emptyToNull(model.full_name) ?? emptyToNull(model.name),
         nationality: emptyToNull(model.nationality),
         nric: emptyToNull(model.nric),
@@ -341,24 +320,23 @@ export default function EmployeesPage() {
         socso_no: emptyToNull(model.socso_no),
         eis_no: emptyToNull(model.eis_no),
 
-        // NEW FLAGS
-        archived_at: editArchived ? new Date().toISOString() : null,
-        include_in_payroll: !!editIncludePayroll,
-        epf_enabled: !!nextEpf,
-        socso_enabled: !!nextSocso,
-        eis_enabled: !!nextEis,
+        is_admin: editIsAdmin,
 
-        // access
-        is_admin: !!editIsAdmin,
+        include_in_payroll: editIncludePayroll,
+        epf_enabled: editEpfEnabled,
+        socso_enabled: editSocsoEnabled,
+        eis_enabled: editEisEnabled,
+
+        archived_at: editArchived ? new Date().toISOString() : null,
       };
+
+      // IMPORTANT: email is identity key; do not edit via normal Save.
+      delete payload.email;
 
       const { error: upErr } = await supabase.from('staff').update(payload).eq('email', model.email);
       if (upErr) throw upErr;
 
-      // update payroll for latest OPEN period
-      await refreshOpenPeriodPayroll();
-
-      setMsg('Saved and payroll refreshed for latest OPEN period.');
+      setMsg('Saved.');
       await load();
     } catch (e: any) {
       setMsg(`Save failed: ${e.message ?? e}`);
@@ -367,26 +345,10 @@ export default function EmployeesPage() {
     }
   };
 
-  /* ---------------- Add employee ---------------- */
   const openAdd = () => {
     if (!isAdmin) return;
     setAddMsg(null);
-    setNewEmp({
-      email: '',
-      full_name: '',
-      position: '',
-      start_date: today,
-      basic_salary: '0.00',
-      is_admin: false,
-
-      archived: false,
-      include_in_payroll: true,
-
-      deductions_enabled: true,
-      epf_enabled: true,
-      socso_enabled: true,
-      eis_enabled: true,
-    });
+    setNewEmp({ email: '', full_name: '', position: '', start_date: today, basic_salary: '0.00', is_admin: false });
     setAddOpen(true);
   };
 
@@ -414,34 +376,24 @@ export default function EmployeesPage() {
 
     setAdding(true);
     try {
-      const nextEpf = newEmp.deductions_enabled ? newEmp.epf_enabled : false;
-      const nextSocso = newEmp.deductions_enabled ? newEmp.socso_enabled : false;
-      const nextEis = newEmp.deductions_enabled ? newEmp.eis_enabled : false;
-
       const payload = {
         email,
         full_name: name,
-        name: name, // keeps older logic happy
         position: pos,
         start_date: start,
         basic_salary: Number.isFinite(salaryNum) ? salaryNum : 0,
-
+        archived_at: null,
+        employment_end_date: null,
         is_admin: !!newEmp.is_admin,
 
-        archived_at: newEmp.archived ? new Date().toISOString() : null,
-        include_in_payroll: !!newEmp.include_in_payroll,
-
-        epf_enabled: !!nextEpf,
-        socso_enabled: !!nextSocso,
-        eis_enabled: !!nextEis,
-
-        employment_end_date: null,
+        include_in_payroll: true,
+        epf_enabled: true,
+        socso_enabled: true,
+        eis_enabled: true,
       };
 
       const res = await supabase.from('staff').upsert(payload, { onConflict: 'email' }).select('email').maybeSingle();
       if (res.error) throw res.error;
-
-      await refreshOpenPeriodPayroll();
 
       setAddMsg('Employee added.');
       setAddOpen(false);
@@ -453,7 +405,13 @@ export default function EmployeesPage() {
     }
   };
 
-  /* ---------------- Render guards ---------------- */
+  function closeEditor() {
+    if (saving) return;
+    setOpenEmail(null);
+    setModel(null);
+    setMsg(null);
+  }
+
   if (authed === false) return <main className="mx-auto max-w-6xl p-6">Please sign in.</main>;
   if (authed === null || (authed && !isAdmin)) return <main className="mx-auto max-w-6xl p-6">Loading…</main>;
 
@@ -463,7 +421,7 @@ export default function EmployeesPage() {
         <h1 className="text-2xl font-semibold">Employees</h1>
         <div className="ml-auto flex items-center gap-2">
           <input
-            className="w-72 rounded border px-3 py-2"
+            className="rounded border px-3 py-2 w-72"
             placeholder="Search name / email / position"
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -522,10 +480,9 @@ export default function EmployeesPage() {
         )}
       </section>
 
-      {/* ================= EDIT DRAWER ================= */}
       {openEmail && model && (
         <div className="fixed inset-0 z-40 bg-black/40" onClick={(e) => e.target === e.currentTarget && closeEditor()}>
-          <div className="absolute right-0 top-0 h-full w-[min(760px,92vw)] overflow-y-auto bg-white shadow-xl">
+          <div className="absolute right-0 top-0 h-full w-[min(720px,92vw)] overflow-y-auto bg-white shadow-xl">
             <div className="flex items-center justify-between border-b px-4 py-3">
               <div className="font-semibold">Edit employee — {model.email}</div>
               <button className="rounded border px-2 py-1" onClick={closeEditor}>
@@ -534,20 +491,40 @@ export default function EmployeesPage() {
             </div>
 
             <div className="grid gap-6 p-4">
-              <Section title="Access">
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-center gap-2">
-                    <input
-                      id="admin-flag"
-                      type="checkbox"
-                      checked={editIsAdmin}
-                      onChange={(e) => setEditIsAdmin(e.target.checked)}
-                    />
-                    <label htmlFor="admin-flag" className="text-sm">
-                      Admin (can manage payroll, periods, employees)
-                    </label>
+              <Section title="Identity">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs text-gray-600">Email (login identity)</label>
+                    <input className="w-full rounded border px-2 py-1 bg-gray-100 text-gray-700" value={model.email} readOnly />
+                    <div className="mt-1 text-[11px] text-gray-500">
+                      This email is used for login + attendance + payroll linking.
+                    </div>
                   </div>
+                  <div className="flex items-end gap-2">
+                    <button
+                      type="button"
+                      className="rounded border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
+                      onClick={changeEmail}
+                      disabled={saving}
+                      title="Change login + payroll email safely"
+                    >
+                      Change email…
+                    </button>
+                  </div>
+                </div>
+              </Section>
 
+              <Section title="Access">
+                <div className="flex items-center gap-2">
+                  <input id="admin-flag" type="checkbox" checked={editIsAdmin} onChange={(e) => setEditIsAdmin(e.target.checked)} />
+                  <label htmlFor="admin-flag" className="text-sm">
+                    Admin (can manage payroll, periods, employees)
+                  </label>
+                </div>
+              </Section>
+
+              <Section title="Employment status">
+                <div className="grid gap-3 md:grid-cols-2">
                   <div className="flex items-center gap-2">
                     <input
                       id="archived-flag"
@@ -568,69 +545,29 @@ export default function EmployeesPage() {
                       onChange={(e) => setEditIncludePayroll(e.target.checked)}
                     />
                     <label htmlFor="include-payroll" className="text-sm">
-                      Include in Payroll (show in Payroll v2 + payslip)
+                      Include in payroll + payslip
                     </label>
                   </div>
                 </div>
+
+                <div className="mt-2 text-[11px] text-gray-500">
+                  If you uncheck “Include in payroll”, the staff will not appear in Payroll v2 summary and their payroll lines will be cleaned on rebuild.
+                </div>
               </Section>
 
-              <Section title="Payroll deductions">
-                <div className="grid gap-3">
+              <Section title="Statutory deductions">
+                <div className="grid gap-3 md:grid-cols-3">
                   <div className="flex items-center gap-2">
-                    <input
-                      id="deduct-master"
-                      type="checkbox"
-                      checked={editDeductionsEnabled}
-                      onChange={(e) => setEditDeductionsEnabled(e.target.checked)}
-                    />
-                    <label htmlFor="deduct-master" className="text-sm font-medium">
-                      Enable statutory deductions (EPF/SOCSO/EIS)
-                    </label>
+                    <input id="epf-enabled" type="checkbox" checked={editEpfEnabled} onChange={(e) => setEditEpfEnabled(e.target.checked)} />
+                    <label htmlFor="epf-enabled" className="text-sm">EPF enabled</label>
                   </div>
-
-                  <div className={`grid gap-2 md:grid-cols-3 ${!editDeductionsEnabled ? 'opacity-50' : ''}`}>
-                    <div className="flex items-center gap-2">
-                      <input
-                        id="epf-enabled"
-                        type="checkbox"
-                        checked={editEpfEnabled}
-                        disabled={!editDeductionsEnabled}
-                        onChange={(e) => setEditEpfEnabled(e.target.checked)}
-                      />
-                      <label htmlFor="epf-enabled" className="text-sm">
-                        EPF enabled
-                      </label>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <input
-                        id="socso-enabled"
-                        type="checkbox"
-                        checked={editSocsoEnabled}
-                        disabled={!editDeductionsEnabled}
-                        onChange={(e) => setEditSocsoEnabled(e.target.checked)}
-                      />
-                      <label htmlFor="socso-enabled" className="text-sm">
-                        SOCSO enabled
-                      </label>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <input
-                        id="eis-enabled"
-                        type="checkbox"
-                        checked={editEisEnabled}
-                        disabled={!editDeductionsEnabled}
-                        onChange={(e) => setEditEisEnabled(e.target.checked)}
-                      />
-                      <label htmlFor="eis-enabled" className="text-sm">
-                        EIS enabled
-                      </label>
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <input id="socso-enabled" type="checkbox" checked={editSocsoEnabled} onChange={(e) => setEditSocsoEnabled(e.target.checked)} />
+                    <label htmlFor="socso-enabled" className="text-sm">SOCSO enabled</label>
                   </div>
-
-                  <div className="text-xs text-gray-500">
-                    If a staff is part-time/trainer and should not have deductions, disable the master toggle (or untick specific ones).
+                  <div className="flex items-center gap-2">
+                    <input id="eis-enabled" type="checkbox" checked={editEisEnabled} onChange={(e) => setEditEisEnabled(e.target.checked)} />
+                    <label htmlFor="eis-enabled" className="text-sm">EIS enabled</label>
                   </div>
                 </div>
               </Section>
@@ -655,23 +592,6 @@ export default function EmployeesPage() {
                 </Grid2>
               </Section>
 
-              <Section title="Emergency contact">
-                <Grid3>
-                  <Text label="Name" value={model.emergency_name ?? ''} onChange={(v) => setModel((m) => ({ ...m!, emergency_name: v }))} />
-                  <Text label="Phone" value={model.emergency_phone ?? ''} onChange={(v) => setModel((m) => ({ ...m!, emergency_phone: v }))} />
-                  <Text label="Relationship" value={model.emergency_relationship ?? ''} onChange={(v) => setModel((m) => ({ ...m!, emergency_relationship: v }))} />
-                </Grid3>
-              </Section>
-
-              <Section title="Salary payment">
-                <Grid3>
-                  <Select label="Method" value={model.salary_payment_method ?? ''} onChange={(v) => setModel((m) => ({ ...m!, salary_payment_method: (v || null) as any }))} options={['Cheque', 'Bank Transfer', 'Cash']} />
-                  <Text label="Bank name" value={model.bank_name ?? ''} onChange={(v) => setModel((m) => ({ ...m!, bank_name: v }))} />
-                  <Text label="Account holder" value={model.bank_account_name ?? ''} onChange={(v) => setModel((m) => ({ ...m!, bank_account_name: v }))} />
-                  <Text label="Account no." value={model.bank_account_no ?? ''} onChange={(v) => setModel((m) => ({ ...m!, bank_account_no: v }))} />
-                </Grid3>
-              </Section>
-
               <Section title="Employment">
                 <Grid3>
                   <Select label="Position" value={model.position ?? ''} onChange={(v) => setModel((m) => ({ ...m!, position: v }))} options={POSITION_OPTIONS} />
@@ -692,27 +612,18 @@ export default function EmployeesPage() {
                 <button className="rounded border px-3 py-2" onClick={closeEditor} disabled={saving}>
                   Cancel
                 </button>
-                <button
-                  className="rounded bg-sky-600 px-3 py-2 text-white hover:bg-sky-700 disabled:opacity-50"
-                  onClick={save}
-                  disabled={saving}
-                >
+                <button className="rounded bg-sky-600 px-3 py-2 text-white hover:bg-sky-700 disabled:opacity-50" onClick={save} disabled={saving}>
                   {saving ? 'Saving…' : 'Save'}
                 </button>
-              </div>
-
-              <div className="text-xs text-gray-500">
-                Note: Archived staff or staff excluded from payroll will be removed from current period payroll after the next build/sync.
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* ================= ADD DRAWER ================= */}
       {addOpen && (
         <div className="fixed inset-0 z-40 bg-black/40" onClick={(e) => e.target === e.currentTarget && setAddOpen(false)}>
-          <div className="absolute right-0 top-0 h-full w-[min(620px,92vw)] overflow-y-auto bg-white shadow-xl">
+          <div className="absolute right-0 top-0 h-full w-[min(560px,92vw)] overflow-y-auto bg-white shadow-xl">
             <div className="flex items-center justify-between border-b px-4 py-3">
               <div className="font-semibold">Add employee</div>
               <button className="rounded border px-2 py-1" onClick={() => setAddOpen(false)}>
@@ -730,103 +641,20 @@ export default function EmployeesPage() {
                   <Select label="Position" value={newEmp.position} onChange={(v) => setNewEmp((e) => ({ ...e, position: v }))} options={POSITION_OPTIONS} />
                   <DateInput label="Start date" value={newEmp.start_date} onChange={(v) => setNewEmp((e) => ({ ...e, start_date: v }))} />
                   <Money label="Basic salary" value={Number(newEmp.basic_salary)} onChange={(v) => setNewEmp((e) => ({ ...e, basic_salary: String(v) }))} />
-
                   <div className="flex items-center gap-2">
-                    <input
-                      id="new-is-admin"
-                      type="checkbox"
-                      checked={newEmp.is_admin}
-                      onChange={(e) => setNewEmp((s) => ({ ...s, is_admin: e.target.checked }))}
-                    />
+                    <input id="new-is-admin" type="checkbox" checked={newEmp.is_admin} onChange={(e) => setNewEmp((s) => ({ ...s, is_admin: e.target.checked }))} />
                     <label htmlFor="new-is-admin" className="text-sm">
                       Set as admin
                     </label>
                   </div>
-
-                  <div className="flex items-center gap-2">
-                    <input
-                      id="new-archived"
-                      type="checkbox"
-                      checked={newEmp.archived}
-                      onChange={(e) => setNewEmp((s) => ({ ...s, archived: e.target.checked }))}
-                    />
-                    <label htmlFor="new-archived" className="text-sm">
-                      Archived (resigned / inactive)
-                    </label>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <input
-                      id="new-include-payroll"
-                      type="checkbox"
-                      checked={newEmp.include_in_payroll}
-                      onChange={(e) => setNewEmp((s) => ({ ...s, include_in_payroll: e.target.checked }))}
-                    />
-                    <label htmlFor="new-include-payroll" className="text-sm">
-                      Include in Payroll (show in Payroll v2 + payslip)
-                    </label>
-                  </div>
                 </Grid2>
-              </Section>
-
-              <Section title="Payroll deductions">
-                <div className="grid gap-3">
-                  <div className="flex items-center gap-2">
-                    <input
-                      id="new-deduct-master"
-                      type="checkbox"
-                      checked={newEmp.deductions_enabled}
-                      onChange={(e) => setNewEmp((s) => ({ ...s, deductions_enabled: e.target.checked }))}
-                    />
-                    <label htmlFor="new-deduct-master" className="text-sm font-medium">
-                      Enable statutory deductions (EPF/SOCSO/EIS)
-                    </label>
-                  </div>
-
-                  <div className={`grid gap-2 md:grid-cols-3 ${!newEmp.deductions_enabled ? 'opacity-50' : ''}`}>
-                    <div className="flex items-center gap-2">
-                      <input
-                        id="new-epf"
-                        type="checkbox"
-                        checked={newEmp.epf_enabled}
-                        disabled={!newEmp.deductions_enabled}
-                        onChange={(e) => setNewEmp((s) => ({ ...s, epf_enabled: e.target.checked }))}
-                      />
-                      <label htmlFor="new-epf" className="text-sm">EPF enabled</label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        id="new-socso"
-                        type="checkbox"
-                        checked={newEmp.socso_enabled}
-                        disabled={!newEmp.deductions_enabled}
-                        onChange={(e) => setNewEmp((s) => ({ ...s, socso_enabled: e.target.checked }))}
-                      />
-                      <label htmlFor="new-socso" className="text-sm">SOCSO enabled</label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        id="new-eis"
-                        type="checkbox"
-                        checked={newEmp.eis_enabled}
-                        disabled={!newEmp.deductions_enabled}
-                        onChange={(e) => setNewEmp((s) => ({ ...s, eis_enabled: e.target.checked }))}
-                      />
-                      <label htmlFor="new-eis" className="text-sm">EIS enabled</label>
-                    </div>
-                  </div>
-                </div>
               </Section>
 
               <div className="flex justify-end gap-2">
                 <button className="rounded border px-3 py-2" onClick={() => setAddOpen(false)} disabled={adding}>
                   Cancel
                 </button>
-                <button
-                  className="rounded bg-emerald-600 px-3 py-2 text-white hover:bg-emerald-700 disabled:opacity-50"
-                  onClick={createEmployee}
-                  disabled={adding}
-                >
+                <button className="rounded bg-emerald-600 px-3 py-2 text-white hover:bg-emerald-700 disabled:opacity-50" onClick={createEmployee} disabled={adding}>
                   {adding ? 'Adding…' : 'Add employee'}
                 </button>
               </div>
@@ -839,13 +667,6 @@ export default function EmployeesPage() {
 }
 
 /* ---------- tiny UI helpers ---------- */
-function emptyToNull(v: any) {
-  return v === '' ? null : v;
-}
-function num(v: any): number {
-  return typeof v === 'number' ? v : v ? Number(v) : 0;
-}
-
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="rounded border bg-white">
