@@ -49,16 +49,17 @@ type StaffFull = {
 
   basic_salary: number | null;
 
-  archived_at?: string | null;
+  is_admin?: boolean | null;
 
+  // payroll flags
+  archived_at?: string | null;
   include_in_payroll?: boolean | null;
-  skip_payroll?: boolean | null;
+  skip_payroll?: boolean | null; // DB trigger keeps this in sync
+  salary_based_on_attendance?: boolean | null;
 
   epf_enabled?: boolean | null;
   socso_enabled?: boolean | null;
   eis_enabled?: boolean | null;
-
-  is_admin?: boolean | null;
 };
 
 type NewEmployee = {
@@ -68,6 +69,14 @@ type NewEmployee = {
   start_date: string;
   basic_salary: string;
   is_admin: boolean;
+
+  // new toggles
+  archived: boolean;
+  include_in_payroll: boolean;
+  salary_based_on_attendance: boolean;
+  epf_enabled: boolean;
+  socso_enabled: boolean;
+  eis_enabled: boolean;
 };
 
 const POSITION_OPTIONS = ['Manager', 'Supervisor', 'Mechanic', 'Admin', 'Temporary', 'Trainer'];
@@ -77,11 +86,8 @@ function rm(n?: number | null) {
   return `RM ${v.toFixed(2)}`;
 }
 
-function emptyToNull(v: any) {
-  return v === '' ? null : v;
-}
-function num(v: any): number {
-  return typeof v === 'number' ? v : v ? Number(v) : 0;
+function nowIso() {
+  return new Date().toISOString();
 }
 
 export default function EmployeesPage() {
@@ -100,14 +106,13 @@ export default function EmployeesPage() {
 
   const [editIsAdmin, setEditIsAdmin] = useState<boolean>(false);
 
-  // payroll + statutory toggles
-  const [editIncludePayroll, setEditIncludePayroll] = useState<boolean>(true);
+  // NEW editor toggles
+  const [editArchived, setEditArchived] = useState<boolean>(false);
+  const [editIncludeInPayroll, setEditIncludeInPayroll] = useState<boolean>(true);
+  const [editSalaryBasedOnAttendance, setEditSalaryBasedOnAttendance] = useState<boolean>(true);
   const [editEpfEnabled, setEditEpfEnabled] = useState<boolean>(true);
   const [editSocsoEnabled, setEditSocsoEnabled] = useState<boolean>(true);
   const [editEisEnabled, setEditEisEnabled] = useState<boolean>(true);
-
-  // archive toggle
-  const [editArchived, setEditArchived] = useState<boolean>(false);
 
   // add employee drawer
   const [addOpen, setAddOpen] = useState(false);
@@ -122,6 +127,13 @@ export default function EmployeesPage() {
     start_date: today,
     basic_salary: '0.00',
     is_admin: false,
+
+    archived: false,
+    include_in_payroll: true,
+    salary_based_on_attendance: true,
+    epf_enabled: true,
+    socso_enabled: true,
+    eis_enabled: true,
   });
 
   // Auth + admin gate
@@ -171,6 +183,7 @@ export default function EmployeesPage() {
     setLoading(true);
     setMsg(null);
 
+    // Admin list via RPC
     const { data, error } = await supabase.rpc('get_staff_brief_active');
 
     if (error) {
@@ -210,11 +223,7 @@ export default function EmployeesPage() {
     setMsg(null);
     setOpenEmail(email);
 
-    const { data, error } = await supabase
-      .from('staff')
-      .select('*')
-      .eq('email', email)
-      .maybeSingle();
+    const { data, error } = await supabase.from('staff').select('*').eq('email', email).maybeSingle();
 
     if (error) {
       setMsg(`Load employee failed: ${error.message}`);
@@ -225,67 +234,17 @@ export default function EmployeesPage() {
     const row = (data ?? null) as StaffFull | null;
     setModel(row);
 
+    // Sync local toggles with DB row (coalesce for safety)
     setEditIsAdmin(!!row?.is_admin);
+    setEditArchived(!!row?.archived_at);
 
-    setEditIncludePayroll(row?.include_in_payroll ?? true);
+    setEditIncludeInPayroll(row?.include_in_payroll ?? true);
+    setEditSalaryBasedOnAttendance(row?.salary_based_on_attendance ?? true);
+
     setEditEpfEnabled(row?.epf_enabled ?? true);
     setEditSocsoEnabled(row?.socso_enabled ?? true);
     setEditEisEnabled(row?.eis_enabled ?? true);
-
-    setEditArchived(!!row?.archived_at);
   };
-
-  async function changeEmail() {
-    if (!model) return;
-    if (!isAdmin) return;
-
-    const oldEmail = model.email.toLowerCase();
-    const next = prompt(`Change email for:\n${oldEmail}\n\nEnter new email:`, '');
-    if (!next) return;
-
-    const newEmail = next.trim().toLowerCase();
-    if (!newEmail.includes('@')) {
-      alert('Invalid email.');
-      return;
-    }
-
-    if (!confirm(`Confirm change:\n${oldEmail}  →  ${newEmail}\n\nThis will change LOGIN + attendance + payroll links.`)) {
-      return;
-    }
-
-    setSaving(true);
-    setMsg(null);
-
-    try {
-      const session = await supabase.auth.getSession();
-      const token = session.data.session?.access_token;
-      if (!token) throw new Error('No session token');
-
-      const res = await fetch('/api/admin/change-email', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ oldEmail, newEmail }),
-      });
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json?.error || 'Change email failed');
-      }
-
-      setMsg('Email changed. Employee must login using the new email.');
-      setOpenEmail(newEmail);
-      // reload editor row
-      await openEditor(newEmail);
-      await load();
-    } catch (e: any) {
-      setMsg(`Change email failed: ${e.message ?? e}`);
-    } finally {
-      setSaving(false);
-    }
-  }
 
   const save = async () => {
     if (!model) return;
@@ -298,9 +257,10 @@ export default function EmployeesPage() {
     setMsg(null);
 
     try {
-      const payload: any = {
-        ...model,
+      const archived_at = editArchived ? (model.archived_at ?? nowIso()) : null;
 
+      const payload: Partial<StaffFull> = {
+        ...model,
         full_name: emptyToNull(model.full_name) ?? emptyToNull(model.name),
         nationality: emptyToNull(model.nationality),
         nric: emptyToNull(model.nric),
@@ -316,27 +276,57 @@ export default function EmployeesPage() {
         bank_account_no: emptyToNull(model.bank_account_no),
         position: emptyToNull(model.position),
         start_date: emptyToNull(model.start_date),
+        employment_end_date: emptyToNull((model as any).employment_end_date),
         epf_no: emptyToNull(model.epf_no),
         socso_no: emptyToNull(model.socso_no),
         eis_no: emptyToNull(model.eis_no),
 
         is_admin: editIsAdmin,
 
-        include_in_payroll: editIncludePayroll,
-        epf_enabled: editEpfEnabled,
-        socso_enabled: editSocsoEnabled,
-        eis_enabled: editEisEnabled,
-
-        archived_at: editArchived ? new Date().toISOString() : null,
+        // NEW toggles
+        archived_at,
+        include_in_payroll: !!editIncludeInPayroll,
+        salary_based_on_attendance: !!editSalaryBasedOnAttendance,
+        epf_enabled: !!editEpfEnabled,
+        socso_enabled: !!editSocsoEnabled,
+        eis_enabled: !!editEisEnabled,
       };
-
-      // IMPORTANT: email is identity key; do not edit via normal Save.
-      delete payload.email;
 
       const { error: upErr } = await supabase.from('staff').update(payload).eq('email', model.email);
       if (upErr) throw upErr;
 
-      setMsg('Saved.');
+      // Recalc latest OPEN period (if any) so toggles reflect quickly
+      const { data: period, error: perErr } = await supabase
+        .schema('pay_v2')
+        .from('periods')
+        .select('year, month, status')
+        .eq('status', 'OPEN')
+        .order('year', { ascending: false })
+        .order('month', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (perErr) throw perErr;
+
+      if (period?.year && period?.month) {
+        const b = await supabase.schema('pay_v2').rpc('build_period', { p_year: period.year, p_month: period.month });
+        // If build_period is admin-only, this should work because page is admin gated.
+        if (b.error) {
+          // fallback: at least sync base + stat
+          const s1 = await supabase.schema('pay_v2').rpc('sync_base_items_respect_archive', {
+            p_year: period.year,
+            p_month: period.month,
+          });
+          if (s1.error) throw s1.error;
+
+          const s2 = await supabase.schema('pay_v2').rpc('recalc_statutories_respect_temp', {
+            p_year: period.year,
+            p_month: period.month,
+          });
+          if (s2.error) throw s2.error;
+        }
+      }
+
+      setMsg('Saved. Payroll flags updated.');
       await load();
     } catch (e: any) {
       setMsg(`Save failed: ${e.message ?? e}`);
@@ -348,7 +338,21 @@ export default function EmployeesPage() {
   const openAdd = () => {
     if (!isAdmin) return;
     setAddMsg(null);
-    setNewEmp({ email: '', full_name: '', position: '', start_date: today, basic_salary: '0.00', is_admin: false });
+    setNewEmp({
+      email: '',
+      full_name: '',
+      position: '',
+      start_date: today,
+      basic_salary: '0.00',
+      is_admin: false,
+
+      archived: false,
+      include_in_payroll: true,
+      salary_based_on_attendance: true,
+      epf_enabled: true,
+      socso_enabled: true,
+      eis_enabled: true,
+    });
     setAddOpen(true);
   };
 
@@ -376,20 +380,24 @@ export default function EmployeesPage() {
 
     setAdding(true);
     try {
-      const payload = {
+      const payload: any = {
         email,
         full_name: name,
         position: pos,
         start_date: start,
         basic_salary: Number.isFinite(salaryNum) ? salaryNum : 0,
-        archived_at: null,
-        employment_end_date: null,
-        is_admin: !!newEmp.is_admin,
 
-        include_in_payroll: true,
-        epf_enabled: true,
-        socso_enabled: true,
-        eis_enabled: true,
+        archived_at: newEmp.archived ? nowIso() : null,
+        employment_end_date: null,
+
+        include_in_payroll: !!newEmp.include_in_payroll,
+        salary_based_on_attendance: !!newEmp.salary_based_on_attendance,
+
+        epf_enabled: !!newEmp.epf_enabled,
+        socso_enabled: !!newEmp.socso_enabled,
+        eis_enabled: !!newEmp.eis_enabled,
+
+        is_admin: !!newEmp.is_admin,
       };
 
       const res = await supabase.from('staff').upsert(payload, { onConflict: 'email' }).select('email').maybeSingle();
@@ -480,6 +488,7 @@ export default function EmployeesPage() {
         )}
       </section>
 
+      {/* ---------- EDIT DRAWER ---------- */}
       {openEmail && model && (
         <div className="fixed inset-0 z-40 bg-black/40" onClick={(e) => e.target === e.currentTarget && closeEditor()}>
           <div className="absolute right-0 top-0 h-full w-[min(720px,92vw)] overflow-y-auto bg-white shadow-xl">
@@ -491,29 +500,7 @@ export default function EmployeesPage() {
             </div>
 
             <div className="grid gap-6 p-4">
-              <Section title="Identity">
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-xs text-gray-600">Email (login identity)</label>
-                    <input className="w-full rounded border px-2 py-1 bg-gray-100 text-gray-700" value={model.email} readOnly />
-                    <div className="mt-1 text-[11px] text-gray-500">
-                      This email is used for login + attendance + payroll linking.
-                    </div>
-                  </div>
-                  <div className="flex items-end gap-2">
-                    <button
-                      type="button"
-                      className="rounded border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
-                      onClick={changeEmail}
-                      disabled={saving}
-                      title="Change login + payroll email safely"
-                    >
-                      Change email…
-                    </button>
-                  </div>
-                </div>
-              </Section>
-
+              {/* Access */}
               <Section title="Access">
                 <div className="flex items-center gap-2">
                   <input id="admin-flag" type="checkbox" checked={editIsAdmin} onChange={(e) => setEditIsAdmin(e.target.checked)} />
@@ -523,8 +510,9 @@ export default function EmployeesPage() {
                 </div>
               </Section>
 
+              {/* Employment status */}
               <Section title="Employment status">
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className="flex flex-col gap-3">
                   <div className="flex items-center gap-2">
                     <input
                       id="archived-flag"
@@ -533,45 +521,64 @@ export default function EmployeesPage() {
                       onChange={(e) => setEditArchived(e.target.checked)}
                     />
                     <label htmlFor="archived-flag" className="text-sm">
-                      Archived (resigned / inactive)
+                      Archived / Resigned (removes from active employee list & payroll)
+                    </label>
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    When checked, <code>archived_at</code> will be set. Uncheck to reactivate.
+                  </div>
+                </div>
+              </Section>
+
+              {/* Payroll & deductions */}
+              <Section title="Payroll & deductions">
+                <div className="grid gap-3">
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="include-payroll"
+                      type="checkbox"
+                      checked={editIncludeInPayroll}
+                      onChange={(e) => setEditIncludeInPayroll(e.target.checked)}
+                    />
+                    <label htmlFor="include-payroll" className="text-sm">
+                      Include in Payroll page (and payslip)
                     </label>
                   </div>
 
                   <div className="flex items-center gap-2">
                     <input
-                      id="include-payroll"
+                      id="salary-att"
                       type="checkbox"
-                      checked={editIncludePayroll}
-                      onChange={(e) => setEditIncludePayroll(e.target.checked)}
+                      checked={editSalaryBasedOnAttendance}
+                      onChange={(e) => setEditSalaryBasedOnAttendance(e.target.checked)}
                     />
-                    <label htmlFor="include-payroll" className="text-sm">
-                      Include in payroll + payslip
+                    <label htmlFor="salary-att" className="text-sm">
+                      Salary based on attendance (generate UNPAID deductions for absences)
                     </label>
                   </div>
-                </div>
 
-                <div className="mt-2 text-[11px] text-gray-500">
-                  If you uncheck “Include in payroll”, the staff will not appear in Payroll v2 summary and their payroll lines will be cleaned on rebuild.
-                </div>
-              </Section>
+                  <div className="grid gap-2 md:grid-cols-3">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input type="checkbox" checked={editEpfEnabled} onChange={(e) => setEditEpfEnabled(e.target.checked)} />
+                      EPF enabled
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input type="checkbox" checked={editSocsoEnabled} onChange={(e) => setEditSocsoEnabled(e.target.checked)} />
+                      SOCSO enabled
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input type="checkbox" checked={editEisEnabled} onChange={(e) => setEditEisEnabled(e.target.checked)} />
+                      EIS enabled
+                    </label>
+                  </div>
 
-              <Section title="Statutory deductions">
-                <div className="grid gap-3 md:grid-cols-3">
-                  <div className="flex items-center gap-2">
-                    <input id="epf-enabled" type="checkbox" checked={editEpfEnabled} onChange={(e) => setEditEpfEnabled(e.target.checked)} />
-                    <label htmlFor="epf-enabled" className="text-sm">EPF enabled</label>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input id="socso-enabled" type="checkbox" checked={editSocsoEnabled} onChange={(e) => setEditSocsoEnabled(e.target.checked)} />
-                    <label htmlFor="socso-enabled" className="text-sm">SOCSO enabled</label>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input id="eis-enabled" type="checkbox" checked={editEisEnabled} onChange={(e) => setEditEisEnabled(e.target.checked)} />
-                    <label htmlFor="eis-enabled" className="text-sm">EIS enabled</label>
+                  <div className="text-xs text-gray-500">
+                    These flags must be respected by your payroll functions (statutory recalc + absent deductions).
                   </div>
                 </div>
               </Section>
 
+              {/* Personal */}
               <Section title="Personal information">
                 <Grid2>
                   <Text label="Full name" value={model.full_name ?? model.name ?? ''} onChange={(v) => setModel((m) => ({ ...m!, full_name: v }))} />
@@ -590,6 +597,23 @@ export default function EmployeesPage() {
                   <Text label="Phone" value={model.phone ?? ''} onChange={(v) => setModel((m) => ({ ...m!, phone: v }))} />
                   <Text label="Address" value={model.address ?? ''} onChange={(v) => setModel((m) => ({ ...m!, address: v }))} />
                 </Grid2>
+              </Section>
+
+              <Section title="Emergency contact">
+                <Grid3>
+                  <Text label="Name" value={model.emergency_name ?? ''} onChange={(v) => setModel((m) => ({ ...m!, emergency_name: v }))} />
+                  <Text label="Phone" value={model.emergency_phone ?? ''} onChange={(v) => setModel((m) => ({ ...m!, emergency_phone: v }))} />
+                  <Text label="Relationship" value={model.emergency_relationship ?? ''} onChange={(v) => setModel((m) => ({ ...m!, emergency_relationship: v }))} />
+                </Grid3>
+              </Section>
+
+              <Section title="Salary payment">
+                <Grid3>
+                  <Select label="Method" value={model.salary_payment_method ?? ''} onChange={(v) => setModel((m) => ({ ...m!, salary_payment_method: (v || null) as any }))} options={['Cheque', 'Bank Transfer', 'Cash']} />
+                  <Text label="Bank name" value={model.bank_name ?? ''} onChange={(v) => setModel((m) => ({ ...m!, bank_name: v }))} />
+                  <Text label="Account holder" value={model.bank_account_name ?? ''} onChange={(v) => setModel((m) => ({ ...m!, bank_account_name: v }))} />
+                  <Text label="Account no." value={model.bank_account_no ?? ''} onChange={(v) => setModel((m) => ({ ...m!, bank_account_no: v }))} />
+                </Grid3>
               </Section>
 
               <Section title="Employment">
@@ -612,7 +636,11 @@ export default function EmployeesPage() {
                 <button className="rounded border px-3 py-2" onClick={closeEditor} disabled={saving}>
                   Cancel
                 </button>
-                <button className="rounded bg-sky-600 px-3 py-2 text-white hover:bg-sky-700 disabled:opacity-50" onClick={save} disabled={saving}>
+                <button
+                  className="rounded bg-sky-600 px-3 py-2 text-white hover:bg-sky-700 disabled:opacity-50"
+                  onClick={save}
+                  disabled={saving}
+                >
                   {saving ? 'Saving…' : 'Save'}
                 </button>
               </div>
@@ -621,6 +649,7 @@ export default function EmployeesPage() {
         </div>
       )}
 
+      {/* ---------- ADD DRAWER ---------- */}
       {addOpen && (
         <div className="fixed inset-0 z-40 bg-black/40" onClick={(e) => e.target === e.currentTarget && setAddOpen(false)}>
           <div className="absolute right-0 top-0 h-full w-[min(560px,92vw)] overflow-y-auto bg-white shadow-xl">
@@ -641,10 +670,69 @@ export default function EmployeesPage() {
                   <Select label="Position" value={newEmp.position} onChange={(v) => setNewEmp((e) => ({ ...e, position: v }))} options={POSITION_OPTIONS} />
                   <DateInput label="Start date" value={newEmp.start_date} onChange={(v) => setNewEmp((e) => ({ ...e, start_date: v }))} />
                   <Money label="Basic salary" value={Number(newEmp.basic_salary)} onChange={(v) => setNewEmp((e) => ({ ...e, basic_salary: String(v) }))} />
+
                   <div className="flex items-center gap-2">
                     <input id="new-is-admin" type="checkbox" checked={newEmp.is_admin} onChange={(e) => setNewEmp((s) => ({ ...s, is_admin: e.target.checked }))} />
                     <label htmlFor="new-is-admin" className="text-sm">
                       Set as admin
+                    </label>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input id="new-archived" type="checkbox" checked={newEmp.archived} onChange={(e) => setNewEmp((s) => ({ ...s, archived: e.target.checked }))} />
+                    <label htmlFor="new-archived" className="text-sm">
+                      Archived / Resigned
+                    </label>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="new-include-payroll"
+                      type="checkbox"
+                      checked={newEmp.include_in_payroll}
+                      onChange={(e) => setNewEmp((s) => ({ ...s, include_in_payroll: e.target.checked }))}
+                    />
+                    <label htmlFor="new-include-payroll" className="text-sm">
+                      Include in payroll page
+                    </label>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="new-salary-att"
+                      type="checkbox"
+                      checked={newEmp.salary_based_on_attendance}
+                      onChange={(e) => setNewEmp((s) => ({ ...s, salary_based_on_attendance: e.target.checked }))}
+                    />
+                    <label htmlFor="new-salary-att" className="text-sm">
+                      Salary based on attendance
+                    </label>
+                  </div>
+
+                  <div className="md:col-span-2 grid gap-2 md:grid-cols-3">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={newEmp.epf_enabled}
+                        onChange={(e) => setNewEmp((s) => ({ ...s, epf_enabled: e.target.checked }))}
+                      />
+                      EPF enabled
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={newEmp.socso_enabled}
+                        onChange={(e) => setNewEmp((s) => ({ ...s, socso_enabled: e.target.checked }))}
+                      />
+                      SOCSO enabled
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={newEmp.eis_enabled}
+                        onChange={(e) => setNewEmp((s) => ({ ...s, eis_enabled: e.target.checked }))}
+                      />
+                      EIS enabled
                     </label>
                   </div>
                 </Grid2>
@@ -654,7 +742,11 @@ export default function EmployeesPage() {
                 <button className="rounded border px-3 py-2" onClick={() => setAddOpen(false)} disabled={adding}>
                   Cancel
                 </button>
-                <button className="rounded bg-emerald-600 px-3 py-2 text-white hover:bg-emerald-700 disabled:opacity-50" onClick={createEmployee} disabled={adding}>
+                <button
+                  className="rounded bg-emerald-600 px-3 py-2 text-white hover:bg-emerald-700 disabled:opacity-50"
+                  onClick={createEmployee}
+                  disabled={adding}
+                >
                   {adding ? 'Adding…' : 'Add employee'}
                 </button>
               </div>
@@ -667,6 +759,13 @@ export default function EmployeesPage() {
 }
 
 /* ---------- tiny UI helpers ---------- */
+function emptyToNull(v: any) {
+  return v === '' ? null : v;
+}
+function num(v: any): number {
+  return typeof v === 'number' ? v : v ? Number(v) : 0;
+}
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="rounded border bg-white">
