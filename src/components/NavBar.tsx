@@ -37,6 +37,7 @@ export default function NavBar() {
     const { data } = supabase.auth.onAuthStateChange((_e, session) => {
       const userEmail = session?.user?.email ?? null;
       setEmail(userEmail);
+
       if (userEmail) {
         supabase.rpc('is_admin').then(({ data, error }) => {
           setIsAdmin(Boolean(data) && !error);
@@ -45,8 +46,8 @@ export default function NavBar() {
         setIsAdmin(false);
       }
     });
-    unsub = data?.subscription ?? null;
 
+    unsub = data?.subscription ?? null;
     return () => unsub?.unsubscribe();
   }, []);
 
@@ -63,12 +64,15 @@ export default function NavBar() {
 
   const linkClass = (href: string) =>
     `inline-flex items-center rounded-md px-3 py-1.5 text-sm font-medium transition
-     ${isActive(href)
-       ? 'bg-gray-900 text-white'
-       : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'}`;
+     ${
+       isActive(href)
+         ? 'bg-gray-900 text-white'
+         : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
+     }`;
 
   return (
-    <nav className="sticky top-0 z-40 w-full border-b border-gray-200 bg-white/90 backdrop-blur">
+    // ✅ KEY FIX: hide NavBar when printing (payslip page already has @media print for .no-print)
+    <nav className="no-print sticky top-0 z-40 w-full border-b border-gray-200 bg-white/90 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
         {/* Left: brand + primary links */}
         <div className="flex items-center gap-1 sm:gap-2">
@@ -84,21 +88,33 @@ export default function NavBar() {
 
           {/* Primary links */}
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-            <Link href="/" className={linkClass('/')}>Check-in</Link>
-            <Link href="/today" className={linkClass('/today')}>Today</Link>
-            <Link href="/report" className={linkClass('/report')}>Report</Link>
-            {/* Removed: Manager */}
-            <Link href="/offday" className={linkClass('/offday')}>Offday/MC</Link>
+            <Link href="/" className={linkClass('/')}>
+              Check-in
+            </Link>
+            <Link href="/today" className={linkClass('/today')}>
+              Today
+            </Link>
+            <Link href="/report" className={linkClass('/report')}>
+              Report
+            </Link>
+            <Link href="/offday" className={linkClass('/offday')}>
+              Offday/MC
+            </Link>
 
-            {/* Admin-only payroll links (old Payroll removed) */}
             {isAdmin && (
               <>
-                <Link href="/payroll/records" className={linkClass('/payroll/records')}>Payroll Records</Link>
-                <Link href="/payroll/v2" className={linkClass('/payroll/v2')}>Payroll v2</Link>
+                <Link href="/payroll/records" className={linkClass('/payroll/records')}>
+                  Payroll Records
+                </Link>
+                <Link href="/payroll/v2" className={linkClass('/payroll/v2')}>
+                  Payroll v2
+                </Link>
               </>
             )}
 
-            <Link href="/employees" className={linkClass('/employees')}>Employees</Link>
+            <Link href="/employees" className={linkClass('/employees')}>
+              Employees
+            </Link>
           </div>
         </div>
 
