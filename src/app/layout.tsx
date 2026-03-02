@@ -1,7 +1,9 @@
 export const dynamic = 'force-dynamic';
+
 import './globals.css';
 import NavBar from '@/components/NavBar';
 import Container from '@/components/Container';
+import RouteKeyed from '@/components/RouteKeyed';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -10,7 +12,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <NavBar />
         <main>
           <Container>
-            {children}
+            <RouteKeyed>{children}</RouteKeyed>
           </Container>
         </main>
       </body>
