@@ -262,14 +262,55 @@ export default function PayslipPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-4">
       <style>{`
-        @media print {
-          .no-print { display: none !important; }
-          body { background: white !important; }
-        }
-        .sheet { max-width: 900px; margin: 0 auto; }
-        .card { background: white; border: 1px solid #e5e7eb; border-radius: 10px; padding: 18px; }
-        .mono { font-variant-numeric: tabular-nums; }
-      `}</style>
+  /* screen: keep normal */
+  .payslip-sheet{
+    max-width: 720px;
+    margin: 0 auto;
+    background: white;
+  }
+
+  /* print: A5 */
+  @media print {
+    @page {
+      size: A5 portrait;
+      margin: 8mm;
+    }
+
+    /* kill any browser-added spacing */
+    html, body {
+      width: 100%;
+      height: auto;
+      margin: 0 !important;
+      padding: 0 !important;
+      background: #fff !important;
+    }
+
+    /* hide UI */
+    .no-print { display: none !important; }
+
+    /* ensure A5-friendly layout */
+    .payslip-sheet {
+      max-width: none !important;
+      margin: 0 !important;
+      border: none !important;
+      box-shadow: none !important;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    /* optional: slightly smaller fonts so it fits nicely on A5 */
+    .payslip-sheet, .payslip-sheet * {
+      font-size: 11px !important;
+      line-height: 1.25 !important;
+    }
+
+    /* prevent tables from splitting badly */
+    table, tr, td, th {
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+    }
+  }
+`}</style>
 
       <div className="sheet">
         {/* Top bar */}
