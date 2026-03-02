@@ -46,7 +46,7 @@ type StaffFull = {
   eis_no: string | null;
 
   basic_salary: number | null;
-  is_admin?: boolean | null; // single source of truth
+  is_admin?: boolean | null;
 };
 
 type NewEmployee = {
@@ -58,7 +58,6 @@ type NewEmployee = {
   is_admin: boolean;
 };
 
-/* Add Temporary + Trainer so exemptions can kick in */
 const POSITION_OPTIONS = ['Manager', 'Supervisor', 'Mechanic', 'Admin', 'Temporary', 'Trainer'];
 
 function rm(n?: number | null) {
@@ -80,13 +79,13 @@ export default function EmployeesPage() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  // admin flag for the user being edited
   const [editIsAdmin, setEditIsAdmin] = useState<boolean>(false);
 
-  // add-employee drawer
+  // add employee drawer
   const [addOpen, setAddOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [addMsg, setAddMsg] = useState<string | null>(null);
+
   const today = new Date().toISOString().slice(0, 10);
   const [newEmp, setNewEmp] = useState<NewEmployee>({
     email: '',
@@ -97,7 +96,7 @@ export default function EmployeesPage() {
     is_admin: false,
   });
 
-  // auth + admin gate
+  // Auth + admin gate
   useEffect(() => {
     let cleanup: (() => void) | undefined;
 
@@ -107,11 +106,9 @@ export default function EmployeesPage() {
       setAuthed(ok);
 
       if (ok) {
-        const { data: adminFlag, error } = await supabase.rpc('is_admin');
-        const adminOk = !error && adminFlag === true;
+        const { data: adminFlag } = await supabase.rpc('is_admin');
+        const adminOk = adminFlag === true;
         setIsAdmin(adminOk);
-
-        // Block non-admin access to Employees page
         if (!adminOk) {
           window.location.href = '/';
           return;
@@ -124,10 +121,9 @@ export default function EmployeesPage() {
         setAuthed(ok2);
 
         if (ok2) {
-          const { data: adminFlag, error } = await supabase.rpc('is_admin');
-          const adminOk = !error && adminFlag === true;
+          const { data: adminFlag } = await supabase.rpc('is_admin');
+          const adminOk = adminFlag === true;
           setIsAdmin(adminOk);
-
           if (!adminOk) {
             window.location.href = '/';
             return;
@@ -147,7 +143,7 @@ export default function EmployeesPage() {
     setLoading(true);
     setMsg(null);
 
-    // Admin-only list via RPC (view is revoked from authenticated)
+    // ✅ Admin list via RPC (view is revoked from authenticated)
     const { data, error } = await supabase.rpc('get_staff_brief_active');
 
     if (error) {
@@ -174,16 +170,16 @@ export default function EmployeesPage() {
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
     if (!term) return rows;
-    return rows.filter((r) =>
-      (r.display_name ?? '').toLowerCase().includes(term) ||
-      r.email.toLowerCase().includes(term) ||
-      (r.position ?? '').toLowerCase().includes(term)
+    return rows.filter(
+      (r) =>
+        (r.display_name ?? '').toLowerCase().includes(term) ||
+        r.email.toLowerCase().includes(term) ||
+        (r.position ?? '').toLowerCase().includes(term)
     );
   }, [rows, q]);
 
   const openEditor = async (email: string) => {
     if (!isAdmin) return;
-
     setMsg(null);
     setOpenEmail(email);
 
@@ -238,14 +234,9 @@ export default function EmployeesPage() {
         is_admin: editIsAdmin,
       };
 
-      // Save to staff (RLS should enforce admin)
-      const { error: upErr } = await supabase
-        .from('staff')
-        .update(payload)
-        .eq('email', model.email);
+      const { error: upErr } = await supabase.from('staff').update(payload).eq('email', model.email);
       if (upErr) throw upErr;
 
-      // Find latest OPEN period
       const { data: period, error: perErr } = await supabase
         .schema('pay_v2')
         .from('periods')
@@ -257,7 +248,6 @@ export default function EmployeesPage() {
         .maybeSingle();
       if (perErr) throw perErr;
 
-      // Sync Base + Recalc (respect archive & temporary exemptions)
       if (period?.year && period?.month) {
         const s1 = await supabase.schema('pay_v2').rpc('sync_base_items_respect_archive', {
           p_year: period.year,
@@ -281,18 +271,10 @@ export default function EmployeesPage() {
     }
   };
 
-  // ------- Add employee -------
   const openAdd = () => {
     if (!isAdmin) return;
     setAddMsg(null);
-    setNewEmp({
-      email: '',
-      full_name: '',
-      position: '',
-      start_date: today,
-      basic_salary: '0.00',
-      is_admin: false,
-    });
+    setNewEmp({ email: '', full_name: '', position: '', start_date: today, basic_salary: '0.00', is_admin: false });
     setAddOpen(true);
   };
 
@@ -331,14 +313,9 @@ export default function EmployeesPage() {
         is_admin: !!newEmp.is_admin,
       };
 
-      const res = await supabase
-        .from('staff')
-        .upsert(payload, { onConflict: 'email' })
-        .select('email')
-        .maybeSingle();
+      const res = await supabase.from('staff').upsert(payload, { onConflict: 'email' }).select('email').maybeSingle();
       if (res.error) throw res.error;
 
-      // Sync Base + Recalc (respect archive & temporary exemptions)
       const { data: per, error: perErr } = await supabase
         .schema('pay_v2')
         .from('periods')
@@ -381,14 +358,8 @@ export default function EmployeesPage() {
     setMsg(null);
   }
 
-  if (authed === false) {
-    return <main className="mx-auto max-w-6xl p-6">Please sign in.</main>;
-  }
-
-  // While checking admin, avoid flashing content
-  if (authed === null || (authed && !isAdmin)) {
-    return <main className="mx-auto max-w-6xl p-6">Loading…</main>;
-  }
+  if (authed === false) return <main className="mx-auto max-w-6xl p-6">Please sign in.</main>;
+  if (authed === null || (authed && !isAdmin)) return <main className="mx-auto max-w-6xl p-6">Loading…</main>;
 
   return (
     <main className="mx-auto max-w-7xl p-6">
@@ -401,21 +372,13 @@ export default function EmployeesPage() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
-          <button
-            className="rounded bg-emerald-600 px-3 py-2 text-white hover:bg-emerald-700"
-            onClick={openAdd}
-            title="Add new employee"
-          >
+          <button className="rounded bg-emerald-600 px-3 py-2 text-white hover:bg-emerald-700" onClick={openAdd}>
             + Add employee
           </button>
         </div>
       </header>
 
-      {msg && (
-        <div className="mb-3 rounded border border-sky-200 bg-sky-50 p-2 text-sm text-sky-800">
-          {msg}
-        </div>
-      )}
+      {msg && <div className="mb-3 rounded border border-sky-200 bg-sky-50 p-2 text-sm text-sky-800">{msg}</div>}
 
       <section className="overflow-x-auto">
         {loading ? (
@@ -436,24 +399,16 @@ export default function EmployeesPage() {
               {filtered.map((r) => (
                 <tr key={r.email} className="hover:bg-gray-50">
                   <td className="border-b px-3 py-2">
-                    <button
-                      className="text-sky-700 hover:underline"
-                      onClick={() => openEditor(r.email)}
-                    >
+                    <button className="text-sky-700 hover:underline" onClick={() => openEditor(r.email)}>
                       {r.display_name ?? r.email}
                     </button>
                   </td>
                   <td className="border-b px-3 py-2">{r.email}</td>
                   <td className="border-b px-3 py-2 text-right">{rm(r.salary_basic)}</td>
                   <td className="border-b px-3 py-2">{r.position ?? '—'}</td>
-                  <td className="border-b px-3 py-2">
-                    {r.year_join ?? (r.start_date?.slice(0, 4) ?? '—')}
-                  </td>
+                  <td className="border-b px-3 py-2">{r.year_join ?? (r.start_date?.slice(0, 4) ?? '—')}</td>
                   <td className="border-b px-3 py-2 text-right">
-                    <button
-                      className="rounded border px-3 py-1.5 hover:bg-gray-50"
-                      onClick={() => openEditor(r.email)}
-                    >
+                    <button className="rounded border px-3 py-1.5 hover:bg-gray-50" onClick={() => openEditor(r.email)}>
                       Edit
                     </button>
                   </td>
@@ -471,14 +426,8 @@ export default function EmployeesPage() {
         )}
       </section>
 
-      {/* Drawer / Modal editor */}
       {openEmail && model && (
-        <div
-          className="fixed inset-0 z-40 bg-black/40"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) closeEditor();
-          }}
-        >
+        <div className="fixed inset-0 z-40 bg-black/40" onClick={(e) => e.target === e.currentTarget && closeEditor()}>
           <div className="absolute right-0 top-0 h-full w-[min(720px,92vw)] overflow-y-auto bg-white shadow-xl">
             <div className="flex items-center justify-between border-b px-4 py-3">
               <div className="font-semibold">Edit employee — {model.email}</div>
@@ -488,186 +437,65 @@ export default function EmployeesPage() {
             </div>
 
             <div className="grid gap-6 p-4">
-              {/* Access controls */}
               <Section title="Access">
                 <div className="flex items-center gap-2">
-                  <input
-                    id="admin-flag"
-                    type="checkbox"
-                    checked={editIsAdmin}
-                    onChange={(e) => setEditIsAdmin(e.target.checked)}
-                  />
+                  <input id="admin-flag" type="checkbox" checked={editIsAdmin} onChange={(e) => setEditIsAdmin(e.target.checked)} />
                   <label htmlFor="admin-flag" className="text-sm">
                     Admin (can manage payroll, periods, employees)
                   </label>
                 </div>
               </Section>
 
-              {/* Personal */}
               <Section title="Personal information">
                 <Grid2>
-                  <Text
-                    label="Full name"
-                    value={model.full_name ?? model.name ?? ''}
-                    onChange={(v) => setModel((m) => ({ ...m!, full_name: v }))}
-                  />
-                  <Text
-                    label="Nationality"
-                    value={model.nationality ?? ''}
-                    onChange={(v) => setModel((m) => ({ ...m!, nationality: v }))}
-                  />
-                  <Text
-                    label="NRIC"
-                    value={model.nric ?? ''}
-                    onChange={(v) => setModel((m) => ({ ...m!, nric: v }))}
-                  />
-                  <DateInput
-                    label="Date of birth"
-                    value={model.dob ?? ''}
-                    onChange={(v) => setModel((m) => ({ ...m!, dob: v }))}
-                  />
-                  <Select
-                    label="Gender"
-                    value={model.gender ?? ''}
-                    onChange={(v) => setModel((m) => ({ ...m!, gender: (v || null) as any }))}
-                    options={['Male', 'Female']}
-                  />
-                  <Select
-                    label="Race"
-                    value={model.race ?? ''}
-                    onChange={(v) => setModel((m) => ({ ...m!, race: (v || null) as any }))}
-                    options={['Malay', 'Chinese', 'Indian', 'Other']}
-                  />
-                  <Select
-                    label="Ability status"
-                    value={model.ability_status ?? ''}
-                    onChange={(v) =>
-                      setModel((m) => ({ ...m!, ability_status: (v || null) as any }))
-                    }
-                    options={['Non-disabled', 'Disabled']}
-                  />
-                  <Select
-                    label="Marital status"
-                    value={model.marital_status ?? ''}
-                    onChange={(v) =>
-                      setModel((m) => ({ ...m!, marital_status: (v || null) as any }))
-                    }
-                    options={['Single', 'Married', 'Divorced/Widowed']}
-                  />
+                  <Text label="Full name" value={model.full_name ?? model.name ?? ''} onChange={(v) => setModel((m) => ({ ...m!, full_name: v }))} />
+                  <Text label="Nationality" value={model.nationality ?? ''} onChange={(v) => setModel((m) => ({ ...m!, nationality: v }))} />
+                  <Text label="NRIC" value={model.nric ?? ''} onChange={(v) => setModel((m) => ({ ...m!, nric: v }))} />
+                  <DateInput label="Date of birth" value={model.dob ?? ''} onChange={(v) => setModel((m) => ({ ...m!, dob: v }))} />
+                  <Select label="Gender" value={model.gender ?? ''} onChange={(v) => setModel((m) => ({ ...m!, gender: (v || null) as any }))} options={['Male', 'Female']} />
+                  <Select label="Race" value={model.race ?? ''} onChange={(v) => setModel((m) => ({ ...m!, race: (v || null) as any }))} options={['Malay', 'Chinese', 'Indian', 'Other']} />
+                  <Select label="Ability status" value={model.ability_status ?? ''} onChange={(v) => setModel((m) => ({ ...m!, ability_status: (v || null) as any }))} options={['Non-disabled', 'Disabled']} />
+                  <Select label="Marital status" value={model.marital_status ?? ''} onChange={(v) => setModel((m) => ({ ...m!, marital_status: (v || null) as any }))} options={['Single', 'Married', 'Divorced/Widowed']} />
                 </Grid2>
               </Section>
 
-              {/* Contact */}
               <Section title="Contact">
                 <Grid2>
-                  <Text
-                    label="Phone"
-                    value={model.phone ?? ''}
-                    onChange={(v) => setModel((m) => ({ ...m!, phone: v }))}
-                  />
-                  <Text
-                    label="Address"
-                    value={model.address ?? ''}
-                    onChange={(v) => setModel((m) => ({ ...m!, address: v }))}
-                  />
+                  <Text label="Phone" value={model.phone ?? ''} onChange={(v) => setModel((m) => ({ ...m!, phone: v }))} />
+                  <Text label="Address" value={model.address ?? ''} onChange={(v) => setModel((m) => ({ ...m!, address: v }))} />
                 </Grid2>
               </Section>
 
-              {/* Emergency */}
               <Section title="Emergency contact">
                 <Grid3>
-                  <Text
-                    label="Name"
-                    value={model.emergency_name ?? ''}
-                    onChange={(v) => setModel((m) => ({ ...m!, emergency_name: v }))}
-                  />
-                  <Text
-                    label="Phone"
-                    value={model.emergency_phone ?? ''}
-                    onChange={(v) => setModel((m) => ({ ...m!, emergency_phone: v }))}
-                  />
-                  <Text
-                    label="Relationship"
-                    value={model.emergency_relationship ?? ''}
-                    onChange={(v) =>
-                      setModel((m) => ({ ...m!, emergency_relationship: v }))
-                    }
-                  />
+                  <Text label="Name" value={model.emergency_name ?? ''} onChange={(v) => setModel((m) => ({ ...m!, emergency_name: v }))} />
+                  <Text label="Phone" value={model.emergency_phone ?? ''} onChange={(v) => setModel((m) => ({ ...m!, emergency_phone: v }))} />
+                  <Text label="Relationship" value={model.emergency_relationship ?? ''} onChange={(v) => setModel((m) => ({ ...m!, emergency_relationship: v }))} />
                 </Grid3>
               </Section>
 
-              {/* Payment */}
               <Section title="Salary payment">
                 <Grid3>
-                  <Select
-                    label="Method"
-                    value={model.salary_payment_method ?? ''}
-                    onChange={(v) =>
-                      setModel((m) => ({
-                        ...m!,
-                        salary_payment_method: (v || null) as any,
-                      }))
-                    }
-                    options={['Cheque', 'Bank Transfer', 'Cash']}
-                  />
-                  <Text
-                    label="Bank name"
-                    value={model.bank_name ?? ''}
-                    onChange={(v) => setModel((m) => ({ ...m!, bank_name: v }))}
-                  />
-                  <Text
-                    label="Account holder"
-                    value={model.bank_account_name ?? ''}
-                    onChange={(v) => setModel((m) => ({ ...m!, bank_account_name: v }))}
-                  />
-                  <Text
-                    label="Account no."
-                    value={model.bank_account_no ?? ''}
-                    onChange={(v) => setModel((m) => ({ ...m!, bank_account_no: v }))}
-                  />
+                  <Select label="Method" value={model.salary_payment_method ?? ''} onChange={(v) => setModel((m) => ({ ...m!, salary_payment_method: (v || null) as any }))} options={['Cheque', 'Bank Transfer', 'Cash']} />
+                  <Text label="Bank name" value={model.bank_name ?? ''} onChange={(v) => setModel((m) => ({ ...m!, bank_name: v }))} />
+                  <Text label="Account holder" value={model.bank_account_name ?? ''} onChange={(v) => setModel((m) => ({ ...m!, bank_account_name: v }))} />
+                  <Text label="Account no." value={model.bank_account_no ?? ''} onChange={(v) => setModel((m) => ({ ...m!, bank_account_no: v }))} />
                 </Grid3>
               </Section>
 
-              {/* Employment */}
               <Section title="Employment">
                 <Grid3>
-                  <Select
-                    label="Position"
-                    value={model.position ?? ''}
-                    onChange={(v) => setModel((m) => ({ ...m!, position: v }))}
-                    options={POSITION_OPTIONS}
-                  />
-                  <DateInput
-                    label="Start date"
-                    value={model.start_date ?? ''}
-                    onChange={(v) => setModel((m) => ({ ...m!, start_date: v }))}
-                  />
-                  <Money
-                    label="Basic salary"
-                    value={num(model.basic_salary)}
-                    onChange={(v) => setModel((m) => ({ ...m!, basic_salary: v }))}
-                  />
+                  <Select label="Position" value={model.position ?? ''} onChange={(v) => setModel((m) => ({ ...m!, position: v }))} options={POSITION_OPTIONS} />
+                  <DateInput label="Start date" value={model.start_date ?? ''} onChange={(v) => setModel((m) => ({ ...m!, start_date: v }))} />
+                  <Money label="Basic salary" value={num(model.basic_salary)} onChange={(v) => setModel((m) => ({ ...m!, basic_salary: v }))} />
                 </Grid3>
               </Section>
 
-              {/* Statutory IDs */}
               <Section title="Statutory IDs">
                 <Grid3>
-                  <Text
-                    label="EPF No"
-                    value={model.epf_no ?? ''}
-                    onChange={(v) => setModel((m) => ({ ...m!, epf_no: v }))}
-                  />
-                  <Text
-                    label="SOCSO No"
-                    value={model.socso_no ?? ''}
-                    onChange={(v) => setModel((m) => ({ ...m!, socso_no: v }))}
-                  />
-                  <Text
-                    label="EIS No"
-                    value={model.eis_no ?? ''}
-                    onChange={(v) => setModel((m) => ({ ...m!, eis_no: v }))}
-                  />
+                  <Text label="EPF No" value={model.epf_no ?? ''} onChange={(v) => setModel((m) => ({ ...m!, epf_no: v }))} />
+                  <Text label="SOCSO No" value={model.socso_no ?? ''} onChange={(v) => setModel((m) => ({ ...m!, socso_no: v }))} />
+                  <Text label="EIS No" value={model.eis_no ?? ''} onChange={(v) => setModel((m) => ({ ...m!, eis_no: v }))} />
                 </Grid3>
               </Section>
 
@@ -675,11 +503,7 @@ export default function EmployeesPage() {
                 <button className="rounded border px-3 py-2" onClick={closeEditor} disabled={saving}>
                   Cancel
                 </button>
-                <button
-                  className="rounded bg-sky-600 px-3 py-2 text-white hover:bg-sky-700 disabled:opacity-50"
-                  onClick={save}
-                  disabled={saving}
-                >
+                <button className="rounded bg-sky-600 px-3 py-2 text-white hover:bg-sky-700 disabled:opacity-50" onClick={save} disabled={saving}>
                   {saving ? 'Saving…' : 'Save'}
                 </button>
               </div>
@@ -688,14 +512,8 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* Add Employee drawer */}
       {addOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/40"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setAddOpen(false);
-          }}
-        >
+        <div className="fixed inset-0 z-40 bg-black/40" onClick={(e) => e.target === e.currentTarget && setAddOpen(false)}>
           <div className="absolute right-0 top-0 h-full w-[min(560px,92vw)] overflow-y-auto bg-white shadow-xl">
             <div className="flex items-center justify-between border-b px-4 py-3">
               <div className="font-semibold">Add employee</div>
@@ -705,47 +523,17 @@ export default function EmployeesPage() {
             </div>
 
             <div className="grid gap-6 p-4">
-              {addMsg && (
-                <div className="rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">
-                  {addMsg}
-                </div>
-              )}
+              {addMsg && <div className="rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">{addMsg}</div>}
 
               <Section title="Basic details">
                 <Grid2>
-                  <Text
-                    label="Email"
-                    value={newEmp.email}
-                    onChange={(v) => setNewEmp((e) => ({ ...e, email: v.toLowerCase() }))}
-                  />
-                  <Text
-                    label="Full name"
-                    value={newEmp.full_name}
-                    onChange={(v) => setNewEmp((e) => ({ ...e, full_name: v }))}
-                  />
-                  <Select
-                    label="Position"
-                    value={newEmp.position}
-                    onChange={(v) => setNewEmp((e) => ({ ...e, position: v }))}
-                    options={POSITION_OPTIONS}
-                  />
-                  <DateInput
-                    label="Start date"
-                    value={newEmp.start_date}
-                    onChange={(v) => setNewEmp((e) => ({ ...e, start_date: v }))}
-                  />
-                  <Money
-                    label="Basic salary"
-                    value={Number(newEmp.basic_salary)}
-                    onChange={(v) => setNewEmp((e) => ({ ...e, basic_salary: String(v) }))}
-                  />
+                  <Text label="Email" value={newEmp.email} onChange={(v) => setNewEmp((e) => ({ ...e, email: v.toLowerCase() }))} />
+                  <Text label="Full name" value={newEmp.full_name} onChange={(v) => setNewEmp((e) => ({ ...e, full_name: v }))} />
+                  <Select label="Position" value={newEmp.position} onChange={(v) => setNewEmp((e) => ({ ...e, position: v }))} options={POSITION_OPTIONS} />
+                  <DateInput label="Start date" value={newEmp.start_date} onChange={(v) => setNewEmp((e) => ({ ...e, start_date: v }))} />
+                  <Money label="Basic salary" value={Number(newEmp.basic_salary)} onChange={(v) => setNewEmp((e) => ({ ...e, basic_salary: String(v) }))} />
                   <div className="flex items-center gap-2">
-                    <input
-                      id="new-is-admin"
-                      type="checkbox"
-                      checked={newEmp.is_admin}
-                      onChange={(e) => setNewEmp((s) => ({ ...s, is_admin: e.target.checked }))}
-                    />
+                    <input id="new-is-admin" type="checkbox" checked={newEmp.is_admin} onChange={(e) => setNewEmp((s) => ({ ...s, is_admin: e.target.checked }))} />
                     <label htmlFor="new-is-admin" className="text-sm">
                       Set as admin
                     </label>
@@ -757,11 +545,7 @@ export default function EmployeesPage() {
                 <button className="rounded border px-3 py-2" onClick={() => setAddOpen(false)} disabled={adding}>
                   Cancel
                 </button>
-                <button
-                  className="rounded bg-emerald-600 px-3 py-2 text-white hover:bg-emerald-700 disabled:opacity-50"
-                  onClick={createEmployee}
-                  disabled={adding}
-                >
+                <button className="rounded bg-emerald-600 px-3 py-2 text-white hover:bg-emerald-700 disabled:opacity-50" onClick={createEmployee} disabled={adding}>
                   {adding ? 'Adding…' : 'Add employee'}
                 </button>
               </div>
@@ -807,26 +591,11 @@ function DateInput({ label, value, onChange }: { label: string; value: string; o
   return (
     <div>
       <label className="mb-1 block text-xs text-gray-600">{label}</label>
-      <input
-        type="date"
-        className="w-full rounded border px-2 py-1"
-        value={value || ''}
-        onChange={(e) => onChange(e.target.value)}
-      />
+      <input type="date" className="w-full rounded border px-2 py-1" value={value || ''} onChange={(e) => onChange(e.target.value)} />
     </div>
   );
 }
-function Select({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: string[];
-  onChange: (v: string) => void;
-}) {
+function Select({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) {
   return (
     <div>
       <label className="mb-1 block text-xs text-gray-600">{label}</label>
