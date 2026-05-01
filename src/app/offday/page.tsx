@@ -214,7 +214,7 @@ export default function OffdayPage() {
                                   <p className="mb-3">{authError}</p>p>
                                   <button
                                                 className="rounded border border-red-300 px-3 py-1.5 text-sm hover:bg-red-100"
-                                                onClick={() => { setAuthError(''); setAuthChecked(false); window.location.reload(); }}
+                                                onClick={() => window.location.reload()}
                                               >
                                               Retry
                                   </button>button>
