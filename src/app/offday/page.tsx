@@ -212,7 +212,8 @@ export default function OffdayPage() {
                 <main className="mx-auto max-w-4xl p-6">
                         <div className="rounded border border-red-200 bg-red-50 p-4 text-sm text-red-700">
                                   <p className="font-semibold mb-2">Failed to load page</p>
-                                  <p className="mb-3">{authError}</p>
+                                  <p className="mb-3">{authError}
+</p>
                                   <button
                                                 className="rounded border border-red-300 px-3 py-1.5 text-sm hover:bg-red-100"
                                                 onClick={() => window.location.reload()}
@@ -270,8 +271,10 @@ export default function OffdayPage() {
                                   </div>
                         </div>
                         <div className="mt-3 flex gap-2">
-                                  <button className={btn} disabled={working} onClick={saveRange}>{working ? 'Working…' : 'Save'}</button>
-                                  <button className={btn} disabled={working} onClick={clearRange}>{working ? 'Working…' : 'Clear'}</button>
+                                  <button className={btn} disabled={working} onClick={saveRange}>{working ? 'Working…' : 'Save'}
+</button>
+                                  <button className={btn} disabled={working} onClick={clearRange}>{working ? 'Working…' : 'Clear'}
+</button>
                         </div>
                         <div className="mt-2 text-xs text-gray-500">
                                   Tip: Use <b>All staff</b> + <b>OFFDAY</b> for public holidays. Range is limited to 60 days for safety.
@@ -313,11 +316,16 @@ export default function OffdayPage() {
                                             const s = staffMap.get((r.staff_email || '').toLowerCase());
                                             return (
                                                                 <tr key={`${r.day}-${r.staff_email}`} className="odd:bg-white even:bg-gray-50">
-                                                                                    <td className="px-3 py-2">{r.day}</td>
-                                                                                    <td className="px-3 py-2">{s?.name ?? '—'}</td>
-                                                                                    <td className="px-3 py-2">{r.staff_email}</td>
-                                                                                    <td className="px-3 py-2 font-medium">{r.status}</td>
-                                                                                    <td className="px-3 py-2">{r.note ?? '—'}</td>
+                                                                                    <td className="px-3 py-2">{r.day}
+</td>
+                                                                                    <td className="px-3 py-2">{s?.name ?? '—'}
+</td>
+                                                                                    <td className="px-3 py-2">{r.staff_email}
+</td>
+                                                                                    <td className="px-3 py-2 font-medium">{r.status}
+</td>
+                                                                                    <td className="px-3 py-2">{r.note ?? '—'}
+</td>
                                                                 </tr>
                                                               );
                           })
@@ -327,4 +335,4 @@ export default function OffdayPage() {
                 </div>
           </main>
         );
-}</main>
+}
