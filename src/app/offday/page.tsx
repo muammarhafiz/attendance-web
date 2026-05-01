@@ -210,22 +210,22 @@ export default function OffdayPage() {
         return (
                 <main className="mx-auto max-w-4xl p-6">
                         <div className="rounded border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                                  <p className="font-semibold mb-2">Failed to load page</p>p>
-                                  <p className="mb-3">{authError}</p>p>
+                                  <p className="font-semibold mb-2">Failed to load page</p>
+                                  <p className="mb-3">{authError}</p>
                                   <button
                                                 className="rounded border border-red-300 px-3 py-1.5 text-sm hover:bg-red-100"
                                                 onClick={() => window.location.reload()}
                                               >
                                               Retry
-                                  </button>button>
-                        </div>div>
-                </main>main>
+                                  </button>
+                        </div>
+                </main>
               );
   }
   
     // Still checking auth
     if (!authChecked) {
-          return <main className="mx-auto max-w-4xl p-6 text-sm text-gray-500">Loading…</main>main>;
+          return <main className="mx-auto max-w-4xl p-6 text-sm text-gray-500">Loading…</main>;
     }
   
     // Auth done but not admin — router.replace already fired, show nothing
@@ -233,97 +233,97 @@ export default function OffdayPage() {
   
     return (
           <main className="mx-auto max-w-5xl p-6">
-                <h1 className="mb-4 text-2xl font-semibold">Offday / MC</h1>h1>
-            {err && <div className="mb-3 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div>div>}
+                <h1 className="mb-4 text-2xl font-semibold">Offday / MC</h1>
+            {err && <div className="mb-3 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div>}
                 <div className="mb-4 rounded border bg-white p-4">
                         <div className="grid gap-3 md:grid-cols-4">
                                   <div>
-                                              <div className="mb-1 text-xs text-gray-600">From</div>div>
+                                              <div className="mb-1 text-xs text-gray-600">From</div>
                                               <input className={input} type="date" value={fromDay} onChange={(e) => setFromDay(e.target.value)} />
-                                  </div>div>
+                                  </div>
                                   <div>
-                                              <div className="mb-1 text-xs text-gray-600">To</div>div>
+                                              <div className="mb-1 text-xs text-gray-600">To</div>
                                               <input className={input} type="date" value={toDay} onChange={(e) => setToDay(e.target.value)} />
-                                  </div>div>
+                                  </div>
                                   <div className="md:col-span-2">
-                                              <div className="mb-1 text-xs text-gray-600">Staff</div>div>
+                                              <div className="mb-1 text-xs text-gray-600">Staff</div>
                                               <select className={input} value={selected} onChange={(e) => setSelected(e.target.value)}>
-                                                            <option value={ALL}>&#x2705; All staff</option>option>
+                                                            <option value={ALL}>&#x2705; All staff</option>
                                                 {staff.filter((s) => !s.archived_at).map((s) => (
-                            <option key={s.email} value={s.email}>{s.name} ({s.email})</option>option>
+                            <option key={s.email} value={s.email}>{s.name} ({s.email})</option>
                           ))}
-                                              </select>select>
-                                  </div>div>
+                                              </select>
+                                  </div>
                                   <div>
-                                              <div className="mb-1 text-xs text-gray-600">Status</div>div>
+                                              <div className="mb-1 text-xs text-gray-600">Status</div>
                                               <select className={input} value={status} onChange={(e) => setStatus(e.target.value as Status)}>
-                                                            <option value="">Pick…</option>option>
-                                                            <option value="OFFDAY">OFFDAY</option>option>
-                                                            <option value="MC">MC</option>option>
-                                                            <option value="ABSENT">ABSENT</option>option>
-                                              </select>select>
-                                  </div>div>
+                                                            <option value="">Pick…</option>
+                                                            <option value="OFFDAY">OFFDAY</option>
+                                                            <option value="MC">MC</option>
+                                                            <option value="ABSENT">ABSENT</option>
+                                              </select>
+                                  </div>
                                   <div className="md:col-span-3">
-                                              <div className="mb-1 text-xs text-gray-600">Note (optional)</div>div>
+                                              <div className="mb-1 text-xs text-gray-600">Note (optional)</div>
                                               <input className={input} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Chinese New Year" />
-                                  </div>div>
-                        </div>div>
+                                  </div>
+                        </div>
                         <div className="mt-3 flex gap-2">
-                                  <button className={btn} disabled={working} onClick={saveRange}>{working ? 'Working…' : 'Save'}</button>button>
-                                  <button className={btn} disabled={working} onClick={clearRange}>{working ? 'Working…' : 'Clear'}</button>button>
-                        </div>div>
+                                  <button className={btn} disabled={working} onClick={saveRange}>{working ? 'Working…' : 'Save'}</button>
+                                  <button className={btn} disabled={working} onClick={clearRange}>{working ? 'Working…' : 'Clear'}</button>
+                        </div>
                         <div className="mt-2 text-xs text-gray-500">
-                                  Tip: Use <b>All staff</b>b> + <b>OFFDAY</b>b> for public holidays. Range is limited to 60 days for safety.
-                        </div>div>
-                </div>div>
+                                  Tip: Use <b>All staff</b> + <b>OFFDAY</b> for public holidays. Range is limited to 60 days for safety.
+                        </div>
+                </div>
                 <div className="mb-3 flex flex-wrap items-end gap-2">
                         <div>
-                                  <div className="mb-1 text-xs text-gray-600">Year</div>div>
+                                  <div className="mb-1 text-xs text-gray-600">Year</div>
                                   <input className={input} type="number" value={year} onChange={(e) => setYear(Number(e.target.value || 0))} />
-                        </div>div>
+                        </div>
                         <div>
-                                  <div className="mb-1 text-xs text-gray-600">Month</div>div>
+                                  <div className="mb-1 text-xs text-gray-600">Month</div>
                                   <input className={input} type="number" min={1} max={12} value={month} onChange={(e) => setMonth(Number(e.target.value || 1))} />
-                        </div>div>
+                        </div>
                         <button className={btn} onClick={loadMonth} disabled={loading || working}>
                           {loading ? 'Loading…' : 'Reload month'}
-                        </button>button>
-                </div>div>
+                        </button>
+                </div>
                 <div className="overflow-x-auto rounded border bg-white">
                         <table className="min-w-[900px] w-full border-collapse text-sm">
                                   <thead className="bg-gray-50">
                                               <tr className="text-left">
-                                                            <th className="border-b px-3 py-2">Day</th>th>
-                                                            <th className="border-b px-3 py-2">Staff</th>th>
-                                                            <th className="border-b px-3 py-2">Email</th>th>
-                                                            <th className="border-b px-3 py-2">Status</th>th>
-                                                            <th className="border-b px-3 py-2">Note</th>th>
-                                              </tr>tr>
-                                  </thead>thead>
+                                                            <th className="border-b px-3 py-2">Day</th>
+                                                            <th className="border-b px-3 py-2">Staff</th>
+                                                            <th className="border-b px-3 py-2">Email</th>
+                                                            <th className="border-b px-3 py-2">Status</th>
+                                                            <th className="border-b px-3 py-2">Note</th>
+                                              </tr>
+                                  </thead>
                                   <tbody>
                                     {rows.length === 0 ? (
                           <tr>
                                           <td className="px-3 py-6 text-center text-gray-500" colSpan={5}>
                                                             No day status records for this month.
-                                          </td>td>
-                          </tr>tr>
+                                          </td>
+                          </tr>
                         ) : (
                           rows.map((r) => {
                                             const s = staffMap.get((r.staff_email || '').toLowerCase());
                                             return (
                                                                 <tr key={`${r.day}-${r.staff_email}`} className="odd:bg-white even:bg-gray-50">
-                                                                                    <td className="px-3 py-2">{r.day}</td>td>
-                                                                                    <td className="px-3 py-2">{s?.name ?? '—'}</td>td>
-                                                                                    <td className="px-3 py-2">{r.staff_email}</td>td>
-                                                                                    <td className="px-3 py-2 font-medium">{r.status}</td>td>
-                                                                                    <td className="px-3 py-2">{r.note ?? '—'}</td>td>
-                                                                </tr>tr>
+                                                                                    <td className="px-3 py-2">{r.day}</td>
+                                                                                    <td className="px-3 py-2">{s?.name ?? '—'}</td>
+                                                                                    <td className="px-3 py-2">{r.staff_email}</td>
+                                                                                    <td className="px-3 py-2 font-medium">{r.status}</td>
+                                                                                    <td className="px-3 py-2">{r.note ?? '—'}</td>
+                                                                </tr>
                                                               );
                           })
                         )}
-                                  </tbody>tbody>
-                        </table>table>
-                </div>div>
-          </main>main>
+                                  </tbody>
+                        </table>
+                </div>
+          </main>
         );
 }</main>
