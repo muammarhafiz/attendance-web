@@ -54,7 +54,8 @@ function eachDateInclusive(fromISO: string, toISO: string): string[] {
 
 export default function OffdayPage() {
     const router = useRouter();
-    const [authChecked, setAuthChecked] = useState(false);
+    // authChecked: true once session check completes (success or failure)
+  const [authChecked, setAuthChecked] = useState(false);
     const [authError, setAuthError] = useState('');
     const [isAdmin, setIsAdmin] = useState(false);
     const [staff, setStaff] = useState<Staff[]>([]);
