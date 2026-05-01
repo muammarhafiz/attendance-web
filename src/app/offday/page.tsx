@@ -11,7 +11,7 @@ type Status = '' | 'ABSENT' | 'MC' | 'OFFDAY';
 type Row = {
   staff_email: string;
   day: string; // YYYY-MM-DD
-  status: string;h
+  status: string;
   note: string | null;
 };
 
