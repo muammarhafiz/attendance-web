@@ -90,6 +90,7 @@ export default function PayrollV2Page() {
   const [rows, setRows] = useState<SummaryRow[]>([]);
   const [absentMap, setAbsentMap] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState<boolean>(false);
+  const [loadErr, setLoadErr] = useState<string>('');
 
   // auth/admin
   const [email, setEmail] = useState<string | null>(null);
@@ -176,6 +177,7 @@ export default function PayrollV2Page() {
 
   const refresh = useCallback(async () => {
     setLoading(true);
+    setLoadErr('');
     setAbsentMap({});
     try {
       // 1) Period status — public view
@@ -221,7 +223,7 @@ export default function PayrollV2Page() {
       }
     } catch (e) {
       console.error(e);
-      alert(`Failed to load payroll data: ${(e as Error).message}`);
+      setLoadErr((e as Error).message ?? 'Failed to load payroll data. Please refresh.');
       setRows([]);
     } finally {
       setLoading(false);
@@ -717,6 +719,12 @@ export default function PayrollV2Page() {
         </button>
       </div>
 
+      {loadErr && (
+        <div className="mb-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 flex items-center justify-between">
+          <span>⚠ {loadErr}</span>
+          <button onClick={refresh} className="ml-3 rounded border border-red-300 px-2 py-1 text-xs hover:bg-red-100">Retry</button>
+        </div>
+      )}
       {loading && (
         <div className="mb-3 rounded border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
           Loading…
