@@ -1,4 +1,5 @@
 'use client';
+export const dynamic = 'force-static';
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
@@ -71,7 +72,7 @@ function minutesLateFrom930(hhmm: string | null): number | null {
   return Math.max(0, (hh * 60 + mm) - (9 * 60 + 30));
 }
 
-export default function MonthlyPrintPage() {
+function MonthlyPrintInner() {
   const sp = useSearchParams();
   const year = Number(sp.get('year') ?? '0');
   const month = Number(sp.get('month') ?? '0');
@@ -398,5 +399,13 @@ export default function MonthlyPrintPage() {
         ))}
       </div>
     </div>
+  );
+}
+
+export default function MonthlyPrintPage() {
+  return (
+    <React.Suspense fallback={<div style={{padding:'20px',color:'#555'}}>Loading report...</div>}>
+      <MonthlyPrintInner />
+    </React.Suspense>
   );
 }
