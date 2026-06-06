@@ -87,6 +87,9 @@ export default function NavBar() {
               </React.Fragment>
             )}
             <Link href="/employees" prefetch={false} className={linkClass('/employees')}>Employees</Link>
+            {isAdmin && (
+              <Link href="/niagawan/sales" prefetch={false} className={linkClass('/niagawan')}>Niagawan</Link>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
