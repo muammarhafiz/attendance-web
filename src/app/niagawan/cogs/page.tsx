@@ -1,7 +1,7 @@
 // src/app/niagawan/cogs/page.tsx
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 type Zero = {
@@ -16,6 +16,16 @@ type Zero = {
 };
 
 type Rule = { id: number; match_type: string; value: string; notes: string | null };
+
+const MATCH_TYPES = [
+  'code_exact',
+  'code_prefix',
+  'code_contains',
+  'name_exact',
+  'name_prefix',
+  'name_contains',
+  'price_max',
+];
 
 const rm = (x: number) =>
   `RM ${x.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -50,6 +60,12 @@ function isIgnored(row: Zero, rules: Rule[]) {
   return false;
 }
 
+function isoDaysAgo(n: number) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
 export default function NiagawanCogsPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
@@ -60,7 +76,26 @@ export default function NiagawanCogsPage() {
   const [err, setErr] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [showRules, setShowRules] = useState(false);
+  const [showBackfill, setShowBackfill] = useState(false);
   const [busy, setBusy] = useState<number | null>(null);
+
+  // add-rule form
+  const [newType, setNewType] = useState('code_exact');
+  const [newValue, setNewValue] = useState('');
+  const [newNotes, setNewNotes] = useState('');
+
+  // edit-rule
+  const [editId, setEditId] = useState<number | null>(null);
+  const [editType, setEditType] = useState('code_exact');
+  const [editValue, setEditValue] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+
+  // backfill
+  const [bfFrom, setBfFrom] = useState(isoDaysAgo(7));
+  const [bfTo, setBfTo] = useState(isoDaysAgo(1));
+  const [bfState, setBfState] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const [bfMsg, setBfMsg] = useState('');
+  const bfPoll = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -91,7 +126,7 @@ export default function NiagawanCogsPage() {
       .select('id,audit_date,inv,inv_date,item,code,price,updated_at')
       .order('audit_date', { ascending: false })
       .order('inv', { ascending: true })
-      .limit(1000);
+      .limit(2000);
     if (error) setErr(error.message);
     else setZeros((data ?? []) as Zero[]);
     setLoading(false);
@@ -103,12 +138,13 @@ export default function NiagawanCogsPage() {
     loadZeros();
   }, [isAdmin, loadRules, loadZeros]);
 
-  const days = useMemo(() => {
-    const s = Array.from(new Set(zeros.map((z) => z.audit_date))).sort().reverse();
-    return s;
-  }, [zeros]);
+  useEffect(() => () => { if (bfPoll.current) clearInterval(bfPoll.current); }, []);
 
-  // default to the most recent day once data loads
+  const days = useMemo(
+    () => Array.from(new Set(zeros.map((z) => z.audit_date))).sort().reverse(),
+    [zeros]
+  );
+
   useEffect(() => {
     if (!day && days.length) setDay(days[0]);
   }, [days, day]);
@@ -149,6 +185,38 @@ export default function NiagawanCogsPage() {
     [loadRules]
   );
 
+  const addRule = useCallback(async () => {
+    const value = newValue.trim();
+    if (!value) return;
+    const { error } = await supabase
+      .from('niagawan_cogs_ignore')
+      .insert({ match_type: newType, value, notes: newNotes.trim() || null });
+    if (!error) {
+      setNewValue('');
+      setNewNotes('');
+      await loadRules();
+    }
+  }, [newType, newValue, newNotes, loadRules]);
+
+  const startEdit = useCallback((r: Rule) => {
+    setEditId(r.id);
+    setEditType(r.match_type);
+    setEditValue(r.value);
+    setEditNotes(r.notes || '');
+  }, []);
+
+  const saveEdit = useCallback(async () => {
+    if (editId == null) return;
+    const value = editValue.trim();
+    if (!value) return;
+    await supabase
+      .from('niagawan_cogs_ignore')
+      .update({ match_type: editType, value, notes: editNotes.trim() || null })
+      .eq('id', editId);
+    setEditId(null);
+    await loadRules();
+  }, [editId, editType, editValue, editNotes, loadRules]);
+
   const deleteRule = useCallback(
     async (id: number) => {
       await supabase.from('niagawan_cogs_ignore').delete().eq('id', id);
@@ -156,6 +224,41 @@ export default function NiagawanCogsPage() {
     },
     [loadRules]
   );
+
+  const runBackfill = useCallback(async () => {
+    if (bfState === 'running') return;
+    if (!bfFrom || !bfTo) { setBfMsg('Pick both dates.'); return; }
+    if (bfFrom > bfTo) { setBfMsg('“From” must be on or before “To”.'); return; }
+    setBfState('running');
+    setBfMsg('Queuing backfill…');
+    const { data, error } = await supabase
+      .from('sync_requests')
+      .insert({ source: 'website-backfill', which: 'cogs', from_date: bfFrom, to_date: bfTo })
+      .select('id')
+      .single();
+    if (error || !data) {
+      setBfState('error');
+      setBfMsg('Could not start: ' + (error?.message ?? 'unknown'));
+      return;
+    }
+    const id = data.id as number;
+    setBfMsg('Backfilling ' + fmtDay(bfFrom) + ' → ' + fmtDay(bfTo) + '… ~1 min per day. You can leave this page; it keeps running.');
+    const started = Date.now();
+    bfPoll.current = setInterval(async () => {
+      const { data: row } = await supabase.from('sync_requests').select('status').eq('id', id).single();
+      const status = row?.status;
+      if (status === 'done' || status === 'error') {
+        if (bfPoll.current) clearInterval(bfPoll.current);
+        await loadZeros();
+        setBfState(status === 'done' ? 'done' : 'error');
+        setBfMsg(status === 'done' ? 'Backfill complete — pick a day above.' : 'Backfill reported an error — check the NAS log.');
+      } else if (Date.now() - started > 30 * 60 * 1000) {
+        if (bfPoll.current) clearInterval(bfPoll.current);
+        setBfState('idle');
+        setBfMsg('Still running in the background — refresh in a bit.');
+      }
+    }, 5000);
+  }, [bfState, bfFrom, bfTo, loadZeros]);
 
   if (authed === null || isAdmin === null) {
     return <div className="text-sm text-gray-500">Checking session…</div>;
@@ -181,9 +284,51 @@ export default function NiagawanCogsPage() {
               ))}
             </select>
           )}
+          <button
+            onClick={() => setShowBackfill((s) => !s)}
+            className="text-xs font-medium text-blue-600 underline hover:text-blue-800"
+          >
+            Backfill…
+          </button>
         </div>
         <span className="text-xs text-gray-400">Last synced: {lastSynced}</span>
       </div>
+
+      {/* Backfill panel */}
+      {showBackfill && (
+        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="text-xs text-gray-600">
+              From
+              <input type="date" value={bfFrom} onChange={(e) => setBfFrom(e.target.value)}
+                className="mt-1 block rounded-md border border-gray-300 px-2 py-1 text-sm" />
+            </label>
+            <label className="text-xs text-gray-600">
+              To
+              <input type="date" value={bfTo} onChange={(e) => setBfTo(e.target.value)}
+                className="mt-1 block rounded-md border border-gray-300 px-2 py-1 text-sm" />
+            </label>
+            <button
+              onClick={runBackfill}
+              disabled={bfState === 'running'}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+                bfState === 'running' ? 'cursor-not-allowed bg-gray-200 text-gray-400' : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
+            >
+              {bfState === 'running' ? 'Backfilling…' : 'Run backfill'}
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-gray-500">
+            Scrapes COGS for each day in the range and loads any missing-cost items. Old days are often already fixed,
+            so they may come back empty.
+          </p>
+          {bfMsg && (
+            <div className={`mt-2 text-xs ${bfState === 'error' ? 'text-rose-700' : bfState === 'done' ? 'text-emerald-700' : 'text-blue-700'}`}>
+              {bfMsg}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="mb-4 rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
         Real parts sold with <strong>no cost entered in Niagawan</strong> for the selected day. Enter their cost in
@@ -241,11 +386,7 @@ export default function NiagawanCogsPage() {
                     <button
                       onClick={() => ignoreRow(r)}
                       disabled={busy === r.id}
-                      title={
-                        r.code
-                          ? `Hide all items with code ${r.code}`
-                          : `Hide items named "${r.item}"`
-                      }
+                      title={r.code ? `Hide all items with code ${r.code}` : `Hide items named "${r.item}"`}
                       className="rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-500 transition hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50"
                     >
                       {busy === r.id ? '…' : 'Ignore'}
@@ -258,7 +399,7 @@ export default function NiagawanCogsPage() {
         </div>
       )}
 
-      {/* Hidden items (transparency) */}
+      {/* Hidden items */}
       {hidden.length > 0 && (
         <div className="mt-4">
           <button
@@ -296,10 +437,38 @@ export default function NiagawanCogsPage() {
         </button>
         {showRules && (
           <div className="mt-2 rounded-lg border border-gray-200 bg-white p-3">
-            <p className="mb-2 text-xs text-gray-500">
-              These rules decide what to hide from the chase list (labour, services, notes). Click “Ignore” on any row
-              above to add one; delete here to bring an item back.
+            <p className="mb-3 text-xs text-gray-500">
+              Rules decide what to hide (labour, services, notes). Add one below, edit/delete existing ones, or click
+              “Ignore” on a row above.
             </p>
+
+            {/* Add rule */}
+            <div className="mb-3 flex flex-wrap items-end gap-2 rounded-md bg-gray-50 p-2">
+              <label className="text-xs text-gray-600">
+                Match type
+                <select value={newType} onChange={(e) => setNewType(e.target.value)}
+                  className="mt-1 block rounded-md border border-gray-300 px-2 py-1 text-xs">
+                  {MATCH_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </label>
+              <label className="text-xs text-gray-600">
+                Value
+                <input value={newValue} onChange={(e) => setNewValue(e.target.value)}
+                  placeholder={newType === 'price_max' ? '0' : 'e.g. LB-LABOUR'}
+                  className="mt-1 block rounded-md border border-gray-300 px-2 py-1 text-xs" />
+              </label>
+              <label className="text-xs text-gray-600">
+                Notes
+                <input value={newNotes} onChange={(e) => setNewNotes(e.target.value)}
+                  placeholder="optional"
+                  className="mt-1 block rounded-md border border-gray-300 px-2 py-1 text-xs" />
+              </label>
+              <button onClick={addRule} disabled={!newValue.trim()}
+                className="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-700 disabled:opacity-40">
+                Add rule
+              </button>
+            </div>
+
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200 text-xs">
                 <thead className="text-left text-gray-500">
@@ -311,21 +480,52 @@ export default function NiagawanCogsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {rules.map((r) => (
-                    <tr key={r.id}>
-                      <td className="whitespace-nowrap px-2 py-1 text-gray-700">{r.match_type}</td>
-                      <td className="whitespace-nowrap px-2 py-1 font-medium text-gray-900">{r.value}</td>
-                      <td className="px-2 py-1 text-gray-500">{r.notes || ''}</td>
-                      <td className="whitespace-nowrap px-2 py-1 text-right">
-                        <button
-                          onClick={() => deleteRule(r.id)}
-                          className="rounded-md border border-gray-200 px-2 py-0.5 text-rose-600 transition hover:bg-rose-50"
-                        >
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {rules.map((r) =>
+                    editId === r.id ? (
+                      <tr key={r.id} className="bg-amber-50">
+                        <td className="px-2 py-1">
+                          <select value={editType} onChange={(e) => setEditType(e.target.value)}
+                            className="rounded border border-gray-300 px-1 py-0.5">
+                            {MATCH_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                        </td>
+                        <td className="px-2 py-1">
+                          <input value={editValue} onChange={(e) => setEditValue(e.target.value)}
+                            className="w-full rounded border border-gray-300 px-1 py-0.5" />
+                        </td>
+                        <td className="px-2 py-1">
+                          <input value={editNotes} onChange={(e) => setEditNotes(e.target.value)}
+                            className="w-full rounded border border-gray-300 px-1 py-0.5" />
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-1 text-right">
+                          <button onClick={saveEdit}
+                            className="mr-1 rounded-md border border-emerald-200 px-2 py-0.5 text-emerald-700 hover:bg-emerald-50">
+                            Save
+                          </button>
+                          <button onClick={() => setEditId(null)}
+                            className="rounded-md border border-gray-200 px-2 py-0.5 text-gray-500 hover:bg-gray-100">
+                            Cancel
+                          </button>
+                        </td>
+                      </tr>
+                    ) : (
+                      <tr key={r.id}>
+                        <td className="whitespace-nowrap px-2 py-1 text-gray-700">{r.match_type}</td>
+                        <td className="whitespace-nowrap px-2 py-1 font-medium text-gray-900">{r.value}</td>
+                        <td className="px-2 py-1 text-gray-500">{r.notes || ''}</td>
+                        <td className="whitespace-nowrap px-2 py-1 text-right">
+                          <button onClick={() => startEdit(r)}
+                            className="mr-1 rounded-md border border-gray-200 px-2 py-0.5 text-gray-600 hover:bg-gray-100">
+                            Edit
+                          </button>
+                          <button onClick={() => deleteRule(r.id)}
+                            className="rounded-md border border-gray-200 px-2 py-0.5 text-rose-600 hover:bg-rose-50">
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  )}
                 </tbody>
               </table>
             </div>
