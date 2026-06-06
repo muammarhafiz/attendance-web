@@ -1,7 +1,7 @@
 // src/app/niagawan/sales/page.tsx
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 type Daily = {
@@ -28,12 +28,18 @@ function fmtDay(d: string) {
   return dd && m && y ? `${dd}/${m}/${y}` : d;
 }
 
+type SyncState = 'idle' | 'running' | 'done' | 'error';
+
 export default function NiagawanSalesPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<Daily[]>([]);
   const [err, setErr] = useState<string | null>(null);
+
+  const [sync, setSync] = useState<SyncState>('idle');
+  const [syncMsg, setSyncMsg] = useState<string>('');
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // auth + role
   useEffect(() => {
@@ -49,22 +55,65 @@ export default function NiagawanSalesPage() {
     })();
   }, []);
 
+  const loadRows = useCallback(async () => {
+    setLoading(true);
+    setErr(null);
+    const { data, error } = await supabase
+      .from('niagawan_daily')
+      .select('day,invoices,sales,cogs,profit,updated_at')
+      .order('day', { ascending: false })
+      .limit(60);
+    if (error) setErr(error.message);
+    else setRows((data ?? []) as Daily[]);
+    setLoading(false);
+  }, []);
+
   // data (only for admins; RLS would block others anyway)
   useEffect(() => {
     if (!isAdmin) return;
-    (async () => {
-      setLoading(true);
-      setErr(null);
-      const { data, error } = await supabase
-        .from('niagawan_daily')
-        .select('day,invoices,sales,cogs,profit,updated_at')
-        .order('day', { ascending: false })
-        .limit(60);
-      if (error) setErr(error.message);
-      else setRows((data ?? []) as Daily[]);
-      setLoading(false);
-    })();
-  }, [isAdmin]);
+    loadRows();
+  }, [isAdmin, loadRows]);
+
+  // clean up any running poll on unmount
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+
+  const syncNow = useCallback(async () => {
+    if (sync === 'running') return;
+    setSync('running');
+    setSyncMsg('Starting…');
+    const { data, error } = await supabase
+      .from('sync_requests')
+      .insert({ source: 'website' })
+      .select('id')
+      .single();
+    if (error || !data) {
+      setSync('error');
+      setSyncMsg('Could not start sync: ' + (error?.message ?? 'unknown error'));
+      return;
+    }
+    const id = data.id as number;
+    setSyncMsg('Syncing from Niagawan… this usually takes 1–2 minutes.');
+    const startedAt = Date.now();
+    pollRef.current = setInterval(async () => {
+      const { data: row } = await supabase
+        .from('sync_requests')
+        .select('status')
+        .eq('id', id)
+        .single();
+      const status = row?.status;
+      if (status === 'done' || status === 'error') {
+        if (pollRef.current) clearInterval(pollRef.current);
+        await loadRows();
+        setSync(status === 'done' ? 'done' : 'error');
+        setSyncMsg(status === 'done' ? 'Synced ✓' : 'Sync ran but reported an error — check the NAS log.');
+        setTimeout(() => { setSync('idle'); setSyncMsg(''); }, 5000);
+      } else if (Date.now() - startedAt > 5 * 60 * 1000) {
+        if (pollRef.current) clearInterval(pollRef.current);
+        setSync('idle');
+        setSyncMsg('Still running in the background — refresh in a moment.');
+      }
+    }, 4000);
+  }, [sync, loadRows]);
 
   const latest = rows[0];
   const lastSynced = useMemo(() => {
@@ -95,12 +144,46 @@ export default function NiagawanSalesPage() {
   return (
     <div>
       {/* KPI row — latest day */}
-      <div className="mb-2 flex items-center justify-between">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-gray-700">
           {latest ? `Latest day · ${fmtDay(latest.day)}` : 'Latest day'}
         </h2>
-        <span className="text-xs text-gray-400">Last synced: {lastSynced}</span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-gray-400">Last synced: {lastSynced}</span>
+          <button
+            onClick={syncNow}
+            disabled={sync === 'running'}
+            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition ${
+              sync === 'running'
+                ? 'cursor-not-allowed bg-gray-100 text-gray-400'
+                : 'bg-blue-600 text-white hover:bg-blue-700'
+            }`}
+          >
+            {sync === 'running' ? (
+              <>
+                <span className="h-3 w-3 animate-spin rounded-full border-2 border-gray-300 border-t-gray-500" />
+                Syncing…
+              </>
+            ) : (
+              'Sync now'
+            )}
+          </button>
+        </div>
       </div>
+
+      {syncMsg && (
+        <div
+          className={`mb-3 rounded border p-2 text-xs ${
+            sync === 'error'
+              ? 'border-rose-200 bg-rose-50 text-rose-700'
+              : sync === 'done'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              : 'border-blue-200 bg-blue-50 text-blue-700'
+          }`}
+        >
+          {syncMsg}
+        </div>
+      )}
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
         {kpis.map((k) => (
