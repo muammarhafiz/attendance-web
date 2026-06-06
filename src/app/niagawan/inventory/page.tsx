@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabaseClient';
 
 type Watch = { code: string; description: string | null; min_balance: number; category: string | null };
 type Bal = { code: string; balance: number | null; suppliers: number | null; checked_at: string | null; updated_at: string | null };
+type Status = { code: string; status: 'on_po' | 'kiv'; note: string | null };
 
 type Row = {
   code: string;
@@ -13,18 +14,15 @@ type Row = {
   category: string;
   min: number;
   balance: number | null;
-  suppliers: number | null;
   updated_at: string | null;
-  status: 'low' | 'ok' | 'unsure';
+  stock: 'low' | 'ok' | 'unsure';
+  po: 'on_po' | 'kiv' | null;
+  note: string | null;
 };
 
 const CAT_ORDER = ['Oil - Mannol', 'Oil - Liquimoly', 'Oil - Gulf', 'Oil - Shell', 'Proton X70', 'Proton X50', 'Proton S70', 'Other'];
 const CATS = [...CAT_ORDER];
-
-function catRank(c: string) {
-  const i = CAT_ORDER.indexOf(c);
-  return i < 0 ? CAT_ORDER.length : i;
-}
+function catRank(c: string) { const i = CAT_ORDER.indexOf(c); return i < 0 ? CAT_ORDER.length : i; }
 
 export default function NiagawanInventoryPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -32,17 +30,17 @@ export default function NiagawanInventoryPage() {
   const [loading, setLoading] = useState(false);
   const [watch, setWatch] = useState<Watch[]>([]);
   const [bals, setBals] = useState<Bal[]>([]);
+  const [statuses, setStatuses] = useState<Status[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [filter, setFilter] = useState<'low' | 'all'>('low');
   const [showReview, setShowReview] = useState(false);
+  const [showKiv, setShowKiv] = useState(false);
   const [showManage, setShowManage] = useState(false);
 
-  // check-stock-now
   const [sync, setSync] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [syncMsg, setSyncMsg] = useState('');
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // manage watchlist
   const [search, setSearch] = useState('');
   const [nCode, setNCode] = useState('');
   const [nDesc, setNDesc] = useState('');
@@ -64,52 +62,54 @@ export default function NiagawanInventoryPage() {
     })();
   }, []);
 
+  const loadStatuses = useCallback(async () => {
+    const { data } = await supabase.from('niagawan_inventory_status').select('code,status,note');
+    setStatuses((data ?? []) as Status[]);
+  }, []);
+
   const loadAll = useCallback(async () => {
     setLoading(true);
     setErr(null);
-    const [w, b] = await Promise.all([
+    const [w, b, s] = await Promise.all([
       supabase.from('niagawan_min_stock').select('code,description,min_balance,category'),
       supabase.from('niagawan_inventory').select('code,balance,suppliers,checked_at,updated_at'),
+      supabase.from('niagawan_inventory_status').select('code,status,note'),
     ]);
     if (w.error) setErr(w.error.message);
     else setWatch((w.data ?? []) as Watch[]);
     setBals((b.data ?? []) as Bal[]);
+    setStatuses((s.data ?? []) as Status[]);
     setLoading(false);
   }, []);
 
-  useEffect(() => {
-    if (!isAdmin) return;
-    loadAll();
-  }, [isAdmin, loadAll]);
-
+  useEffect(() => { if (!isAdmin) return; loadAll(); }, [isAdmin, loadAll]);
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
-  const balByCode = useMemo(() => {
-    const m = new Map<string, Bal>();
-    for (const b of bals) m.set(b.code, b);
-    return m;
-  }, [bals]);
+  const balByCode = useMemo(() => { const m = new Map<string, Bal>(); for (const b of bals) m.set(b.code, b); return m; }, [bals]);
+  const statByCode = useMemo(() => { const m = new Map<string, Status>(); for (const s of statuses) m.set(s.code, s); return m; }, [statuses]);
 
   const rows: Row[] = useMemo(() => {
     return watch.map((w) => {
       const b = balByCode.get(w.code);
       const balance = b && b.balance != null ? Number(b.balance) : null;
-      let status: Row['status'];
-      if (balance == null) status = 'unsure';
-      else if (balance <= (w.min_balance || 0)) status = 'low';
-      else status = 'ok';
+      let stock: Row['stock'];
+      if (balance == null) stock = 'unsure';
+      else if (balance <= (w.min_balance || 0)) stock = 'low';
+      else stock = 'ok';
+      const st = statByCode.get(w.code);
       return {
         code: w.code,
         description: w.description || '',
         category: w.category || 'Other',
         min: w.min_balance || 0,
         balance,
-        suppliers: b?.suppliers ?? null,
         updated_at: b?.updated_at ?? null,
-        status,
+        stock,
+        po: st?.status ?? null,
+        note: st?.note ?? null,
       };
     });
-  }, [watch, balByCode]);
+  }, [watch, balByCode, statByCode]);
 
   const lastChecked = useMemo(() => {
     let t: string | null = null;
@@ -118,48 +118,65 @@ export default function NiagawanInventoryPage() {
   }, [bals]);
 
   const stats = useMemo(() => {
-    const low = rows.filter((r) => r.status === 'low');
-    const unsure = rows.filter((r) => r.status === 'unsure');
-    const cats = new Set(low.map((r) => r.category));
-    return { low: low.length, unsure: unsure.length, cats: cats.size, total: rows.length };
+    let toOrder = 0, onPo = 0, kiv = 0, review = 0;
+    for (const r of rows) {
+      if (r.po === 'kiv') { kiv++; continue; }
+      if (r.stock === 'unsure') { review++; continue; }
+      if (r.stock === 'low') { if (r.po === 'on_po') onPo++; else toOrder++; }
+    }
+    return { toOrder, onPo, kiv, review };
   }, [rows]);
 
+  // Reorder list: low (or all) items, excluding KIV.
   const groups = useMemo(() => {
-    const visible = rows.filter((r) => r.status !== 'unsure' && (filter === 'all' || r.status === 'low'));
+    const visible = rows.filter((r) => r.po !== 'kiv' && r.stock !== 'unsure' && (filter === 'all' || r.stock === 'low'));
     const byCat = new Map<string, Row[]>();
-    for (const r of visible) {
-      if (!byCat.has(r.category)) byCat.set(r.category, []);
-      byCat.get(r.category)!.push(r);
-    }
+    for (const r of visible) { if (!byCat.has(r.category)) byCat.set(r.category, []); byCat.get(r.category)!.push(r); }
     const cats = Array.from(byCat.keys()).sort((a, b) => catRank(a) - catRank(b) || a.localeCompare(b));
     return cats.map((cat) => {
       const items = byCat.get(cat)!;
       items.sort((a, b) => {
-        const al = a.status === 'low' ? 0 : 1, bl = b.status === 'low' ? 0 : 1;
-        if (al !== bl) return al - bl;
+        const ar = a.stock === 'low' && a.po !== 'on_po' ? 0 : a.po === 'on_po' ? 1 : 2;
+        const br = b.stock === 'low' && b.po !== 'on_po' ? 0 : b.po === 'on_po' ? 1 : 2;
+        if (ar !== br) return ar - br;
         return a.code.localeCompare(b.code);
       });
-      const lowCount = items.filter((r) => r.status === 'low').length;
+      const lowCount = items.filter((r) => r.stock === 'low' && r.po !== 'on_po').length;
       return { cat, items, lowCount };
     });
   }, [rows, filter]);
 
-  const review = useMemo(() => rows.filter((r) => r.status === 'unsure'), [rows]);
+  const review = useMemo(() => rows.filter((r) => r.stock === 'unsure' && r.po !== 'kiv'), [rows]);
+  const kivList = useMemo(() => rows.filter((r) => r.po === 'kiv').sort((a, b) => catRank(a.category) - catRank(b.category) || a.code.localeCompare(b.code)), [rows]);
 
   const filteredWatch = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const list = q
-      ? watch.filter((w) => w.code.toLowerCase().includes(q) || (w.description || '').toLowerCase().includes(q))
-      : watch;
+    const list = q ? watch.filter((w) => w.code.toLowerCase().includes(q) || (w.description || '').toLowerCase().includes(q)) : watch;
     return [...list].sort((a, b) => catRank(a.category || 'Other') - catRank(b.category || 'Other') || a.code.localeCompare(b.code));
   }, [watch, search]);
 
+  // --- purchasing status writes ---
+  const setPO = useCallback(async (code: string) => {
+    await supabase.from('niagawan_inventory_status').upsert({ code, status: 'on_po', updated_at: new Date().toISOString() }, { onConflict: 'code' });
+    await loadStatuses();
+  }, [loadStatuses]);
+  const setKIV = useCallback(async (code: string) => {
+    await supabase.from('niagawan_inventory_status').upsert({ code, status: 'kiv', updated_at: new Date().toISOString() }, { onConflict: 'code' });
+    await loadStatuses();
+  }, [loadStatuses]);
+  const clearStatus = useCallback(async (code: string) => {
+    await supabase.from('niagawan_inventory_status').delete().eq('code', code);
+    await loadStatuses();
+  }, [loadStatuses]);
+  const saveNote = useCallback(async (code: string, note: string) => {
+    await supabase.from('niagawan_inventory_status').update({ note }).eq('code', code);
+    await loadStatuses();
+  }, [loadStatuses]);
+
   const checkStockNow = useCallback(async () => {
     if (sync === 'running') return;
-    setSync('running');
-    setSyncMsg('Starting stock check…');
-    const { data, error } = await supabase
-      .from('sync_requests').insert({ source: 'website-inventory', which: 'inventory' }).select('id').single();
+    setSync('running'); setSyncMsg('Starting stock check…');
+    const { data, error } = await supabase.from('sync_requests').insert({ source: 'website-inventory', which: 'inventory' }).select('id').single();
     if (error || !data) { setSync('error'); setSyncMsg('Could not start: ' + (error?.message ?? 'unknown')); return; }
     const id = data.id as number;
     setSyncMsg('Checking live stock in Niagawan… ~1–2 min. You can leave this page.');
@@ -174,8 +191,7 @@ export default function NiagawanInventoryPage() {
         setTimeout(() => { setSync('idle'); setSyncMsg(''); }, 5000);
       } else if (Date.now() - started > 5 * 60 * 1000) {
         if (pollRef.current) clearInterval(pollRef.current);
-        setSync('idle');
-        setSyncMsg('Still running in the background — refresh in a bit.');
+        setSync('idle'); setSyncMsg('Still running in the background — refresh in a bit.');
       }
     }, 4000);
   }, [sync, loadAll]);
@@ -183,28 +199,16 @@ export default function NiagawanInventoryPage() {
   const addItem = useCallback(async () => {
     const code = nCode.trim();
     if (!code) return;
-    const { error } = await supabase.from('niagawan_min_stock').insert({
-      code, description: nDesc.trim() || null, min_balance: Number(nMin) || 4, category: nCat,
-    });
-    if (!error) { setNCode(''); setNDesc(''); setNMin('4'); setNCat('Other'); await loadAll(); }
-    else setErr(error.message);
+    const { error } = await supabase.from('niagawan_min_stock').insert({ code, description: nDesc.trim() || null, min_balance: Number(nMin) || 4, category: nCat });
+    if (!error) { setNCode(''); setNDesc(''); setNMin('4'); setNCat('Other'); await loadAll(); } else setErr(error.message);
   }, [nCode, nDesc, nMin, nCat, loadAll]);
-
-  const startEdit = useCallback((w: Watch) => {
-    setEditCode(w.code); setEDesc(w.description || ''); setEMin(String(w.min_balance || 4)); setECat(w.category || 'Other');
-  }, []);
+  const startEdit = useCallback((w: Watch) => { setEditCode(w.code); setEDesc(w.description || ''); setEMin(String(w.min_balance || 4)); setECat(w.category || 'Other'); }, []);
   const saveEdit = useCallback(async () => {
     if (!editCode) return;
-    await supabase.from('niagawan_min_stock')
-      .update({ description: eDesc.trim() || null, min_balance: Number(eMin) || 4, category: eCat, updated_at: new Date().toISOString() })
-      .eq('code', editCode);
-    setEditCode(null);
-    await loadAll();
+    await supabase.from('niagawan_min_stock').update({ description: eDesc.trim() || null, min_balance: Number(eMin) || 4, category: eCat, updated_at: new Date().toISOString() }).eq('code', editCode);
+    setEditCode(null); await loadAll();
   }, [editCode, eDesc, eMin, eCat, loadAll]);
-  const deleteItem = useCallback(async (code: string) => {
-    await supabase.from('niagawan_min_stock').delete().eq('code', code);
-    await loadAll();
-  }, [loadAll]);
+  const deleteItem = useCallback(async (code: string) => { await supabase.from('niagawan_min_stock').delete().eq('code', code); await loadAll(); }, [loadAll]);
 
   if (authed === null || isAdmin === null) return <div className="text-sm text-gray-500">Checking session…</div>;
   if (authed === false) return <div className="text-sm text-gray-600">Please sign in to view this page.</div>;
@@ -229,27 +233,13 @@ export default function NiagawanInventoryPage() {
         </div>
       </div>
 
-      {syncMsg && (
-        <div className={`mb-3 rounded border p-2 text-xs ${sync === 'error' ? 'border-rose-200 bg-rose-50 text-rose-700' : sync === 'done' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-blue-200 bg-blue-50 text-blue-700'}`}>{syncMsg}</div>
-      )}
+      {syncMsg && (<div className={`mb-3 rounded border p-2 text-xs ${sync === 'error' ? 'border-rose-200 bg-rose-50 text-rose-700' : sync === 'done' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-blue-200 bg-blue-50 text-blue-700'}`}>{syncMsg}</div>)}
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
-          <div className="text-xs font-medium text-gray-500">Low items</div>
-          <div className="mt-1 text-lg font-semibold text-rose-600">{stats.low}</div>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
-          <div className="text-xs font-medium text-gray-500">Categories affected</div>
-          <div className="mt-1 text-lg font-semibold text-gray-900">{stats.cats}</div>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
-          <div className="text-xs font-medium text-gray-500">Needs review</div>
-          <div className="mt-1 text-lg font-semibold text-amber-600">{stats.unsure}</div>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
-          <div className="text-xs font-medium text-gray-500">Items watched</div>
-          <div className="mt-1 text-lg font-semibold text-gray-900">{stats.total}</div>
-        </div>
+        <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm"><div className="text-xs font-medium text-gray-500">To order</div><div className="mt-1 text-lg font-semibold text-rose-600">{stats.toOrder}</div></div>
+        <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm"><div className="text-xs font-medium text-gray-500">On PO</div><div className="mt-1 text-lg font-semibold text-blue-600">{stats.onPo}</div></div>
+        <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm"><div className="text-xs font-medium text-gray-500">KIV / on hold</div><div className="mt-1 text-lg font-semibold text-gray-500">{stats.kiv}</div></div>
+        <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm"><div className="text-xs font-medium text-gray-500">Needs review</div><div className="mt-1 text-lg font-semibold text-amber-600">{stats.review}</div></div>
       </div>
 
       {err && <div className="mb-4 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{err}</div>}
@@ -258,7 +248,7 @@ export default function NiagawanInventoryPage() {
         <div className="text-sm text-gray-500">Loading…</div>
       ) : groups.length === 0 ? (
         <div className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-sm text-gray-500">
-          {filter === 'low' ? 'Nothing low right now — everything is above its minimum. 🎉' : 'No stock data yet. Tap “Check stock now”.'}
+          {filter === 'low' ? 'Nothing left to order — all low items are on a PO, on hold, or back in stock. 🎉' : 'No stock data yet. Tap “Check stock now”.'}
         </div>
       ) : (
         <div className="space-y-5">
@@ -266,26 +256,43 @@ export default function NiagawanInventoryPage() {
             <div key={g.cat} className="overflow-hidden rounded-lg border border-gray-200">
               <div className="flex items-center justify-between bg-blue-50 px-3 py-2 text-sm font-semibold text-gray-800">
                 <span>{g.cat}</span>
-                <span className="text-xs font-medium text-gray-500">{g.items.length} item{g.items.length !== 1 ? 's' : ''}, {g.lowCount} low</span>
+                <span className="text-xs font-medium text-gray-500">{g.items.length} item{g.items.length !== 1 ? 's' : ''}, {g.lowCount} to order</span>
               </div>
               <table className="min-w-full divide-y divide-gray-200 text-sm">
                 <thead className="bg-gray-50">
                   <tr className="text-left">
                     <th className="px-3 py-2 font-semibold text-gray-700">Code</th>
                     <th className="px-3 py-2 font-semibold text-gray-700">Description</th>
-                    <th className="px-3 py-2 text-right font-semibold text-gray-700">Balance</th>
+                    <th className="px-3 py-2 text-right font-semibold text-gray-700">Bal</th>
                     <th className="px-3 py-2 text-right font-semibold text-gray-700">Min</th>
+                    <th className="px-3 py-2 text-right font-semibold text-gray-700">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
-                  {g.items.map((r) => (
-                    <tr key={r.code} className={r.status === 'low' ? 'bg-rose-50' : ''}>
-                      <td className="whitespace-nowrap px-3 py-2 font-medium text-gray-900">{r.code}</td>
-                      <td className="px-3 py-2 text-gray-700">{r.description}</td>
-                      <td className={`whitespace-nowrap px-3 py-2 text-right font-medium ${r.status === 'low' ? 'text-rose-600' : 'text-gray-900'}`}>{r.balance}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-right text-gray-500">{r.min}</td>
-                    </tr>
-                  ))}
+                  {g.items.map((r) => {
+                    const onPo = r.po === 'on_po';
+                    const low = r.stock === 'low';
+                    const rowCls = onPo ? 'bg-blue-50' : low ? 'bg-rose-50' : '';
+                    return (
+                      <tr key={r.code} className={rowCls}>
+                        <td className="whitespace-nowrap px-3 py-2 font-medium text-gray-900">
+                          {r.code}
+                          {onPo && <span className="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">ON PO</span>}
+                        </td>
+                        <td className="px-3 py-2 text-gray-700">{r.description}</td>
+                        <td className={`whitespace-nowrap px-3 py-2 text-right font-medium ${onPo ? 'text-blue-700' : low ? 'text-rose-600' : 'text-gray-900'}`}>{r.balance}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right text-gray-500">{r.min}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right">
+                          {onPo ? (
+                            <button onClick={() => clearStatus(r.code)} className="rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-500 hover:bg-gray-100">Undo PO</button>
+                          ) : (
+                            <button onClick={() => setPO(r.code)} className="mr-1 rounded-md border border-blue-200 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50">On PO</button>
+                          )}
+                          <button onClick={() => setKIV(r.code)} className="rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-500 hover:bg-gray-100">KIV</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -293,7 +300,47 @@ export default function NiagawanInventoryPage() {
         </div>
       )}
 
-      {/* Needs review (unsure) */}
+      {/* KIV / on hold */}
+      {kivList.length > 0 && (
+        <div className="mt-5">
+          <button onClick={() => setShowKiv((s) => !s)} className="text-xs font-medium text-gray-600 underline hover:text-gray-800">
+            {showKiv ? 'Hide' : 'Show'} KIV / on hold ({kivList.length})
+          </button>
+          {showKiv && (
+            <div className="mt-2 overflow-x-auto rounded-lg border border-gray-200">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-50 text-left text-gray-500">
+                  <tr>
+                    <th className="px-3 py-2 font-semibold">Code</th>
+                    <th className="px-3 py-2 font-semibold">Description</th>
+                    <th className="px-3 py-2 text-right font-semibold">Bal</th>
+                    <th className="px-3 py-2 font-semibold">Note</th>
+                    <th className="px-3 py-2 text-right font-semibold"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {kivList.map((r) => (
+                    <tr key={r.code}>
+                      <td className="whitespace-nowrap px-3 py-2 font-medium text-gray-900">{r.code}</td>
+                      <td className="px-3 py-2 text-gray-700">{r.description}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right text-gray-500">{r.balance == null ? '—' : r.balance}</td>
+                      <td className="px-3 py-2">
+                        <input defaultValue={r.note || ''} placeholder="e.g. supplier out till July" onBlur={(e) => { if (e.target.value !== (r.note || '')) saveNote(r.code, e.target.value); }}
+                          className="w-full rounded border border-gray-200 px-1.5 py-0.5 text-xs" />
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right">
+                        <button onClick={() => clearStatus(r.code)} className="rounded-md border border-emerald-200 px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-50">← Reorder</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Needs review */}
       {review.length > 0 && (
         <div className="mt-5">
           <button onClick={() => setShowReview((s) => !s)} className="text-xs font-medium text-amber-700 underline hover:text-amber-900">
@@ -325,32 +372,20 @@ export default function NiagawanInventoryPage() {
         {showManage && (
           <div className="mt-2 rounded-lg border border-gray-200 bg-white p-3">
             <p className="mb-3 text-xs text-gray-500">Items the scraper checks each run. Add, edit the min level / category, or remove. Changes take effect on the next stock check.</p>
-
-            {/* Add */}
             <div className="mb-3 flex flex-wrap items-end gap-2 rounded-md bg-gray-50 p-2">
               <label className="text-xs text-gray-600">Code<input value={nCode} onChange={(e) => setNCode(e.target.value)} placeholder="e.g. MN7501-4" className="mt-1 block w-32 rounded-md border border-gray-300 px-2 py-1 text-xs" /></label>
               <label className="text-xs text-gray-600">Description<input value={nDesc} onChange={(e) => setNDesc(e.target.value)} className="mt-1 block w-56 rounded-md border border-gray-300 px-2 py-1 text-xs" /></label>
               <label className="text-xs text-gray-600">Min<input value={nMin} onChange={(e) => setNMin(e.target.value)} className="mt-1 block w-14 rounded-md border border-gray-300 px-2 py-1 text-xs" /></label>
               <label className="text-xs text-gray-600">Category
-                <select value={nCat} onChange={(e) => setNCat(e.target.value)} className="mt-1 block rounded-md border border-gray-300 px-2 py-1 text-xs">
-                  {CATS.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <select value={nCat} onChange={(e) => setNCat(e.target.value)} className="mt-1 block rounded-md border border-gray-300 px-2 py-1 text-xs">{CATS.map((c) => <option key={c} value={c}>{c}</option>)}</select>
               </label>
               <button onClick={addItem} disabled={!nCode.trim()} className="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-700 disabled:opacity-40">Add item</button>
             </div>
-
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search code or description…" className="mb-2 w-full rounded-md border border-gray-300 px-2 py-1 text-xs" />
-
             <div className="max-h-96 overflow-y-auto rounded-md border border-gray-100">
               <table className="min-w-full divide-y divide-gray-100 text-xs">
                 <thead className="sticky top-0 bg-gray-50 text-left text-gray-500">
-                  <tr>
-                    <th className="px-2 py-1 font-semibold">Code</th>
-                    <th className="px-2 py-1 font-semibold">Description</th>
-                    <th className="px-2 py-1 font-semibold">Min</th>
-                    <th className="px-2 py-1 font-semibold">Category</th>
-                    <th className="px-2 py-1"></th>
-                  </tr>
+                  <tr><th className="px-2 py-1 font-semibold">Code</th><th className="px-2 py-1 font-semibold">Description</th><th className="px-2 py-1 font-semibold">Min</th><th className="px-2 py-1 font-semibold">Category</th><th className="px-2 py-1"></th></tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {filteredWatch.map((w) =>
@@ -359,11 +394,7 @@ export default function NiagawanInventoryPage() {
                         <td className="whitespace-nowrap px-2 py-1 font-medium text-gray-900">{w.code}</td>
                         <td className="px-2 py-1"><input value={eDesc} onChange={(e) => setEDesc(e.target.value)} className="w-full rounded border border-gray-300 px-1 py-0.5" /></td>
                         <td className="px-2 py-1"><input value={eMin} onChange={(e) => setEMin(e.target.value)} className="w-12 rounded border border-gray-300 px-1 py-0.5" /></td>
-                        <td className="px-2 py-1">
-                          <select value={eCat} onChange={(e) => setECat(e.target.value)} className="rounded border border-gray-300 px-1 py-0.5">
-                            {CATS.map((c) => <option key={c} value={c}>{c}</option>)}
-                          </select>
-                        </td>
+                        <td className="px-2 py-1"><select value={eCat} onChange={(e) => setECat(e.target.value)} className="rounded border border-gray-300 px-1 py-0.5">{CATS.map((c) => <option key={c} value={c}>{c}</option>)}</select></td>
                         <td className="whitespace-nowrap px-2 py-1 text-right">
                           <button onClick={saveEdit} className="mr-1 rounded-md border border-emerald-200 px-2 py-0.5 text-emerald-700 hover:bg-emerald-50">Save</button>
                           <button onClick={() => setEditCode(null)} className="rounded-md border border-gray-200 px-2 py-0.5 text-gray-500 hover:bg-gray-100">Cancel</button>
