@@ -9,6 +9,7 @@ const TABS = [
   { href: '/niagawan/sales', label: 'Sales' },
   { href: '/niagawan/cogs', label: 'COGS' },
   { href: '/niagawan/inventory', label: 'Inventory' },
+  { href: '/niagawan/settings', label: 'Settings' },
 ];
 
 export default function NiagawanLayout({ children }: { children: React.ReactNode }) {
