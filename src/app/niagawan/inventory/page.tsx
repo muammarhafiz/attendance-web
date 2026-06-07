@@ -53,6 +53,7 @@ export default function NiagawanInventoryPage() {
   const [poScanMsg, setPoScanMsg] = useState('');
   const [scanFrom, setScanFrom] = useState(thisMonday());
   const [scanTo, setScanTo] = useState(today());
+  const [selectedCats, setSelectedCats] = useState<string[]>([]);
   const poPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [search, setSearch] = useState('');
@@ -223,11 +224,22 @@ export default function NiagawanInventoryPage() {
     }, 4000);
   }, [sync, loadAll]);
 
+  // Sections that can actually produce a PO = have auto-PO items WITH a supplier assigned.
+  const scanCats = useMemo(() => {
+    const s = new Set<string>();
+    watch.forEach((w) => { if (w.auto_po && w.supplier_id && w.category) s.add(w.category); });
+    return [...s].sort();
+  }, [watch]);
+  // Default to all scannable sections; keep prior selection (pruned) when the list changes.
+  useEffect(() => { setSelectedCats((prev) => (prev.length ? prev.filter((c) => scanCats.includes(c)) : scanCats)); }, [scanCats]);
+  const toggleCat = useCallback((c: string) => { setSelectedCats((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c])); }, []);
+
   const runAutoPo = useCallback(async () => {
     if (poScan === 'running') return;
     if (!scanFrom || !scanTo) { setPoScan('error'); setPoScanMsg('Pick a date range first.'); return; }
+    if (scanCats.length && !selectedCats.length) { setPoScan('error'); setPoScanMsg('Tick at least one section to scan.'); return; }
     setPoScan('running'); setPoScanMsg('Starting sales scan…');
-    const { data, error } = await supabase.from('sync_requests').insert({ source: 'website-inventory', which: 'autopo', from_date: scanFrom, to_date: scanTo }).select('id').single();
+    const { data, error } = await supabase.from('sync_requests').insert({ source: 'website-inventory', which: 'autopo', from_date: scanFrom, to_date: scanTo, categories: selectedCats }).select('id').single();
     if (error || !data) { setPoScan('error'); setPoScanMsg('Could not start: ' + (error?.message ?? 'unknown')); return; }
     const id = data.id as number;
     setPoScanMsg('Scanning sales in Niagawan… ~1–2 min. Draft POs will appear above.');
@@ -245,7 +257,7 @@ export default function NiagawanInventoryPage() {
         setPoScan('idle'); setPoScanMsg('Still running in the background — refresh in a bit.');
       }
     }, 4000);
-  }, [poScan, scanFrom, scanTo, loadSuggs]);
+  }, [poScan, scanFrom, scanTo, selectedCats, scanCats, loadSuggs]);
 
   const addItem = useCallback(async () => {
     const code = nCode.trim();
@@ -321,7 +333,26 @@ export default function NiagawanInventoryPage() {
 
       <div className="mb-4 rounded-lg border border-gray-200 bg-white p-3">
         <div className="text-sm font-medium text-gray-800">Draft purchase orders from sales</div>
-        <div className="mt-0.5 text-xs text-gray-400">Scans what sold in this period and drafts a PO per supplier (watchlist engine oils only). Review &amp; approve above before anything is created in Niagawan.</div>
+        <div className="mt-0.5 text-xs text-gray-400">Scans what sold in this period and drafts a PO per supplier. Review &amp; approve above before anything is created in Niagawan.</div>
+        {scanCats.length > 0 && (
+          <div className="mt-2">
+            <div className="mb-1 flex items-center gap-2 text-xs text-gray-500">
+              <span>Sections to scan:</span>
+              <button onClick={() => setSelectedCats(scanCats)} className="rounded border border-gray-200 px-1.5 py-0.5 text-[11px] text-gray-500 hover:bg-gray-100">All</button>
+              <button onClick={() => setSelectedCats([])} className="rounded border border-gray-200 px-1.5 py-0.5 text-[11px] text-gray-500 hover:bg-gray-100">None</button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {scanCats.map((c) => {
+                const on = selectedCats.includes(c);
+                return (
+                  <button key={c} onClick={() => toggleCat(c)} className={`rounded-full border px-2.5 py-1 text-xs ${on ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-300 bg-white text-gray-500'}`}>
+                    {on ? '✓ ' : ''}{c}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         <div className="mt-2 flex flex-wrap items-end gap-2">
           <label className="text-xs text-gray-500">From<br /><input type="date" value={scanFrom} onChange={(e) => setScanFrom(e.target.value)} className="mt-0.5 rounded-md border border-gray-300 px-2 py-1 text-sm" /></label>
           <label className="text-xs text-gray-500">To<br /><input type="date" value={scanTo} onChange={(e) => setScanTo(e.target.value)} className="mt-0.5 rounded-md border border-gray-300 px-2 py-1 text-sm" /></label>
