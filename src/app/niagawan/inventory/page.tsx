@@ -4,8 +4,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-type Watch = { code: string; description: string | null; min_balance: number; category: string | null };
+type Watch = { code: string; description: string | null; min_balance: number; category: string | null; auto_po: boolean; supplier_id: string | null; supplier_name: string | null };
 type Bal = { code: string; balance: number | null; suppliers: number | null; checked_at: string | null; updated_at: string | null };
+type Supplier = { creditor_id: string; name: string };
 type Status = { code: string; status: 'on_po' | 'kiv'; note: string | null };
 
 type Row = {
@@ -31,6 +32,7 @@ export default function NiagawanInventoryPage() {
   const [watch, setWatch] = useState<Watch[]>([]);
   const [bals, setBals] = useState<Bal[]>([]);
   const [statuses, setStatuses] = useState<Status[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [filter, setFilter] = useState<'low' | 'all'>('low');
   const [showReview, setShowReview] = useState(false);
@@ -70,15 +72,17 @@ export default function NiagawanInventoryPage() {
   const loadAll = useCallback(async () => {
     setLoading(true);
     setErr(null);
-    const [w, b, s] = await Promise.all([
-      supabase.from('niagawan_min_stock').select('code,description,min_balance,category'),
+    const [w, b, s, sup] = await Promise.all([
+      supabase.from('niagawan_min_stock').select('code,description,min_balance,category,auto_po,supplier_id,supplier_name'),
       supabase.from('niagawan_inventory').select('code,balance,suppliers,checked_at,updated_at'),
       supabase.from('niagawan_inventory_status').select('code,status,note'),
+      supabase.from('niagawan_suppliers').select('creditor_id,name').order('name'),
     ]);
     if (w.error) setErr(w.error.message);
     else setWatch((w.data ?? []) as Watch[]);
     setBals((b.data ?? []) as Bal[]);
     setStatuses((s.data ?? []) as Status[]);
+    setSuppliers((sup.data ?? []) as Supplier[]);
     setLoading(false);
   }, []);
 
@@ -209,6 +213,16 @@ export default function NiagawanInventoryPage() {
     setEditCode(null); await loadAll();
   }, [editCode, eDesc, eMin, eCat, loadAll]);
   const deleteItem = useCallback(async (code: string) => { await supabase.from('niagawan_min_stock').delete().eq('code', code); await loadAll(); }, [loadAll]);
+  const toggleAutoPo = useCallback(async (code: string, val: boolean) => {
+    setWatch((ws) => ws.map((w) => (w.code === code ? { ...w, auto_po: val } : w)));
+    await supabase.from('niagawan_min_stock').update({ auto_po: val, updated_at: new Date().toISOString() }).eq('code', code);
+  }, []);
+  const setSupplierFor = useCallback(async (code: string, supplier_id: string) => {
+    const sup = suppliers.find((s) => s.creditor_id === supplier_id) || null;
+    setWatch((ws) => ws.map((w) => (w.code === code ? { ...w, supplier_id: supplier_id || null, supplier_name: sup?.name ?? null } : w)));
+    await supabase.from('niagawan_min_stock').update({ supplier_id: supplier_id || null, supplier_name: sup?.name ?? null, updated_at: new Date().toISOString() }).eq('code', code);
+  }, [suppliers]);
+  const autoPoCount = useMemo(() => watch.filter((w) => w.auto_po).length, [watch]);
 
   if (authed === null || isAdmin === null) return <div className="text-sm text-gray-500">Checking session…</div>;
   if (authed === false) return <div className="text-sm text-gray-600">Please sign in to view this page.</div>;
@@ -367,11 +381,15 @@ export default function NiagawanInventoryPage() {
       {/* Manage watchlist */}
       <div className="mt-6">
         <button onClick={() => setShowManage((s) => !s)} className="text-xs font-medium text-gray-500 underline hover:text-gray-700">
-          {showManage ? 'Hide' : 'Manage'} watchlist ({watch.length} items)
+          {showManage ? 'Hide' : 'Manage'} watchlist ({watch.length} items · {autoPoCount} on auto-PO)
         </button>
         {showManage && (
           <div className="mt-2 rounded-lg border border-gray-200 bg-white p-3">
-            <p className="mb-3 text-xs text-gray-500">Items the scraper checks each run. Add, edit the min level / category, or remove. Changes take effect on the next stock check.</p>
+            <p className="mb-3 text-xs text-gray-500">
+              Items the scraper checks each run. <strong>Auto-PO</strong> = include this item in the daily auto-purchase-order task
+              (when it sells, it gets drafted into a PO for its <strong>supplier</strong>). Tick the items you want and pick each
+              one&rsquo;s supplier.
+            </p>
             <div className="mb-3 flex flex-wrap items-end gap-2 rounded-md bg-gray-50 p-2">
               <label className="text-xs text-gray-600">Code<input value={nCode} onChange={(e) => setNCode(e.target.value)} placeholder="e.g. MN7501-4" className="mt-1 block w-32 rounded-md border border-gray-300 px-2 py-1 text-xs" /></label>
               <label className="text-xs text-gray-600">Description<input value={nDesc} onChange={(e) => setNDesc(e.target.value)} className="mt-1 block w-56 rounded-md border border-gray-300 px-2 py-1 text-xs" /></label>
@@ -385,7 +403,7 @@ export default function NiagawanInventoryPage() {
             <div className="max-h-96 overflow-y-auto rounded-md border border-gray-100">
               <table className="min-w-full divide-y divide-gray-100 text-xs">
                 <thead className="sticky top-0 bg-gray-50 text-left text-gray-500">
-                  <tr><th className="px-2 py-1 font-semibold">Code</th><th className="px-2 py-1 font-semibold">Description</th><th className="px-2 py-1 font-semibold">Min</th><th className="px-2 py-1 font-semibold">Category</th><th className="px-2 py-1"></th></tr>
+                  <tr><th className="px-2 py-1 font-semibold">Code</th><th className="px-2 py-1 font-semibold">Description</th><th className="px-2 py-1 font-semibold">Min</th><th className="px-2 py-1 font-semibold">Category</th><th className="px-2 py-1 text-center font-semibold">Auto-PO</th><th className="px-2 py-1 font-semibold">Supplier</th><th className="px-2 py-1"></th></tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {filteredWatch.map((w) =>
@@ -395,6 +413,8 @@ export default function NiagawanInventoryPage() {
                         <td className="px-2 py-1"><input value={eDesc} onChange={(e) => setEDesc(e.target.value)} className="w-full rounded border border-gray-300 px-1 py-0.5" /></td>
                         <td className="px-2 py-1"><input value={eMin} onChange={(e) => setEMin(e.target.value)} className="w-12 rounded border border-gray-300 px-1 py-0.5" /></td>
                         <td className="px-2 py-1"><select value={eCat} onChange={(e) => setECat(e.target.value)} className="rounded border border-gray-300 px-1 py-0.5">{CATS.map((c) => <option key={c} value={c}>{c}</option>)}</select></td>
+                        <td className="px-2 py-1 text-center text-gray-300">—</td>
+                        <td className="px-2 py-1 text-gray-300">—</td>
                         <td className="whitespace-nowrap px-2 py-1 text-right">
                           <button onClick={saveEdit} className="mr-1 rounded-md border border-emerald-200 px-2 py-0.5 text-emerald-700 hover:bg-emerald-50">Save</button>
                           <button onClick={() => setEditCode(null)} className="rounded-md border border-gray-200 px-2 py-0.5 text-gray-500 hover:bg-gray-100">Cancel</button>
@@ -406,6 +426,16 @@ export default function NiagawanInventoryPage() {
                         <td className="px-2 py-1 text-gray-700">{w.description}</td>
                         <td className="px-2 py-1 text-gray-500">{w.min_balance}</td>
                         <td className="whitespace-nowrap px-2 py-1 text-gray-500">{w.category}</td>
+                        <td className="px-2 py-1 text-center">
+                          <input type="checkbox" checked={w.auto_po} onChange={(e) => toggleAutoPo(w.code, e.target.checked)} className="h-3.5 w-3.5" />
+                        </td>
+                        <td className="px-2 py-1">
+                          <select value={w.supplier_id || ''} onChange={(e) => setSupplierFor(w.code, e.target.value)}
+                            className={`max-w-[180px] rounded border px-1 py-0.5 ${w.auto_po && !w.supplier_id ? 'border-rose-300 bg-rose-50' : 'border-gray-300'}`}>
+                            <option value="">— pick —</option>
+                            {suppliers.map((s) => <option key={s.creditor_id} value={s.creditor_id}>{s.name}</option>)}
+                          </select>
+                        </td>
                         <td className="whitespace-nowrap px-2 py-1 text-right">
                           <button onClick={() => startEdit(w)} className="mr-1 rounded-md border border-gray-200 px-2 py-0.5 text-gray-600 hover:bg-gray-100">Edit</button>
                           <button onClick={() => deleteItem(w.code)} className="rounded-md border border-gray-200 px-2 py-0.5 text-rose-600 hover:bg-rose-50">Delete</button>
