@@ -7,6 +7,8 @@ import { supabase } from '@/lib/supabaseClient';
 type Watch = { code: string; description: string | null; min_balance: number; category: string | null; auto_po: boolean; supplier_id: string | null; supplier_name: string | null };
 type Bal = { code: string; balance: number | null; suppliers: number | null; checked_at: string | null; updated_at: string | null };
 type Supplier = { creditor_id: string; name: string };
+type PoSugg = { id: number; supplier_id: string; supplier_name: string | null; items: { code: string; desc?: string; qty: number }[]; period_from: string | null; period_to: string | null; status: string; po_number: string | null; note: string | null };
+const fmtD = (d: string | null) => { if (!d) return ''; const [y, m, dd] = d.split('-'); return dd ? `${dd}/${m}/${y}` : d; };
 type Status = { code: string; status: 'on_po' | 'kiv'; note: string | null };
 
 type Row = {
@@ -33,6 +35,7 @@ export default function NiagawanInventoryPage() {
   const [bals, setBals] = useState<Bal[]>([]);
   const [statuses, setStatuses] = useState<Status[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [suggs, setSuggs] = useState<PoSugg[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [filter, setFilter] = useState<'low' | 'all'>('low');
   const [showReview, setShowReview] = useState(false);
@@ -72,21 +75,31 @@ export default function NiagawanInventoryPage() {
   const loadAll = useCallback(async () => {
     setLoading(true);
     setErr(null);
-    const [w, b, s, sup] = await Promise.all([
+    const [w, b, s, sup, pg] = await Promise.all([
       supabase.from('niagawan_min_stock').select('code,description,min_balance,category,auto_po,supplier_id,supplier_name'),
       supabase.from('niagawan_inventory').select('code,balance,suppliers,checked_at,updated_at'),
       supabase.from('niagawan_inventory_status').select('code,status,note'),
       supabase.from('niagawan_suppliers').select('creditor_id,name').order('name'),
+      supabase.from('po_suggestions').select('id,supplier_id,supplier_name,items,period_from,period_to,status,po_number,note').neq('status', 'rejected').order('id', { ascending: false }).limit(30),
     ]);
     if (w.error) setErr(w.error.message);
     else setWatch((w.data ?? []) as Watch[]);
     setBals((b.data ?? []) as Bal[]);
     setStatuses((s.data ?? []) as Status[]);
     setSuppliers((sup.data ?? []) as Supplier[]);
+    setSuggs((pg.data ?? []) as PoSugg[]);
     setLoading(false);
   }, []);
 
+  const loadSuggs = useCallback(async () => {
+    const { data } = await supabase.from('po_suggestions').select('id,supplier_id,supplier_name,items,period_from,period_to,status,po_number,note').neq('status', 'rejected').order('id', { ascending: false }).limit(30);
+    setSuggs((data ?? []) as PoSugg[]);
+  }, []);
+  const approveSugg = useCallback(async (id: number) => { await supabase.from('po_suggestions').update({ status: 'approved', updated_at: new Date().toISOString() }).eq('id', id); await loadSuggs(); }, [loadSuggs]);
+  const rejectSugg = useCallback(async (id: number) => { await supabase.from('po_suggestions').update({ status: 'rejected', updated_at: new Date().toISOString() }).eq('id', id); await loadSuggs(); }, [loadSuggs]);
+
   useEffect(() => { if (!isAdmin) return; loadAll(); }, [isAdmin, loadAll]);
+  useEffect(() => { if (!isAdmin) return; const t = setInterval(loadSuggs, 12000); return () => clearInterval(t); }, [isAdmin, loadSuggs]);
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
   const balByCode = useMemo(() => { const m = new Map<string, Bal>(); for (const b of bals) m.set(b.code, b); return m; }, [bals]);
@@ -228,8 +241,47 @@ export default function NiagawanInventoryPage() {
   if (authed === false) return <div className="text-sm text-gray-600">Please sign in to view this page.</div>;
   if (!isAdmin) return <div className="text-sm text-gray-600">This page is for admins only.</div>;
 
+  const pendingSuggs = suggs.filter((s) => s.status === 'pending').length;
+
   return (
     <div>
+      {suggs.length > 0 && (
+        <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50/50 p-3">
+          <h2 className="mb-2 text-sm font-semibold text-blue-900">
+            Purchase orders to approve{pendingSuggs > 0 ? ` (${pendingSuggs} pending)` : ''}
+          </h2>
+          <div className="space-y-2">
+            {suggs.map((s) => (
+              <div key={s.id} className="rounded-md border border-gray-200 bg-white p-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm font-medium text-gray-900">
+                    {s.supplier_name}
+                    <span className="ml-2 text-xs font-normal text-gray-500">
+                      {(s.items || []).length} item{(s.items || []).length !== 1 ? 's' : ''}
+                      {s.period_from ? ` · sold ${fmtD(s.period_from)}–${fmtD(s.period_to)}` : ''}
+                    </span>
+                  </div>
+                  <div className="whitespace-nowrap">
+                    {s.status === 'pending' && (
+                      <>
+                        <button onClick={() => approveSugg(s.id)} className="mr-1 rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700">Approve → create PO</button>
+                        <button onClick={() => rejectSugg(s.id)} className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-500 hover:bg-gray-100">Reject</button>
+                      </>
+                    )}
+                    {s.status === 'approved' && <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-600"><span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-blue-200 border-t-blue-500" />Approved — creating in Niagawan…</span>}
+                    {s.status === 'created' && <span className="text-xs font-medium text-emerald-700">✓ Created {s.po_number || ''}{s.note ? ` · ${s.note}` : ''}</span>}
+                    {s.status === 'error' && <span className="text-xs font-medium text-rose-600">Error: {s.note}</span>}
+                  </div>
+                </div>
+                <div className="mt-1 text-xs text-gray-500">
+                  {(s.items || []).map((it) => `${it.qty}× ${it.desc || it.code}`).join('  ·  ')}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold text-gray-700">Reorder list</h2>
