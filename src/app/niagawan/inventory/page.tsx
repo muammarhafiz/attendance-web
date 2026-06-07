@@ -9,6 +9,9 @@ type Bal = { code: string; balance: number | null; suppliers: number | null; che
 type Supplier = { creditor_id: string; name: string };
 type PoSugg = { id: number; supplier_id: string; supplier_name: string | null; items: { code: string; desc?: string; qty: number }[]; period_from: string | null; period_to: string | null; status: string; po_number: string | null; note: string | null };
 const fmtD = (d: string | null) => { if (!d) return ''; const [y, m, dd] = d.split('-'); return dd ? `${dd}/${m}/${y}` : d; };
+const isoOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const thisMonday = () => { const d = new Date(); const dow = d.getDay(); d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow)); return isoOf(d); };
+const today = () => isoOf(new Date());
 type Status = { code: string; status: 'on_po' | 'kiv'; note: string | null };
 
 type Row = {
@@ -45,6 +48,12 @@ export default function NiagawanInventoryPage() {
   const [sync, setSync] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [syncMsg, setSyncMsg] = useState('');
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const [poScan, setPoScan] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const [poScanMsg, setPoScanMsg] = useState('');
+  const [scanFrom, setScanFrom] = useState(thisMonday());
+  const [scanTo, setScanTo] = useState(today());
+  const poPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [search, setSearch] = useState('');
   const [nCode, setNCode] = useState('');
@@ -101,7 +110,7 @@ export default function NiagawanInventoryPage() {
 
   useEffect(() => { if (!isAdmin) return; loadAll(); }, [isAdmin, loadAll]);
   useEffect(() => { if (!isAdmin) return; const t = setInterval(loadSuggs, 12000); return () => clearInterval(t); }, [isAdmin, loadSuggs]);
-  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); if (poPollRef.current) clearInterval(poPollRef.current); }, []);
 
   const balByCode = useMemo(() => { const m = new Map<string, Bal>(); for (const b of bals) m.set(b.code, b); return m; }, [bals]);
   const statByCode = useMemo(() => { const m = new Map<string, Status>(); for (const s of statuses) m.set(s.code, s); return m; }, [statuses]);
@@ -214,6 +223,30 @@ export default function NiagawanInventoryPage() {
     }, 4000);
   }, [sync, loadAll]);
 
+  const runAutoPo = useCallback(async () => {
+    if (poScan === 'running') return;
+    if (!scanFrom || !scanTo) { setPoScan('error'); setPoScanMsg('Pick a date range first.'); return; }
+    setPoScan('running'); setPoScanMsg('Starting sales scan…');
+    const { data, error } = await supabase.from('sync_requests').insert({ source: 'website-inventory', which: 'autopo', from_date: scanFrom, to_date: scanTo }).select('id').single();
+    if (error || !data) { setPoScan('error'); setPoScanMsg('Could not start: ' + (error?.message ?? 'unknown')); return; }
+    const id = data.id as number;
+    setPoScanMsg('Scanning sales in Niagawan… ~1–2 min. Draft POs will appear above.');
+    const started = Date.now();
+    poPollRef.current = setInterval(async () => {
+      const { data: r } = await supabase.from('sync_requests').select('status').eq('id', id).single();
+      if (r?.status === 'done' || r?.status === 'error') {
+        if (poPollRef.current) clearInterval(poPollRef.current);
+        await loadSuggs();
+        setPoScan(r.status === 'done' ? 'done' : 'error');
+        setPoScanMsg(r.status === 'done' ? 'Scan complete ✓ — any draft POs are shown above to approve.' : 'Scan ran but reported an error.');
+        setTimeout(() => { setPoScan('idle'); setPoScanMsg(''); }, 6000);
+      } else if (Date.now() - started > 5 * 60 * 1000) {
+        if (poPollRef.current) clearInterval(poPollRef.current);
+        setPoScan('idle'); setPoScanMsg('Still running in the background — refresh in a bit.');
+      }
+    }, 4000);
+  }, [poScan, scanFrom, scanTo, loadSuggs]);
+
   const addItem = useCallback(async () => {
     const code = nCode.trim();
     if (!code) return;
@@ -285,6 +318,19 @@ export default function NiagawanInventoryPage() {
           </div>
         </div>
       )}
+
+      <div className="mb-4 rounded-lg border border-gray-200 bg-white p-3">
+        <div className="text-sm font-medium text-gray-800">Draft purchase orders from sales</div>
+        <div className="mt-0.5 text-xs text-gray-400">Scans what sold in this period and drafts a PO per supplier (watchlist engine oils only). Review &amp; approve above before anything is created in Niagawan.</div>
+        <div className="mt-2 flex flex-wrap items-end gap-2">
+          <label className="text-xs text-gray-500">From<br /><input type="date" value={scanFrom} onChange={(e) => setScanFrom(e.target.value)} className="mt-0.5 rounded-md border border-gray-300 px-2 py-1 text-sm" /></label>
+          <label className="text-xs text-gray-500">To<br /><input type="date" value={scanTo} onChange={(e) => setScanTo(e.target.value)} className="mt-0.5 rounded-md border border-gray-300 px-2 py-1 text-sm" /></label>
+          <button onClick={runAutoPo} disabled={poScan === 'running'} className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-60">
+            {poScan === 'running' ? (<><span className="h-3 w-3 animate-spin rounded-full border-2 border-blue-200 border-t-white" />Scanning…</>) : 'Scan sales & draft POs'}
+          </button>
+          {poScanMsg && <span className="text-xs text-gray-500">{poScanMsg}</span>}
+        </div>
+      </div>
 
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
