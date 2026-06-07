@@ -97,6 +97,7 @@ export default function NiagawanInventoryPage() {
   }, []);
   const approveSugg = useCallback(async (id: number) => { await supabase.from('po_suggestions').update({ status: 'approved', updated_at: new Date().toISOString() }).eq('id', id); await loadSuggs(); }, [loadSuggs]);
   const rejectSugg = useCallback(async (id: number) => { await supabase.from('po_suggestions').update({ status: 'rejected', updated_at: new Date().toISOString() }).eq('id', id); await loadSuggs(); }, [loadSuggs]);
+  const dismissSugg = useCallback(async (id: number) => { await supabase.from('po_suggestions').delete().eq('id', id); await loadSuggs(); }, [loadSuggs]);
 
   useEffect(() => { if (!isAdmin) return; loadAll(); }, [isAdmin, loadAll]);
   useEffect(() => { if (!isAdmin) return; const t = setInterval(loadSuggs, 12000); return () => clearInterval(t); }, [isAdmin, loadSuggs]);
@@ -271,6 +272,9 @@ export default function NiagawanInventoryPage() {
                     {s.status === 'approved' && <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-600"><span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-blue-200 border-t-blue-500" />Approved — creating in Niagawan…</span>}
                     {s.status === 'created' && <span className="text-xs font-medium text-emerald-700">✓ Created {s.po_number || ''}{s.note ? ` · ${s.note}` : ''}</span>}
                     {s.status === 'error' && <span className="text-xs font-medium text-rose-600">Error: {s.note}</span>}
+                    {s.status !== 'pending' && (
+                      <button onClick={() => dismissSugg(s.id)} title="Remove from list" className="ml-2 rounded-md border border-gray-200 px-1.5 py-0.5 text-xs text-gray-400 hover:bg-gray-100 hover:text-gray-700">✕</button>
+                    )}
                   </div>
                 </div>
                 <div className="mt-1 text-xs text-gray-500">
