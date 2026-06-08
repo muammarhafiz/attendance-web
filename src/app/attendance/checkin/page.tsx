@@ -296,9 +296,15 @@ export default function CheckinV2Page() {
                 <input type="date" value={mcTo} onChange={(e) => setMcTo(e.target.value)} className="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
               </label>
             </div>
-            <label className="block text-xs text-gray-500">Certificate (photo or PDF)
-              <input type="file" accept="image/*,application/pdf" onChange={(e) => setMcFile(e.target.files?.[0] ?? null)} className="mt-0.5 block w-full text-sm" />
-            </label>
+            <div className="text-xs text-gray-500">Certificate (photo or PDF)
+              <div className="mt-1 flex items-center gap-2">
+                <label className="inline-flex cursor-pointer items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                  📎 Choose file
+                  <input type="file" accept="image/*,application/pdf" onChange={(e) => setMcFile(e.target.files?.[0] ?? null)} className="hidden" />
+                </label>
+                <span className="min-w-0 flex-1 truncate text-xs text-gray-500">{mcFile ? mcFile.name : 'No file chosen'}</span>
+              </div>
+            </div>
             <label className="block text-xs text-gray-500">Note (optional)
               <input value={mcNote} onChange={(e) => setMcNote(e.target.value)} placeholder="e.g. clinic name" className="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
             </label>
