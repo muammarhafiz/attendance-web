@@ -77,7 +77,7 @@ export default function AttendanceReportPage() {
     const by = new Map<string, { name: string; present: number; absent: number; lateDays: number; lateMin: number; off: number }>();
     for (const r of rows) {
       const cur = by.get(r.staff_email) ?? { name: r.staff_name ?? r.staff_email, present: 0, absent: 0, lateDays: 0, lateMin: 0, off: 0 };
-      if (r.status === 'PRESENT') { cur.present++; if ((r.late_min ?? 0) > 0) { cur.lateDays++; cur.lateMin += r.late_min ?? 0; } }
+      if (r.status === 'PRESENT' || r.status === 'HOME') { cur.present++; if ((r.late_min ?? 0) > 0) { cur.lateDays++; cur.lateMin += r.late_min ?? 0; } }
       else if (r.status === 'ABSENT') cur.absent++;
       else if (r.status === 'OFFDAY' || r.status === 'MC' || r.status === 'OFF') cur.off++;
       by.set(r.staff_email, cur);
@@ -209,8 +209,9 @@ export default function AttendanceReportPage() {
                     <td className="px-3 py-2 text-gray-700">{fmtDay(r.day)}</td>
                     <td className="px-3 py-2">
                       {r.status === 'PRESENT' && <span className="text-emerald-700">Present</span>}
+                      {r.status === 'HOME' && <span className="text-emerald-700">Home (WFH)</span>}
                       {r.status === 'ABSENT' && <span className="text-rose-600">Absent</span>}
-                      {r.status === 'OFF' && <span className="text-gray-500">Closed (Sun)</span>}
+                      {r.status === 'OFF' && <span className="text-gray-500">Closed</span>}
                       {r.status === 'OFFDAY' && <span className="text-blue-700">Off day</span>}
                       {r.status === 'MC' && <span className="text-blue-700">MC</span>}
                     </td>
