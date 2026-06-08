@@ -90,6 +90,9 @@ export default function NavBar() {
             {isAdmin && (
               <Link href="/niagawan/sales" prefetch={false} className={linkClass('/niagawan')}>Niagawan</Link>
             )}
+            {isAdmin && (
+              <Link href="/attendance/checkin" prefetch={false} className={linkClass('/attendance')}>Attendance</Link>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">

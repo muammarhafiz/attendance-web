@@ -1,0 +1,226 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { supabase } from '@/lib/supabaseClient';
+
+type Status = {
+  status?: string;
+  check_in_kl?: string | null;
+  check_out_kl?: string | null;
+  late_min?: number | null;
+};
+
+// 'HH:MM:SS.mmm' -> 'H:MM AM/PM'
+function fmtTime(t: string | null | undefined): string {
+  if (!t) return '—';
+  const [hh, mm] = t.split(':');
+  let h = Number(hh);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${h}:${mm} ${ampm}`;
+}
+
+function haversineM(aLat: number, aLon: number, bLat: number, bLon: number): number {
+  const R = 6371000;
+  const dLat = ((bLat - aLat) * Math.PI) / 180;
+  const dLon = ((bLon - aLon) * Math.PI) / 180;
+  const la1 = (aLat * Math.PI) / 180;
+  const la2 = (bLat * Math.PI) / 180;
+  const s =
+    Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLon / 2) ** 2;
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s)));
+}
+
+export default function CheckinV2Page() {
+  const [email, setEmail] = useState<string | null | undefined>(undefined);
+  const [cfg, setCfg] = useState<{ lat: number; lon: number; radius: number } | null>(null);
+  const [geo, setGeo] = useState<{ lat: number; lon: number; acc: number } | null>(null);
+  const [geoErr, setGeoErr] = useState<string | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [status, setStatus] = useState<Status | null>(null);
+  const [busy, setBusy] = useState<null | 'in' | 'out'>(null);
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  // --- auth ---
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null));
+    const { data } = supabase.auth.onAuthStateChange((_e, s) => setEmail(s?.user?.email ?? null));
+    return () => data.subscription.unsubscribe();
+  }, []);
+
+  // --- workshop geofence config (for on-screen distance only; server is source of truth) ---
+  useEffect(() => {
+    supabase
+      .from('config')
+      .select('workshop_lat,workshop_lon,radius_m')
+      .eq('id', 1)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) setCfg({ lat: data.workshop_lat, lon: data.workshop_lon, radius: data.radius_m });
+      });
+  }, []);
+
+  const loadStatus = useCallback(async () => {
+    const { data, error } = await supabase.rpc('my_attendance_today');
+    if (!error) setStatus((data ?? {}) as Status);
+  }, []);
+
+  useEffect(() => {
+    if (email) loadStatus();
+  }, [email, loadStatus]);
+
+  const getLocation = useCallback(() => {
+    if (!('geolocation' in navigator)) {
+      setGeoErr('This device does not support GPS.');
+      return;
+    }
+    setLocating(true);
+    setGeoErr(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setGeo({ lat: pos.coords.latitude, lon: pos.coords.longitude, acc: pos.coords.accuracy });
+        setLocating(false);
+      },
+      (err) => {
+        setGeoErr(err.message || 'Could not get your location.');
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
+    );
+  }, []);
+
+  useEffect(() => {
+    getLocation();
+  }, [getLocation]);
+
+  const distance = useMemo(() => {
+    if (!geo || !cfg) return null;
+    return haversineM(geo.lat, geo.lon, cfg.lat, cfg.lon);
+  }, [geo, cfg]);
+
+  const inside = distance != null && cfg ? distance <= cfg.radius : null;
+
+  const checkedIn = !!status?.check_in_kl;
+  const checkedOut = !!status?.check_out_kl;
+
+  const doCheck = useCallback(
+    async (kind: 'in' | 'out') => {
+      if (!geo) {
+        setMsg({ kind: 'err', text: 'Waiting for your GPS location — tap "Refresh location".' });
+        return;
+      }
+      setBusy(kind);
+      setMsg(null);
+      const fn = kind === 'in' ? 'checkin_v2' : 'checkout_v2';
+      const { error } = await supabase.rpc(fn, { p_lat: geo.lat, p_lon: geo.lon, p_note: null });
+      if (error) {
+        setMsg({ kind: 'err', text: error.message });
+      } else {
+        setMsg({ kind: 'ok', text: kind === 'in' ? 'Checked in ✓' : 'Checked out ✓' });
+        await loadStatus();
+      }
+      setBusy(null);
+    },
+    [geo, loadStatus]
+  );
+
+  if (email === undefined) return <div className="text-sm text-gray-500">Loading…</div>;
+  if (email === null)
+    return (
+      <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600">
+        Please <a href="/login" className="text-blue-600 underline">sign in</a> to check in.
+      </div>
+    );
+
+  return (
+    <div className="mx-auto max-w-md">
+      {/* Status card */}
+      <div className="mb-4 rounded-xl border border-gray-200 bg-white p-4">
+        <div className="text-xs font-medium uppercase tracking-wide text-gray-400">Today</div>
+        {!checkedIn ? (
+          <div className="mt-1 text-lg font-semibold text-gray-900">Not checked in yet</div>
+        ) : (
+          <div className="mt-1">
+            <div className="text-lg font-semibold text-emerald-700">
+              ✓ Checked in at {fmtTime(status?.check_in_kl)}
+              {(status?.late_min ?? 0) > 0 && (
+                <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">
+                  {status?.late_min} min late
+                </span>
+              )}
+            </div>
+            <div className="mt-0.5 text-sm text-gray-500">
+              {checkedOut ? `Checked out at ${fmtTime(status?.check_out_kl)}` : 'Still on the clock'}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Location card */}
+      <div className="mb-4 rounded-xl border border-gray-200 bg-white p-4">
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-medium text-gray-700">Your location</div>
+          <button
+            onClick={getLocation}
+            disabled={locating}
+            className="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+          >
+            {locating ? 'Locating…' : 'Refresh location'}
+          </button>
+        </div>
+        {geoErr ? (
+          <div className="mt-2 text-sm text-rose-600">{geoErr}</div>
+        ) : !geo ? (
+          <div className="mt-2 text-sm text-gray-500">Getting your GPS…</div>
+        ) : (
+          <div className="mt-2 text-sm">
+            {distance != null && (
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${
+                  inside ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+                }`}
+              >
+                {inside ? '✓ Inside the workshop area' : '✗ Outside the workshop area'} · ~{distance} m
+              </span>
+            )}
+            <div className="mt-1 text-xs text-gray-400">GPS accuracy ±{Math.round(geo.acc)} m</div>
+          </div>
+        )}
+      </div>
+
+      {/* Action buttons */}
+      <div className="grid grid-cols-2 gap-3">
+        <button
+          onClick={() => doCheck('in')}
+          disabled={busy !== null || checkedIn || !geo}
+          className="rounded-xl bg-emerald-600 py-4 text-base font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-40"
+        >
+          {busy === 'in' ? 'Checking in…' : 'Check in'}
+        </button>
+        <button
+          onClick={() => doCheck('out')}
+          disabled={busy !== null || !checkedIn || checkedOut || !geo}
+          className="rounded-xl bg-gray-900 py-4 text-base font-semibold text-white transition hover:bg-black disabled:opacity-40"
+        >
+          {busy === 'out' ? 'Checking out…' : 'Check out'}
+        </button>
+      </div>
+
+      {msg && (
+        <div
+          className={`mt-3 rounded-lg border p-2.5 text-sm ${
+            msg.kind === 'ok'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+              : 'border-rose-200 bg-rose-50 text-rose-800'
+          }`}
+        >
+          {msg.text}
+        </div>
+      )}
+
+      <p className="mt-3 text-center text-xs text-gray-400">
+        Your location is checked on the server when you tap the button.
+      </p>
+    </div>
+  );
+}
