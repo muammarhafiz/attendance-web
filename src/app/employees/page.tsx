@@ -60,6 +60,8 @@ type StaffFull = {
   epf_enabled?: boolean | null;
   socso_enabled?: boolean | null;
   eis_enabled?: boolean | null;
+
+  track_attendance?: boolean | null;
 };
 
 type NewEmployee = {
@@ -115,6 +117,7 @@ export default function EmployeesPage() {
   const [editEpfEnabled, setEditEpfEnabled] = useState<boolean>(true);
   const [editSocsoEnabled, setEditSocsoEnabled] = useState<boolean>(true);
   const [editEisEnabled, setEditEisEnabled] = useState<boolean>(true);
+  const [editTrackAttendance, setEditTrackAttendance] = useState<boolean>(true);
 
   // add employee drawer
   const [addOpen, setAddOpen] = useState(false);
@@ -276,6 +279,7 @@ export default function EmployeesPage() {
     setEditEpfEnabled(row?.epf_enabled ?? true);
     setEditSocsoEnabled(row?.socso_enabled ?? true);
     setEditEisEnabled(row?.eis_enabled ?? true);
+    setEditTrackAttendance(row?.track_attendance ?? true);
   };
 
   const save = async () => {
@@ -322,10 +326,17 @@ export default function EmployeesPage() {
         epf_enabled: !!editEpfEnabled,
         socso_enabled: !!editSocsoEnabled,
         eis_enabled: !!editEisEnabled,
+        track_attendance: !!editTrackAttendance,
       };
 
       const { error: upErr } = await supabase.from('staff').update(payload).eq('email', model.email);
       if (upErr) throw upErr;
+
+      // Refresh attendance for this month so the track-attendance change shows immediately
+      try {
+        const fom = today.slice(0, 8) + '01';
+        await supabase.rpc('attendance_v2_recompute', { p_from: fom, p_to: today });
+      } catch { /* non-fatal */ }
 
       // Revoke / restore login access to match archived state (best-effort)
       try {
@@ -618,6 +629,19 @@ export default function EmployeesPage() {
                   <div className="text-xs text-gray-500">
                     When checked, <code>archived_at</code> will be set. Uncheck to reactivate.
                   </div>
+                </div>
+              </Section>
+
+              {/* Attendance */}
+              <Section title="Attendance">
+                <div className="flex items-center gap-2">
+                  <input id="track-att" type="checkbox" checked={editTrackAttendance} onChange={(e) => setEditTrackAttendance(e.target.checked)} />
+                  <label htmlFor="track-att" className="text-sm">
+                    Track attendance (show in Today / Report, expected to check in)
+                  </label>
+                </div>
+                <div className="mt-1 text-xs text-gray-500">
+                  Turn this OFF for the owner / managers who don&apos;t clock in — they won&apos;t appear on the attendance board or in reports.
                 </div>
               </Section>
 
