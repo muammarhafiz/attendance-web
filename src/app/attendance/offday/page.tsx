@@ -15,10 +15,14 @@ const isoToday = () => {
 };
 
 const STATUSES = [
-  { value: 'OFFDAY', label: 'Off day / Public holiday' },
+  { value: 'OFFDAY', label: 'Off day (annual leave / rest)' },
+  { value: 'PH', label: 'Public holiday (government)' },
   { value: 'MC', label: 'Medical leave (MC)' },
   { value: 'ABSENT', label: 'Absent' },
 ];
+const STATUS_LABEL: Record<string, string> = {
+  OFFDAY: 'Off day', PH: 'Public holiday', MC: 'MC', ABSENT: 'Absent',
+};
 
 export default function AttendanceOffdayPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -159,7 +163,7 @@ export default function AttendanceOffdayPage() {
           <button onClick={apply} disabled={busy} className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50">
             {busy ? 'Saving…' : 'Set'}
           </button>
-          <span className="text-xs text-gray-400">Tip: All staff + Off day = public holiday.</span>
+          <span className="text-xs text-gray-400">Tip: for a government holiday, pick &quot;Public holiday&quot; + All staff.</span>
         </div>
         {msg && (
           <div className={`mt-3 rounded-md border p-2 text-sm ${msg.kind === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>
@@ -188,7 +192,7 @@ export default function AttendanceOffdayPage() {
                 <tr key={`${r.day}|${r.staff_email}`} className="border-t border-gray-100">
                   <td className="px-3 py-2 text-gray-700">{r.day.slice(8)}/{r.day.slice(5, 7)}</td>
                   <td className="px-3 py-2 text-gray-700">{nameByEmail.get(r.staff_email) ?? r.staff_email}</td>
-                  <td className="px-3 py-2"><span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{r.status}</span></td>
+                  <td className="px-3 py-2"><span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{STATUS_LABEL[r.status] ?? r.status}</span></td>
                   <td className="px-3 py-2 text-gray-500">{r.note ?? '—'}</td>
                   <td className="px-3 py-2 text-right">
                     <button onClick={() => clearOne(r)} disabled={busy} className="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-100 disabled:opacity-50">Clear</button>
