@@ -5,7 +5,9 @@ import { createClientServer } from '@/lib/supabaseServer'
 export async function GET(req: Request) {
   const url = new URL(req.url)
   const code = url.searchParams.get('code')
-  const next = url.searchParams.get('next') || '/'
+  // Only allow same-site relative paths, to prevent an open-redirect via ?next=
+  const nextRaw = url.searchParams.get('next') || '/'
+  const next = nextRaw.startsWith('/') && !nextRaw.startsWith('//') ? nextRaw : '/'
 
   // Server-side Supabase client; handles cookies internally
   const supabase = createClientServer(req)
