@@ -97,6 +97,7 @@ export default function EmployeesPage() {
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<StaffBrief[]>([]);
   const [q, setQ] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
 
   // editor
   const [openEmail, setOpenEmail] = useState<string | null>(null);
@@ -203,9 +204,39 @@ export default function EmployeesPage() {
     setLoading(false);
   };
 
+  const loadArchived = async () => {
+    setLoading(true);
+    setMsg(null);
+    const { data, error } = await supabase
+      .from('staff')
+      .select('email, full_name, name, position, basic_salary, start_date')
+      .not('archived_at', 'is', null)
+      .order('full_name');
+    if (error) {
+      setMsg(`Load failed: ${error.message}`);
+      setRows([]);
+      setLoading(false);
+      return;
+    }
+    const list = ((data ?? []) as Array<{ email: string; full_name: string | null; name: string | null; position: string | null; basic_salary: number | null; start_date: string | null }>)
+      .map((r) => ({
+        display_name: r.full_name ?? r.name,
+        email: r.email,
+        salary_basic: r.basic_salary,
+        position: r.position,
+        start_date: r.start_date,
+        year_join: r.start_date ? Number(r.start_date.slice(0, 4)) : null,
+      })) as StaffBrief[];
+    setRows(list);
+    setLoading(false);
+  };
+
+  const reloadList = () => (showArchived ? loadArchived() : load());
+
   useEffect(() => {
-    if (authed && isAdmin) load();
-  }, [authed, isAdmin]);
+    if (authed && isAdmin) { if (showArchived) loadArchived(); else load(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, isAdmin, showArchived]);
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -295,6 +326,16 @@ export default function EmployeesPage() {
       const { error: upErr } = await supabase.from('staff').update(payload).eq('email', model.email);
       if (upErr) throw upErr;
 
+      // Revoke / restore login access to match archived state (best-effort)
+      try {
+        const tok = (await supabase.auth.getSession()).data.session?.access_token;
+        await fetch('/api/admin/set-login-access', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
+          body: JSON.stringify({ email: model.email, archived: editArchived }),
+        });
+      } catch { /* non-fatal */ }
+
       // Recalc latest OPEN period (if any) so toggles reflect quickly
       const { data: period, error: perErr } = await supabase
         .schema('pay_v2')
@@ -326,8 +367,8 @@ export default function EmployeesPage() {
         }
       }
 
-      setMsg('Saved. Payroll flags updated.');
-      await load();
+      setMsg(editArchived ? 'Saved. Employee archived & login revoked.' : 'Saved.');
+      await reloadList();
     } catch (e: any) {
       setMsg(`Save failed: ${e.message ?? e}`);
     } finally {
@@ -427,6 +468,7 @@ export default function EmployeesPage() {
     <main className="mx-auto max-w-7xl p-6">
       <header className="mb-4 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold">Employees</h1>
+        {showArchived && <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-600">Archived</span>}
         <div className="ml-auto flex items-center gap-2">
           <input
             className="rounded border px-3 py-2 w-72"
@@ -434,9 +476,17 @@ export default function EmployeesPage() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
-          <button className="rounded bg-emerald-600 px-3 py-2 text-white hover:bg-emerald-700" onClick={openAdd}>
-            + Add employee
+          <button
+            className="rounded border px-3 py-2 hover:bg-gray-50"
+            onClick={() => setShowArchived((v) => !v)}
+          >
+            {showArchived ? 'Show active' : 'Show archived'}
           </button>
+          {!showArchived && (
+            <button className="rounded bg-emerald-600 px-3 py-2 text-white hover:bg-emerald-700" onClick={openAdd}>
+              + Add employee
+            </button>
+          )}
         </div>
       </header>
 
