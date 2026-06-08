@@ -24,6 +24,8 @@ export default function McReviewPage() {
   const [names, setNames] = useState<Map<string, string>>(new Map());
   const [busy, setBusy] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [staffF, setStaffF] = useState('ALL');
+  const [statusF, setStatusF] = useState('all');
 
   useEffect(() => {
     (async () => {
@@ -56,6 +58,17 @@ export default function McReviewPage() {
     return [...reqs].sort((a, b) => rank(a.status) - rank(b.status) || b.created_at.localeCompare(a.created_at));
   }, [reqs]);
 
+  const staffList = useMemo(() => {
+    const m = new Map<string, string>();
+    reqs.forEach((r) => m.set(r.staff_email, names.get(r.staff_email.toLowerCase()) ?? r.staff_email));
+    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [reqs, names]);
+
+  const filtered = useMemo(
+    () => sorted.filter((r) => (staffF === 'ALL' || r.staff_email === staffF) && (statusF === 'all' || r.status === statusF)),
+    [sorted, staffF, statusF]
+  );
+
   const viewCert = useCallback(async (path: string | null) => {
     if (!path) return;
     const { data, error } = await supabase.storage.from('mc').createSignedUrl(path, 300);
@@ -77,18 +90,28 @@ export default function McReviewPage() {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between">
-        <span className="text-sm text-gray-600">{pendingCount} pending {pendingCount === 1 ? 'request' : 'requests'}</span>
-        <button onClick={load} disabled={loading} className="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span className="text-sm text-gray-600">{pendingCount} pending</span>
+        <select value={staffF} onChange={(e) => setStaffF(e.target.value)} className="ml-2 rounded-md border border-gray-300 px-2 py-1.5 text-sm">
+          <option value="ALL">All staff</option>
+          {staffList.map(([email, name]) => <option key={email} value={email}>{name}</option>)}
+        </select>
+        <select value={statusF} onChange={(e) => setStatusF(e.target.value)} className="rounded-md border border-gray-300 px-2 py-1.5 text-sm">
+          <option value="all">All statuses</option>
+          <option value="pending">Pending</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+        </select>
+        <button onClick={load} disabled={loading} className="ml-auto rounded-md border border-gray-300 px-2.5 py-1.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50">
           {loading ? 'Loading…' : 'Refresh'}
         </button>
       </div>
 
-      {sorted.length === 0 ? (
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">No MC submissions yet.</div>
+      {filtered.length === 0 ? (
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">No MC submissions match.</div>
       ) : (
         <div className="space-y-2">
-          {sorted.map((r) => (
+          {filtered.map((r) => (
             <div key={r.id} className={`rounded-lg border p-3 ${r.status === 'pending' ? 'border-amber-200 bg-amber-50/40' : 'border-gray-200 bg-white'}`}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
