@@ -74,13 +74,14 @@ export default function AttendanceReportPage() {
 
   // per-staff summary
   const summary = useMemo(() => {
-    const by = new Map<string, { name: string; present: number; absent: number; lateDays: number; lateMin: number; mc: number; offday: number }>();
+    const by = new Map<string, { name: string; present: number; absent: number; lateDays: number; lateMin: number; mc: number; offday: number; ph: number }>();
     for (const r of rows) {
-      const cur = by.get(r.staff_email) ?? { name: r.staff_name ?? r.staff_email, present: 0, absent: 0, lateDays: 0, lateMin: 0, mc: 0, offday: 0 };
+      const cur = by.get(r.staff_email) ?? { name: r.staff_name ?? r.staff_email, present: 0, absent: 0, lateDays: 0, lateMin: 0, mc: 0, offday: 0, ph: 0 };
       if (r.status === 'PRESENT' || r.status === 'HOME') { cur.present++; if ((r.late_min ?? 0) > 0) { cur.lateDays++; cur.lateMin += r.late_min ?? 0; } }
       else if (r.status === 'ABSENT') cur.absent++;
       else if (r.status === 'MC') cur.mc++;
       else if (r.status === 'OFFDAY') cur.offday++;
+      else if (r.status === 'PH') cur.ph++;
       // 'OFF' (Sunday / workshop closed) is intentionally NOT counted here
       by.set(r.staff_email, cur);
     }
@@ -172,6 +173,7 @@ export default function AttendanceReportPage() {
                 <th className="px-3 py-2 text-right font-medium text-gray-600">Total late</th>
                 <th className="px-3 py-2 text-right font-medium text-gray-600">MC</th>
                 <th className="px-3 py-2 text-right font-medium text-gray-600">Off day</th>
+                <th className="px-3 py-2 text-right font-medium text-gray-600">Public holiday</th>
               </tr>
             </thead>
             <tbody>
@@ -186,6 +188,7 @@ export default function AttendanceReportPage() {
                   <td className="px-3 py-2 text-right text-amber-700">{s.lateMin ? `${s.lateMin} min` : '—'}</td>
                   <td className="px-3 py-2 text-right text-purple-700">{s.mc || '—'}</td>
                   <td className="px-3 py-2 text-right text-blue-700">{s.offday || '—'}</td>
+                  <td className="px-3 py-2 text-right text-indigo-700">{s.ph || '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -217,6 +220,7 @@ export default function AttendanceReportPage() {
                       {r.status === 'ABSENT' && <span className="text-rose-600">Absent</span>}
                       {r.status === 'OFF' && <span className="text-gray-500">Closed</span>}
                       {r.status === 'OFFDAY' && <span className="text-blue-700">Off day</span>}
+                      {r.status === 'PH' && <span className="text-indigo-700">Public holiday</span>}
                       {r.status === 'MC' && <span className="text-blue-700">MC</span>}
                     </td>
                     <td className="px-3 py-2 text-gray-700">{fmt12(r.check_in_kl)}</td>
