@@ -74,12 +74,14 @@ export default function AttendanceReportPage() {
 
   // per-staff summary
   const summary = useMemo(() => {
-    const by = new Map<string, { name: string; present: number; absent: number; lateDays: number; lateMin: number; off: number }>();
+    const by = new Map<string, { name: string; present: number; absent: number; lateDays: number; lateMin: number; mc: number; offday: number }>();
     for (const r of rows) {
-      const cur = by.get(r.staff_email) ?? { name: r.staff_name ?? r.staff_email, present: 0, absent: 0, lateDays: 0, lateMin: 0, off: 0 };
+      const cur = by.get(r.staff_email) ?? { name: r.staff_name ?? r.staff_email, present: 0, absent: 0, lateDays: 0, lateMin: 0, mc: 0, offday: 0 };
       if (r.status === 'PRESENT' || r.status === 'HOME') { cur.present++; if ((r.late_min ?? 0) > 0) { cur.lateDays++; cur.lateMin += r.late_min ?? 0; } }
       else if (r.status === 'ABSENT') cur.absent++;
-      else if (r.status === 'OFFDAY' || r.status === 'MC' || r.status === 'OFF') cur.off++;
+      else if (r.status === 'MC') cur.mc++;
+      else if (r.status === 'OFFDAY') cur.offday++;
+      // 'OFF' (Sunday / workshop closed) is intentionally NOT counted here
       by.set(r.staff_email, cur);
     }
     return [...by.entries()].map(([email, v]) => ({ email, ...v })).sort((a, b) => a.name.localeCompare(b.name));
@@ -168,7 +170,8 @@ export default function AttendanceReportPage() {
                 <th className="px-3 py-2 text-right font-medium text-gray-600">Absent</th>
                 <th className="px-3 py-2 text-right font-medium text-gray-600">Late days</th>
                 <th className="px-3 py-2 text-right font-medium text-gray-600">Total late</th>
-                <th className="px-3 py-2 text-right font-medium text-gray-600">Off / MC</th>
+                <th className="px-3 py-2 text-right font-medium text-gray-600">MC</th>
+                <th className="px-3 py-2 text-right font-medium text-gray-600">Off day</th>
               </tr>
             </thead>
             <tbody>
@@ -181,7 +184,8 @@ export default function AttendanceReportPage() {
                   <td className="px-3 py-2 text-right text-rose-600">{s.absent || '—'}</td>
                   <td className="px-3 py-2 text-right text-amber-700">{s.lateDays || '—'}</td>
                   <td className="px-3 py-2 text-right text-amber-700">{s.lateMin ? `${s.lateMin} min` : '—'}</td>
-                  <td className="px-3 py-2 text-right text-blue-700">{s.off || '—'}</td>
+                  <td className="px-3 py-2 text-right text-purple-700">{s.mc || '—'}</td>
+                  <td className="px-3 py-2 text-right text-blue-700">{s.offday || '—'}</td>
                 </tr>
               ))}
             </tbody>
