@@ -98,6 +98,7 @@ export default function EmployeesPage() {
   const [rows, setRows] = useState<StaffBrief[]>([]);
   const [q, setQ] = useState('');
   const [showArchived, setShowArchived] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   // editor
   const [openEmail, setOpenEmail] = useState<string | null>(null);
@@ -454,6 +455,35 @@ export default function EmployeesPage() {
     }
   };
 
+  const deleteEmployee = async (email: string, name: string) => {
+    const typed = window.prompt(
+      `This permanently deletes ${name} and ALL their data (attendance history, payroll, MC certificates, and login). This CANNOT be undone.\n\nType the email to confirm:\n${email}`
+    );
+    if (typed === null) return; // cancelled
+    if (typed.trim().toLowerCase() !== email.toLowerCase()) {
+      alert('Email did not match — nothing was deleted.');
+      return;
+    }
+    setDeleting(email);
+    setMsg(null);
+    try {
+      const tok = (await supabase.auth.getSession()).data.session?.access_token;
+      const res = await fetch('/api/admin/delete-employee', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
+        body: JSON.stringify({ email }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || 'Delete failed');
+      setMsg(`Permanently deleted ${name}.`);
+      await reloadList();
+    } catch (e: any) {
+      setMsg(`Delete failed: ${e.message ?? e}`);
+    } finally {
+      setDeleting(null);
+    }
+  };
+
   function closeEditor() {
     if (saving) return;
     setOpenEmail(null);
@@ -520,9 +550,20 @@ export default function EmployeesPage() {
                   <td className="border-b px-3 py-2">{r.position ?? '—'}</td>
                   <td className="border-b px-3 py-2">{r.year_join ?? (r.start_date?.slice(0, 4) ?? '—')}</td>
                   <td className="border-b px-3 py-2 text-right">
-                    <button className="rounded border px-3 py-1.5 hover:bg-gray-50" onClick={() => openEditor(r.email)}>
-                      Edit
-                    </button>
+                    <div className="flex justify-end gap-2">
+                      <button className="rounded border px-3 py-1.5 hover:bg-gray-50" onClick={() => openEditor(r.email)}>
+                        Edit
+                      </button>
+                      {showArchived && (
+                        <button
+                          className="rounded border border-rose-300 px-3 py-1.5 text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                          disabled={deleting === r.email}
+                          onClick={() => deleteEmployee(r.email, r.display_name ?? r.email)}
+                        >
+                          {deleting === r.email ? 'Deleting…' : 'Delete'}
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
