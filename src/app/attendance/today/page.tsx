@@ -101,7 +101,7 @@ export default function AttendanceTodayPage() {
     let present = 0, absent = 0, late = 0, off = 0, notYet = 0;
     for (const r of rows) {
       if (r.status === 'OFFDAY' || r.status === 'MC' || r.status === 'OFF') off++;
-      else if (r.status === 'PRESENT') {
+      else if (r.status === 'PRESENT' || r.status === 'HOME') {
         present++;
         if ((r.late_min ?? 0) > 0) late++;
       } else if (r.status === 'ABSENT') {
@@ -168,6 +168,7 @@ export default function AttendanceTodayPage() {
                   <td className="px-3 py-2 text-gray-900">{r.display_name ?? r.staff_email}</td>
                   <td className="px-3 py-2">
                     {r.status === 'PRESENT' && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Present</span>}
+                    {r.status === 'HOME' && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Home</span>}
                     {r.status === 'OFF' && <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Closed</span>}
                     {(r.status === 'OFFDAY' || r.status === 'MC') && <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{r.status === 'OFFDAY' ? 'Off day' : 'MC'}</span>}
                     {showAbsent && <span className="rounded-full bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700">Absent</span>}
