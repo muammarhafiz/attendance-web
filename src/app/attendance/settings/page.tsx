@@ -74,19 +74,16 @@ export default function AttendanceSettingsPage() {
   }, []);
 
   const cycleDay = useCallback(async (email: string, dowKey: string) => {
+    // compute the new schedule up-front (NOT inside the setState updater)
+    const target = staff.find((s) => s.email === email);
+    const cur = { ...DEFAULT_SCHED, ...(target?.weekly_schedule || {}) };
+    cur[dowKey] = nextMode(cur[dowKey] || 'workshop');
+
     setSavingEmail(email);
     setMsg(null);
-    let saved: Record<string, string> = DEFAULT_SCHED;
-    setStaff((prev) =>
-      prev.map((s) => {
-        if (s.email !== email) return s;
-        const cur = { ...DEFAULT_SCHED, ...(s.weekly_schedule || {}) };
-        cur[dowKey] = nextMode(cur[dowKey] || 'workshop');
-        saved = cur;
-        return { ...s, weekly_schedule: cur };
-      })
-    );
-    const { error } = await supabase.from('staff').update({ weekly_schedule: saved }).eq('email', email);
+    setStaff((prev) => prev.map((s) => (s.email === email ? { ...s, weekly_schedule: cur } : s)));
+
+    const { error } = await supabase.from('staff').update({ weekly_schedule: cur }).eq('email', email);
     if (error) setMsg(`Save failed: ${error.message}`);
     else {
       await supabase.rpc('attendance_v2_recompute', { p_from: firstOfMonth(), p_to: isoToday() });
@@ -94,7 +91,7 @@ export default function AttendanceSettingsPage() {
       setTimeout(() => setMsg(null), 2000);
     }
     setSavingEmail(null);
-  }, []);
+  }, [staff]);
 
   const recomputeAll = useCallback(async () => {
     setRecomputing(true);
