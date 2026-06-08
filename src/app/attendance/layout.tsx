@@ -10,6 +10,7 @@ const TABS = [
   { href: '/attendance/today', label: 'Today' },
   { href: '/attendance/report', label: 'Report' },
   { href: '/attendance/offday', label: 'Off-day' },
+  { href: '/attendance/settings', label: 'Settings' },
 ];
 
 export default function AttendanceLayout({ children }: { children: React.ReactNode }) {
