@@ -73,7 +73,7 @@ export default function AttendanceReportPage() {
       const cur = by.get(r.staff_email) ?? { name: r.staff_name ?? r.staff_email, present: 0, absent: 0, lateDays: 0, lateMin: 0, off: 0 };
       if (r.status === 'PRESENT') { cur.present++; if ((r.late_min ?? 0) > 0) { cur.lateDays++; cur.lateMin += r.late_min ?? 0; } }
       else if (r.status === 'ABSENT') cur.absent++;
-      else if (r.status === 'OFFDAY' || r.status === 'MC') cur.off++;
+      else if (r.status === 'OFFDAY' || r.status === 'MC' || r.status === 'OFF') cur.off++;
       by.set(r.staff_email, cur);
     }
     return [...by.entries()].map(([email, v]) => ({ email, ...v })).sort((a, b) => a.name.localeCompare(b.name));
@@ -168,7 +168,9 @@ export default function AttendanceReportPage() {
                   <td className="px-3 py-2">
                     {r.status === 'PRESENT' && <span className="text-emerald-700">Present</span>}
                     {r.status === 'ABSENT' && <span className="text-rose-600">Absent</span>}
-                    {(r.status === 'OFFDAY' || r.status === 'MC') && <span className="text-blue-700">{r.status}</span>}
+                    {r.status === 'OFF' && <span className="text-gray-500">Closed (Sun)</span>}
+                    {r.status === 'OFFDAY' && <span className="text-blue-700">Off day</span>}
+                    {r.status === 'MC' && <span className="text-blue-700">MC</span>}
                   </td>
                   <td className="px-3 py-2 text-gray-700">{fmt12(r.check_in_kl)}</td>
                   <td className="px-3 py-2 text-gray-700">{fmt12(r.check_out_kl)}</td>
