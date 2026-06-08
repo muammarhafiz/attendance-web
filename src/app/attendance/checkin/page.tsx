@@ -40,6 +40,14 @@ export default function CheckinV2Page() {
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState<null | 'in' | 'out'>(null);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [now, setNow] = useState<Date | null>(null);
+
+  // --- live KL clock (set after mount to avoid hydration mismatch) ---
+  useEffect(() => {
+    setNow(new Date());
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   // --- auth ---
   useEffect(() => {
@@ -132,8 +140,27 @@ export default function CheckinV2Page() {
       </div>
     );
 
+  const timeStr = now
+    ? new Intl.DateTimeFormat('en-MY', {
+        timeZone: 'Asia/Kuala_Lumpur',
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true,
+      }).format(now)
+    : '—';
+  const dateStr = now
+    ? new Intl.DateTimeFormat('en-MY', {
+        timeZone: 'Asia/Kuala_Lumpur',
+        weekday: 'long', day: '2-digit', month: 'short', year: 'numeric',
+      }).format(now)
+    : '';
+
   return (
     <div className="mx-auto max-w-md">
+      {/* Live clock */}
+      <div className="mb-4 rounded-xl border border-gray-200 bg-white p-4 text-center">
+        <div className="text-4xl font-bold tracking-tight text-gray-900 tabular-nums">{timeStr}</div>
+        <div className="mt-1 text-sm text-gray-500">{dateStr} · Kuala Lumpur</div>
+      </div>
+
       {/* Status card */}
       <div className="mb-4 rounded-xl border border-gray-200 bg-white p-4">
         <div className="text-xs font-medium uppercase tracking-wide text-gray-400">Today</div>
