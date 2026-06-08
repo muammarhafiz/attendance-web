@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 type Row = {
@@ -37,6 +37,12 @@ export default function AttendanceReportPage() {
   const [staffFilter, setStaffFilter] = useState<string>('ALL');
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
+  const [editDay, setEditDay] = useState<string | null>(null);
+  const [eStatus, setEStatus] = useState('WORKING');
+  const [eIn, setEIn] = useState('');
+  const [eOut, setEOut] = useState('');
+  const [eNote, setENote] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -83,6 +89,40 @@ export default function AttendanceReportPage() {
     () => rows.filter((r) => r.staff_email === staffFilter).sort((a, b) => a.day.localeCompare(b.day)),
     [rows, staffFilter]
   );
+
+  const startEdit = useCallback((r: Row) => {
+    setEditDay(r.day);
+    setEStatus(r.status === 'OFFDAY' ? 'OFFDAY' : r.status === 'MC' ? 'MC' : r.status === 'ABSENT' ? 'ABSENT' : 'WORKING');
+    setEIn(r.check_in_kl ?? '');
+    setEOut(r.check_out_kl ?? '');
+    setENote('');
+  }, []);
+
+  const saveEdit = useCallback(async (email: string, day: string) => {
+    setSaving(true);
+    try {
+      if (eStatus === 'WORKING') {
+        // no status override -> use real check-ins; optionally override the times
+        await supabase.from('day_status').delete().eq('day', day).eq('staff_email', email);
+        if (eIn || eOut) {
+          await supabase.from('day_time_override').upsert(
+            { day, staff_email: email, check_in_kl: eIn || null, check_out_kl: eOut || null, note: eNote || null },
+            { onConflict: 'day,staff_email' }
+          );
+        } else {
+          await supabase.from('day_time_override').delete().eq('day', day).eq('staff_email', email);
+        }
+      } else {
+        // OFFDAY / MC / ABSENT
+        await supabase.rpc('set_day_status', { p_email: email, p_day: day, p_status: eStatus, p_note: eNote || null });
+      }
+      await supabase.rpc('attendance_v2_recompute', { p_from: day, p_to: day });
+      setEditDay(null);
+      await load();
+    } finally {
+      setSaving(false);
+    }
+  }, [eStatus, eIn, eOut, eNote, load]);
 
   const prevMonth = () => { const d = new Date(year, month - 2, 1); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); };
   const nextMonth = () => { const d = new Date(year, month, 1); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); };
@@ -149,7 +189,7 @@ export default function AttendanceReportPage() {
           <div className="border-t border-gray-100 px-3 py-2 text-xs text-gray-400">Tap a staff name to see their daily detail.</div>
         </div>
       ) : (
-        /* Per-staff daily detail */
+        /* Per-staff daily detail (editable) */
         <div className="overflow-x-auto rounded-lg border border-gray-200">
           <table className="w-full border-collapse text-sm">
             <thead>
@@ -159,25 +199,76 @@ export default function AttendanceReportPage() {
                 <th className="px-3 py-2 font-medium text-gray-600">In</th>
                 <th className="px-3 py-2 font-medium text-gray-600">Out</th>
                 <th className="px-3 py-2 text-right font-medium text-gray-600">Late</th>
+                <th className="px-3 py-2"></th>
               </tr>
             </thead>
             <tbody>
               {detail.map((r) => (
-                <tr key={r.day} className="border-t border-gray-100">
-                  <td className="px-3 py-2 text-gray-700">{fmtDay(r.day)}</td>
-                  <td className="px-3 py-2">
-                    {r.status === 'PRESENT' && <span className="text-emerald-700">Present</span>}
-                    {r.status === 'ABSENT' && <span className="text-rose-600">Absent</span>}
-                    {r.status === 'OFF' && <span className="text-gray-500">Closed (Sun)</span>}
-                    {r.status === 'OFFDAY' && <span className="text-blue-700">Off day</span>}
-                    {r.status === 'MC' && <span className="text-blue-700">MC</span>}
-                  </td>
-                  <td className="px-3 py-2 text-gray-700">{fmt12(r.check_in_kl)}</td>
-                  <td className="px-3 py-2 text-gray-700">{fmt12(r.check_out_kl)}</td>
-                  <td className={`px-3 py-2 text-right ${(r.late_min ?? 0) > 0 ? 'font-semibold text-rose-600' : 'text-gray-400'}`}>
-                    {(r.late_min ?? 0) > 0 ? `${r.late_min} min` : '—'}
-                  </td>
-                </tr>
+                <Fragment key={r.day}>
+                  <tr className="border-t border-gray-100">
+                    <td className="px-3 py-2 text-gray-700">{fmtDay(r.day)}</td>
+                    <td className="px-3 py-2">
+                      {r.status === 'PRESENT' && <span className="text-emerald-700">Present</span>}
+                      {r.status === 'ABSENT' && <span className="text-rose-600">Absent</span>}
+                      {r.status === 'OFF' && <span className="text-gray-500">Closed (Sun)</span>}
+                      {r.status === 'OFFDAY' && <span className="text-blue-700">Off day</span>}
+                      {r.status === 'MC' && <span className="text-blue-700">MC</span>}
+                    </td>
+                    <td className="px-3 py-2 text-gray-700">{fmt12(r.check_in_kl)}</td>
+                    <td className="px-3 py-2 text-gray-700">{fmt12(r.check_out_kl)}</td>
+                    <td className={`px-3 py-2 text-right ${(r.late_min ?? 0) > 0 ? 'font-semibold text-rose-600' : 'text-gray-400'}`}>
+                      {(r.late_min ?? 0) > 0 ? `${r.late_min} min` : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <button
+                        onClick={() => (editDay === r.day ? setEditDay(null) : startEdit(r))}
+                        className="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-100"
+                      >
+                        {editDay === r.day ? 'Close' : 'Edit'}
+                      </button>
+                    </td>
+                  </tr>
+                  {editDay === r.day && (
+                    <tr className="border-t border-gray-100 bg-gray-50">
+                      <td colSpan={6} className="px-3 py-3">
+                        <div className="flex flex-wrap items-end gap-3">
+                          <label className="text-xs text-gray-500">Status
+                            <select value={eStatus} onChange={(e) => setEStatus(e.target.value)} className="mt-0.5 block rounded-md border border-gray-300 px-2 py-1 text-sm">
+                              <option value="WORKING">Working day</option>
+                              <option value="OFFDAY">Off day</option>
+                              <option value="MC">Sick leave (MC)</option>
+                              <option value="ABSENT">Absent</option>
+                            </select>
+                          </label>
+                          {eStatus === 'WORKING' && (
+                            <>
+                              <label className="text-xs text-gray-500">Check-in
+                                <input type="time" value={eIn} onChange={(e) => setEIn(e.target.value)} className="mt-0.5 block rounded-md border border-gray-300 px-2 py-1 text-sm" />
+                              </label>
+                              <label className="text-xs text-gray-500">Check-out
+                                <input type="time" value={eOut} onChange={(e) => setEOut(e.target.value)} className="mt-0.5 block rounded-md border border-gray-300 px-2 py-1 text-sm" />
+                              </label>
+                            </>
+                          )}
+                          <label className="text-xs text-gray-500">Note
+                            <input value={eNote} onChange={(e) => setENote(e.target.value)} placeholder="optional" className="mt-0.5 block rounded-md border border-gray-300 px-2 py-1 text-sm" />
+                          </label>
+                          <button
+                            onClick={() => saveEdit(r.staff_email, r.day)}
+                            disabled={saving}
+                            className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-black disabled:opacity-50"
+                          >
+                            {saving ? 'Saving…' : 'Save'}
+                          </button>
+                          <button onClick={() => setEditDay(null)} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100">Cancel</button>
+                        </div>
+                        <div className="mt-2 text-xs text-gray-400">
+                          &quot;Working day&quot; clears any off-day/MC and uses real check-ins (with your time edits, if any).
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>
