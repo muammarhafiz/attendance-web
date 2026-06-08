@@ -41,6 +41,13 @@ export default function CheckinV2Page() {
   const [busy, setBusy] = useState<null | 'in' | 'out'>(null);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [now, setNow] = useState<Date | null>(null);
+  const [showMc, setShowMc] = useState(false);
+  const [mcFrom, setMcFrom] = useState('');
+  const [mcTo, setMcTo] = useState('');
+  const [mcFile, setMcFile] = useState<File | null>(null);
+  const [mcNote, setMcNote] = useState('');
+  const [mcBusy, setMcBusy] = useState(false);
+  const [mcMsg, setMcMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   // --- live KL clock (set after mount to avoid hydration mismatch) ---
   useEffect(() => {
@@ -131,6 +138,30 @@ export default function CheckinV2Page() {
     },
     [geo, loadStatus]
   );
+
+  const submitMc = async () => {
+    if (!email) return;
+    if (!mcFrom || !mcTo) { setMcMsg({ kind: 'err', text: 'Pick the MC start and end dates.' }); return; }
+    if (mcFrom > mcTo) { setMcMsg({ kind: 'err', text: 'The "From" date is after the "To" date.' }); return; }
+    if (!mcFile) { setMcMsg({ kind: 'err', text: 'Attach the MC certificate (photo or PDF).' }); return; }
+    setMcBusy(true); setMcMsg(null);
+    try {
+      const ext = (mcFile.name.split('.').pop() || 'jpg').toLowerCase();
+      const path = `${email}/${Date.now()}.${ext}`;
+      const up = await supabase.storage.from('mc').upload(path, mcFile, { upsert: false });
+      if (up.error) throw up.error;
+      const { error } = await supabase.from('mc_requests').insert({
+        staff_email: email, date_from: mcFrom, date_to: mcTo, file_path: path, note: mcNote || null,
+      });
+      if (error) throw error;
+      setMcMsg({ kind: 'ok', text: 'MC submitted ✓ — waiting for approval.' });
+      setMcFrom(''); setMcTo(''); setMcFile(null); setMcNote('');
+    } catch (e: unknown) {
+      setMcMsg({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setMcBusy(false);
+    }
+  };
 
   if (email === undefined) return <div className="text-sm text-gray-500">Loading…</div>;
   if (email === null)
@@ -248,6 +279,40 @@ export default function CheckinV2Page() {
       <p className="mt-3 text-center text-xs text-gray-400">
         Your location is checked on the server when you tap the button.
       </p>
+
+      {/* Submit MC */}
+      <div className="mt-4 rounded-xl border border-gray-200 bg-white p-4">
+        <button onClick={() => setShowMc((v) => !v)} className="flex w-full items-center justify-between text-sm font-medium text-gray-700">
+          <span>📄 Submit MC (medical certificate)</span>
+          <span className="text-gray-400">{showMc ? '−' : '+'}</span>
+        </button>
+        {showMc && (
+          <div className="mt-3 space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <label className="text-xs text-gray-500">From
+                <input type="date" value={mcFrom} onChange={(e) => setMcFrom(e.target.value)} className="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+              </label>
+              <label className="text-xs text-gray-500">To
+                <input type="date" value={mcTo} onChange={(e) => setMcTo(e.target.value)} className="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+              </label>
+            </div>
+            <label className="block text-xs text-gray-500">Certificate (photo or PDF)
+              <input type="file" accept="image/*,application/pdf" onChange={(e) => setMcFile(e.target.files?.[0] ?? null)} className="mt-0.5 block w-full text-sm" />
+            </label>
+            <label className="block text-xs text-gray-500">Note (optional)
+              <input value={mcNote} onChange={(e) => setMcNote(e.target.value)} placeholder="e.g. clinic name" className="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+            </label>
+            <button onClick={submitMc} disabled={mcBusy} className="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+              {mcBusy ? 'Submitting…' : 'Submit MC'}
+            </button>
+            {mcMsg && (
+              <div className={`rounded-md border p-2 text-sm ${mcMsg.kind === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>
+                {mcMsg.text}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
