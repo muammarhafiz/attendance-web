@@ -83,6 +83,7 @@ export default function NavBar() {
             {isAdmin && (
               <React.Fragment>
                 <Link href="/payroll/records" prefetch={false} className={linkClass('/payroll/records')}>Payroll Records</Link>
+                <Link href="/payroll/v3" prefetch={false} className={linkClass('/payroll/v3')}>Payroll v3</Link>
                 <Link href="/payroll/v2" prefetch={false} className={linkClass('/payroll/v2')}>Payroll v2</Link>
               </React.Fragment>
             )}
