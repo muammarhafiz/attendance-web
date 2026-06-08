@@ -58,10 +58,7 @@ export default function AttendanceTodayPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('v2_today')
-      .select('*')
-      .order('display_name', { ascending: true });
+    const { data, error } = await supabase.rpc('attendance_today_v2');
     if (!error) {
       setRows((data ?? []) as Row[]);
       setUpdated(
