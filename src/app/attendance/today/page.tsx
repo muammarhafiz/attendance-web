@@ -32,7 +32,8 @@ function klNowMinutes(): number {
   return h * 60 + m;
 }
 
-const CUTOFF_MIN = 10 * 60 + 30; // 10:30 KL
+const DEFAULT_START_MIN = 9 * 60 + 30; // 09:30 default start
+const GRACE_MIN = 60; // "Absent" shows 1 hour after each person's start
 
 export default function AttendanceTodayPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -40,6 +41,7 @@ export default function AttendanceTodayPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
   const [updated, setUpdated] = useState<string>('');
+  const [startByEmail, setStartByEmail] = useState<Map<string, number>>(new Map());
 
   useEffect(() => {
     (async () => {
@@ -79,8 +81,26 @@ export default function AttendanceTodayPage() {
     }
   }, [isAdmin, load]);
 
+  // per-staff start times (for the per-person "Absent" cutoff = start + 1h)
+  useEffect(() => {
+    if (!isAdmin) return;
+    supabase.from('staff').select('email,work_start_time').then(({ data }) => {
+      const m = new Map<string, number>();
+      (data ?? []).forEach((s: { email: string; work_start_time: string | null }) => {
+        const t = (s.work_start_time ?? '09:30:00').split(':');
+        m.set(s.email, Number(t[0]) * 60 + Number(t[1]));
+      });
+      setStartByEmail(m);
+    });
+  }, [isAdmin]);
+
+  const cutoffFor = useCallback(
+    (emailAddr: string) => (startByEmail.get(emailAddr) ?? DEFAULT_START_MIN) + GRACE_MIN,
+    [startByEmail]
+  );
+
   const counts = useMemo(() => {
-    const past = klNowMinutes() >= CUTOFF_MIN;
+    const nowMin = klNowMinutes();
     let present = 0, absent = 0, late = 0, off = 0, notYet = 0;
     for (const r of rows) {
       if (r.status === 'OFFDAY' || r.status === 'MC') off++;
@@ -88,18 +108,16 @@ export default function AttendanceTodayPage() {
         present++;
         if ((r.late_min ?? 0) > 0) late++;
       } else if (r.status === 'ABSENT') {
-        if (past) absent++;
+        if (nowMin >= cutoffFor(r.staff_email)) absent++;
         else notYet++;
       }
     }
     return { present, absent, late, off, notYet };
-  }, [rows]);
+  }, [rows, cutoffFor]);
 
   if (authed === null || isAdmin === null) return <div className="text-sm text-gray-500">Checking…</div>;
   if (!authed) return <div className="text-sm text-gray-600">Please sign in.</div>;
   if (!isAdmin) return <div className="text-sm text-gray-600">This page is for admins only.</div>;
-
-  const past = klNowMinutes() >= CUTOFF_MIN;
 
   return (
     <div>
@@ -108,9 +126,9 @@ export default function AttendanceTodayPage() {
         {[
           { label: 'Present', value: counts.present, cls: 'text-emerald-700' },
           { label: 'Late', value: counts.late, cls: 'text-amber-700' },
-          { label: past ? 'Absent' : 'Not in yet', value: past ? counts.absent : counts.notYet, cls: past ? 'text-rose-700' : 'text-gray-500' },
+          { label: 'Not in yet', value: counts.notYet, cls: 'text-gray-500' },
+          { label: 'Absent', value: counts.absent, cls: 'text-rose-700' },
           { label: 'Off / MC', value: counts.off, cls: 'text-blue-700' },
-          { label: 'Total', value: rows.length, cls: 'text-gray-900' },
         ].map((c) => (
           <div key={c.label} className="rounded-lg border border-gray-200 bg-white p-3 text-center">
             <div className={`text-2xl font-bold ${c.cls}`}>{c.value}</div>
@@ -144,8 +162,9 @@ export default function AttendanceTodayPage() {
           <tbody>
             {rows.map((r) => {
               const isAbsent = r.status === 'ABSENT';
-              const showAbsent = isAbsent && past;
-              const showNotYet = isAbsent && !past;
+              const nowMin = klNowMinutes();
+              const showAbsent = isAbsent && nowMin >= cutoffFor(r.staff_email);
+              const showNotYet = isAbsent && nowMin < cutoffFor(r.staff_email);
               const isLate = r.status === 'PRESENT' && (r.late_min ?? 0) > 0;
               return (
                 <tr key={r.staff_email} className="border-t border-gray-100">
