@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { createClientServer } from '@/lib/supabaseServer';
 // @ts-ignore  // types provided by src/types/pdfkit-standalone.d.ts
 import PDFDocument from 'pdfkit/js/pdfkit.standalone.js';
 
@@ -179,17 +180,36 @@ async function uploadToStorage(path: string, bytes: Buffer, contentType = 'appli
     contentType,
   });
   if (error) throw new Error(error.message);
-  const { data: pub } = supabaseAdmin.storage.from('payroll').getPublicUrl(path);
-  return pub.publicUrl;
+  // Bucket is PRIVATE — return a short-lived signed URL instead of a public one.
+  const { data: signed, error: sErr } = await supabaseAdmin.storage
+    .from('payroll')
+    .createSignedUrl(path, 60 * 60); // 1 hour
+  if (sErr || !signed) throw new Error(sErr?.message || 'could not sign url');
+  return signed.signedUrl;
 }
 
-export async function GET(req: Request) {
+export async function POST(req: Request) {
   try {
+    // --- admin gate: this route uses the service-role key, so it MUST verify the caller ---
+    const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    const sb = createClientServer(req);
+    const { data: auth, error: authErr } = await sb.auth.getUser(token);
+    if (authErr || !auth?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    const { data: isAdmin } = await sb.rpc('is_admin');
+    if (isAdmin !== true) {
+      return NextResponse.json({ error: 'Forbidden — admins only' }, { status: 403 });
+    }
+
     const { searchParams } = new URL(req.url);
     const year = Number(searchParams.get('year'));
     const month = Number(searchParams.get('month'));
-    if (!year || !month) {
-      return NextResponse.json({ error: 'year & month required' }, { status: 400 });
+    if (!Number.isInteger(year) || year < 2000 || year > 2100 || !Number.isInteger(month) || month < 1 || month > 12) {
+      return NextResponse.json({ error: 'valid year & month required' }, { status: 400 });
     }
 
     const period = await fetchPeriod(year, month);
@@ -218,7 +238,7 @@ export async function GET(req: Request) {
       payslipResults.push({ email, url });
     }
 
-    await supabaseAdmin.rpc('pay_v2.finalize_period', { p_year: year, p_month: month });
+    await supabaseAdmin.schema('pay_v2').rpc('finalize_period', { p_year: year, p_month: month });
 
     return NextResponse.json({ summaryUrl, payslips: payslipResults }, { status: 200 });
   } catch (e: any) {

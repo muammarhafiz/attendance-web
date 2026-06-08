@@ -149,8 +149,10 @@ export default function PayrollRecordsPage() {
       if (lsSErr) throw lsSErr;
       const hasSummary = (lsSummary ?? []).some((f) => f.name === summaryName);
       if (hasSummary) {
-        const { data: pub } = supabase.storage.from('payroll').getPublicUrl(`${basePath}/${summaryName}`);
-        setSummaryUrl(pub.publicUrl);
+        const { data: signed } = await supabase.storage
+          .from('payroll')
+          .createSignedUrl(`${basePath}/${summaryName}`, 3600);
+        setSummaryUrl(signed?.signedUrl ?? null);
       } else {
         setSummaryUrl(null);
       }
@@ -162,10 +164,14 @@ export default function PayrollRecordsPage() {
       if (lsErr) throw lsErr;
 
       const files = (ls ?? []).filter((f) => f.name.toLowerCase().endsWith('.pdf'));
-      const withUrls: PayslipFile[] = files.map((f) => {
-        const { data: pub } = supabase.storage.from('payroll').getPublicUrl(`${basePath}/payslips/${f.name}`);
-        return { name: f.name, url: pub.publicUrl };
-      });
+      const withUrls: PayslipFile[] = await Promise.all(
+        files.map(async (f) => {
+          const { data: signed } = await supabase.storage
+            .from('payroll')
+            .createSignedUrl(`${basePath}/payslips/${f.name}`, 3600);
+          return { name: f.name, url: signed?.signedUrl ?? '' };
+        })
+      );
       setPayslips(withUrls);
       setFinMsg(null);
     } catch (e: any) {
@@ -192,7 +198,12 @@ export default function PayrollRecordsPage() {
     setFinMsg('Generating PDFs & finalizing…');
     try {
       const qs = new URLSearchParams({ year: String(year), month: String(month) }).toString();
-      const res = await fetch(`/api/payroll/finalize?${qs}`, { method: 'POST' });
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      const res = await fetch(`/api/payroll/finalize?${qs}`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error || 'Failed to finalize');
 
