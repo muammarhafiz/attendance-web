@@ -197,6 +197,11 @@ export default function AttendanceReportPage() {
         </div>
       ) : (
         /* Per-staff daily detail (editable) */
+        <>
+        <div className="mb-2 flex items-center gap-2">
+          <button onClick={() => setStaffFilter('ALL')} className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2.5 py-1 text-sm text-gray-600 hover:bg-gray-50">← All staff</button>
+          <span className="text-sm font-medium text-gray-900">{staffList.find(([e]) => e === staffFilter)?.[1] ?? staffFilter}</span>
+        </div>
         <div className="overflow-x-auto rounded-lg border border-gray-200">
           <table className="w-full border-collapse text-sm">
             <thead>
@@ -282,6 +287,7 @@ export default function AttendanceReportPage() {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   );
