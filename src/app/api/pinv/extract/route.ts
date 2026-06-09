@@ -11,16 +11,24 @@ const admin = createClient(
   { auth: { persistSession: false } }
 );
 
-const PROMPT =
-  'Read this supplier purchase invoice. Return ONLY JSON with this shape: ' +
-  '{"supplier_name":string,"ref_no":string,"invoice_date":"YYYY-MM-DD","total":number,' +
-  '"items":[{"item_code":string,"description":string,"qty":number,"unit_price":number,"amount":number}]}. ' +
-  'Use the EXACT item code from the Item Code column (keep spaces/brackets). Include every line item. ' +
-  'ref_no is the supplier invoice number. If a field is missing use null.';
+function buildPrompt(categoryNames: string[]): string {
+  const catLine = categoryNames.length
+    ? ' For each item also pick the single best "category" from EXACTLY this list (copy the name verbatim, do not invent new ones): ' +
+      categoryNames.join(' | ') + '. If unsure, use "SPARE PARTS ITEM".'
+    : '';
+  return (
+    'Read this supplier purchase invoice. Return ONLY JSON with this shape: ' +
+    '{"supplier_name":string,"ref_no":string,"invoice_date":"YYYY-MM-DD","total":number,' +
+    '"items":[{"item_code":string,"description":string,"qty":number,"unit_price":number,"amount":number,"category":string}]}. ' +
+    'Use the EXACT item code from the Item Code column (keep spaces/brackets). Include every line item. ' +
+    'ref_no is the supplier invoice number. If a field is missing use null.' +
+    catLine
+  );
+}
 
-async function geminiExtract(base64: string, key: string): Promise<string> {
+async function geminiExtract(base64: string, key: string, prompt: string): Promise<string> {
   const body = JSON.stringify({
-    contents: [{ parts: [{ inline_data: { mime_type: 'application/pdf', data: base64 } }, { text: PROMPT }] }],
+    contents: [{ parts: [{ inline_data: { mime_type: 'application/pdf', data: base64 } }, { text: prompt }] }],
     generationConfig: { responseMimeType: 'application/json' },
   });
   let lastErr = '';
@@ -72,7 +80,11 @@ export async function POST(req: Request) {
     const { data: secret } = await admin.from('app_secrets').select('value').eq('name', 'gemini_key').single();
     if (!secret?.value) throw new Error('AI key not configured');
 
-    const text = await geminiExtract(base64, secret.value);
+    const { data: cats } = await admin.from('niagawan_category').select('name').order('name');
+    const categoryNames = (cats ?? []).map((c: { name: string }) => c.name).filter(Boolean);
+    const validCats = new Set(categoryNames.map((n) => n.toUpperCase()));
+
+    const text = await geminiExtract(base64, secret.value, buildPrompt(categoryNames));
     let parsed: { supplier_name?: string; ref_no?: string; invoice_date?: string; total?: number; items?: unknown[] };
     try { parsed = JSON.parse(text); } catch { throw new Error('AI returned invalid data'); }
     const items = Array.isArray(parsed.items) ? parsed.items : [];
@@ -90,7 +102,8 @@ export async function POST(req: Request) {
     await admin.from('pinv_item').delete().eq('pinv_id', id);
     if (items.length) {
       const rows = items.map((raw, i) => {
-        const it = raw as { item_code?: unknown; description?: unknown; qty?: unknown; unit_price?: unknown; amount?: unknown };
+        const it = raw as { item_code?: unknown; description?: unknown; qty?: unknown; unit_price?: unknown; amount?: unknown; category?: unknown };
+        const cat = String(it.category ?? '').trim();
         return {
           pinv_id: id,
           line_no: i + 1,
@@ -99,6 +112,7 @@ export async function POST(req: Request) {
           qty: Number(it.qty) || 0,
           unit_price: Number(it.unit_price) || 0,
           amount: Number(it.amount) || 0,
+          category: cat && validCats.has(cat.toUpperCase()) ? cat : 'SPARE PARTS ITEM',
         };
       });
       await admin.from('pinv_item').insert(rows);
