@@ -1,0 +1,153 @@
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabaseClient';
+
+type Pinv = {
+  id: string;
+  status: string;
+  file_path: string | null;
+  supplier_name: string | null;
+  ref_no: string | null;
+  invoice_date: string | null;
+  total: number | null;
+  niagawan_pi_no: string | null;
+  created_at: string;
+};
+
+const STATUS_STYLE: Record<string, string> = {
+  uploaded: 'bg-gray-100 text-gray-600',
+  extracting: 'bg-amber-100 text-amber-700',
+  extracted: 'bg-blue-100 text-blue-700',
+  approved: 'bg-indigo-100 text-indigo-700',
+  creating: 'bg-amber-100 text-amber-700',
+  created: 'bg-emerald-100 text-emerald-700',
+  error: 'bg-rose-100 text-rose-700',
+};
+const fmtD = (d: string | null) => { if (!d) return '—'; const [y, m, dd] = d.split('-'); return `${dd}/${m}/${y}`; };
+const rm = (n: number | null) => (n == null ? '—' : `RM ${Number(n).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+
+export default function PurchaseInvoicePage() {
+  const [authed, setAuthed] = useState<boolean | null>(null);
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [rows, setRows] = useState<Pinv[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      setAuthed(!!data.session);
+      if (data.session) { const { data: ok } = await supabase.rpc('is_admin'); setIsAdmin(ok === true); }
+      else setIsAdmin(false);
+    })();
+  }, []);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabase.from('pinv').select('*').order('created_at', { ascending: false }).limit(100);
+    setRows((data ?? []) as Pinv[]);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { if (isAdmin) load(); }, [isAdmin, load]);
+
+  const upload = useCallback(async () => {
+    if (!file) { setMsg({ kind: 'err', text: 'Choose a PDF first.' }); return; }
+    setBusy(true); setMsg(null);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const email = sess.session?.user?.email ?? 'unknown';
+      const ext = (file.name.split('.').pop() || 'pdf').toLowerCase();
+      const path = `${Date.now()}_${file.name.replace(/[^\w.\-]+/g, '_')}`;
+      const up = await supabase.storage.from('pinv').upload(path, file, { upsert: false, contentType: ext === 'pdf' ? 'application/pdf' : undefined });
+      if (up.error) throw up.error;
+      const { error } = await supabase.from('pinv').insert({ file_path: path, status: 'uploaded', created_by: email });
+      if (error) throw error;
+      setMsg({ kind: 'ok', text: 'Uploaded ✓ — ready to read.' });
+      setFile(null);
+      await load();
+    } catch (e: unknown) {
+      setMsg({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setBusy(false);
+    }
+  }, [file, load]);
+
+  const viewPdf = useCallback(async (path: string | null) => {
+    if (!path) return;
+    const { data } = await supabase.storage.from('pinv').createSignedUrl(path, 300);
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank', 'noopener');
+  }, []);
+
+  if (authed === null || isAdmin === null) return <div className="text-sm text-gray-500">Checking…</div>;
+  if (!authed) return <div className="text-sm text-gray-600">Please sign in.</div>;
+  if (!isAdmin) return <div className="text-sm text-gray-600">This page is for admins only.</div>;
+
+  return (
+    <div>
+      {/* Upload */}
+      <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
+        <div className="text-sm font-medium text-gray-800">Upload a supplier purchase invoice (PDF)</div>
+        <div className="mt-0.5 text-xs text-gray-400">
+          Upload the PDF → the system will read it → you review → it creates the invoice in Niagawan. (Reading &amp; create steps coming next.)
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <label className="inline-flex cursor-pointer items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            📎 Choose PDF
+            <input type="file" accept="application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="hidden" />
+          </label>
+          <span className="min-w-0 flex-1 truncate text-xs text-gray-500">{file ? file.name : 'No file chosen'}</span>
+          <button onClick={upload} disabled={busy || !file} className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+            {busy ? 'Uploading…' : 'Upload'}
+          </button>
+        </div>
+        {msg && <div className={`mt-2 rounded-md border p-2 text-sm ${msg.kind === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>{msg.text}</div>}
+      </div>
+
+      {/* List */}
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-gray-700">Uploaded invoices</h2>
+        <button onClick={load} disabled={loading} className="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50">{loading ? '…' : 'Refresh'}</button>
+      </div>
+      <div className="overflow-x-auto rounded-lg border border-gray-200">
+        <table className="w-full border-collapse text-sm">
+          <thead className="bg-gray-50 text-left">
+            <tr>
+              <th className="px-3 py-2 font-medium text-gray-600">Uploaded</th>
+              <th className="px-3 py-2 font-medium text-gray-600">Supplier</th>
+              <th className="px-3 py-2 font-medium text-gray-600">Ref#</th>
+              <th className="px-3 py-2 font-medium text-gray-600">Date</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-600">Total</th>
+              <th className="px-3 py-2 font-medium text-gray-600">Status</th>
+              <th className="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr><td colSpan={7} className="px-3 py-6 text-center text-gray-500">No invoices uploaded yet.</td></tr>
+            ) : rows.map((r) => (
+              <tr key={r.id} className="border-t border-gray-100">
+                <td className="px-3 py-2 text-gray-500">{new Date(r.created_at).toLocaleDateString('en-MY')}</td>
+                <td className="px-3 py-2 text-gray-900">{r.supplier_name ?? '—'}</td>
+                <td className="px-3 py-2 text-gray-700">{r.ref_no ?? '—'}</td>
+                <td className="px-3 py-2 text-gray-700">{fmtD(r.invoice_date)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{rm(r.total)}</td>
+                <td className="px-3 py-2">
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[r.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                    {r.status === 'created' && r.niagawan_pi_no ? r.niagawan_pi_no : r.status}
+                  </span>
+                </td>
+                <td className="px-3 py-2 text-right">
+                  {r.file_path && <button onClick={() => viewPdf(r.file_path)} className="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50">View PDF</button>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
