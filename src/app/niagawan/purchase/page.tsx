@@ -34,6 +34,7 @@ export default function PurchaseInvoicePage() {
   const [loading, setLoading] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
+  const [readingId, setReadingId] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   useEffect(() => {
@@ -75,6 +76,29 @@ export default function PurchaseInvoicePage() {
       setBusy(false);
     }
   }, [file, load]);
+
+  const readInvoice = useCallback(async (id: string) => {
+    setReadingId(id); setMsg(null);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (!token) throw new Error('Not signed in.');
+      const res = await fetch('/api/pinv/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ id }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.error || `Read failed (${res.status})`);
+      setMsg({ kind: 'ok', text: `Read ✓ — found ${j.items ?? 0} line item${j.items === 1 ? '' : 's'}.` });
+      await load();
+    } catch (e: unknown) {
+      setMsg({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
+      await load();
+    } finally {
+      setReadingId(null);
+    }
+  }, [load]);
 
   const viewPdf = useCallback(async (path: string | null) => {
     if (!path) return;
@@ -141,7 +165,19 @@ export default function PurchaseInvoicePage() {
                   </span>
                 </td>
                 <td className="px-3 py-2 text-right">
-                  {r.file_path && <button onClick={() => viewPdf(r.file_path)} className="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50">View PDF</button>}
+                  <div className="flex items-center justify-end gap-1.5">
+                    {(r.status === 'uploaded' || r.status === 'error') && (
+                      <button onClick={() => readInvoice(r.id)} disabled={readingId === r.id} className="rounded bg-blue-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+                        {readingId === r.id ? 'Reading…' : 'Read'}
+                      </button>
+                    )}
+                    {r.status === 'extracted' && (
+                      <button onClick={() => readInvoice(r.id)} disabled={readingId === r.id} className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50">
+                        {readingId === r.id ? 'Reading…' : 'Re-read'}
+                      </button>
+                    )}
+                    {r.file_path && <button onClick={() => viewPdf(r.file_path)} className="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50">View PDF</button>}
+                  </div>
                 </td>
               </tr>
             ))}
