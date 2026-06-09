@@ -14,6 +14,8 @@ type Pinv = {
   total: number | null;
   niagawan_pi_no: string | null;
   note: string | null;
+  check_status: string | null;
+  checked_at: string | null;
 };
 
 type Item = {
@@ -25,6 +27,8 @@ type Item = {
   amount: number;
   category: string;
   will_create: boolean;
+  sold_status: string | null;
+  sold_on: string | null;
 };
 
 const rm = (n: number) => `RM ${Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -70,6 +74,8 @@ export default function ReviewInvoicePage() {
         amount: Number(r.amount) || 0,
         category: String(r.category ?? '') || 'SPARE PARTS ITEM',
         will_create: Boolean(r.will_create),
+        sold_status: (r.sold_status as string) ?? null,
+        sold_on: (r.sold_on as string) ?? null,
       }))
     );
     setLoading(false);
@@ -83,7 +89,7 @@ export default function ReviewInvoicePage() {
   const setItem = (idx: number, patch: Partial<Item>) => {
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   };
-  const addRow = () => setItems((prev) => [...prev, { line_no: prev.length + 1, item_code: '', description: '', qty: 1, unit_price: 0, amount: 0, category: 'SPARE PARTS ITEM', will_create: true }]);
+  const addRow = () => setItems((prev) => [...prev, { line_no: prev.length + 1, item_code: '', description: '', qty: 1, unit_price: 0, amount: 0, category: 'SPARE PARTS ITEM', will_create: true, sold_status: null, sold_on: null }]);
   const removeRow = (idx: number) => setItems((prev) => prev.filter((_, i) => i !== idx).map((it, i) => ({ ...it, line_no: i + 1 })));
 
   const save = useCallback(async (approve: boolean) => {
@@ -138,6 +144,21 @@ export default function ReviewInvoicePage() {
     }
   }, [id, head, items, load, router]);
 
+  const runCheck = useCallback(async () => {
+    if (!id) return;
+    setMsg(null);
+    const { error } = await supabase.from('pinv').update({ check_status: 'queued', updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) { setMsg({ kind: 'err', text: error.message }); return; }
+    setHead((h) => (h ? { ...h, check_status: 'queued' } : h));
+  }, [id]);
+
+  // While a sales check is queued/running, poll for the result.
+  useEffect(() => {
+    if (head?.check_status !== 'queued' && head?.check_status !== 'checking') return;
+    const t = setInterval(() => { load(); }, 4000);
+    return () => clearInterval(t);
+  }, [head?.check_status, load]);
+
   const viewPdf = useCallback(async () => {
     if (!head?.file_path) return;
     const { data } = await supabase.storage.from('pinv').createSignedUrl(head.file_path, 300);
@@ -149,12 +170,16 @@ export default function ReviewInvoicePage() {
   if (!head) return <div className="text-sm text-gray-600">Invoice not found. <button onClick={() => router.push('/niagawan/purchase')} className="text-blue-600 underline">Back</button></div>;
 
   const locked = head.status === 'approved' || head.status === 'creating' || head.status === 'created';
+  const showBilled = head.check_status === 'checked';
 
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
         <button onClick={() => router.push('/niagawan/purchase')} className="text-sm text-gray-500 hover:text-gray-900">← Back to invoices</button>
         <div className="flex items-center gap-2">
+          {(head.check_status === 'queued' || head.check_status === 'checking')
+            ? <span className="rounded border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">Checking sales… (~1 min)</span>
+            : <button onClick={runCheck} className="rounded border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">{head.check_status === 'checked' ? '↻ Re-check sales' : 'Check against sales'}</button>}
           {head.file_path && <button onClick={viewPdf} className="rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50">View PDF</button>}
           <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{head.status === 'created' && head.niagawan_pi_no ? head.niagawan_pi_no : head.status}</span>
         </div>
@@ -198,6 +223,14 @@ export default function ReviewInvoicePage() {
         </div>
       </div>
 
+      {/* Sales-check result banner */}
+      {head.check_status === 'checked' && (() => {
+        const nf = items.filter((it) => it.sold_status === 'not_found');
+        return nf.length === 0
+          ? <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-800">✓ All items were billed on a sale invoice (±7 days of the invoice date).</div>
+          : <div className="mb-3 rounded-md border border-rose-200 bg-rose-50 p-2 text-sm text-rose-800"><b>{nf.length} item{nf.length === 1 ? '' : 's'} not on any sale invoice</b> — possibly bought but not yet billed to a customer: {nf.map((it) => it.item_code).filter(Boolean).join(', ')}</div>;
+      })()}
+
       {/* Items */}
       <div className="mb-2 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-gray-700">Line items ({items.length})</h2>
@@ -214,12 +247,13 @@ export default function ReviewInvoicePage() {
               <th className="px-2 py-2 text-right font-medium text-gray-600">Unit price</th>
               <th className="px-2 py-2 text-right font-medium text-gray-600">Amount</th>
               <th className="px-2 py-2 font-medium text-gray-600">Category <span className="font-normal text-gray-400">(if new)</span></th>
+              {showBilled && <th className="px-2 py-2 font-medium text-gray-600">Billed?</th>}
               {!locked && <th className="px-2 py-2"></th>}
             </tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
-              <tr><td colSpan={locked ? 7 : 8} className="px-3 py-6 text-center text-gray-500">No line items.</td></tr>
+              <tr><td colSpan={(locked ? 7 : 8) + (showBilled ? 1 : 0)} className="px-3 py-6 text-center text-gray-500">No line items.</td></tr>
             ) : items.map((it, idx) => {
               return (
                 <tr key={idx} className="border-t border-gray-100 align-top">
@@ -248,6 +282,15 @@ export default function ReviewInvoicePage() {
                       {cats.map((c) => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </td>
+                  {showBilled && (
+                    <td className="px-2 py-1.5">
+                      {it.sold_status === 'found'
+                        ? <span title={it.sold_on || ''} className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">✓ {it.sold_on || 'billed'}</span>
+                        : it.sold_status === 'not_found'
+                          ? <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">✗ not billed</span>
+                          : <span className="text-xs text-gray-400">—</span>}
+                    </td>
+                  )}
                   {!locked && (
                     <td className="px-2 py-1.5 text-right">
                       <button onClick={() => removeRow(idx)} className="rounded px-1.5 py-0.5 text-xs text-rose-500 hover:bg-rose-50">✕</button>
