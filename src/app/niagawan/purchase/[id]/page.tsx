@@ -16,6 +16,7 @@ type Pinv = {
   note: string | null;
   check_status: string | null;
   checked_at: string | null;
+  resolve_status: string | null;
 };
 
 type Item = {
@@ -29,6 +30,8 @@ type Item = {
   will_create: boolean;
   sold_status: string | null;
   sold_on: string | null;
+  in_niagawan: boolean | null;
+  niagawan_category: string | null;
 };
 
 const rm = (n: number) => `RM ${Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -76,6 +79,8 @@ export default function ReviewInvoicePage() {
         will_create: Boolean(r.will_create),
         sold_status: (r.sold_status as string) ?? null,
         sold_on: (r.sold_on as string) ?? null,
+        in_niagawan: (r.in_niagawan as boolean | null) ?? null,
+        niagawan_category: (r.niagawan_category as string) ?? null,
       }))
     );
     setLoading(false);
@@ -89,7 +94,7 @@ export default function ReviewInvoicePage() {
   const setItem = (idx: number, patch: Partial<Item>) => {
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   };
-  const addRow = () => setItems((prev) => [...prev, { line_no: prev.length + 1, item_code: '', description: '', qty: 1, unit_price: 0, amount: 0, category: 'SPARE PARTS ITEM', will_create: true, sold_status: null, sold_on: null }]);
+  const addRow = () => setItems((prev) => [...prev, { line_no: prev.length + 1, item_code: '', description: '', qty: 1, unit_price: 0, amount: 0, category: 'SPARE PARTS ITEM', will_create: true, sold_status: null, sold_on: null, in_niagawan: null, niagawan_category: null }]);
   const removeRow = (idx: number) => setItems((prev) => prev.filter((_, i) => i !== idx).map((it, i) => ({ ...it, line_no: i + 1 })));
 
   const save = useCallback(async (approve: boolean) => {
@@ -159,6 +164,24 @@ export default function ReviewInvoicePage() {
     return () => clearInterval(t);
   }, [head?.check_status, load]);
 
+  const runResolve = useCallback(async () => {
+    if (!id) return;
+    const { error } = await supabase.from('pinv').update({ resolve_status: 'queued' }).eq('id', id);
+    if (!error) setHead((h) => (h ? { ...h, resolve_status: 'queued' } : h));
+  }, [id]);
+
+  // Auto-look-up Niagawan categories once if this invoice has never been resolved.
+  useEffect(() => {
+    if (head && (head.resolve_status === null || head.resolve_status === undefined)) runResolve();
+  }, [head, runResolve]);
+
+  // While the Niagawan lookup is queued/running, poll for the result.
+  useEffect(() => {
+    if (head?.resolve_status !== 'queued' && head?.resolve_status !== 'resolving') return;
+    const t = setInterval(() => { load(); }, 4000);
+    return () => clearInterval(t);
+  }, [head?.resolve_status, load]);
+
   const viewPdf = useCallback(async () => {
     if (!head?.file_path) return;
     const { data } = await supabase.storage.from('pinv').createSignedUrl(head.file_path, 300);
@@ -171,6 +194,7 @@ export default function ReviewInvoicePage() {
 
   const locked = head.status === 'approved' || head.status === 'creating' || head.status === 'created';
   const showBilled = head.check_status === 'checked';
+  const resolving = head.resolve_status === 'queued' || head.resolve_status === 'resolving';
 
   return (
     <div>
@@ -233,7 +257,7 @@ export default function ReviewInvoicePage() {
 
       {/* Items */}
       <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-700">Line items ({items.length})</h2>
+        <h2 className="text-sm font-semibold text-gray-700">Line items ({items.length}){resolving && <span className="ml-2 font-normal text-amber-600">· looking up Niagawan categories…</span>}</h2>
         {!locked && <button onClick={addRow} className="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50">+ Add row</button>}
       </div>
       <div className="overflow-x-auto rounded-lg border border-gray-200">
@@ -246,7 +270,7 @@ export default function ReviewInvoicePage() {
               <th className="px-2 py-2 text-right font-medium text-gray-600">Qty</th>
               <th className="px-2 py-2 text-right font-medium text-gray-600">Unit price</th>
               <th className="px-2 py-2 text-right font-medium text-gray-600">Amount</th>
-              <th className="px-2 py-2 font-medium text-gray-600">Category <span className="font-normal text-gray-400">(if new)</span></th>
+              <th className="px-2 py-2 font-medium text-gray-600">Category <span className="font-normal text-gray-400">(Niagawan · or pick if new)</span></th>
               {showBilled && <th className="px-2 py-2 font-medium text-gray-600">Billed?</th>}
               {!locked && <th className="px-2 py-2"></th>}
             </tr>
@@ -276,11 +300,18 @@ export default function ReviewInvoicePage() {
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-gray-700">{rm(round2(it.qty * it.unit_price))}</td>
                   <td className="px-2 py-1.5">
-                    <select disabled={locked} value={cats.includes(it.category) ? it.category : ''} onChange={(e) => setItem(idx, { category: e.target.value })}
-                      className="w-44 rounded border border-gray-200 px-1.5 py-1 text-xs disabled:bg-transparent disabled:border-transparent">
-                      {!cats.includes(it.category) && <option value="">{it.category || '—'}</option>}
-                      {cats.map((c) => <option key={c} value={c}>{c}</option>)}
-                    </select>
+                    {resolving
+                      ? <span className="text-xs text-gray-400">looking up…</span>
+                      : it.in_niagawan === true
+                        ? <span className="inline-flex items-center gap-1.5" title="Already in Niagawan — its category is not changed">
+                            <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">{it.niagawan_category || '—'}</span>
+                            <span className="text-[10px] uppercase tracking-wide text-gray-400">in Niagawan</span>
+                          </span>
+                        : <select disabled={locked} value={cats.includes(it.category) ? it.category : ''} onChange={(e) => setItem(idx, { category: e.target.value })}
+                            className="w-44 rounded border border-amber-300 bg-amber-50 px-1.5 py-1 text-xs disabled:bg-transparent disabled:border-transparent" title="New item — pick the category it will be created in">
+                            {!cats.includes(it.category) && <option value="">{it.category || '—'}</option>}
+                            {cats.map((c) => <option key={c} value={c}>{c}</option>)}
+                          </select>}
                   </td>
                   {showBilled && (
                     <td className="px-2 py-1.5">

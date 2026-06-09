@@ -96,6 +96,7 @@ export async function POST(req: Request) {
       total: Number.isFinite(Number(parsed.total)) ? Number(parsed.total) : null,
       status: 'extracted',
       note: null,
+      resolve_status: 'queued', // NAS will look up each item's existence + category in Niagawan
       updated_at: new Date().toISOString(),
     }).eq('id', id);
 
