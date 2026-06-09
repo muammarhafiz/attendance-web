@@ -17,15 +17,6 @@ type ConfigState =
   | { status: 'error'; message: string }
   | { status: 'ok'; workshop: LatLon; radiusM: number };
 
-function toKLDateISO(): string {
-  // YYYY-MM-DD for Asia/Kuala_Lumpur
-  const kl = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' }));
-  const y = kl.getFullYear();
-  const m = String(kl.getMonth() + 1).padStart(2, '0');
-  const d = String(kl.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
 function haversineMeters(a: LatLon, b: LatLon): number {
   const R = 6371000; // m
   const dLat = ((b.lat - a.lat) * Math.PI) / 180;
@@ -50,28 +41,23 @@ export default function HomePage() {
   const [saving, setSaving] = useState<boolean>(false);
   const [msg, setMsg] = useState<string>('');
 
-  // live clock
+  // live clock (Asia/Kuala_Lumpur)
   useEffect(() => {
-    const id = setInterval(() => {
-      const d = new Date(
-        new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' })
-      );
+    const tick = () => {
+      const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kuala_Lumpur' }));
       setNowText(
         d.toLocaleString('en-GB', {
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: false
+          weekday: 'short', day: '2-digit', month: 'short',
+          hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
         })
       );
-    }, 1000);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, []);
 
-  // read workshop config from DB (table: public.config with columns workshop_lat, workshop_lon, radius_m)
+  // read workshop config from DB (public.config: workshop_lat, workshop_lon, radius_m)
   const loadConfig = useCallback(async () => {
     setCfg({ status: 'loading' });
     const { data, error } = await supabase
@@ -80,14 +66,10 @@ export default function HomePage() {
       .limit(1)
       .maybeSingle();
 
-    if (error) {
-      setCfg({ status: 'error', message: error.message });
-      return;
-    }
+    if (error) { setCfg({ status: 'error', message: error.message }); return; }
     const lat = Number(data?.workshop_lat ?? NaN);
     const lon = Number(data?.workshop_lon ?? NaN);
     const radiusM = Number(data?.radius_m ?? NaN);
-
     if (!Number.isFinite(lat) || !Number.isFinite(lon) || !Number.isFinite(radiusM)) {
       setCfg({ status: 'error', message: 'Invalid config values in table "config".' });
       return;
@@ -95,9 +77,7 @@ export default function HomePage() {
     setCfg({ status: 'ok', workshop: { lat, lon }, radiusM });
   }, []);
 
-  useEffect(() => {
-    void loadConfig();
-  }, [loadConfig]);
+  useEffect(() => { void loadConfig(); }, [loadConfig]);
 
   const distanceM = useMemo(() => {
     if (cfg.status !== 'ok' || !me) return null;
@@ -109,87 +89,69 @@ export default function HomePage() {
     return distanceM <= cfg.radiusM;
   }, [cfg, distanceM]);
 
-  // called by map when user refreshes location
   const onLocationChange = useCallback((pos: LatLon, acc?: number) => {
     setMe(pos);
     setAccM(typeof acc === 'number' ? Math.round(acc) : null);
   }, []);
 
   async function handleCheck(kind: 'in' | 'out') {
-  try {
-    setSaving(true);
-    setMsg('');
+    try {
+      setSaving(true);
+      setMsg('');
+      const { data: sess } = await supabase.auth.getSession();
+      const email = sess.session?.user?.email ?? '';
+      if (!email) { setMsg('Please sign in first.'); return; }
 
-    const { data: sess } = await supabase.auth.getSession();
-    const email = sess.session?.user?.email ?? '';
-    if (!email) {
-      setMsg('Please sign in first.');
-      return;
+      const action = kind === 'in' ? 'Check-in' : 'Check-out';
+      const { error } = await supabase.from('attendance').insert({
+        action,
+        ts: new Date().toISOString(),
+        lat: me?.lat ?? null,
+        lon: me?.lon ?? null,
+        distance_m: distanceM ?? null,
+        staff_email: email,
+        staff_name: email.split('@')[0],
+        note: null,
+      });
+      if (error) { setMsg('Error: ' + error.message); return; }
+      setMsg(action + ' recorded.');
+    } catch (e) {
+      setMsg('Error: ' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setSaving(false);
     }
-
-    const action = kind === 'in' ? 'Check-in' : 'Check-out';
-
-    const { error } = await supabase.from('attendance').insert({
-      action,                              // required
-      ts: new Date().toISOString(),        // server time
-      lat: me?.lat ?? null,
-      lon: me?.lon ?? null,
-      distance_m: distanceM ?? null,       // integer or numeric ok
-      // ❌ day: toKLDateISO(),  <-- remove this line
-      staff_email: email,
-      staff_name: email.split('@')[0],
-      note: null
-    });
-
-    if (error) {
-      setMsg('Error: ' + error.message);
-      return;
-    }
-    setMsg(action + ' recorded.');
-  } catch (e) {
-    setMsg('Error: ' + (e instanceof Error ? e.message : String(e)));
-  } finally {
-    setSaving(false);
   }
-}
 
   /* --------------------------------- render --------------------------------- */
 
+  const isErr = msg.startsWith('Error:');
+
   return (
-    <PageShell title="Workshop Attendance" subtitle={nowText}>
-      <Card>
-        <CardBody>
-          {/* tiny status ribbon */}
-          <div
-            style={{
-              background: '#ecfdf5',
-              border: '1px solid #d1fae5',
-              borderRadius: 6,
-              padding: '6px 10px',
-              fontSize: 12,
-              marginBottom: 8
-            }}
-          >
-            {cfg.status === 'loading' && <>Loading workshop location…</>}
-            {cfg.status === 'error' && (
-              <span style={{ color: '#b91c1c' }}>
-                Config error: {cfg.message}
-              </span>
-            )}
-            {cfg.status === 'ok' && (
-              <>
-                Workshop: <b>{cfg.workshop.lat.toFixed(6)}, {cfg.workshop.lon.toFixed(6)}</b>{' '}
-                (radius {cfg.radiusM} m)
-                <span style={{
-                  marginLeft: 8, fontSize: 10, padding: '2px 6px',
-                  background: '#d1fae5', borderRadius: 999
-                }}>DB</span>
-              </>
-            )}
+    <PageShell title="Check in" subtitle="Workshop attendance">
+      {/* Live clock + range status */}
+      <Card className="mb-4">
+        <CardBody className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Kuala Lumpur time</div>
+            <div className="mt-0.5 truncate text-xl font-bold tabular-nums text-slate-900 sm:text-2xl">{nowText || '—'}</div>
           </div>
+          {cfg.status === 'ok' && me && (
+            <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${insideRadius ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+              {insideRadius ? '✓ In range' : '✗ Out of range'}
+            </span>
+          )}
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardBody className="space-y-4">
+          {cfg.status === 'loading' && <p className="text-sm text-slate-500">Loading workshop location…</p>}
+          {cfg.status === 'error' && (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">Config error: {cfg.message}</div>
+          )}
 
           {/* Map */}
-          <div className="h-[360px] w-full">
+          <div className="h-[320px] w-full overflow-hidden rounded-xl border border-slate-200">
             {cfg.status === 'ok' && (
               <CurrentMap
                 workshop={{ lat: cfg.workshop.lat, lon: cfg.workshop.lon }}
@@ -199,73 +161,47 @@ export default function HomePage() {
             )}
           </div>
 
-          {/* Readout + actions */}
-          <div style={{
-            marginTop: 12,
-            padding: 12,
-            border: '1px solid #e5e7eb',
-            borderRadius: 8,
-            background: '#fff'
-          }}>
-            <div style={{ marginBottom: 8, fontSize: 14 }}>
-              {me ? (
-                <>
-                  You: <b>{me.lat.toFixed(6)}, {me.lon.toFixed(6)}</b>{' '}
-                  {accM !== null && <span>(±{accM} m)</span>}
-                  {cfg.status === 'ok' && distanceM !== null && (
-                    <>
-                      {' '} • Distance to workshop:{' '}
-                      <b>{distanceM} m</b>{' '}
-                      {insideRadius ? (
-                        <span style={{ color: '#16a34a' }}>✓ inside radius</span>
-                      ) : (
-                        <span style={{ color: '#dc2626' }}>✗ outside radius</span>
-                      )}
-                    </>
-                  )}
-                </>
-              ) : (
-                <>Waiting for location… Tap <b>Refresh location</b> on the map.</>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', gap: 12 }}>
-              <button
-                onClick={() => void handleCheck('in')}
-                disabled={saving || !insideRadius}
-                style={{
-                  padding: '10px 16px',
-                  borderRadius: 8,
-                  border: 'none',
-                  background: insideRadius ? '#16a34a' : '#9ca3af',
-                  color: '#fff',
-                  fontWeight: 600
-                }}
-              >
-                Check in
-              </button>
-              <button
-                onClick={() => void handleCheck('out')}
-                disabled={saving || !insideRadius}
-                style={{
-                  padding: '10px 16px',
-                  borderRadius: 8,
-                  border: 'none',
-                  background: insideRadius ? '#2563eb' : '#9ca3af',
-                  color: '#fff',
-                  fontWeight: 600
-                }}
-              >
-                Check out
-              </button>
-            </div>
-
-            {msg && (
-              <div style={{ marginTop: 10, color: msg.startsWith('Error:') ? '#b91c1c' : '#166534' }}>
-                {msg}
+          {/* Location readout */}
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+            {me ? (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span>📍 <b className="tabular-nums">{me.lat.toFixed(5)}, {me.lon.toFixed(5)}</b>{accM !== null && <span className="text-slate-400"> (±{accM} m)</span>}</span>
+                {distanceM !== null && (
+                  <span className="text-slate-500">·  {distanceM} m from workshop</span>
+                )}
               </div>
+            ) : (
+              <span className="text-slate-500">Waiting for location — tap <b>Refresh location</b> on the map.</span>
             )}
           </div>
+
+          {/* Actions — big, thumb-friendly, stacked on mobile */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <button
+              onClick={() => void handleCheck('in')}
+              disabled={saving || !insideRadius}
+              className="inline-flex h-12 items-center justify-center rounded-xl text-base font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 bg-emerald-600 hover:bg-emerald-700"
+            >
+              {saving ? '…' : 'Check in'}
+            </button>
+            <button
+              onClick={() => void handleCheck('out')}
+              disabled={saving || !insideRadius}
+              className="inline-flex h-12 items-center justify-center rounded-xl text-base font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 bg-brand-700 hover:bg-brand-800"
+            >
+              {saving ? '…' : 'Check out'}
+            </button>
+          </div>
+
+          {cfg.status === 'ok' && me && !insideRadius && (
+            <p className="text-center text-xs text-slate-400">You must be inside the workshop area to check in or out.</p>
+          )}
+
+          {msg && (
+            <div className={`rounded-lg border px-3 py-2 text-sm ${isErr ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+              {msg}
+            </div>
+          )}
         </CardBody>
       </Card>
     </PageShell>
