@@ -19,7 +19,7 @@ export default function Login() {
         <div className="flex justify-center">
           <Image src="/zordaq-auto.png" alt="ZORDAQ Auto Service" width={717} height={1174} priority className="h-24 w-auto" />
         </div>
-        <h1 className="mt-5 text-center text-lg font-semibold text-slate-900">ZORDAQ Auto Service</h1>
+        <h1 className="mt-5 text-center text-lg font-semibold text-slate-900">Zordaq Auto Services</h1>
         <p className="mt-1 text-center text-sm text-slate-500">Staff access only — sign in with your work Google account.</p>
 
         <button

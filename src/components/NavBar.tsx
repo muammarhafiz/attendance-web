@@ -110,10 +110,7 @@ export default function NavBar() {
         {/* Brand */}
         <Link href="/" prefetch={false} className="flex shrink-0 items-center gap-2" aria-label="ZORDAQ Auto Service — Home">
           <Image src="/zordaq-auto.png" alt="ZORDAQ Auto Service" width={717} height={1174} priority className="h-9 w-auto" />
-          <span className="flex flex-col leading-none">
-            <span className="text-[15px] font-extrabold tracking-tight text-slate-900">ZORDAQ</span>
-            <span className="text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-500">Auto Service</span>
-          </span>
+          <span className="text-sm font-extrabold tracking-tight text-slate-900 sm:text-base">Zordaq Auto Services</span>
         </Link>
 
         {/* Desktop nav */}

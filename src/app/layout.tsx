@@ -10,8 +10,8 @@ import RouteKeyed from '@/components/RouteKeyed';
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' });
 
 export const metadata: Metadata = {
-  title: 'ZORDAQ Auto Service',
-  description: 'ZORDAQ Auto Service — staff attendance, payroll & Niagawan operations.',
+  title: 'Zordaq Auto Services',
+  description: 'Zordaq Auto Services — staff attendance, payroll & Niagawan operations.',
   icons: { icon: '/icon.png', apple: '/icon.png' },
 };
 
