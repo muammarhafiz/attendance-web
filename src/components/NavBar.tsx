@@ -70,19 +70,15 @@ export default function NavBar() {
 
   const mainLinks: NavItem[] = [
     { href: '/', label: 'Check-in' },
-    { href: '/today', label: 'Today' },
-    { href: '/report', label: 'Report' },
-    { href: '/offday', label: 'Offday / MC' },
-    { href: '/employees', label: 'Employees' },
   ];
   const adminLinks: NavItem[] = [
-    { href: '/niagawan/sales', match: '/niagawan', label: 'Niagawan', badge: counts.po },
     { href: '/attendance/checkin', match: '/attendance', label: 'Attendance', badge: counts.mc + counts.offday },
+    { href: '/niagawan/sales', match: '/niagawan', label: 'Niagawan', badge: counts.po },
+    { href: '/employees', label: 'Employees' },
   ];
   const payrollLinks: NavItem[] = [
+    { href: '/payroll/v3', label: 'Payroll' },
     { href: '/payroll/records', label: 'Payroll Records' },
-    { href: '/payroll/v3', label: 'Payroll v3' },
-    { href: '/payroll/v2', label: 'Payroll v2' },
   ];
 
   const Badge = ({ n }: { n?: number }) =>
