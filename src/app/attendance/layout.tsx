@@ -10,6 +10,7 @@ const TABS = [
   { href: '/attendance/today', label: 'Today' },
   { href: '/attendance/report', label: 'Report' },
   { href: '/attendance/offday', label: 'Off-day' },
+  { href: '/attendance/leave', label: 'Off-day req' },
   { href: '/attendance/mc', label: 'MC' },
   { href: '/attendance/settings', label: 'Settings' },
 ];
