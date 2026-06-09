@@ -11,6 +11,7 @@ export default function NavBar() {
   const pathname = usePathname();
   const [email, setEmail] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [counts, setCounts] = useState<{ mc: number; offday: number; po: number }>({ mc: 0, offday: 0, po: 0 });
 
   useEffect(() => {
     let unsub: { unsubscribe: () => void } | null = null;
@@ -43,6 +44,19 @@ export default function NavBar() {
     unsub = data?.subscription ?? null;
     return () => unsub?.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!isAdmin) { setCounts({ mc: 0, offday: 0, po: 0 }); return; }
+    let active = true;
+    const load = async () => {
+      const { data } = await supabase.rpc('notification_counts');
+      const d = (data ?? {}) as { mc?: number; offday?: number; po?: number };
+      if (active) setCounts({ mc: d.mc ?? 0, offday: d.offday ?? 0, po: d.po ?? 0 });
+    };
+    load();
+    const id = setInterval(load, 60000);
+    return () => { active = false; clearInterval(id); };
+  }, [isAdmin, pathname]);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -89,10 +103,16 @@ export default function NavBar() {
             )}
             <Link href="/employees" prefetch={false} className={linkClass('/employees')}>Employees</Link>
             {isAdmin && (
-              <Link href="/niagawan/sales" prefetch={false} className={linkClass('/niagawan')}>Niagawan</Link>
+              <Link href="/niagawan/sales" prefetch={false} className={linkClass('/niagawan')}>
+                Niagawan
+                {counts.po > 0 && <span className="ml-1 inline-flex min-w-[18px] items-center justify-center rounded-full bg-rose-600 px-1 text-[11px] font-semibold leading-4 text-white">{counts.po}</span>}
+              </Link>
             )}
             {isAdmin && (
-              <Link href="/attendance/checkin" prefetch={false} className={linkClass('/attendance')}>Attendance</Link>
+              <Link href="/attendance/checkin" prefetch={false} className={linkClass('/attendance')}>
+                Attendance
+                {(counts.mc + counts.offday) > 0 && <span className="ml-1 inline-flex min-w-[18px] items-center justify-center rounded-full bg-rose-600 px-1 text-[11px] font-semibold leading-4 text-white">{counts.mc + counts.offday}</span>}
+              </Link>
             )}
           </div>
         </div>
