@@ -48,6 +48,12 @@ export default function CheckinV2Page() {
   const [mcNote, setMcNote] = useState('');
   const [mcBusy, setMcBusy] = useState(false);
   const [mcMsg, setMcMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [showOff, setShowOff] = useState(false);
+  const [offFrom, setOffFrom] = useState('');
+  const [offTo, setOffTo] = useState('');
+  const [offReason, setOffReason] = useState('');
+  const [offBusy, setOffBusy] = useState(false);
+  const [offMsg, setOffMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   // --- live KL clock (set after mount to avoid hydration mismatch) ---
   useEffect(() => {
@@ -161,6 +167,19 @@ export default function CheckinV2Page() {
     } finally {
       setMcBusy(false);
     }
+  };
+
+  const submitOff = async () => {
+    if (!email) return;
+    if (!offFrom || !offTo) { setOffMsg({ kind: 'err', text: 'Pick the start and end dates.' }); return; }
+    if (offFrom > offTo) { setOffMsg({ kind: 'err', text: 'The "From" date is after the "To" date.' }); return; }
+    setOffBusy(true); setOffMsg(null);
+    const { error } = await supabase.from('offday_requests').insert({
+      staff_email: email, date_from: offFrom, date_to: offTo, reason: offReason || null,
+    });
+    if (error) setOffMsg({ kind: 'err', text: error.message });
+    else { setOffMsg({ kind: 'ok', text: 'Off-day request sent ✓ — waiting for approval.' }); setOffFrom(''); setOffTo(''); setOffReason(''); }
+    setOffBusy(false);
   };
 
   if (email === undefined) return <div className="text-sm text-gray-500">Loading…</div>;
@@ -279,6 +298,37 @@ export default function CheckinV2Page() {
       <p className="mt-3 text-center text-xs text-gray-400">
         Your location is checked on the server when you tap the button.
       </p>
+
+      {/* Request off day */}
+      <div className="mt-4 rounded-xl border border-gray-200 bg-white p-4">
+        <button onClick={() => setShowOff((v) => !v)} className="flex w-full items-center justify-between text-sm font-medium text-gray-700">
+          <span>🌴 Request off day (leave)</span>
+          <span className="text-gray-400">{showOff ? '−' : '+'}</span>
+        </button>
+        {showOff && (
+          <div className="mt-3 space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <label className="text-xs text-gray-500">From
+                <input type="date" value={offFrom} onChange={(e) => setOffFrom(e.target.value)} className="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+              </label>
+              <label className="text-xs text-gray-500">To
+                <input type="date" value={offTo} onChange={(e) => setOffTo(e.target.value)} className="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+              </label>
+            </div>
+            <label className="block text-xs text-gray-500">Reason (optional)
+              <input value={offReason} onChange={(e) => setOffReason(e.target.value)} placeholder="e.g. family matters" className="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+            </label>
+            <button onClick={submitOff} disabled={offBusy} className="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+              {offBusy ? 'Sending…' : 'Request off day'}
+            </button>
+            {offMsg && (
+              <div className={`rounded-md border p-2 text-sm ${offMsg.kind === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>
+                {offMsg.text}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Submit MC */}
       <div className="mt-4 rounded-xl border border-gray-200 bg-white p-4">
