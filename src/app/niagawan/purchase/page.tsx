@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
 type Pinv = {
@@ -28,6 +29,7 @@ const fmtD = (d: string | null) => { if (!d) return '—'; const [y, m, dd] = d.
 const rm = (n: number | null) => (n == null ? '—' : `RM ${Number(n).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 
 export default function PurchaseInvoicePage() {
+  const router = useRouter();
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [rows, setRows] = useState<Pinv[]>([]);
@@ -116,7 +118,7 @@ export default function PurchaseInvoicePage() {
       <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
         <div className="text-sm font-medium text-gray-800">Upload a supplier purchase invoice (PDF)</div>
         <div className="mt-0.5 text-xs text-gray-400">
-          Upload the PDF → the system will read it → you review → it creates the invoice in Niagawan. (Reading &amp; create steps coming next.)
+          Upload the PDF → click <b>Read</b> so the system extracts it → <b>Review</b> &amp; fix → approve to create it in Niagawan.
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <label className="inline-flex cursor-pointer items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
@@ -169,6 +171,11 @@ export default function PurchaseInvoicePage() {
                     {(r.status === 'uploaded' || r.status === 'error') && (
                       <button onClick={() => readInvoice(r.id)} disabled={readingId === r.id} className="rounded bg-blue-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
                         {readingId === r.id ? 'Reading…' : 'Read'}
+                      </button>
+                    )}
+                    {(r.status === 'extracted' || r.status === 'approved' || r.status === 'creating' || r.status === 'created') && (
+                      <button onClick={() => router.push(`/niagawan/purchase/${r.id}`)} className="rounded bg-gray-900 px-2 py-0.5 text-xs font-semibold text-white hover:bg-gray-700">
+                        {r.status === 'extracted' ? 'Review' : 'View'}
                       </button>
                     )}
                     {r.status === 'extracted' && (
