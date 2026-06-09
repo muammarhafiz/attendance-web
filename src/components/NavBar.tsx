@@ -108,8 +108,12 @@ export default function NavBar() {
     <nav className="no-print sticky top-0 z-40 w-full border-b border-slate-200 bg-white/90 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-2.5">
         {/* Brand */}
-        <Link href="/" prefetch={false} className="flex shrink-0 items-center" aria-label="ZORDAQ Motorsport — Home">
-          <Image src="/zordaq-logo.png" alt="ZORDAQ Motorsport" width={916} height={182} priority className="h-6 w-auto sm:h-7" />
+        <Link href="/" prefetch={false} className="flex shrink-0 items-center gap-2" aria-label="ZORDAQ Auto Service — Home">
+          <Image src="/zordaq-auto.png" alt="ZORDAQ Auto Service" width={717} height={1174} priority className="h-9 w-auto" />
+          <span className="flex flex-col leading-none">
+            <span className="text-[15px] font-extrabold tracking-tight text-slate-900">ZORDAQ</span>
+            <span className="text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-500">Auto Service</span>
+          </span>
         </Link>
 
         {/* Desktop nav */}
