@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
 type Status = {
@@ -31,6 +32,7 @@ function haversineM(aLat: number, aLon: number, bLat: number, bLon: number): num
 }
 
 export default function CheckinV2() {
+  const router = useRouter();
   const [email, setEmail] = useState<string | null | undefined>(undefined);
   const [cfg, setCfg] = useState<{ lat: number; lon: number; radius: number } | null>(null);
   const [geo, setGeo] = useState<{ lat: number; lon: number; acc: number } | null>(null);
@@ -77,6 +79,9 @@ export default function CheckinV2() {
   }, []);
 
   useEffect(() => { if (email) loadStatus(); }, [email, loadStatus]);
+
+  // Not signed in → send to the branded login page.
+  useEffect(() => { if (email === null) router.replace('/login'); }, [email, router]);
 
   const getLocation = useCallback(() => {
     if (!('geolocation' in navigator)) { setGeoErr('This device does not support GPS.'); return; }
@@ -147,13 +152,8 @@ export default function CheckinV2() {
     setOffBusy(false);
   };
 
-  if (email === undefined) return <div className="text-sm text-slate-500">Loading…</div>;
-  if (email === null)
-    return (
-      <div className="mx-auto max-w-md rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
-        Please <a href="/login" className="font-medium text-brand-700 underline">sign in</a> to check in.
-      </div>
-    );
+  if (email === undefined || email === null)
+    return <div className="mx-auto max-w-md p-6 text-center text-sm text-slate-500">Loading…</div>;
 
   const timeStr = now
     ? new Intl.DateTimeFormat('en-MY', { timeZone: 'Asia/Kuala_Lumpur', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }).format(now)
