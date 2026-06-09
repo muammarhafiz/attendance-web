@@ -1,0 +1,282 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabaseClient';
+
+type Pinv = {
+  id: string;
+  status: string;
+  file_path: string | null;
+  supplier_name: string | null;
+  ref_no: string | null;
+  invoice_date: string | null;
+  total: number | null;
+  niagawan_pi_no: string | null;
+  note: string | null;
+};
+
+type Item = {
+  line_no: number;
+  item_code: string;
+  description: string;
+  qty: number;
+  unit_price: number;
+  amount: number;
+  will_create: boolean;
+};
+
+const norm = (c: string | null | undefined) => (c ?? '').toUpperCase().replace(/\s+/g, ' ').trim();
+const rm = (n: number) => `RM ${Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+
+export default function ReviewInvoicePage() {
+  const router = useRouter();
+  const params = useParams<{ id: string }>();
+  const id = params?.id;
+
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [head, setHead] = useState<Pinv | null>(null);
+  const [items, setItems] = useState<Item[]>([]);
+  const [catalog, setCatalog] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const { data: ok } = await supabase.rpc('is_admin');
+      setIsAdmin(ok === true);
+    })();
+  }, []);
+
+  const load = useCallback(async () => {
+    if (!id) return;
+    setLoading(true);
+    const [{ data: p }, { data: its }, { data: inv }] = await Promise.all([
+      supabase.from('pinv').select('*').eq('id', id).maybeSingle(),
+      supabase.from('pinv_item').select('*').eq('pinv_id', id).order('line_no', { ascending: true }),
+      supabase.from('niagawan_inventory').select('code'),
+    ]);
+    setHead((p ?? null) as Pinv | null);
+    const cat = new Set<string>((inv ?? []).map((r: { code: string }) => norm(r.code)));
+    setCatalog(cat);
+    setItems(
+      ((its ?? []) as Array<Record<string, unknown>>).map((r, i) => ({
+        line_no: Number(r.line_no) || i + 1,
+        item_code: String(r.item_code ?? ''),
+        description: String(r.description ?? ''),
+        qty: Number(r.qty) || 0,
+        unit_price: Number(r.unit_price) || 0,
+        amount: Number(r.amount) || 0,
+        will_create: r.will_create == null ? !cat.has(norm(String(r.item_code ?? ''))) : Boolean(r.will_create),
+      }))
+    );
+    setLoading(false);
+  }, [id]);
+
+  useEffect(() => { if (isAdmin) load(); }, [isAdmin, load]);
+
+  const computedTotal = useMemo(() => round2(items.reduce((s, it) => s + round2(it.qty * it.unit_price), 0)), [items]);
+  const newCount = useMemo(() => items.filter((it) => it.will_create).length, [items]);
+  const totalMismatch = head?.total != null && Math.abs(round2(head.total) - computedTotal) > 0.01;
+
+  const setItem = (idx: number, patch: Partial<Item>) => {
+    setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+  };
+  const addRow = () => setItems((prev) => [...prev, { line_no: prev.length + 1, item_code: '', description: '', qty: 1, unit_price: 0, amount: 0, will_create: true }]);
+  const removeRow = (idx: number) => setItems((prev) => prev.filter((_, i) => i !== idx).map((it, i) => ({ ...it, line_no: i + 1 })));
+
+  const save = useCallback(async (approve: boolean) => {
+    if (!id || !head) return;
+    setBusy(true); setMsg(null);
+    try {
+      const cleaned = items
+        .map((it, i) => ({ ...it, line_no: i + 1, amount: round2(it.qty * it.unit_price) }))
+        .filter((it) => it.item_code.trim() || it.description.trim());
+      if (approve) {
+        if (cleaned.length === 0) throw new Error('Add at least one line item before approving.');
+        if (cleaned.some((it) => !it.item_code.trim())) throw new Error('Every item needs a code before approving.');
+      }
+      const { error: hErr } = await supabase.from('pinv').update({
+        supplier_name: head.supplier_name?.trim() || null,
+        ref_no: head.ref_no?.trim() || null,
+        invoice_date: head.invoice_date || null,
+        total: head.total,
+        status: approve ? 'approved' : 'extracted',
+        updated_at: new Date().toISOString(),
+      }).eq('id', id);
+      if (hErr) throw hErr;
+
+      const { error: dErr } = await supabase.from('pinv_item').delete().eq('pinv_id', id);
+      if (dErr) throw dErr;
+      if (cleaned.length) {
+        const rows = cleaned.map((it) => ({
+          pinv_id: id,
+          line_no: it.line_no,
+          item_code: it.item_code.trim() || null,
+          description: it.description.trim() || null,
+          qty: it.qty,
+          unit_price: it.unit_price,
+          amount: it.amount,
+          matched: !it.will_create,
+          will_create: it.will_create,
+        }));
+        const { error: iErr } = await supabase.from('pinv_item').insert(rows);
+        if (iErr) throw iErr;
+      }
+      if (approve) {
+        setMsg({ kind: 'ok', text: 'Approved ✓ — queued to create in Niagawan.' });
+        setTimeout(() => router.push('/niagawan/purchase'), 900);
+      } else {
+        setMsg({ kind: 'ok', text: 'Saved ✓' });
+        await load();
+      }
+    } catch (e: unknown) {
+      setMsg({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setBusy(false);
+    }
+  }, [id, head, items, load, router]);
+
+  const viewPdf = useCallback(async () => {
+    if (!head?.file_path) return;
+    const { data } = await supabase.storage.from('pinv').createSignedUrl(head.file_path, 300);
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank', 'noopener');
+  }, [head]);
+
+  if (isAdmin === null || loading) return <div className="text-sm text-gray-500">Loading…</div>;
+  if (!isAdmin) return <div className="text-sm text-gray-600">This page is for admins only.</div>;
+  if (!head) return <div className="text-sm text-gray-600">Invoice not found. <button onClick={() => router.push('/niagawan/purchase')} className="text-blue-600 underline">Back</button></div>;
+
+  const locked = head.status === 'approved' || head.status === 'creating' || head.status === 'created';
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between">
+        <button onClick={() => router.push('/niagawan/purchase')} className="text-sm text-gray-500 hover:text-gray-900">← Back to invoices</button>
+        <div className="flex items-center gap-2">
+          {head.file_path && <button onClick={viewPdf} className="rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50">View PDF</button>}
+          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{head.status === 'created' && head.niagawan_pi_no ? head.niagawan_pi_no : head.status}</span>
+        </div>
+      </div>
+
+      {locked && (
+        <div className="mb-3 rounded-md border border-indigo-200 bg-indigo-50 p-2 text-sm text-indigo-800">
+          This invoice is {head.status}. It can no longer be edited.
+        </div>
+      )}
+
+      {/* Header */}
+      <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label className="block">
+            <span className="text-xs font-medium text-gray-500">Supplier</span>
+            <input disabled={locked} value={head.supplier_name ?? ''} onChange={(e) => setHead({ ...head, supplier_name: e.target.value })}
+              className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-50" />
+          </label>
+          <label className="block">
+            <span className="text-xs font-medium text-gray-500">Supplier invoice ref#</span>
+            <input disabled={locked} value={head.ref_no ?? ''} onChange={(e) => setHead({ ...head, ref_no: e.target.value })}
+              className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-50" />
+          </label>
+          <label className="block">
+            <span className="text-xs font-medium text-gray-500">Invoice date</span>
+            <input disabled={locked} type="date" value={head.invoice_date ?? ''} onChange={(e) => setHead({ ...head, invoice_date: e.target.value })}
+              className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-50" />
+          </label>
+          <label className="block">
+            <span className="text-xs font-medium text-gray-500">Invoice total (from PDF)</span>
+            <input disabled={locked} type="number" step="0.01" value={head.total ?? ''} onChange={(e) => setHead({ ...head, total: e.target.value === '' ? null : Number(e.target.value) })}
+              className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-50" />
+          </label>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+          <span className="text-gray-500">Line items total: <b className="tabular-nums text-gray-800">{rm(computedTotal)}</b></span>
+          {totalMismatch
+            ? <span className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-700">⚠ differs from PDF total {rm(head.total ?? 0)}</span>
+            : <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-medium text-emerald-700">✓ matches PDF total</span>}
+          {newCount > 0 && <span className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-700">{newCount} new product{newCount === 1 ? '' : 's'} will be created</span>}
+        </div>
+      </div>
+
+      {/* Items */}
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-gray-700">Line items ({items.length})</h2>
+        {!locked && <button onClick={addRow} className="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50">+ Add row</button>}
+      </div>
+      <div className="overflow-x-auto rounded-lg border border-gray-200">
+        <table className="w-full border-collapse text-sm">
+          <thead className="bg-gray-50 text-left">
+            <tr>
+              <th className="px-2 py-2 font-medium text-gray-600">#</th>
+              <th className="px-2 py-2 font-medium text-gray-600">Item code</th>
+              <th className="px-2 py-2 font-medium text-gray-600">Description</th>
+              <th className="px-2 py-2 text-right font-medium text-gray-600">Qty</th>
+              <th className="px-2 py-2 text-right font-medium text-gray-600">Unit price</th>
+              <th className="px-2 py-2 text-right font-medium text-gray-600">Amount</th>
+              <th className="px-2 py-2 font-medium text-gray-600">In Niagawan?</th>
+              {!locked && <th className="px-2 py-2"></th>}
+            </tr>
+          </thead>
+          <tbody>
+            {items.length === 0 ? (
+              <tr><td colSpan={locked ? 7 : 8} className="px-3 py-6 text-center text-gray-500">No line items.</td></tr>
+            ) : items.map((it, idx) => {
+              const exists = catalog.has(norm(it.item_code));
+              return (
+                <tr key={idx} className="border-t border-gray-100 align-top">
+                  <td className="px-2 py-1.5 text-gray-400">{idx + 1}</td>
+                  <td className="px-2 py-1.5">
+                    <input disabled={locked} value={it.item_code} onChange={(e) => setItem(idx, { item_code: e.target.value })}
+                      className="w-36 rounded border border-gray-200 px-1.5 py-1 font-mono text-xs disabled:bg-transparent disabled:border-transparent" />
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <input disabled={locked} value={it.description} onChange={(e) => setItem(idx, { description: e.target.value })}
+                      className="w-full min-w-[14rem] rounded border border-gray-200 px-1.5 py-1 text-xs disabled:bg-transparent disabled:border-transparent" />
+                  </td>
+                  <td className="px-2 py-1.5 text-right">
+                    <input disabled={locked} type="number" step="any" value={it.qty} onChange={(e) => setItem(idx, { qty: Number(e.target.value) })}
+                      className="w-16 rounded border border-gray-200 px-1.5 py-1 text-right text-xs disabled:bg-transparent disabled:border-transparent" />
+                  </td>
+                  <td className="px-2 py-1.5 text-right">
+                    <input disabled={locked} type="number" step="0.01" value={it.unit_price} onChange={(e) => setItem(idx, { unit_price: Number(e.target.value) })}
+                      className="w-20 rounded border border-gray-200 px-1.5 py-1 text-right text-xs disabled:bg-transparent disabled:border-transparent" />
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-gray-700">{rm(round2(it.qty * it.unit_price))}</td>
+                  <td className="px-2 py-1.5">
+                    {it.item_code.trim() === '' ? <span className="text-xs text-gray-400">—</span>
+                      : exists ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">In catalog</span>
+                      : <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">New → create</span>}
+                  </td>
+                  {!locked && (
+                    <td className="px-2 py-1.5 text-right">
+                      <button onClick={() => removeRow(idx)} className="rounded px-1.5 py-0.5 text-xs text-rose-500 hover:bg-rose-50">✕</button>
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="mt-2 text-xs text-gray-400">
+        &ldquo;In catalog&rdquo; is a preview based on your synced Niagawan stock list. Codes marked &ldquo;New&rdquo; will be created as products when this invoice is sent to Niagawan. Final matching happens at create time.
+      </p>
+
+      {msg && <div className={`mt-3 rounded-md border p-2 text-sm ${msg.kind === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>{msg.text}</div>}
+
+      {!locked && (
+        <div className="mt-4 flex items-center gap-2">
+          <button onClick={() => save(false)} disabled={busy} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+            {busy ? 'Saving…' : 'Save changes'}
+          </button>
+          <button onClick={() => save(true)} disabled={busy} className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
+            {busy ? 'Working…' : 'Approve → create in Niagawan'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
