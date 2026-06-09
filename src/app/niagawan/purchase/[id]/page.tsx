@@ -26,7 +26,6 @@ type Item = {
   will_create: boolean;
 };
 
-const norm = (c: string | null | undefined) => (c ?? '').toUpperCase().replace(/\s+/g, ' ').trim();
 const rm = (n: number) => `RM ${Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -39,7 +38,6 @@ export default function ReviewInvoicePage() {
   const [loading, setLoading] = useState(true);
   const [head, setHead] = useState<Pinv | null>(null);
   const [items, setItems] = useState<Item[]>([]);
-  const [catalog, setCatalog] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
@@ -53,14 +51,11 @@ export default function ReviewInvoicePage() {
   const load = useCallback(async () => {
     if (!id) return;
     setLoading(true);
-    const [{ data: p }, { data: its }, { data: inv }] = await Promise.all([
+    const [{ data: p }, { data: its }] = await Promise.all([
       supabase.from('pinv').select('*').eq('id', id).maybeSingle(),
       supabase.from('pinv_item').select('*').eq('pinv_id', id).order('line_no', { ascending: true }),
-      supabase.from('niagawan_inventory').select('code'),
     ]);
     setHead((p ?? null) as Pinv | null);
-    const cat = new Set<string>((inv ?? []).map((r: { code: string }) => norm(r.code)));
-    setCatalog(cat);
     setItems(
       ((its ?? []) as Array<Record<string, unknown>>).map((r, i) => ({
         line_no: Number(r.line_no) || i + 1,
@@ -69,7 +64,7 @@ export default function ReviewInvoicePage() {
         qty: Number(r.qty) || 0,
         unit_price: Number(r.unit_price) || 0,
         amount: Number(r.amount) || 0,
-        will_create: r.will_create == null ? !cat.has(norm(String(r.item_code ?? ''))) : Boolean(r.will_create),
+        will_create: Boolean(r.will_create),
       }))
     );
     setLoading(false);
@@ -78,7 +73,6 @@ export default function ReviewInvoicePage() {
   useEffect(() => { if (isAdmin) load(); }, [isAdmin, load]);
 
   const computedTotal = useMemo(() => round2(items.reduce((s, it) => s + round2(it.qty * it.unit_price), 0)), [items]);
-  const newCount = useMemo(() => items.filter((it) => it.will_create).length, [items]);
   const totalMismatch = head?.total != null && Math.abs(round2(head.total) - computedTotal) > 0.01;
 
   const setItem = (idx: number, patch: Partial<Item>) => {
@@ -119,8 +113,7 @@ export default function ReviewInvoicePage() {
           qty: it.qty,
           unit_price: it.unit_price,
           amount: it.amount,
-          matched: !it.will_create,
-          will_create: it.will_create,
+          // matched / will_create are decided authoritatively by the NAS at create time
         }));
         const { error: iErr } = await supabase.from('pinv_item').insert(rows);
         if (iErr) throw iErr;
@@ -196,7 +189,6 @@ export default function ReviewInvoicePage() {
           {totalMismatch
             ? <span className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-700">⚠ differs from PDF total {rm(head.total ?? 0)}</span>
             : <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-medium text-emerald-700">✓ matches PDF total</span>}
-          {newCount > 0 && <span className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-700">{newCount} new product{newCount === 1 ? '' : 's'} will be created</span>}
         </div>
       </div>
 
@@ -215,15 +207,13 @@ export default function ReviewInvoicePage() {
               <th className="px-2 py-2 text-right font-medium text-gray-600">Qty</th>
               <th className="px-2 py-2 text-right font-medium text-gray-600">Unit price</th>
               <th className="px-2 py-2 text-right font-medium text-gray-600">Amount</th>
-              <th className="px-2 py-2 font-medium text-gray-600">In Niagawan?</th>
               {!locked && <th className="px-2 py-2"></th>}
             </tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
-              <tr><td colSpan={locked ? 7 : 8} className="px-3 py-6 text-center text-gray-500">No line items.</td></tr>
+              <tr><td colSpan={locked ? 6 : 7} className="px-3 py-6 text-center text-gray-500">No line items.</td></tr>
             ) : items.map((it, idx) => {
-              const exists = catalog.has(norm(it.item_code));
               return (
                 <tr key={idx} className="border-t border-gray-100 align-top">
                   <td className="px-2 py-1.5 text-gray-400">{idx + 1}</td>
@@ -244,11 +234,6 @@ export default function ReviewInvoicePage() {
                       className="w-20 rounded border border-gray-200 px-1.5 py-1 text-right text-xs disabled:bg-transparent disabled:border-transparent" />
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-gray-700">{rm(round2(it.qty * it.unit_price))}</td>
-                  <td className="px-2 py-1.5">
-                    {it.item_code.trim() === '' ? <span className="text-xs text-gray-400">—</span>
-                      : exists ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">In catalog</span>
-                      : <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">New → create</span>}
-                  </td>
                   {!locked && (
                     <td className="px-2 py-1.5 text-right">
                       <button onClick={() => removeRow(idx)} className="rounded px-1.5 py-0.5 text-xs text-rose-500 hover:bg-rose-50">✕</button>
@@ -262,7 +247,7 @@ export default function ReviewInvoicePage() {
       </div>
 
       <p className="mt-2 text-xs text-gray-400">
-        &ldquo;In catalog&rdquo; is a preview based on your synced Niagawan stock list. Codes marked &ldquo;New&rdquo; will be created as products when this invoice is sent to Niagawan. Final matching happens at create time.
+        When you approve, the system checks each item code against Niagawan directly: existing items are added as-is, and any code Niagawan doesn&rsquo;t have yet is created as a new product first. No duplicates.
       </p>
 
       {msg && <div className={`mt-3 rounded-md border p-2 text-sm ${msg.kind === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>{msg.text}</div>}
