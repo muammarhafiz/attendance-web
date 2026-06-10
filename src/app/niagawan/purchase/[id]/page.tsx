@@ -22,6 +22,7 @@ type Pinv = {
 type Item = {
   line_no: number;
   item_code: string;
+  codes: string[];
   description: string;
   qty: number;
   unit_price: number;
@@ -71,6 +72,7 @@ export default function ReviewInvoicePage() {
       ((its ?? []) as Array<Record<string, unknown>>).map((r, i) => ({
         line_no: Number(r.line_no) || i + 1,
         item_code: String(r.item_code ?? ''),
+        codes: Array.isArray(r.codes) ? (r.codes as unknown[]).map((c) => String(c ?? '')).filter(Boolean) : [],
         description: String(r.description ?? ''),
         qty: Number(r.qty) || 0,
         unit_price: Number(r.unit_price) || 0,
@@ -94,7 +96,7 @@ export default function ReviewInvoicePage() {
   const setItem = (idx: number, patch: Partial<Item>) => {
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   };
-  const addRow = () => setItems((prev) => [...prev, { line_no: prev.length + 1, item_code: '', description: '', qty: 1, unit_price: 0, amount: 0, category: 'SPARE PARTS ITEM', will_create: true, sold_status: null, sold_on: null, in_niagawan: null, niagawan_category: null }]);
+  const addRow = () => setItems((prev) => [...prev, { line_no: prev.length + 1, item_code: '', codes: [], description: '', qty: 1, unit_price: 0, amount: 0, category: 'SPARE PARTS ITEM', will_create: true, sold_status: null, sold_on: null, in_niagawan: null, niagawan_category: null }]);
   const removeRow = (idx: number) => setItems((prev) => prev.filter((_, i) => i !== idx).map((it, i) => ({ ...it, line_no: i + 1 })));
 
   const save = useCallback(async (approve: boolean) => {
@@ -103,10 +105,10 @@ export default function ReviewInvoicePage() {
     try {
       const cleaned = items
         .map((it, i) => ({ ...it, line_no: i + 1, amount: round2(it.qty * it.unit_price) }))
-        .filter((it) => it.item_code.trim() || it.description.trim());
+        .filter((it) => it.item_code.trim() || it.codes.length || it.description.trim());
       if (approve) {
         if (cleaned.length === 0) throw new Error('Add at least one line item before approving.');
-        if (cleaned.some((it) => !it.item_code.trim())) throw new Error('Every item needs a code before approving.');
+        if (cleaned.some((it) => !it.item_code.trim() && it.codes.length === 0)) throw new Error('Every item needs at least one code before approving.');
       }
       const { error: hErr } = await supabase.from('pinv').update({
         supplier_name: head.supplier_name?.trim() || null,
@@ -124,7 +126,8 @@ export default function ReviewInvoicePage() {
         const rows = cleaned.map((it) => ({
           pinv_id: id,
           line_no: it.line_no,
-          item_code: it.item_code.trim() || null,
+          item_code: it.item_code.trim() || it.codes[0] || null,
+          codes: it.codes,
           description: it.description.trim() || null,
           qty: it.qty,
           unit_price: it.unit_price,
@@ -285,6 +288,11 @@ export default function ReviewInvoicePage() {
                   <td className="px-2 py-1.5">
                     <input disabled={locked} value={it.item_code} onChange={(e) => setItem(idx, { item_code: e.target.value })}
                       className="w-36 rounded border border-gray-200 px-1.5 py-1 font-mono text-xs disabled:bg-transparent disabled:border-transparent" />
+                    {it.codes.length > 1 && (
+                      <div className="mt-1 max-w-[12rem] font-mono text-[10px] leading-tight text-gray-400" title={'All codes recognised on this line:\n' + it.codes.join('  ')}>
+                        +{it.codes.length - 1} more: {it.codes.slice(1).join(' ')}
+                      </div>
+                    )}
                   </td>
                   <td className="px-2 py-1.5">
                     <input disabled={locked} value={it.description} onChange={(e) => setItem(idx, { description: e.target.value })}
