@@ -1,7 +1,7 @@
-// src/app/kiv/sale-invoice/page.tsx
+// src/app/niagawan/kiv/sale-invoice/page.tsx
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 type Moved = {
@@ -28,12 +28,17 @@ const fmtWhen = (s: string) => {
   return Number.isNaN(dt.getTime()) ? s : dt.toLocaleString('en-MY', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 };
 
+type RunState = 'idle' | 'running' | 'done' | 'error';
+
 export default function KivSaleInvoicePage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [rows, setRows] = useState<Moved[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [run, setRun] = useState<RunState>('idle');
+  const [runMsg, setRunMsg] = useState('');
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -45,6 +50,8 @@ export default function KivSaleInvoicePage() {
       } else setIsAdmin(false);
     })();
   }, []);
+
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
@@ -60,6 +67,49 @@ export default function KivSaleInvoicePage() {
 
   useEffect(() => { if (isAdmin) load(); }, [isAdmin, load]);
 
+  // Manual trigger: queue a live KIV move on the NAS (same engine as the 19:45 schedule).
+  const moveNow = useCallback(async () => {
+    if (run === 'running') return;
+    if (!window.confirm(
+      "Move today's UNPAID sale invoices to the next working day now?\n\n" +
+      'Each one is first marked delivered (dated today), then its invoice date is moved. ' +
+      'This changes real invoices in Niagawan — normally the 19:45 schedule does this automatically.'
+    )) return;
+    setRun('running');
+    setRunMsg('Starting…');
+    const { data, error } = await supabase
+      .from('sync_requests')
+      .insert({ which: 'kiv', source: 'website' })
+      .select('id')
+      .single();
+    if (error || !data) {
+      setRun('error');
+      setRunMsg('Could not start: ' + (error?.message ?? 'unknown error'));
+      return;
+    }
+    const id = data.id as number;
+    setRunMsg('Moving unpaid invoices… this usually takes under a minute.');
+    const startedAt = Date.now();
+    pollRef.current = setInterval(async () => {
+      const { data: row } = await supabase.from('sync_requests').select('status,result').eq('id', id).single();
+      const status = row?.status;
+      if (status === 'done' || status === 'error') {
+        if (pollRef.current) clearInterval(pollRef.current);
+        await load();
+        const moved = (row?.result || '').match(/(\d+) unpaid invoice/);
+        setRun(status === 'done' ? 'done' : 'error');
+        setRunMsg(status === 'done'
+          ? `Done ✓${moved ? ` — ${moved[1]} unpaid invoice(s) processed` : ''} — details emailed & listed below.`
+          : 'The run reported an error — check the email / NAS log.');
+        setTimeout(() => { setRun('idle'); setRunMsg(''); }, 8000);
+      } else if (Date.now() - startedAt > 5 * 60 * 1000) {
+        if (pollRef.current) clearInterval(pollRef.current);
+        setRun('idle');
+        setRunMsg('Still running in the background — refresh in a moment.');
+      }
+    }, 4000);
+  }, [run, load]);
+
   if (authed === null || isAdmin === null) return <div className="text-sm text-gray-500">Checking…</div>;
   if (!authed) return <div className="text-sm text-gray-600">Please sign in.</div>;
   if (!isAdmin) return <div className="text-sm text-gray-600">This page is for admins only.</div>;
@@ -68,14 +118,28 @@ export default function KivSaleInvoicePage() {
     <div className="space-y-4">
       {/* Card: Moved sale invoices */}
       <div className="rounded-lg border border-gray-200 bg-white">
-        <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-3">
           <div>
             <h2 className="text-sm font-semibold text-gray-800">Moved sale invoices</h2>
             <p className="mt-0.5 text-xs text-gray-400">Unpaid invoices carried forward to the next day (so each day&apos;s sales/COGS reflects only completed, paid sales).</p>
           </div>
-          <button onClick={load} disabled={loading} className="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50">{loading ? '…' : 'Refresh'}</button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={moveNow}
+              disabled={run === 'running'}
+              className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {run === 'running' ? 'Moving…' : 'Move unpaid invoices now'}
+            </button>
+            <button onClick={load} disabled={loading} className="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50">{loading ? '…' : 'Refresh'}</button>
+          </div>
         </div>
 
+        {runMsg && (
+          <div className={`mx-3 mt-3 rounded-md border p-2 text-sm ${run === 'error' ? 'border-rose-200 bg-rose-50 text-rose-800' : run === 'done' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+            {runMsg}
+          </div>
+        )}
         {err && <div className="m-3 rounded-md border border-rose-200 bg-rose-50 p-2 text-sm text-rose-800">{err}</div>}
 
         <div className="overflow-x-auto">
