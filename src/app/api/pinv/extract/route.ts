@@ -170,16 +170,21 @@ export async function POST(req: Request) {
     let parsed: { supplier_name?: string; ref_no?: string; invoice_date?: string; total?: number; items?: unknown[] };
     try { parsed = JSON.parse(text); } catch { throw new Error('AI returned invalid data'); }
     const items = Array.isArray(parsed.items) ? parsed.items : [];
+    const invDate = typeof parsed.invoice_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(parsed.invoice_date) ? parsed.invoice_date : null;
 
     await admin.from('pinv').update({
       supplier_name: parsed.supplier_name ?? null,
       ref_no: parsed.ref_no ?? null,
-      invoice_date: typeof parsed.invoice_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(parsed.invoice_date) ? parsed.invoice_date : null,
+      invoice_date: invDate,
       total: Number.isFinite(Number(parsed.total)) ? Number(parsed.total) : null,
       status: 'extracted',
       note: null,
       read_model: readModel, // which AI actually read it (primary 3.5 vs backup 2.5) — shown on review
       resolve_status: 'queued', // NAS will look up each item's existence + category in Niagawan
+      // Auto-run the sales-check on read (needs a date + items); the NAS poller picks it up so the
+      // owner sees Billed?/Check-it/Not-billed without clicking. Cleared on re-read.
+      check_status: (invDate && items.length) ? 'queued' : null,
+      checked_at: null,
       updated_at: new Date().toISOString(),
     }).eq('id', id);
 
