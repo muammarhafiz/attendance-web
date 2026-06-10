@@ -47,7 +47,11 @@ async function geminiExtract(base64: string, key: string, prompt: string): Promi
     generationConfig: { responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } },
   });
   const OVERALL_MS = 52000; // stay safely under Vercel's 60s function cap
-  const ATTEMPT_MS = 26000; // per-attempt hard timeout
+  // Per-attempt timeout is generous: when 3.5-flash is slow-but-working (overloaded but not
+  // refusing), a big invoice can need 30-45s to finish. A short cap would chop a read that
+  // would have succeeded. Fast failures (503) still return in ~1s, so retries still happen for
+  // those; this long cap only matters when the model actually accepts and is grinding.
+  const ATTEMPT_MS = 46000;
   const start = Date.now();
   let lastErr = '';
   let attempts = 0;
