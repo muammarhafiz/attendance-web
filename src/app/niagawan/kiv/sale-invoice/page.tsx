@@ -39,6 +39,9 @@ export default function KivSaleInvoicePage() {
   const [run, setRun] = useState<RunState>('idle');
   const [runMsg, setRunMsg] = useState('');
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const todayISO = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10); // KL date
+  const [fromDate, setFromDate] = useState(todayISO);
+  const [toDate, setToDate] = useState(todayISO);
 
   useEffect(() => {
     (async () => {
@@ -67,19 +70,23 @@ export default function KivSaleInvoicePage() {
 
   useEffect(() => { if (isAdmin) load(); }, [isAdmin, load]);
 
-  // Manual trigger: queue a live KIV move on the NAS (same engine as the 19:45 schedule).
+  // Manual trigger: queue a live KIV move on the NAS (same engine as the 19:45 schedule),
+  // for the chosen date range. All unpaid invoices found move to the next working day.
   const moveNow = useCallback(async () => {
     if (run === 'running') return;
+    if (!fromDate || !toDate) { setRun('error'); setRunMsg('Pick both dates.'); return; }
+    if (fromDate > toDate) { setRun('error'); setRunMsg('"From" must be on or before "To".'); return; }
+    const fmt = (d: string) => d.split('-').reverse().join('/');
     if (!window.confirm(
-      "Move today's UNPAID sale invoices to the next working day now?\n\n" +
-      'Each one is first marked delivered (dated today), then its invoice date is moved. ' +
-      'This changes real invoices in Niagawan — normally the 19:45 schedule does this automatically.'
+      `Move UNPAID sale invoices dated ${fmt(fromDate)} – ${fmt(toDate)} to the next working day?\n\n` +
+      'Each one is first marked delivered (dated the day the car came in), then its invoice date is moved. ' +
+      'This changes real invoices in Niagawan — normally the 19:45 schedule does this automatically for today.'
     )) return;
     setRun('running');
     setRunMsg('Starting…');
     const { data, error } = await supabase
       .from('sync_requests')
-      .insert({ which: 'kiv', source: 'website' })
+      .insert({ which: 'kiv', source: 'website', from_date: fromDate, to_date: toDate })
       .select('id')
       .single();
     if (error || !data) {
@@ -108,7 +115,7 @@ export default function KivSaleInvoicePage() {
         setRunMsg('Still running in the background — refresh in a moment.');
       }
     }, 4000);
-  }, [run, load]);
+  }, [run, load, fromDate, toDate]);
 
   if (authed === null || isAdmin === null) return <div className="text-sm text-gray-500">Checking…</div>;
   if (!authed) return <div className="text-sm text-gray-600">Please sign in.</div>;
@@ -123,13 +130,23 @@ export default function KivSaleInvoicePage() {
             <h2 className="text-sm font-semibold text-gray-800">Moved sale invoices</h2>
             <p className="mt-0.5 text-xs text-gray-400">Unpaid invoices carried forward to the next day (so each day&apos;s sales/COGS reflects only completed, paid sales).</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="text-[11px] text-gray-500">
+              From
+              <input type="date" value={fromDate} max={todayISO} onChange={(e) => setFromDate(e.target.value)}
+                className="mt-0.5 block rounded-md border border-gray-300 px-2 py-1 text-xs" />
+            </label>
+            <label className="text-[11px] text-gray-500">
+              To
+              <input type="date" value={toDate} max={todayISO} onChange={(e) => setToDate(e.target.value)}
+                className="mt-0.5 block rounded-md border border-gray-300 px-2 py-1 text-xs" />
+            </label>
             <button
               onClick={moveNow}
               disabled={run === 'running'}
               className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              {run === 'running' ? 'Moving…' : 'Move unpaid invoices now'}
+              {run === 'running' ? 'Moving…' : 'Move unpaid invoices'}
             </button>
             <button onClick={load} disabled={loading} className="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50">{loading ? '…' : 'Refresh'}</button>
           </div>
