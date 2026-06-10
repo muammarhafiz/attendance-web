@@ -74,6 +74,7 @@ export default function NavBar() {
   const adminLinks: NavItem[] = [
     { href: '/attendance/checkin', match: '/attendance', label: 'Attendance', badge: counts.mc + counts.offday },
     { href: '/niagawan/sales', match: '/niagawan', label: 'Niagawan', badge: counts.po },
+    { href: '/kiv/sale-invoice', match: '/kiv', label: 'KIV Invoices' },
     { href: '/employees', label: 'Employees' },
   ];
   const payrollLinks: NavItem[] = [
