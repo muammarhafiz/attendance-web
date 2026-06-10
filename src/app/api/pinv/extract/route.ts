@@ -17,11 +17,15 @@ function buildPrompt(categoryNames: string[]): string {
       categoryNames.join(' | ') + '. If unsure, use "SPARE PARTS ITEM".'
     : '';
   return (
-    'Read this supplier purchase invoice. Return ONLY JSON with this shape: ' +
+    'Read this supplier auto-parts purchase invoice. Return ONLY JSON with this shape: ' +
     '{"supplier_name":string,"ref_no":string,"invoice_date":"YYYY-MM-DD","total":number,' +
-    '"items":[{"item_code":string,"description":string,"qty":number,"unit_price":number,"amount":number,"category":string}]}. ' +
-    'Use the EXACT item code from the Item Code column (keep spaces/brackets). Include every line item. ' +
-    'ref_no is the supplier invoice number. If a field is missing use null.' +
+    '"items":[{"codes":[string],"description":string,"qty":number,"unit_price":number,"amount":number,"category":string}]}. ' +
+    'For each line item, "codes" = the list of ALL product/part codes for that item. ' +
+    'A part code is a short alphanumeric token (letters and/or digits, may contain dashes or a brand prefix such as "APM 927Q"), e.g. "CXA-0578","1643ZY","CD-2119BB","720505","KM7194","FEW-R126". ' +
+    'A code is NOT: a vehicle model (JAZZ, FREED, CRZ), a part type (CONDENSER, RADIATOR), a generic word (OEM, HQ, NEW), a unit (UNIT, PCS), or any shelf / "Group" / location column value (e.g. "A6.1") — IGNORE those. ' +
+    'If the invoice has a clean Item Code column, that single code is the only entry in "codes". If several codes are embedded in the description, include them ALL, in the order they appear. ' +
+    '"description" = a clean human description of the item WITHOUT the codes: item type + vehicle model + year, e.g. "CONDENSER W/DRIER JAZZ FREED CRZ 09". ' +
+    'Include every line item. ref_no is the supplier invoice number. If a field is missing use null.' +
     catLine
   );
 }
@@ -103,12 +107,16 @@ export async function POST(req: Request) {
     await admin.from('pinv_item').delete().eq('pinv_id', id);
     if (items.length) {
       const rows = items.map((raw, i) => {
-        const it = raw as { item_code?: unknown; description?: unknown; qty?: unknown; unit_price?: unknown; amount?: unknown; category?: unknown };
+        const it = raw as { item_code?: unknown; codes?: unknown; description?: unknown; qty?: unknown; unit_price?: unknown; amount?: unknown; category?: unknown };
         const cat = String(it.category ?? '').trim();
+        // Normalise the codes list (fallback to a single item_code if the model returned that).
+        let codes = Array.isArray(it.codes) ? it.codes.map((c) => String(c ?? '').trim()).filter(Boolean) : [];
+        if (codes.length === 0 && it.item_code) { const c = String(it.item_code).trim(); if (c) codes = [c]; }
         return {
           pinv_id: id,
           line_no: i + 1,
-          item_code: String(it.item_code ?? '').trim() || null,
+          item_code: codes[0] ?? null, // primary code, for display
+          codes,
           description: String(it.description ?? '').trim() || null,
           qty: Number(it.qty) || 0,
           unit_price: Number(it.unit_price) || 0,
