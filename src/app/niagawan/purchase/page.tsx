@@ -104,7 +104,8 @@ export default function PurchaseInvoicePage() {
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j?.error || `Read failed (${res.status})`);
-      setMsg({ kind: 'ok', text: `Read ✓ — found ${j.items ?? 0} line item${j.items === 1 ? '' : 's'}.` });
+      const backup = typeof j?.model === 'string' && !j.model.includes('3.5');
+      setMsg({ kind: 'ok', text: `Read ✓ — found ${j.items ?? 0} line item${j.items === 1 ? '' : 's'}.${backup ? ` (backup AI ${j.model} — double-check the codes on Review)` : ''}` });
       await load();
     } catch (e: unknown) {
       setMsg({ kind: 'err', text: e instanceof Error ? e.message : String(e) });

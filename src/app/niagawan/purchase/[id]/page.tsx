@@ -17,6 +17,7 @@ type Pinv = {
   check_status: string | null;
   checked_at: string | null;
   resolve_status: string | null;
+  read_model: string | null;
 };
 
 type Item = {
@@ -216,6 +217,13 @@ export default function ReviewInvoicePage() {
         <div className="mb-3 rounded-md border border-indigo-200 bg-indigo-50 p-2 text-sm text-indigo-800">
           This invoice is {head.status}. It can no longer be edited.
         </div>
+      )}
+
+      {/* Which AI read this — flag clearly when the backup model was used so codes get extra scrutiny */}
+      {head.read_model && (
+        head.read_model.includes('3.5')
+          ? <div className="mb-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-500">Read by primary AI (<span className="font-mono">{head.read_model}</span>).</div>
+          : <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">⚠️ Read by <b>backup AI</b> (<span className="font-mono">{head.read_model}</span>) because the primary was overloaded. Please <b>double-check the part codes</b> against the PDF before approving.</div>
       )}
 
       {/* Header */}
