@@ -272,12 +272,26 @@ export default function ReviewInvoicePage() {
         </div>
       </div>
 
-      {/* Sales-check result banner */}
+      {/* Sales-check result banner (3-way: billed / check / not billed) */}
       {head.check_status === 'checked' && (() => {
         const nf = items.filter((it) => it.sold_status === 'not_found');
-        return nf.length === 0
-          ? <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-800">✓ All items were billed on a sale invoice (±7 days of the invoice date).</div>
-          : <div className="mb-3 rounded-md border border-rose-200 bg-rose-50 p-2 text-sm text-rose-800"><b>{nf.length} item{nf.length === 1 ? '' : 's'} not on any sale invoice</b> — possibly bought but not yet billed to a customer: {nf.map((it) => it.item_code).filter(Boolean).join(', ')}</div>;
+        const ck = items.filter((it) => it.sold_status === 'check');
+        if (nf.length === 0 && ck.length === 0)
+          return <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-800">✓ All items were billed on a sale invoice (±7 days of the invoice date).</div>;
+        return (
+          <div className="mb-3 space-y-2">
+            {nf.length > 0 && (
+              <div className="rounded-md border border-rose-200 bg-rose-50 p-2 text-sm text-rose-800">
+                <b>{nf.length} item{nf.length === 1 ? '' : 's'} not on any sale invoice</b> — possibly bought but not yet billed to a customer: {nf.map((it) => it.item_code).filter(Boolean).join(', ')}
+              </div>
+            )}
+            {ck.length > 0 && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-sm text-amber-800">
+                <b>{ck.length} item{ck.length === 1 ? '' : 's'} to verify</b> — the code only appears in a sale invoice’s <b>remark/note</b>, not as a billed line item. It might be the real sale (recorded loosely) or a note about a different part — open the listed invoice to confirm: {ck.map((it) => it.item_code).filter(Boolean).join(', ')}
+              </div>
+            )}
+          </div>
+        );
       })()}
 
       {/* Items */}
@@ -352,9 +366,11 @@ export default function ReviewInvoicePage() {
                     <td className="px-2 py-1.5">
                       {it.sold_status === 'found'
                         ? <span title={it.sold_on || ''} className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">✓ {it.sold_on || 'billed'}</span>
-                        : it.sold_status === 'not_found'
-                          ? <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">✗ not billed</span>
-                          : <span className="text-xs text-gray-400">—</span>}
+                        : it.sold_status === 'check'
+                          ? <span title={'Code found only in a sale invoice’s remark/note, not as a billed line item — open it to confirm:\n' + (it.sold_on || '')} className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">⚠ check {it.sold_on || ''}</span>
+                          : it.sold_status === 'not_found'
+                            ? <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">✗ not billed</span>
+                            : <span className="text-xs text-gray-400">—</span>}
                     </td>
                   )}
                   {!locked && (
