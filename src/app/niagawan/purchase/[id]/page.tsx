@@ -18,6 +18,7 @@ type Pinv = {
   checked_at: string | null;
   resolve_status: string | null;
   read_model: string | null;
+  dup_pi_no: string | null;
 };
 
 type Item = {
@@ -225,6 +226,13 @@ export default function ReviewInvoicePage() {
       {locked && (
         <div className="mb-3 rounded-md border border-indigo-200 bg-indigo-50 p-2 text-sm text-indigo-800">
           This invoice is {head.status}. It can no longer be edited.
+        </div>
+      )}
+
+      {/* Duplicate guard: this supplier invoice ref already exists in Niagawan */}
+      {head.dup_pi_no && head.status !== 'created' && (
+        <div className="mb-3 rounded-md border-2 border-rose-400 bg-rose-50 p-3 text-sm text-rose-800">
+          ⚠️ <b>Possible duplicate.</b> This supplier invoice{head.ref_no ? <> (<span className="font-mono">{head.ref_no}</span>)</> : ''} is <b>already in Niagawan</b> as <b className="font-mono">{head.dup_pi_no}</b>. Approving would create a second copy — only approve if this is genuinely a new, separate invoice. (The system will also refuse to create a duplicate.)
         </div>
       )}
 
