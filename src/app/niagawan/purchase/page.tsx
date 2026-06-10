@@ -37,7 +37,19 @@ export default function PurchaseInvoicePage() {
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [readingId, setReadingId] = useState<string | null>(null);
+  const [readSecs, setReadSecs] = useState(0);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  // Tick a live elapsed-seconds counter while a read is in progress, so the user can see the
+  // system is actively working (an AI read can take 15–50s) and isn't frozen.
+  useEffect(() => {
+    if (!readingId) { setReadSecs(0); return; }
+    setReadSecs(0);
+    const t = setInterval(() => setReadSecs((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [readingId]);
+
+  const readingRow = rows.find((r) => r.id === readingId) ?? null;
 
   useEffect(() => {
     (async () => {
@@ -132,6 +144,24 @@ export default function PurchaseInvoicePage() {
         </div>
         {msg && <div className={`mt-2 rounded-md border p-2 text-sm ${msg.kind === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>{msg.text}</div>}
       </div>
+
+      {/* Live processing banner — shows the AI read is actively working (not stuck) */}
+      {readingId && (
+        <div className="mb-4 flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <svg className="h-5 w-5 shrink-0 animate-spin text-amber-600" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z" />
+          </svg>
+          <div className="min-w-0 text-sm">
+            <div className="font-semibold text-amber-900">
+              Reading {readingRow?.ref_no ? <span className="font-mono">{readingRow.ref_no}</span> : 'invoice'} with AI… <span className="tabular-nums">({readSecs}s)</span>
+            </div>
+            <div className="text-xs text-amber-700">
+              This usually takes 15–50 seconds (up to ~60s for big invoices). Please keep this page open — don&apos;t press Read again.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* List */}
       <div className="mb-2 flex items-center justify-between">

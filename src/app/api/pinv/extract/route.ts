@@ -30,45 +30,65 @@ function buildPrompt(categoryNames: string[]): string {
   );
 }
 
+// We use ONE model — gemini-3.5-flash — because it reads part codes accurately (the old
+// gemini-2.0-flash misread e.g. HUB227->HUB2327). "thinking" is turned OFF (thinkingBudget:0):
+// for a plain read-and-extract job it adds latency without improving accuracy, so disabling it
+// makes the model fast enough to finish inside Vercel's 60s cap.
+//
+// The model itself can be transiently overloaded on Google's side (HTTP 503 / 429 / 500), which
+// shows up as the request hanging then failing. So instead of falling back to a different model,
+// we RETRY gemini-3.5-flash a few times within an overall deadline. Non-transient errors
+// (400/403/404) stop immediately — retrying those is pointless.
+const READ_MODEL = 'gemini-3.5-flash';
+
 async function geminiExtract(base64: string, key: string, prompt: string): Promise<string> {
   const body = JSON.stringify({
     contents: [{ parts: [{ inline_data: { mime_type: 'application/pdf', data: base64 } }, { text: prompt }] }],
-    generationConfig: { responseMimeType: 'application/json' },
+    generationConfig: { responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } },
   });
-  // Each model gets a hard timeout so the whole request finishes well under Vercel's 60s
-  // limit — otherwise a hanging AI call gets killed mid-run and the invoice is left stuck.
+  const OVERALL_MS = 52000; // stay safely under Vercel's 60s function cap
+  const ATTEMPT_MS = 26000; // per-attempt hard timeout
+  const start = Date.now();
   let lastErr = '';
-  // Use accurate, current flash models. The old fallback gemini-2.0-flash both misread codes
-  // (e.g. HUB227->HUB2327) and was retired (404). gemini-3.5-flash / gemini-flash-latest read
-  // codes correctly in testing and stay responsive when gemini-2.5-flash is overloaded (503).
-  const tries: Array<[string, number]> = [
-    ['gemini-3.5-flash', 22000],
-    ['gemini-flash-latest', 18000],
-    ['gemini-2.5-flash', 14000],
-  ];
-  for (const [model, timeoutMs] of tries) {
+  let attempts = 0;
+
+  while (Date.now() - start < OVERALL_MS - 1500) {
+    attempts++;
+    const remaining = OVERALL_MS - (Date.now() - start);
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    const timer = setTimeout(() => ctrl.abort(), Math.min(ATTEMPT_MS, remaining));
+    let transient = false;
     try {
       const r = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${READ_MODEL}:generateContent?key=${key}`,
         { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, signal: ctrl.signal }
       );
       if (r.ok) {
         const j = await r.json();
         const text = j?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) return text;
-        lastErr = `${model} empty response`;
+        lastErr = `${READ_MODEL} empty response`;
+        transient = true; // worth one more try
+      } else if (r.status === 503 || r.status === 429 || r.status === 500) {
+        lastErr = `${READ_MODEL} HTTP ${r.status} — Google is overloaded, please try again shortly`;
+        transient = true;
       } else {
-        lastErr = `${model} HTTP ${r.status}`;
+        lastErr = `${READ_MODEL} HTTP ${r.status}`; // non-transient — stop
+        break;
       }
     } catch (e: unknown) {
-      lastErr = `${model} ${e instanceof Error && e.name === 'AbortError' ? 'timed out' : (e instanceof Error ? e.message : String(e))}`;
+      lastErr = `${READ_MODEL} ${e instanceof Error && e.name === 'AbortError' ? 'timed out' : (e instanceof Error ? e.message : String(e))}`;
+      transient = true; // timeout — Google was slow, retry if time allows
     } finally {
       clearTimeout(timer);
     }
+    if (!transient) break;
+    // brief backoff before retrying, only if meaningful time remains
+    if (Date.now() - start < OVERALL_MS - 3000) {
+      await new Promise((res) => setTimeout(res, 1200));
+    }
   }
-  throw new Error('AI read failed: ' + lastErr);
+  throw new Error('AI read failed: ' + lastErr + ` (after ${attempts} attempt${attempts === 1 ? '' : 's'})`);
 }
 
 export async function POST(req: Request) {
