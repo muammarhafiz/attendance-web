@@ -38,12 +38,13 @@ async function geminiExtract(base64: string, key: string, prompt: string): Promi
   // Each model gets a hard timeout so the whole request finishes well under Vercel's 60s
   // limit — otherwise a hanging AI call gets killed mid-run and the invoice is left stuck.
   let lastErr = '';
-  // Primary + current fallbacks (gemini-2.0-flash was retired -> 404). If the primary is
-  // overloaded (503), fall through to lighter/latest flash models that stay responsive.
+  // Use accurate, current flash models. The old fallback gemini-2.0-flash both misread codes
+  // (e.g. HUB227->HUB2327) and was retired (404). gemini-3.5-flash / gemini-flash-latest read
+  // codes correctly in testing and stay responsive when gemini-2.5-flash is overloaded (503).
   const tries: Array<[string, number]> = [
-    ['gemini-2.5-flash', 22000],
+    ['gemini-3.5-flash', 22000],
     ['gemini-flash-latest', 18000],
-    ['gemini-2.5-flash-lite', 14000],
+    ['gemini-2.5-flash', 14000],
   ];
   for (const [model, timeoutMs] of tries) {
     const ctrl = new AbortController();
