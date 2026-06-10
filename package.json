@@ -18,7 +18,8 @@
     "pdfkit": "^0.17.2",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "react-leaflet": "^5.0.0"
+    "react-leaflet": "^5.0.0",
+    "unpdf": "^1.6.2"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

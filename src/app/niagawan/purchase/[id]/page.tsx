@@ -34,6 +34,7 @@ type Item = {
   sold_on: string | null;
   in_niagawan: boolean | null;
   niagawan_category: string | null;
+  code_verified: boolean | null;
 };
 
 const rm = (n: number) => `RM ${Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -84,6 +85,7 @@ export default function ReviewInvoicePage() {
         sold_on: (r.sold_on as string) ?? null,
         in_niagawan: (r.in_niagawan as boolean | null) ?? null,
         niagawan_category: (r.niagawan_category as string) ?? null,
+        code_verified: (r.code_verified as boolean | null) ?? null,
       }))
     );
     setLoading(false);
@@ -97,7 +99,7 @@ export default function ReviewInvoicePage() {
   const setItem = (idx: number, patch: Partial<Item>) => {
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   };
-  const addRow = () => setItems((prev) => [...prev, { line_no: prev.length + 1, item_code: '', codes: [], description: '', qty: 1, unit_price: 0, amount: 0, category: 'SPARE PARTS ITEM', will_create: true, sold_status: null, sold_on: null, in_niagawan: null, niagawan_category: null }]);
+  const addRow = () => setItems((prev) => [...prev, { line_no: prev.length + 1, item_code: '', codes: [], description: '', qty: 1, unit_price: 0, amount: 0, category: 'SPARE PARTS ITEM', will_create: true, sold_status: null, sold_on: null, in_niagawan: null, niagawan_category: null, code_verified: null }]);
   const removeRow = (idx: number) => setItems((prev) => prev.filter((_, i) => i !== idx).map((it, i) => ({ ...it, line_no: i + 1 })));
 
   const save = useCallback(async (approve: boolean) => {
@@ -134,6 +136,7 @@ export default function ReviewInvoicePage() {
           unit_price: it.unit_price,
           amount: it.amount,
           category: it.category || 'SPARE PARTS ITEM',
+          code_verified: it.code_verified, // keep the read-time flag (cleared to null when the code is edited)
           // matched / will_create are decided authoritatively by the NAS at create time
         }));
         const { error: iErr } = await supabase.from('pinv_item').insert(rows);
@@ -226,6 +229,17 @@ export default function ReviewInvoicePage() {
           : <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">⚠️ Read by <b>backup AI</b> (<span className="font-mono">{head.read_model}</span>) because the primary was overloaded. Please <b>double-check the part codes</b> against the PDF before approving.</div>
       )}
 
+      {/* Code-verification summary: codes that weren't found verbatim in the PDF's own text */}
+      {(() => {
+        const bad = items.filter((it) => it.code_verified === false);
+        if (bad.length === 0) return null;
+        return (
+          <div className="mb-3 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+            ⚠ <b>{bad.length} code{bad.length === 1 ? '' : 's'} not found in the PDF text</b> (lines {bad.map((b) => b.line_no).join(', ')}) — the AI may have misread {bad.length === 1 ? 'it' : 'them'}. They're highlighted red below; please check against the PDF before approving.
+          </div>
+        );
+      })()}
+
       {/* Header */}
       <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -294,8 +308,13 @@ export default function ReviewInvoicePage() {
                 <tr key={idx} className="border-t border-gray-100 align-top">
                   <td className="px-2 py-1.5 text-gray-400">{idx + 1}</td>
                   <td className="px-2 py-1.5">
-                    <input disabled={locked} value={it.item_code} onChange={(e) => setItem(idx, { item_code: e.target.value })}
-                      className="w-36 rounded border border-gray-200 px-1.5 py-1 font-mono text-xs disabled:bg-transparent disabled:border-transparent" />
+                    <input disabled={locked} value={it.item_code} onChange={(e) => setItem(idx, { item_code: e.target.value, code_verified: null })}
+                      className={`w-36 rounded border px-1.5 py-1 font-mono text-xs disabled:bg-transparent ${it.code_verified === false ? 'border-rose-400 bg-rose-50' : 'border-gray-200 disabled:border-transparent'}`} />
+                    {it.code_verified === false && (
+                      <div className="mt-0.5 max-w-[12rem] text-[10px] font-medium leading-tight text-rose-600" title="This code was NOT found in the invoice's text — the AI may have misread it. Check it against the PDF.">
+                        ⚠ not found in PDF text — check it
+                      </div>
+                    )}
                     {it.codes.length > 1 && (
                       <div className="mt-1 max-w-[12rem] font-mono text-[10px] leading-tight text-gray-400" title={'All codes recognised on this line:\n' + it.codes.join('  ')}>
                         +{it.codes.length - 1} more: {it.codes.slice(1).join(' ')}

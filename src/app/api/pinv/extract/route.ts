@@ -1,9 +1,25 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { createClientServer } from '@/lib/supabaseServer';
+import { extractText, getDocumentProxy } from 'unpdf';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
+
+// Normalise a code/text for matching: uppercase, strip everything except letters+digits.
+// Used to verify each AI-returned code literally appears in the invoice's own text layer.
+const normForMatch = (s: string) => String(s ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+// Pull the real text layer out of a (digital) PDF. Returns '' for image-only/scanned PDFs.
+async function extractPdfText(buf: ArrayBuffer): Promise<string> {
+  try {
+    const pdf = await getDocumentProxy(new Uint8Array(buf));
+    const { text } = await extractText(pdf, { mergePages: true });
+    return Array.isArray(text) ? text.join('\n') : String(text ?? '');
+  } catch {
+    return '';
+  }
+}
 
 const admin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -11,10 +27,19 @@ const admin = createClient(
   { auth: { persistSession: false } }
 );
 
-function buildPrompt(categoryNames: string[]): string {
+function buildPrompt(categoryNames: string[], invoiceText: string): string {
   const catLine = categoryNames.length
     ? ' For each item also pick the single best "category" from EXACTLY this list (copy the name verbatim, do not invent new ones): ' +
       categoryNames.join(' | ') + '. If unsure, use "SPARE PARTS ITEM".'
+    : '';
+  // The PDF's own text layer is provided as the AUTHORITATIVE source for codes. This is exact
+  // text from the file (not OCR), so the model must copy codes from it verbatim rather than
+  // "reading" them off the image — that is what prevents misreads like VF21 -> VF17.
+  const textBlock = invoiceText.trim()
+    ? '\n\nThe EXACT text of this invoice (extracted directly from the PDF, character-for-character) is between the markers below. ' +
+      'Treat this text as the AUTHORITATIVE source for every product code: copy codes EXACTLY as they appear here, character for character. ' +
+      'Use the attached PDF only for layout/structure if helpful. Do NOT invent or alter any code.\n' +
+      '<<<INVOICE_TEXT>>>\n' + invoiceText.slice(0, 24000) + '\n<<<END_INVOICE_TEXT>>>'
     : '';
   return (
     'Read this supplier auto-parts purchase invoice. Return ONLY JSON with this shape: ' +
@@ -26,7 +51,8 @@ function buildPrompt(categoryNames: string[]): string {
     'If the invoice has a clean Item Code column, that single code is the only entry in "codes". If several codes are embedded in the description, include them ALL, in the order they appear. ' +
     '"description" = a clean human description of the item WITHOUT the codes: item type + vehicle model + year, e.g. "CONDENSER W/DRIER JAZZ FREED CRZ 09". ' +
     'Include every line item. ref_no is the supplier invoice number. If a field is missing use null.' +
-    catLine
+    catLine +
+    textBlock
   );
 }
 
@@ -121,7 +147,17 @@ export async function POST(req: Request) {
 
     const { data: blob, error: dErr } = await admin.storage.from('pinv').download(row.file_path);
     if (dErr || !blob) throw new Error('Could not read the PDF: ' + (dErr?.message ?? ''));
-    const base64 = Buffer.from(await blob.arrayBuffer()).toString('base64');
+    const ab = await blob.arrayBuffer();
+    const base64 = Buffer.from(ab).toString('base64');
+
+    // Extract the PDF's real text layer. For digital invoices this is exact (no OCR), and we
+    // feed it to the AI as the authoritative source for codes. If there's essentially no text,
+    // it's a scanned/photo PDF — stop rather than risk a silent misread.
+    const invoiceText = await extractPdfText(ab);
+    if (normForMatch(invoiceText).length < 40) {
+      throw new Error('This looks like a scanned/photo PDF (no readable text layer). Please upload a digital PDF invoice.');
+    }
+    const textNorm = normForMatch(invoiceText);
 
     const { data: secret } = await admin.from('app_secrets').select('value').eq('name', 'gemini_key').single();
     if (!secret?.value) throw new Error('AI key not configured');
@@ -130,7 +166,7 @@ export async function POST(req: Request) {
     const categoryNames = (cats ?? []).map((c: { name: string }) => c.name).filter(Boolean);
     const validCats = new Set(categoryNames.map((n) => n.toUpperCase()));
 
-    const { text, model: readModel } = await geminiExtract(base64, secret.value, buildPrompt(categoryNames));
+    const { text, model: readModel } = await geminiExtract(base64, secret.value, buildPrompt(categoryNames, invoiceText));
     let parsed: { supplier_name?: string; ref_no?: string; invoice_date?: string; total?: number; items?: unknown[] };
     try { parsed = JSON.parse(text); } catch { throw new Error('AI returned invalid data'); }
     const items = Array.isArray(parsed.items) ? parsed.items : [];
@@ -155,6 +191,9 @@ export async function POST(req: Request) {
         // Normalise the codes list (fallback to a single item_code if the model returned that).
         let codes = Array.isArray(it.codes) ? it.codes.map((c) => String(c ?? '').trim()).filter(Boolean) : [];
         if (codes.length === 0 && it.item_code) { const c = String(it.item_code).trim(); if (c) codes = [c]; }
+        // Verify every code actually appears in the invoice's own text layer. If a code is NOT
+        // found, the AI likely misread it — flag it so the Review screen can highlight it red.
+        const code_verified = codes.length > 0 && codes.every((c) => textNorm.includes(normForMatch(c)));
         return {
           pinv_id: id,
           line_no: i + 1,
@@ -165,12 +204,15 @@ export async function POST(req: Request) {
           unit_price: Number(it.unit_price) || 0,
           amount: Number(it.amount) || 0,
           category: cat && validCats.has(cat.toUpperCase()) ? cat : 'SPARE PARTS ITEM',
+          code_verified,
         };
       });
       await admin.from('pinv_item').insert(rows);
+      const flagged = rows.filter((r) => !r.code_verified).length;
+      return NextResponse.json({ ok: true, items: items.length, model: readModel, flagged });
     }
 
-    return NextResponse.json({ ok: true, items: items.length, model: readModel });
+    return NextResponse.json({ ok: true, items: items.length, model: readModel, flagged: 0 });
   } catch (e: unknown) {
     const m = e instanceof Error ? e.message : String(e);
     if (id) { try { await admin.from('pinv').update({ status: 'error', note: m.slice(0, 300), updated_at: new Date().toISOString() }).eq('id', id); } catch { /* ignore */ } }
