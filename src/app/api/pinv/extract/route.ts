@@ -35,23 +35,30 @@ async function geminiExtract(base64: string, key: string, prompt: string): Promi
     contents: [{ parts: [{ inline_data: { mime_type: 'application/pdf', data: base64 } }, { text: prompt }] }],
     generationConfig: { responseMimeType: 'application/json' },
   });
+  // Each model gets a hard timeout so the whole request finishes well under Vercel's 60s
+  // limit — otherwise a hanging AI call gets killed mid-run and the invoice is left stuck.
   let lastErr = '';
-  for (const model of ['gemini-2.5-flash', 'gemini-2.0-flash']) {
-    for (let attempt = 0; attempt < 2; attempt++) {
+  const tries: Array<[string, number]> = [['gemini-2.5-flash', 28000], ['gemini-2.0-flash', 22000]];
+  for (const [model, timeoutMs] of tries) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
       const r = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, signal: ctrl.signal }
       );
       if (r.ok) {
         const j = await r.json();
         const text = j?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) return text;
-        lastErr = 'empty AI response';
+        lastErr = `${model} empty response`;
       } else {
         lastErr = `${model} HTTP ${r.status}`;
-        if (r.status !== 503 && r.status !== 429) break;
-        await new Promise((res) => setTimeout(res, 1500));
       }
+    } catch (e: unknown) {
+      lastErr = `${model} ${e instanceof Error && e.name === 'AbortError' ? 'timed out' : (e instanceof Error ? e.message : String(e))}`;
+    } finally {
+      clearTimeout(timer);
     }
   }
   throw new Error('AI read failed: ' + lastErr);
