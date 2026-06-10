@@ -27,6 +27,7 @@ type Item = {
   description: string;
   qty: number;
   unit_price: number;
+  discount: number;
   amount: number;
   category: string;
   will_create: boolean;
@@ -39,6 +40,9 @@ type Item = {
 
 const rm = (n: number) => `RM ${Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+// Net line total = qty x unit price, minus any per-line discount %. This is what reconciles
+// against the supplier's printed line amount (and against the invoice total).
+const lineAmount = (qty: number, unit: number, disc: number) => round2((Number(qty) || 0) * (Number(unit) || 0) * (1 - (Number(disc) || 0) / 100));
 
 export default function ReviewInvoicePage() {
   const router = useRouter();
@@ -78,6 +82,7 @@ export default function ReviewInvoicePage() {
         description: String(r.description ?? ''),
         qty: Number(r.qty) || 0,
         unit_price: Number(r.unit_price) || 0,
+        discount: Number(r.discount) || 0,
         amount: Number(r.amount) || 0,
         category: String(r.category ?? '') || 'SPARE PARTS ITEM',
         will_create: Boolean(r.will_create),
@@ -93,13 +98,13 @@ export default function ReviewInvoicePage() {
 
   useEffect(() => { if (isAdmin) load(); }, [isAdmin, load]);
 
-  const computedTotal = useMemo(() => round2(items.reduce((s, it) => s + round2(it.qty * it.unit_price), 0)), [items]);
+  const computedTotal = useMemo(() => round2(items.reduce((s, it) => s + lineAmount(it.qty, it.unit_price, it.discount), 0)), [items]);
   const totalMismatch = head?.total != null && Math.abs(round2(head.total) - computedTotal) > 0.01;
 
   const setItem = (idx: number, patch: Partial<Item>) => {
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   };
-  const addRow = () => setItems((prev) => [...prev, { line_no: prev.length + 1, item_code: '', codes: [], description: '', qty: 1, unit_price: 0, amount: 0, category: 'SPARE PARTS ITEM', will_create: true, sold_status: null, sold_on: null, in_niagawan: null, niagawan_category: null, code_verified: null }]);
+  const addRow = () => setItems((prev) => [...prev, { line_no: prev.length + 1, item_code: '', codes: [], description: '', qty: 1, unit_price: 0, discount: 0, amount: 0, category: 'SPARE PARTS ITEM', will_create: true, sold_status: null, sold_on: null, in_niagawan: null, niagawan_category: null, code_verified: null }]);
   const removeRow = (idx: number) => setItems((prev) => prev.filter((_, i) => i !== idx).map((it, i) => ({ ...it, line_no: i + 1 })));
 
   const save = useCallback(async (approve: boolean) => {
@@ -107,7 +112,7 @@ export default function ReviewInvoicePage() {
     setBusy(true); setMsg(null);
     try {
       const cleaned = items
-        .map((it, i) => ({ ...it, line_no: i + 1, amount: round2(it.qty * it.unit_price) }))
+        .map((it, i) => ({ ...it, line_no: i + 1, amount: lineAmount(it.qty, it.unit_price, it.discount) }))
         .filter((it) => it.item_code.trim() || it.codes.length || it.description.trim());
       if (approve) {
         if (cleaned.length === 0) throw new Error('Add at least one line item before approving.');
@@ -134,6 +139,7 @@ export default function ReviewInvoicePage() {
           description: it.description.trim() || null,
           qty: it.qty,
           unit_price: it.unit_price,
+          discount: it.discount,
           amount: it.amount,
           category: it.category || 'SPARE PARTS ITEM',
           code_verified: it.code_verified, // keep the read-time flag (cleared to null when the code is edited)
@@ -308,6 +314,7 @@ export default function ReviewInvoicePage() {
               <th className="px-2 py-2 font-medium text-gray-600">Description</th>
               <th className="px-2 py-2 text-right font-medium text-gray-600">Qty</th>
               <th className="px-2 py-2 text-right font-medium text-gray-600">Unit price</th>
+              <th className="px-2 py-2 text-right font-medium text-gray-600">Disc %</th>
               <th className="px-2 py-2 text-right font-medium text-gray-600">Amount</th>
               <th className="px-2 py-2 font-medium text-gray-600">Category <span className="font-normal text-gray-400">(Niagawan · or pick if new)</span></th>
               {showBilled && <th className="px-2 py-2 font-medium text-gray-600">Billed?</th>}
@@ -316,7 +323,7 @@ export default function ReviewInvoicePage() {
           </thead>
           <tbody>
             {items.length === 0 ? (
-              <tr><td colSpan={(locked ? 7 : 8) + (showBilled ? 1 : 0)} className="px-3 py-6 text-center text-gray-500">No line items.</td></tr>
+              <tr><td colSpan={(locked ? 8 : 9) + (showBilled ? 1 : 0)} className="px-3 py-6 text-center text-gray-500">No line items.</td></tr>
             ) : items.map((it, idx) => {
               return (
                 <tr key={idx} className="border-t border-gray-100 align-top">
@@ -347,7 +354,12 @@ export default function ReviewInvoicePage() {
                     <input disabled={locked} type="number" step="0.01" value={it.unit_price} onChange={(e) => setItem(idx, { unit_price: Number(e.target.value) })}
                       className="w-20 rounded border border-gray-200 px-1.5 py-1 text-right text-xs disabled:bg-transparent disabled:border-transparent" />
                   </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums text-gray-700">{rm(round2(it.qty * it.unit_price))}</td>
+                  <td className="px-2 py-1.5 text-right">
+                    <input disabled={locked} type="number" step="0.01" value={it.discount} onChange={(e) => setItem(idx, { discount: Number(e.target.value) })}
+                      title="Per-line discount %, e.g. 15 for a 15% discount"
+                      className="w-14 rounded border border-gray-200 px-1.5 py-1 text-right text-xs disabled:bg-transparent disabled:border-transparent" />
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-gray-700">{rm(lineAmount(it.qty, it.unit_price, it.discount))}</td>
                   <td className="px-2 py-1.5">
                     {resolving
                       ? <span className="text-xs text-gray-400">looking up…</span>

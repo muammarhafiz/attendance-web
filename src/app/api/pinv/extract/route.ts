@@ -44,13 +44,14 @@ function buildPrompt(categoryNames: string[], invoiceText: string): string {
   return (
     'Read this supplier auto-parts purchase invoice. Return ONLY JSON with this shape: ' +
     '{"supplier_name":string,"ref_no":string,"invoice_date":"YYYY-MM-DD","total":number,' +
-    '"items":[{"codes":[string],"description":string,"qty":number,"unit_price":number,"amount":number,"category":string}]}. ' +
+    '"items":[{"codes":[string],"description":string,"qty":number,"unit_price":number,"discount":number,"amount":number,"category":string}]}. ' +
     'For each line item, "codes" = the list of ALL product/part codes for that item. ' +
     'A part code is a short alphanumeric token (letters and/or digits, may contain dashes or a brand prefix such as "APM 927Q"), e.g. "CXA-0578","1643ZY","CD-2119BB","720505","KM7194","FEW-R126". ' +
     'A code is NOT: a vehicle model (JAZZ, FREED, CRZ), a part type (CONDENSER, RADIATOR), a generic word (OEM, HQ, NEW), a unit (UNIT, PCS), or any shelf / "Group" / location column value (e.g. "A6.1") — IGNORE those. ' +
     'If the invoice has a clean Item Code column, that single code is the only entry in "codes". If several codes are embedded in the description, include them ALL, in the order they appear. ' +
     '"description" = a clean human description of the item WITHOUT the codes: item type + vehicle model + year, e.g. "CONDENSER W/DRIER JAZZ FREED CRZ 09". ' +
-    'Include every line item. ref_no is the supplier invoice number. If a field is missing use null.' +
+    '"unit_price" = the GROSS unit price as printed, BEFORE any discount. "discount" = the per-line discount as a PERCENT number (e.g. 15 if the line shows a "15%" discount column); use 0 when there is no discount. "amount" = the NET line total after discount, i.e. qty * unit_price * (1 - discount/100). ' +
+    'Include every line item. ref_no is the supplier invoice number. If a field is missing use null (use 0 for discount).' +
     catLine +
     textBlock
   );
@@ -191,7 +192,7 @@ export async function POST(req: Request) {
     await admin.from('pinv_item').delete().eq('pinv_id', id);
     if (items.length) {
       const rows = items.map((raw, i) => {
-        const it = raw as { item_code?: unknown; codes?: unknown; description?: unknown; qty?: unknown; unit_price?: unknown; amount?: unknown; category?: unknown };
+        const it = raw as { item_code?: unknown; codes?: unknown; description?: unknown; qty?: unknown; unit_price?: unknown; discount?: unknown; amount?: unknown; category?: unknown };
         const cat = String(it.category ?? '').trim();
         // Normalise the codes list (fallback to a single item_code if the model returned that).
         let codes = Array.isArray(it.codes) ? it.codes.map((c) => String(c ?? '').trim()).filter(Boolean) : [];
@@ -207,6 +208,7 @@ export async function POST(req: Request) {
           description: String(it.description ?? '').trim() || null,
           qty: Number(it.qty) || 0,
           unit_price: Number(it.unit_price) || 0,
+          discount: Number(it.discount) || 0,
           amount: Number(it.amount) || 0,
           category: cat && validCats.has(cat.toUpperCase()) ? cat : 'SPARE PARTS ITEM',
           code_verified,
