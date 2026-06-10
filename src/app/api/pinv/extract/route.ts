@@ -43,7 +43,7 @@ function buildPrompt(categoryNames: string[], invoiceText: string): string {
     : '';
   return (
     'Read this supplier auto-parts purchase invoice. Return ONLY JSON with this shape: ' +
-    '{"supplier_name":string,"ref_no":string,"invoice_date":"YYYY-MM-DD","total":number,' +
+    '{"supplier_name":string,"ref_no":string,"do_no":string,"invoice_date":"YYYY-MM-DD","total":number,' +
     '"items":[{"codes":[string],"description":string,"qty":number,"unit_price":number,"discount":number,"amount":number,"category":string}]}. ' +
     'For each line item, "codes" = the list of ALL product/part codes for that item. ' +
     'A part code is a short alphanumeric token (letters and/or digits, may contain dashes or a brand prefix such as "APM 927Q"), e.g. "CXA-0578","1643ZY","CD-2119BB","720505","KM7194","FEW-R126". ' +
@@ -51,7 +51,9 @@ function buildPrompt(categoryNames: string[], invoiceText: string): string {
     'If the invoice has a clean Item Code column, that single code is the only entry in "codes". If several codes are embedded in the description, include them ALL, in the order they appear. ' +
     '"description" = a clean human description of the item WITHOUT the codes: item type + vehicle model + year, e.g. "CONDENSER W/DRIER JAZZ FREED CRZ 09". ' +
     '"unit_price" = the GROSS unit price as printed, BEFORE any discount. "discount" = the per-line discount as a PERCENT number (e.g. 15 if the line shows a "15%" discount column); use 0 when there is no discount. "amount" = the NET line total after discount, i.e. qty * unit_price * (1 - discount/100). ' +
-    'Include every line item. ref_no is the supplier invoice number. If a field is missing use null (use 0 for discount).' +
+    'Include every line item. ref_no is the supplier invoice number. ' +
+    'do_no is the Delivery Order number for the whole invoice if one is shown (labelled D/O, D.O., DO, or D/O No.), e.g. "DO2026/03/0784" or "D2605525"; use null if there is no single header-level D/O number. ' +
+    'If a field is missing use null (use 0 for discount).' +
     catLine +
     textBlock
   );
@@ -168,7 +170,7 @@ export async function POST(req: Request) {
     const validCats = new Set(categoryNames.map((n) => n.toUpperCase()));
 
     const { text, model: readModel } = await geminiExtract(base64, secret.value, buildPrompt(categoryNames, invoiceText));
-    let parsed: { supplier_name?: string; ref_no?: string; invoice_date?: string; total?: number; items?: unknown[] };
+    let parsed: { supplier_name?: string; ref_no?: string; do_no?: string; invoice_date?: string; total?: number; items?: unknown[] };
     try { parsed = JSON.parse(text); } catch { throw new Error('AI returned invalid data'); }
     const items = Array.isArray(parsed.items) ? parsed.items : [];
     const invDate = typeof parsed.invoice_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(parsed.invoice_date) ? parsed.invoice_date : null;
@@ -176,6 +178,7 @@ export async function POST(req: Request) {
     await admin.from('pinv').update({
       supplier_name: parsed.supplier_name ?? null,
       ref_no: parsed.ref_no ?? null,
+      do_no: typeof parsed.do_no === 'string' && parsed.do_no.trim() ? parsed.do_no.trim().slice(0, 80) : null,
       invoice_date: invDate,
       total: Number.isFinite(Number(parsed.total)) ? Number(parsed.total) : null,
       status: 'extracted',
