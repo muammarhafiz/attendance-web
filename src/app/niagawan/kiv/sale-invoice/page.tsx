@@ -40,14 +40,16 @@ export default function KivSaleInvoicePage() {
   const [runMsg, setRunMsg] = useState('');
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const todayISO = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10); // KL date
-  // Default target = next working day after today (Sunday closed: Saturday -> Monday).
-  const nextWorking = (() => {
-    const d = new Date(Date.now() + 8 * 3600 * 1000 + 86400 * 1000);
-    if (d.getUTCDay() === 0) d.setUTCDate(d.getUTCDate() + 1);
+  // Default source = previous working day (Sunday closed: Monday looks back to Saturday).
+  // ⚠ Niagawan REJECTS future invoice dates (and reverts the invoice to its original date), so
+  // the target is capped at today — carry-forward runs in the morning: yesterday -> today.
+  const lastWorking = (() => {
+    const d = new Date(Date.now() + 8 * 3600 * 1000 - 86400 * 1000);
+    if (d.getUTCDay() === 0) d.setUTCDate(d.getUTCDate() - 1);
     return d.toISOString().slice(0, 10);
   })();
-  const [fromDate, setFromDate] = useState(todayISO);   // source: the day whose unpaid invoices to move
-  const [toDate, setToDate] = useState(nextWorking);    // target: the date to move them TO
+  const [fromDate, setFromDate] = useState(lastWorking); // source: the day whose unpaid invoices to move
+  const [toDate, setToDate] = useState(todayISO);        // target: the date to move them TO (max today)
 
   useEffect(() => {
     (async () => {
@@ -82,13 +84,14 @@ export default function KivSaleInvoicePage() {
     if (run === 'running') return;
     if (!fromDate || !toDate) { setRun('error'); setRunMsg('Pick both dates.'); return; }
     if (fromDate === toDate) { setRun('error'); setRunMsg('The two dates must be different.'); return; }
+    if (toDate > todayISO) { setRun('error'); setRunMsg('Niagawan does not accept future invoice dates — "Move to" can be today at the latest.'); return; }
     const fmt = (d: string) => d.split('-').reverse().join('/');
     const sunday = new Date(toDate + 'T00:00:00Z').getUTCDay() === 0;
     if (!window.confirm(
       `Move UNPAID sale invoices dated ${fmt(fromDate)} to ${fmt(toDate)}?\n\n` +
       (sunday ? '⚠ Note: the target date is a SUNDAY (workshop closed).\n\n' : '') +
       'Each one is first marked delivered (dated the day the car came in), then its invoice date is changed. ' +
-      'This changes real invoices in Niagawan — normally the 19:45 schedule does this automatically for today.'
+      'This changes real invoices in Niagawan — normally the morning schedule does this automatically (yesterday → today).'
     )) return;
     setRun('running');
     setRunMsg('Starting…');
@@ -147,7 +150,7 @@ export default function KivSaleInvoicePage() {
             <span className="pb-1.5 text-gray-400">→</span>
             <label className="text-[11px] text-gray-500">
               Move to
-              <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)}
+              <input type="date" value={toDate} max={todayISO} onChange={(e) => setToDate(e.target.value)}
                 className="mt-0.5 block rounded-md border border-gray-300 px-2 py-1 text-xs" />
             </label>
             <button

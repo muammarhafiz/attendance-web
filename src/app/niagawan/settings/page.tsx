@@ -22,7 +22,7 @@ const META: Record<string, { title: string; desc: string; fields: Array<'period'
   },
   kiv_move: {
     title: 'Move unpaid sale invoices (carry forward)',
-    desc: 'Every evening, any sale invoice dated today that is still fully unpaid is marked delivered (dated today — the day the car came in) and moved to the next working day (Saturday → Monday), so each day’s sales/COGS shows only completed, paid work. Every move is listed on the KIV Invoices tab and emailed to you. Run it before the nightly sync.',
+    desc: 'Every morning, any sale invoice from the previous working day that is still fully unpaid is marked delivered (dated the day the car came in) and moved to today (Monday picks up Saturday), so each day’s final sales/COGS shows only completed, paid work. Runs in the morning because Niagawan does not accept future invoice dates. Every move is listed on the KIV Invoices tab and emailed to you.',
     fields: ['time'],
   },
 };
