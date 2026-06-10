@@ -4,16 +4,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-type Schedule = { period?: 'daily' | 'weekly'; day?: string; time?: string };
+type Schedule = { period?: 'daily' | 'weekly'; day?: string; time?: string; window_days?: number };
 type Task = { key: string; label: string; enabled: boolean; schedule: Schedule };
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
-const META: Record<string, { title: string; desc: string; fields: Array<'period' | 'day' | 'time'> }> = {
+const META: Record<string, { title: string; desc: string; fields: Array<'period' | 'day' | 'time' | 'window'> }> = {
   nightly_sync: {
     title: 'Nightly data sync',
-    desc: "Scrapes yesterday's sales, COGS and stock from Niagawan into the dashboard every night.",
-    fields: ['time'],
+    desc: "Pulls sales, COGS and stock from Niagawan into the dashboard every night. The re-sync window also refreshes recent past days, so invoices that get carried forward (job delayed, no parts) stay accurate without manual fixing.",
+    fields: ['time', 'window'],
   },
   auto_po: {
     title: 'Auto-PO from sales',
@@ -25,6 +25,11 @@ const META: Record<string, { title: string; desc: string; fields: Array<'period'
 function summarise(t: Task): string {
   const s = t.schedule || {};
   const time = s.time || '—';
+  if (t.key === 'nightly_sync') {
+    const w = Number(s.window_days) || 0;
+    const win = w >= 1 ? ` · re-syncs last ${w === 30 ? '1 month' : w + ' days'}` : ' · yesterday only';
+    return `Runs daily at ${time}${win}`;
+  }
   if (META[t.key]?.fields.includes('period') && s.period === 'weekly') {
     const d = (s.day || 'monday');
     return `Runs every ${d.charAt(0).toUpperCase() + d.slice(1)} at ${time}`;
@@ -159,6 +164,21 @@ export default function NiagawanSettingsPage() {
                         />
                       </label>
                     )}
+                    {meta.fields.includes('window') && (
+                      <label className="text-xs text-gray-600">
+                        Re-sync window
+                        <select
+                          value={String(t.schedule?.window_days ?? 0)}
+                          onChange={(e) => setSchedule(t.key, { window_days: Number(e.target.value) })}
+                          className="mt-1 block rounded-md border border-gray-300 px-2 py-1 text-sm"
+                        >
+                          <option value="0">Auto — yesterday only</option>
+                          <option value="7">Last 7 days</option>
+                          <option value="14">Last 14 days</option>
+                          <option value="30">Last 1 month</option>
+                        </select>
+                      </label>
+                    )}
                     <div className="ml-auto text-xs font-medium text-gray-400">{summarise(t)}</div>
                   </div>
                 )}
@@ -169,8 +189,7 @@ export default function NiagawanSettingsPage() {
       )}
 
       <p className="mt-4 text-xs text-gray-400">
-        Note: the NAS automation engine (which reads these settings and runs the tasks) is being connected next. Until
-        then, your choices here are saved and ready.
+        The NAS automation engine reads these settings on its next run — changes take effect from the next scheduled time.
       </p>
     </div>
   );
