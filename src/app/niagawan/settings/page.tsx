@@ -20,6 +20,11 @@ const META: Record<string, { title: string; desc: string; fields: Array<'period'
     desc: 'Drafts purchase orders for the items that sold (only the ones you ticked “Auto-PO” on the Inventory page), grouped by supplier, and posts them for your approval before anything is created in Niagawan.',
     fields: ['period', 'day', 'time'],
   },
+  kiv_move: {
+    title: 'Move unpaid sale invoices (carry forward)',
+    desc: 'Every evening, any sale invoice dated today that is still fully unpaid is marked delivered (dated today — the day the car came in) and moved to the next working day (Saturday → Monday), so each day’s sales/COGS shows only completed, paid work. Every move is listed on the KIV Invoices tab and emailed to you. Run it before the nightly sync.',
+    fields: ['time'],
+  },
 };
 
 function summarise(t: Task): string {
@@ -80,7 +85,7 @@ export default function NiagawanSettingsPage() {
   }, [tasks, persist]);
 
   const ordered = useMemo(() => {
-    const order = ['nightly_sync', 'auto_po'];
+    const order = ['nightly_sync', 'auto_po', 'kiv_move'];
     return [...tasks].sort((a, b) => (order.indexOf(a.key) + 100) - (order.indexOf(b.key) + 100) || a.key.localeCompare(b.key));
   }, [tasks]);
 
