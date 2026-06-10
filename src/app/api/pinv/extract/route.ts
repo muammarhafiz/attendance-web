@@ -200,16 +200,23 @@ export async function POST(req: Request) {
         // Verify every code actually appears in the invoice's own text layer. If a code is NOT
         // found, the AI likely misread it — flag it so the Review screen can highlight it red.
         const code_verified = codes.length > 0 && codes.every((c) => textNorm.includes(normForMatch(c)));
+        // Derive the effective discount % from the printed NET amount (most reliable field).
+        // A free / zero-total line (unit price shown but amount 0) becomes 100% off; a "15% off"
+        // line becomes 15; a normal line 0 — so the review total always reconciles to the invoice.
+        const qn = Number(it.qty) || 0, un = Number(it.unit_price) || 0, am = Number(it.amount) || 0;
+        const gross = qn * un;
+        let discount = Number(it.discount) || 0;
+        if (gross > 0) { const d = Math.round((1 - am / gross) * 10000) / 100; discount = d < 0 ? 0 : d > 100 ? 100 : d; }
         return {
           pinv_id: id,
           line_no: i + 1,
           item_code: codes[0] ?? null, // primary code, for display
           codes,
           description: String(it.description ?? '').trim() || null,
-          qty: Number(it.qty) || 0,
-          unit_price: Number(it.unit_price) || 0,
-          discount: Number(it.discount) || 0,
-          amount: Number(it.amount) || 0,
+          qty: qn,
+          unit_price: un,
+          discount,
+          amount: am,
           category: cat && validCats.has(cat.toUpperCase()) ? cat : 'SPARE PARTS ITEM',
           code_verified,
         };
