@@ -14,6 +14,17 @@ type Moved = {
   moved_at: string;
 };
 
+type Partial = {
+  id: number;
+  sale_inv_no: string;
+  customer: string | null;
+  total: number | string | null;
+  paid: number | string | null;
+  balance: number | string | null;
+  sale_date: string | null;
+  scanned_at: string;
+};
+
 const rm = (x: number | string | null | undefined) => {
   const n = Number(x);
   return Number.isFinite(n) ? `RM ${n.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
@@ -34,8 +45,12 @@ export default function KivSaleInvoicePage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [rows, setRows] = useState<Moved[]>([]);
+  const [partials, setPartials] = useState<Partial[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [scan, setScan] = useState<RunState>('idle');
+  const [scanMsg, setScanMsg] = useState('');
+  const scanPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [run, setRun] = useState<RunState>('idle');
   const [runMsg, setRunMsg] = useState('');
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -62,17 +77,20 @@ export default function KivSaleInvoicePage() {
     })();
   }, []);
 
-  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+  useEffect(() => () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    if (scanPollRef.current) clearInterval(scanPollRef.current);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
-    const { data, error } = await supabase
-      .from('niagawan_moved_sale')
-      .select('*')
-      .order('moved_at', { ascending: false })
-      .limit(300);
-    if (error) setErr(error.message);
+    const [{ data, error }, { data: pData, error: pErr }] = await Promise.all([
+      supabase.from('niagawan_moved_sale').select('*').order('moved_at', { ascending: false }).limit(300),
+      supabase.from('niagawan_partial_sale').select('*').order('sale_date', { ascending: false }).limit(300),
+    ]);
+    if (error || pErr) setErr(error?.message || pErr?.message || null);
     setRows((data ?? []) as Moved[]);
+    setPartials((pData ?? []) as Partial[]);
     setLoading(false);
   }, []);
 
@@ -127,6 +145,30 @@ export default function KivSaleInvoicePage() {
       }
     }, 4000);
   }, [run, load, fromDate, toDate]);
+
+  // Manual trigger: refresh the partial-invoice snapshot now (read-only scan of the year).
+  const scanNow = useCallback(async () => {
+    if (scan === 'running') return;
+    setScan('running'); setScanMsg('Scanning Niagawan for partially-paid invoices… (~1 min)');
+    const { data, error } = await supabase.from('sync_requests').insert({ which: 'kiv-partial', source: 'website' }).select('id').single();
+    if (error || !data) { setScan('error'); setScanMsg('Could not start: ' + (error?.message ?? 'unknown error')); return; }
+    const id = data.id as number;
+    const startedAt = Date.now();
+    scanPollRef.current = setInterval(async () => {
+      const { data: row } = await supabase.from('sync_requests').select('status').eq('id', id).single();
+      const status = row?.status;
+      if (status === 'done' || status === 'error') {
+        if (scanPollRef.current) clearInterval(scanPollRef.current);
+        await load();
+        setScan(status === 'done' ? 'done' : 'error');
+        setScanMsg(status === 'done' ? 'Scan complete ✓' : 'Scan reported an error — check the email / NAS log.');
+        setTimeout(() => { setScan('idle'); setScanMsg(''); }, 6000);
+      } else if (Date.now() - startedAt > 5 * 60 * 1000) {
+        if (scanPollRef.current) clearInterval(scanPollRef.current);
+        setScan('idle'); setScanMsg('Still running — refresh in a moment.');
+      }
+    }, 4000);
+  }, [scan, load]);
 
   if (authed === null || isAdmin === null) return <div className="text-sm text-gray-500">Checking…</div>;
   if (!authed) return <div className="text-sm text-gray-600">Please sign in.</div>;
@@ -201,7 +243,60 @@ export default function KivSaleInvoicePage() {
         </div>
       </div>
 
-      {/* More cards (e.g. Partial invoices) will go here later. */}
+      {/* Card: Partial invoices */}
+      <div className="rounded-lg border border-gray-200 bg-white">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-3">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-800">Partial invoices</h2>
+            <p className="mt-0.5 text-xs text-gray-400">
+              Sale invoices this year where the customer paid a deposit but still owes a balance. Refreshed daily at the scheduled time
+              {partials[0]?.scanned_at ? <> · last scanned {fmtWhen(partials[0].scanned_at)}</> : null}.
+            </p>
+          </div>
+          <button
+            onClick={scanNow}
+            disabled={scan === 'running'}
+            className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            {scan === 'running' ? 'Scanning…' : '↻ Scan now'}
+          </button>
+        </div>
+
+        {scanMsg && (
+          <div className={`mx-3 mt-3 rounded-md border p-2 text-sm ${scan === 'error' ? 'border-rose-200 bg-rose-50 text-rose-800' : scan === 'done' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+            {scanMsg}
+          </div>
+        )}
+
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
+            <thead className="bg-gray-50 text-left">
+              <tr>
+                <th className="px-3 py-2 font-medium text-gray-600">Invoice</th>
+                <th className="px-3 py-2 font-medium text-gray-600">Customer</th>
+                <th className="px-3 py-2 font-medium text-gray-600">Date</th>
+                <th className="px-3 py-2 text-right font-medium text-gray-600">Total</th>
+                <th className="px-3 py-2 text-right font-medium text-gray-600">Paid</th>
+                <th className="px-3 py-2 text-right font-medium text-gray-600">Balance owed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {partials.length === 0 ? (
+                <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">No partial invoices found{partials.length === 0 && !loading ? ' — press “Scan now” for the first scan.' : '.'}</td></tr>
+              ) : partials.map((r) => (
+                <tr key={r.id} className="border-t border-gray-100">
+                  <td className="px-3 py-2 font-mono text-gray-800">{r.sale_inv_no}</td>
+                  <td className="px-3 py-2 text-gray-700">{r.customer ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-600">{fmtDate(r.sale_date)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{rm(r.total)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-emerald-700">{rm(r.paid)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums font-semibold text-rose-700">{rm(r.balance)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
