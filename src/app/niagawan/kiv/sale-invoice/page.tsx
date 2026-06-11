@@ -50,7 +50,7 @@ export default function KivSaleInvoicePage() {
   const [err, setErr] = useState<string | null>(null);
   const [scan, setScan] = useState<RunState>('idle');
   const [scanMsg, setScanMsg] = useState('');
-  const [yearFilter, setYearFilter] = useState<string>('all');
+  const [yearFilter, setYearFilter] = useState<string>(new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 4)); // default: current year (KL)
   const scanPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [run, setRun] = useState<RunState>('idle');
   const [runMsg, setRunMsg] = useState('');
@@ -171,14 +171,15 @@ export default function KivSaleInvoicePage() {
     }, 4000);
   }, [scan, load]);
 
-  // Year dropdown options come from the data itself; the list filters client-side.
+  // Year dropdown options: the years present in the data plus the current year; the card
+  // always shows ONE selected year (default: current year).
   const partialYears = useMemo(() => {
-    const ys = new Set<string>();
+    const ys = new Set<string>([new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 4)]);
     partials.forEach((p) => { if (p.sale_date) ys.add(p.sale_date.slice(0, 4)); });
     return Array.from(ys).sort().reverse();
   }, [partials]);
   const shownPartials = useMemo(
-    () => (yearFilter === 'all' ? partials : partials.filter((p) => (p.sale_date || '').startsWith(yearFilter))),
+    () => partials.filter((p) => (p.sale_date || '').startsWith(yearFilter)),
     [partials, yearFilter]
   );
   const shownOwed = useMemo(() => shownPartials.reduce((s, p) => s + (Number(p.balance) || 0), 0), [shownPartials]);
@@ -266,7 +267,7 @@ export default function KivSaleInvoicePage() {
               {partials[0]?.scanned_at ? <> · last scanned {fmtWhen(partials[0].scanned_at)}</> : null}.
             </p>
             <p className="mt-1 text-xs font-medium text-gray-600">
-              {shownPartials.length} invoice{shownPartials.length === 1 ? '' : 's'}{yearFilter !== 'all' ? ` in ${yearFilter}` : ''} · <span className="text-rose-700">{rm(shownOwed)} owed</span>
+              {shownPartials.length} invoice{shownPartials.length === 1 ? '' : 's'} in {yearFilter} · <span className="text-rose-700">{rm(shownOwed)} owed</span>
             </p>
           </div>
           <div className="flex items-end gap-2">
@@ -274,7 +275,6 @@ export default function KivSaleInvoicePage() {
               Year
               <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)}
                 className="mt-0.5 block rounded-md border border-gray-300 px-2 py-1 text-xs">
-                <option value="all">All years</option>
                 {partialYears.map((y) => <option key={y} value={y}>{y}</option>)}
               </select>
             </label>
