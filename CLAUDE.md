@@ -5,7 +5,7 @@ Admin web app for **ZORDAQ AUTO SERVICES** (car workshop, Putrajaya, Malaysia). 
 ## Stack & deploy
 
 - Next.js App Router + TypeScript + Tailwind, deployed on **Vercel**.
-- **Merging a PR to `main` deploys to production** (~1 min). There is no staging. Keep PRs small and type-check first: `npx tsc --noEmit`.
+- **Merging a PR to `main` deploys to production** (~1 min). There is no staging. Keep PRs small and type-check first: `npm install` (fresh containers have no node_modules), then `npx tsc --noEmit`. If the type-check can't run, say so before merging — Vercel's build will catch type errors and refuse to deploy, but then the merge sits broken on main.
 - Database/auth: **Supabase** (project `naefauflkisldxftxuhq`). Client pages use `@/lib/supabaseClient`; admin-only pages gate on the `is_admin()` RPC. RLS is enforced — admin policies typically `using is_admin()`.
 - Supabase **edge functions** (`niagawan-pinv`, `niagawan-ingest`, `niagawan-autopo`, `niagawan-inventory`) use shared-token auth checked against the `app_secrets` table (service-role only). They are deployed with `verify_jwt:false` — never flip that on or the NAS gets 401s. Tokens live in `app_secrets` and server-side code only; **never put tokens in client code or this file**.
 
