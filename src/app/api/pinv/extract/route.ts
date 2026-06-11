@@ -130,6 +130,37 @@ async function geminiExtract(base64: string, key: string, prompt: string): Promi
   throw new Error('AI read failed: ' + lastErr + ` (after ${attempts} attempt${attempts === 1 ? '' : 's'})`);
 }
 
+// Some suppliers (Gulf/Atomlubes) print NO item codes — only descriptions. Match an uncoded
+// line against our own product list by oil grade (0W20/5W30/10W40…), bottle size, and name
+// words, and only fill the code when exactly one product fits.
+function descWords(s: string): string[] {
+  return s.toUpperCase().split(/[^A-Z]+/).filter((w) => w.length >= 3 && w !== 'GULF' && w !== 'ENGINE' && w !== 'OIL');
+}
+function descGrade(s: string): string | null {
+  const m = s.toUpperCase().match(/(\d+)W[- ]?(\d+)/);
+  return m ? `${Number(m[1])}W${Number(m[2])}` : null;
+}
+function descSize(s: string): string | null {
+  const d = s.toUpperCase();
+  const caseM = d.match(/\dX(\d+(?:\.\d+)?)L/);                 // "4X3L" = carton of 4 × 3L bottles
+  const plainM = d.match(/(?:^|[^X0-9])(\d+(?:\.\d+)?)L\b/);    // "… 0W20 3L"
+  return caseM ? caseM[1] : plainM ? plainM[1] : null;
+}
+function matchCodeByDescription(desc: string, prods: Array<{ code: string; description: string }>): string | null {
+  const grade = descGrade(desc), size = descSize(desc), words = new Set(descWords(desc));
+  let best: { code: string; score: number } | null = null;
+  let tied = false;
+  for (const p of prods) {
+    if (descGrade(p.description) !== grade) continue;           // grade must agree (null === null ok)
+    const ps = descSize(p.description);
+    if (size && ps && size !== ps) continue;                    // size must agree when both printed
+    const score = descWords(p.description).filter((w) => words.has(w)).length;
+    if (!best || score > best.score) { best = { code: p.code, score }; tied = false; }
+    else if (score === best.score) tied = true;
+  }
+  return best && !tied && best.score >= 2 ? best.code : null;   // need 2+ shared name words, unique winner
+}
+
 export async function POST(req: Request) {
   let id: string | null = null;
   try {
@@ -223,7 +254,7 @@ export async function POST(req: Request) {
         return {
           pinv_id: id,
           line_no: i + 1,
-          item_code: codes[0] ?? null, // primary code, for display
+          item_code: (codes[0] ?? null) as string | null, // primary code, for display
           codes,
           description: String(it.description ?? '').trim() || null,
           qty: qn,
@@ -231,11 +262,22 @@ export async function POST(req: Request) {
           discount,
           amount: am,
           category: cat && validCats.has(cat.toUpperCase()) ? cat : 'SPARE PARTS ITEM',
-          code_verified,
+          code_verified: code_verified as boolean | null,
         };
       });
+      // Gulf/Atomlubes print no item codes at all — fill uncoded lines from our own Gulf
+      // product list by description match. Matched codes aren't flagged red (the PDF has no
+      // code to verify against); the Niagawan lookup that follows confirms they exist.
+      if (rows.some((r) => r.codes.length === 0) && /atomlubes|gulf/i.test(String(parsed.supplier_name ?? ''))) {
+        const { data: prods } = await admin.from('niagawan_min_stock').select('code,description').ilike('supplier_name', '%atomlubes%');
+        for (const r of rows) {
+          if (r.codes.length > 0 || !r.description) continue;
+          const hit = matchCodeByDescription(r.description, (prods ?? []) as Array<{ code: string; description: string }>);
+          if (hit) { r.codes = [hit]; r.item_code = hit; r.code_verified = null; }
+        }
+      }
       await admin.from('pinv_item').insert(rows);
-      const flagged = rows.filter((r) => !r.code_verified).length;
+      const flagged = rows.filter((r) => r.code_verified === false).length;
       return NextResponse.json({ ok: true, items: items.length, model: readModel, flagged });
     }
 
