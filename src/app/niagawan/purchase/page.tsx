@@ -39,6 +39,7 @@ export default function PurchaseInvoicePage() {
   const [readingId, setReadingId] = useState<string | null>(null);
   const [readSecs, setReadSecs] = useState(0);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [mailCheck, setMailCheck] = useState<'idle' | 'running'>('idle');
 
   // Tick a live elapsed-seconds counter while a read is in progress, so the user can see the
   // system is actively working (an AI read can take 15–50s) and isn't frozen.
@@ -116,6 +117,39 @@ export default function PurchaseInvoicePage() {
     }
   }, [load]);
 
+  // Ask the workshop mailbox (zordaqputrajaya@gmail.com) to fetch supplier invoice PDFs NOW.
+  // Queued via sync_requests -> the NAS calls the mailbox script (token stays server-side).
+  const checkEmail = useCallback(async () => {
+    if (mailCheck === 'running') return;
+    setMailCheck('running'); setMsg(null);
+    const { data, error } = await supabase.from('sync_requests').insert({ which: 'email-check', source: 'website' }).select('id').single();
+    if (error || !data) { setMailCheck('idle'); setMsg({ kind: 'err', text: 'Could not start the email check: ' + (error?.message ?? 'unknown') }); return; }
+    const id = data.id as number;
+    const startedAt = Date.now();
+    const t = setInterval(async () => {
+      const { data: row } = await supabase.from('sync_requests').select('status,result').eq('id', id).single();
+      if (row?.status === 'done' || row?.status === 'error') {
+        clearInterval(t);
+        setMailCheck('idle');
+        if (row.status === 'done') {
+          const m = (row.result || '').match(/saved=(\d+)\s+unknown-sender=(\d+)/);
+          const saved = m ? Number(m[1]) : 0, unknown = m ? Number(m[2]) : 0;
+          setMsg({
+            kind: 'ok',
+            text: saved
+              ? `📧 Email checked — ${saved} invoice(s) saved to the “Supplier Invoices” folder in Drive (details emailed).${unknown ? ` ${unknown} PDF(s) from unknown senders were skipped.` : ''}`
+              : `📧 Email checked — no new supplier invoices found.${unknown ? ` ${unknown} PDF(s) from unknown senders were skipped (see email).` : ''}`,
+          });
+        } else {
+          setMsg({ kind: 'err', text: 'Email check failed — make sure the v2 mailbox script is deployed (see email/NAS log).' });
+        }
+      } else if (Date.now() - startedAt > 3 * 60 * 1000) {
+        clearInterval(t); setMailCheck('idle');
+        setMsg({ kind: 'err', text: 'Email check is taking long — it may still finish in the background.' });
+      }
+    }, 4000);
+  }, [mailCheck]);
+
   const viewPdf = useCallback(async (path: string | null) => {
     if (!path) return;
     const { data } = await supabase.storage.from('pinv').createSignedUrl(path, 300);
@@ -142,6 +176,10 @@ export default function PurchaseInvoicePage() {
           <span className="min-w-0 flex-1 truncate text-xs text-gray-500">{file ? file.name : 'No file chosen'}</span>
           <button onClick={upload} disabled={busy || !file} className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
             {busy ? 'Uploading…' : 'Upload'}
+          </button>
+          <button onClick={checkEmail} disabled={mailCheck === 'running'} title="Fetch supplier invoice PDFs from zordaqputrajaya@gmail.com into the Drive “Supplier Invoices” folder"
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+            {mailCheck === 'running' ? 'Checking email…' : '📧 Check email now'}
           </button>
         </div>
         {msg && <div className={`mt-2 rounded-md border p-2 text-sm ${msg.kind === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>{msg.text}</div>}
