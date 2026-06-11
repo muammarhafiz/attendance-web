@@ -202,11 +202,29 @@ export default function ReviewInvoicePage() {
     if (data?.signedUrl) window.open(data.signedUrl, '_blank', 'noopener');
   }, [head]);
 
+  // Dismiss = hide this invoice from the list (e.g. it's already keyed into Niagawan manually).
+  // Nothing in Niagawan is touched; reversible from the list via "Show dismissed".
+  const dismissInvoice = useCallback(async () => {
+    if (!id || !head) return;
+    if (!window.confirm(`Dismiss ${head.ref_no || 'this invoice'}? It will be hidden from the list — nothing is changed in Niagawan.`)) return;
+    const { error } = await supabase.from('pinv').update({ status: 'dismissed', updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) { setMsg({ kind: 'err', text: error.message }); return; }
+    router.push('/niagawan/purchase');
+  }, [id, head, router]);
+
+  const restoreInvoice = useCallback(async () => {
+    if (!id || !head) return;
+    const back = head.supplier_name || head.total != null ? 'extracted' : 'uploaded';
+    const { error } = await supabase.from('pinv').update({ status: back, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) { setMsg({ kind: 'err', text: error.message }); return; }
+    await load();
+  }, [id, head, load]);
+
   if (isAdmin === null || loading) return <div className="text-sm text-gray-500">Loading…</div>;
   if (!isAdmin) return <div className="text-sm text-gray-600">This page is for admins only.</div>;
   if (!head) return <div className="text-sm text-gray-600">Invoice not found. <button onClick={() => router.push('/niagawan/purchase')} className="text-blue-600 underline">Back</button></div>;
 
-  const locked = head.status === 'approved' || head.status === 'creating' || head.status === 'created';
+  const locked = head.status === 'approved' || head.status === 'creating' || head.status === 'created' || head.status === 'dismissed';
   const showBilled = head.check_status === 'checked';
   const resolving = head.resolve_status === 'queued' || head.resolve_status === 'resolving';
 
@@ -219,13 +237,21 @@ export default function ReviewInvoicePage() {
             ? <span className="rounded border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">Checking sales… (~1 min)</span>
             : <button onClick={runCheck} className="rounded border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">{head.check_status === 'checked' ? '↻ Re-check sales' : 'Check against sales'}</button>}
           {head.file_path && <button onClick={viewPdf} className="rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50">View PDF</button>}
+          {(head.status === 'uploaded' || head.status === 'extracted' || head.status === 'error') && (
+            <button onClick={dismissInvoice} title="Hide this invoice (e.g. it's already in Niagawan). Nothing is changed in Niagawan." className="rounded border border-gray-200 px-2.5 py-1 text-xs text-rose-500 hover:bg-rose-50">✕ Dismiss</button>
+          )}
+          {head.status === 'dismissed' && (
+            <button onClick={restoreInvoice} className="rounded border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">↩ Restore</button>
+          )}
           <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{head.status === 'created' && head.niagawan_pi_no ? head.niagawan_pi_no : head.status}</span>
         </div>
       </div>
 
       {locked && (
         <div className="mb-3 rounded-md border border-indigo-200 bg-indigo-50 p-2 text-sm text-indigo-800">
-          This invoice is {head.status}. It can no longer be edited.
+          {head.status === 'dismissed'
+            ? <>This invoice is dismissed (hidden from the list). Press <b>↩ Restore</b> above if you want to process it after all.</>
+            : <>This invoice is {head.status}. It can no longer be edited.</>}
         </div>
       )}
 
