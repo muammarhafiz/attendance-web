@@ -71,8 +71,10 @@ function buildPrompt(categoryNames: string[], invoiceText: string): string {
 // read gets extra human scrutiny before it reaches Niagawan.
 type ReadTier = { name: string; untilMs: number };
 const READ_TIERS: ReadTier[] = [
-  { name: 'gemini-3.5-flash', untilMs: 32000 }, // primary gets the first ~32s
-  { name: 'gemini-2.5-flash', untilMs: 52000 }, // backup uses the remainder (it answers in ~2s)
+  // Primary gets ~20s of retries; if it's overloaded (peak-hour 503s) the healthy backup needs
+  // a real window — a 2-3 page invoice read takes 15-30s, so it gets the remaining ~32s.
+  { name: 'gemini-3.5-flash', untilMs: 20000 },
+  { name: 'gemini-2.5-flash', untilMs: 52000 },
 ];
 const OVERALL_MS = 52000; // stay safely under Vercel's 60s function cap
 const ATTEMPT_MS = 28000; // per-attempt hard timeout (a slow-but-working read can take ~30s)
