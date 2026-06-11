@@ -24,6 +24,7 @@ const STATUS_STYLE: Record<string, string> = {
   creating: 'bg-amber-100 text-amber-700',
   created: 'bg-emerald-100 text-emerald-700',
   error: 'bg-rose-100 text-rose-700',
+  dismissed: 'bg-gray-200 text-gray-500',
 };
 const fmtD = (d: string | null) => { if (!d) return '—'; const [y, m, dd] = d.split('-'); return `${dd}/${m}/${y}`; };
 const rm = (n: number | null) => (n == null ? '—' : `RM ${Number(n).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
@@ -40,6 +41,7 @@ export default function PurchaseInvoicePage() {
   const [readSecs, setReadSecs] = useState(0);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [mailCheck, setMailCheck] = useState<'idle' | 'running'>('idle');
+  const [showDismissed, setShowDismissed] = useState(false);
 
   // Tick a live elapsed-seconds counter while a read is in progress, so the user can see the
   // system is actively working (an AI read can take 15–50s) and isn't frozen.
@@ -63,10 +65,12 @@ export default function PurchaseInvoicePage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.from('pinv').select('*').order('created_at', { ascending: false }).limit(100);
+    let q = supabase.from('pinv').select('*').order('created_at', { ascending: false }).limit(100);
+    if (!showDismissed) q = q.neq('status', 'dismissed');
+    const { data } = await q;
     setRows((data ?? []) as Pinv[]);
     setLoading(false);
-  }, []);
+  }, [showDismissed]);
 
   useEffect(() => { if (isAdmin) load(); }, [isAdmin, load]);
 
@@ -150,6 +154,23 @@ export default function PurchaseInvoicePage() {
     }, 4000);
   }, [mailCheck]);
 
+  // Dismiss = hide an invoice we won't process (e.g. it's already keyed into Niagawan manually).
+  // Nothing in Niagawan is touched and the PDF stays in Drive; reversible via "Show dismissed".
+  const dismiss = useCallback(async (r: Pinv) => {
+    if (!window.confirm(`Dismiss ${r.ref_no || 'this invoice'}? It will be hidden from this list — nothing is changed in Niagawan. You can restore it with "Show dismissed".`)) return;
+    const { error } = await supabase.from('pinv').update({ status: 'dismissed', updated_at: new Date().toISOString() }).eq('id', r.id);
+    if (error) setMsg({ kind: 'err', text: error.message });
+    else { setMsg({ kind: 'ok', text: `Dismissed ${r.ref_no || 'invoice'} ✓ — tick "Show dismissed" if you need it back.` }); await load(); }
+  }, [load]);
+
+  const restore = useCallback(async (r: Pinv) => {
+    // Back to 'extracted' if it has been read before (supplier/total present), else back to 'uploaded'.
+    const back = r.supplier_name || r.total != null ? 'extracted' : 'uploaded';
+    const { error } = await supabase.from('pinv').update({ status: back, updated_at: new Date().toISOString() }).eq('id', r.id);
+    if (error) setMsg({ kind: 'err', text: error.message });
+    else { setMsg({ kind: 'ok', text: `Restored ${r.ref_no || 'invoice'} ✓` }); await load(); }
+  }, [load]);
+
   const viewPdf = useCallback(async (path: string | null) => {
     if (!path) return;
     const { data } = await supabase.storage.from('pinv').createSignedUrl(path, 300);
@@ -206,7 +227,13 @@ export default function PurchaseInvoicePage() {
       {/* List */}
       <div className="mb-2 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-gray-700">Uploaded invoices</h2>
-        <button onClick={load} disabled={loading} className="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50">{loading ? '…' : 'Refresh'}</button>
+        <div className="flex items-center gap-3">
+          <label className="flex cursor-pointer items-center gap-1.5 text-xs text-gray-500">
+            <input type="checkbox" checked={showDismissed} onChange={(e) => setShowDismissed(e.target.checked)} className="h-3.5 w-3.5" />
+            Show dismissed
+          </label>
+          <button onClick={load} disabled={loading} className="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50">{loading ? '…' : 'Refresh'}</button>
+        </div>
       </div>
       <div className="overflow-x-auto rounded-lg border border-gray-200">
         <table className="w-full border-collapse text-sm">
@@ -254,6 +281,16 @@ export default function PurchaseInvoicePage() {
                       </button>
                     )}
                     {r.file_path && <button onClick={() => viewPdf(r.file_path)} className="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50">View PDF</button>}
+                    {(r.status === 'uploaded' || r.status === 'extracted' || r.status === 'error') && (
+                      <button onClick={() => dismiss(r)} title="Hide this invoice (e.g. it's already in Niagawan). Nothing is changed in Niagawan." className="rounded border border-gray-200 px-2 py-0.5 text-xs text-rose-500 hover:bg-rose-50">
+                        ✕ Dismiss
+                      </button>
+                    )}
+                    {r.status === 'dismissed' && (
+                      <button onClick={() => restore(r)} className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50">
+                        ↩ Restore
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
