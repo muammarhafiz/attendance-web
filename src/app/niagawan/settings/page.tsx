@@ -25,6 +25,11 @@ const META: Record<string, { title: string; desc: string; fields: Array<'period'
     desc: 'Every morning, any sale invoice from the previous working day that is still fully unpaid is marked delivered (dated the day the car came in) and moved to today (Monday picks up Saturday), so each day’s final sales/COGS shows only completed, paid work. Runs in the morning because Niagawan does not accept future invoice dates. Every move is listed on the KIV Invoices tab and emailed to you.',
     fields: ['time'],
   },
+  kiv_partial: {
+    title: 'Scan partial sale invoices',
+    desc: 'Scans the whole current year in Niagawan for sale invoices that are PARTIALLY paid (customer paid a deposit but a balance is still owed) and refreshes the “Partial invoices” list on the KIV Invoices tab.',
+    fields: ['time'],
+  },
 };
 
 function summarise(t: Task): string {
@@ -85,7 +90,7 @@ export default function NiagawanSettingsPage() {
   }, [tasks, persist]);
 
   const ordered = useMemo(() => {
-    const order = ['nightly_sync', 'auto_po', 'kiv_move'];
+    const order = ['nightly_sync', 'auto_po', 'kiv_move', 'kiv_partial'];
     return [...tasks].sort((a, b) => (order.indexOf(a.key) + 100) - (order.indexOf(b.key) + 100) || a.key.localeCompare(b.key));
   }, [tasks]);
 
