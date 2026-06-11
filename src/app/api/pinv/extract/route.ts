@@ -131,13 +131,21 @@ async function geminiExtract(base64: string, key: string, prompt: string): Promi
 export async function POST(req: Request) {
   let id: string | null = null;
   try {
-    const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
-    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    const sb = createClientServer(req);
-    const { data: auth, error: aErr } = await sb.auth.getUser(token);
-    if (aErr || !auth?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    const { data: isAdmin } = await sb.rpc('is_admin');
-    if (isAdmin !== true) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    // Two ways in: an admin's browser session (Bearer JWT), or the shared system token
+    // (x-ingest-token) used by the automation (edge fn auto-read after an email upload).
+    const ingest = (req.headers.get('x-ingest-token') || '').trim();
+    if (ingest) {
+      const { data: secret } = await admin.from('app_secrets').select('value').eq('name', 'niagawan_ingest_token').single();
+      if (!secret?.value || ingest !== secret.value) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    } else {
+      const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
+      if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const sb = createClientServer(req);
+      const { data: auth, error: aErr } = await sb.auth.getUser(token);
+      if (aErr || !auth?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const { data: isAdmin } = await sb.rpc('is_admin');
+      if (isAdmin !== true) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
 
     const body = await req.json();
     id = body?.id ?? null;
