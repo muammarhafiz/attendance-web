@@ -42,6 +42,7 @@ export default function PurchaseInvoicePage() {
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [mailCheck, setMailCheck] = useState<'idle' | 'running'>('idle');
   const [showDismissed, setShowDismissed] = useState(false);
+  const [supplierFilter, setSupplierFilter] = useState<string | null>(null);
 
   // Tick a live elapsed-seconds counter while a read is in progress, so the user can see the
   // system is actively working (an AI read can take 15–50s) and isn't frozen.
@@ -67,10 +68,11 @@ export default function PurchaseInvoicePage() {
     setLoading(true);
     let q = supabase.from('pinv').select('*').order('created_at', { ascending: false }).limit(100);
     if (!showDismissed) q = q.neq('status', 'dismissed');
+    if (supplierFilter) q = q.eq('supplier_name', supplierFilter);
     const { data } = await q;
     setRows((data ?? []) as Pinv[]);
     setLoading(false);
-  }, [showDismissed]);
+  }, [showDismissed, supplierFilter]);
 
   useEffect(() => { if (isAdmin) load(); }, [isAdmin, load]);
 
@@ -226,7 +228,15 @@ export default function PurchaseInvoicePage() {
 
       {/* List */}
       <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-700">Uploaded invoices</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-semibold text-gray-700">Uploaded invoices</h2>
+          {supplierFilter && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+              {supplierFilter}
+              <button onClick={() => setSupplierFilter(null)} title="Clear supplier filter" className="text-blue-500 hover:text-blue-800">✕</button>
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-3">
           <label className="flex cursor-pointer items-center gap-1.5 text-xs text-gray-500">
             <input type="checkbox" checked={showDismissed} onChange={(e) => setShowDismissed(e.target.checked)} className="h-3.5 w-3.5" />
@@ -254,7 +264,17 @@ export default function PurchaseInvoicePage() {
             ) : rows.map((r) => (
               <tr key={r.id} className="border-t border-gray-100">
                 <td className="px-3 py-2 text-gray-500">{new Date(r.created_at).toLocaleDateString('en-MY')}</td>
-                <td className="px-3 py-2 text-gray-900">{r.supplier_name ?? '—'}</td>
+                <td className="px-3 py-2 text-gray-900">
+                  {r.supplier_name ? (
+                    <button
+                      onClick={() => setSupplierFilter(r.supplier_name)}
+                      title={`Show only invoices from ${r.supplier_name}`}
+                      className="text-left text-blue-600 hover:text-blue-800 hover:underline"
+                    >
+                      {r.supplier_name}
+                    </button>
+                  ) : '—'}
+                </td>
                 <td className="px-3 py-2 text-gray-700">{r.ref_no ?? '—'}</td>
                 <td className="px-3 py-2 text-gray-700">{fmtD(r.invoice_date)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{rm(r.total)}</td>
