@@ -1,7 +1,7 @@
 // src/app/niagawan/kiv/sale-invoice/page.tsx
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 type Moved = {
@@ -50,6 +50,7 @@ export default function KivSaleInvoicePage() {
   const [err, setErr] = useState<string | null>(null);
   const [scan, setScan] = useState<RunState>('idle');
   const [scanMsg, setScanMsg] = useState('');
+  const [yearFilter, setYearFilter] = useState<string>('all');
   const scanPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [run, setRun] = useState<RunState>('idle');
   const [runMsg, setRunMsg] = useState('');
@@ -170,6 +171,18 @@ export default function KivSaleInvoicePage() {
     }, 4000);
   }, [scan, load]);
 
+  // Year dropdown options come from the data itself; the list filters client-side.
+  const partialYears = useMemo(() => {
+    const ys = new Set<string>();
+    partials.forEach((p) => { if (p.sale_date) ys.add(p.sale_date.slice(0, 4)); });
+    return Array.from(ys).sort().reverse();
+  }, [partials]);
+  const shownPartials = useMemo(
+    () => (yearFilter === 'all' ? partials : partials.filter((p) => (p.sale_date || '').startsWith(yearFilter))),
+    [partials, yearFilter]
+  );
+  const shownOwed = useMemo(() => shownPartials.reduce((s, p) => s + (Number(p.balance) || 0), 0), [shownPartials]);
+
   if (authed === null || isAdmin === null) return <div className="text-sm text-gray-500">Checking…</div>;
   if (!authed) return <div className="text-sm text-gray-600">Please sign in.</div>;
   if (!isAdmin) return <div className="text-sm text-gray-600">This page is for admins only.</div>;
@@ -249,17 +262,30 @@ export default function KivSaleInvoicePage() {
           <div>
             <h2 className="text-sm font-semibold text-gray-800">Partial invoices</h2>
             <p className="mt-0.5 text-xs text-gray-400">
-              Sale invoices this year where the customer paid a deposit but still owes a balance. Refreshed daily at the scheduled time
+              Sale invoices where the customer paid a deposit but still owes a balance (all years). Refreshed daily at the scheduled time
               {partials[0]?.scanned_at ? <> · last scanned {fmtWhen(partials[0].scanned_at)}</> : null}.
             </p>
+            <p className="mt-1 text-xs font-medium text-gray-600">
+              {shownPartials.length} invoice{shownPartials.length === 1 ? '' : 's'}{yearFilter !== 'all' ? ` in ${yearFilter}` : ''} · <span className="text-rose-700">{rm(shownOwed)} owed</span>
+            </p>
           </div>
-          <button
-            onClick={scanNow}
-            disabled={scan === 'running'}
-            className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-          >
-            {scan === 'running' ? 'Scanning…' : '↻ Scan now'}
-          </button>
+          <div className="flex items-end gap-2">
+            <label className="text-[11px] text-gray-500">
+              Year
+              <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)}
+                className="mt-0.5 block rounded-md border border-gray-300 px-2 py-1 text-xs">
+                <option value="all">All years</option>
+                {partialYears.map((y) => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </label>
+            <button
+              onClick={scanNow}
+              disabled={scan === 'running'}
+              className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              {scan === 'running' ? 'Scanning…' : '↻ Scan now'}
+            </button>
+          </div>
         </div>
 
         {scanMsg && (
@@ -281,9 +307,9 @@ export default function KivSaleInvoicePage() {
               </tr>
             </thead>
             <tbody>
-              {partials.length === 0 ? (
-                <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">No partial invoices found{partials.length === 0 && !loading ? ' — press “Scan now” for the first scan.' : '.'}</td></tr>
-              ) : partials.map((r) => (
+              {shownPartials.length === 0 ? (
+                <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">{partials.length === 0 ? 'No partial invoices found — press “Scan now” for the first scan.' : 'No partial invoices in ' + yearFilter + '.'}</td></tr>
+              ) : shownPartials.map((r) => (
                 <tr key={r.id} className="border-t border-gray-100">
                   <td className="px-3 py-2 font-mono text-gray-800">{r.sale_inv_no}</td>
                   <td className="px-3 py-2 text-gray-700">{r.customer ?? '—'}</td>
