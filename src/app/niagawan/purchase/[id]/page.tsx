@@ -383,7 +383,14 @@ export default function ReviewInvoicePage() {
                 <tr key={idx} className="border-t border-gray-100 align-top">
                   <td className="px-2 py-1.5 text-gray-400">{idx + 1}</td>
                   <td className="px-2 py-1.5">
-                    <input disabled={locked} value={it.item_code} onChange={(e) => setItem(idx, { item_code: e.target.value, code_verified: null })}
+                    <input disabled={locked} value={it.item_code}
+                      onChange={(e) => {
+                        // Typing a code is an explicit override: it must ALSO become the codes
+                        // list (which is what the NAS matches/creates by). Leaving stale alt
+                        // codes there made Niagawan ignore the owner's typed code (2026-06-12).
+                        const v = e.target.value;
+                        setItem(idx, { item_code: v, codes: v.trim() ? [v.trim()] : [], code_verified: null });
+                      }}
                       className={`w-36 rounded border px-1.5 py-1 font-mono text-xs disabled:bg-transparent ${it.code_verified === false ? 'border-rose-400 bg-rose-50' : 'border-gray-200 disabled:border-transparent'}`} />
                     {it.code_verified === false && (
                       <div className="mt-0.5 max-w-[12rem] text-[10px] font-medium leading-tight text-rose-600" title="This code was NOT found in the invoice's text — the AI may have misread it. Check it against the PDF.">
