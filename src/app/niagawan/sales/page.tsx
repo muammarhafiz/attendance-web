@@ -10,8 +10,33 @@ type Daily = {
   sales: number | string;
   cogs: number | string;
   profit: number | string;
+  unpaid_count: number | null;
   updated_at: string | null;
 };
+
+type Zero = { audit_date: string; item: string | null; code: string | null; price: string | null };
+type Rule = { match_type: string; value: string };
+
+// Same ignore-rule logic as the COGS chase list (cashier note-lines etc. are not real parts,
+// so they don't block a day from being "final").
+function zeroIgnored(row: Zero, rules: Rule[]) {
+  const name = String(row.item || '').trim().toLowerCase();
+  const code = String(row.code || '').trim().toLowerCase();
+  const price = parseFloat(String(row.price ?? '').replace(/,/g, '')) || 0;
+  for (const r of rules) {
+    const t = String(r.match_type || '').trim().toLowerCase();
+    const v = String(r.value || '').trim().toLowerCase();
+    if (!t || !v) continue;
+    if (t === 'code_prefix' && code.startsWith(v)) return true;
+    if (t === 'code_exact' && code === v) return true;
+    if (t === 'code_contains' && code.includes(v)) return true;
+    if (t === 'name_prefix' && name.startsWith(v)) return true;
+    if (t === 'name_exact' && name === v) return true;
+    if (t === 'name_contains' && name.includes(v)) return true;
+    if (t === 'price_max' && price <= (parseFloat(v) || 0)) return true;
+  }
+  return false;
+}
 
 const n = (x: number | string | null | undefined) =>
   Number.isFinite(typeof x === 'string' ? Number(x) : (x ?? 0)) ? Number(x) : 0;
@@ -40,6 +65,8 @@ export default function NiagawanSalesPage() {
   const [sync, setSync] = useState<SyncState>('idle');
   const [syncMsg, setSyncMsg] = useState<string>('');
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [zeros, setZeros] = useState<Zero[]>([]);
+  const [rules, setRules] = useState<Rule[]>([]);
 
   // auth + role
   useEffect(() => {
@@ -58,15 +85,40 @@ export default function NiagawanSalesPage() {
   const loadRows = useCallback(async () => {
     setLoading(true);
     setErr(null);
-    const { data, error } = await supabase
-      .from('niagawan_daily')
-      .select('day,invoices,sales,cogs,profit,updated_at')
-      .order('day', { ascending: false })
-      .limit(60);
+    const [{ data, error }, { data: z }, { data: ru }] = await Promise.all([
+      supabase
+        .from('niagawan_daily')
+        .select('day,invoices,sales,cogs,profit,unpaid_count,updated_at')
+        .order('day', { ascending: false })
+        .limit(60),
+      supabase.from('niagawan_cogs_zeros').select('audit_date,item,code,price'),
+      supabase.from('niagawan_cogs_ignore').select('match_type,value'),
+    ]);
     if (error) setErr(error.message);
     else setRows((data ?? []) as Daily[]);
+    setZeros((z ?? []) as Zero[]);
+    setRules((ru ?? []) as Rule[]);
     setLoading(false);
   }, []);
+
+  // Zero-cost items per day (ignore rules applied) — a day is only FINAL when this is 0
+  // AND it has no unpaid invoices left (they get carried forward at 8pm).
+  const zeroByDay = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const z of zeros) {
+      if (zeroIgnored(z, rules)) continue;
+      map[z.audit_date] = (map[z.audit_date] || 0) + 1;
+    }
+    return map;
+  }, [zeros, rules]);
+
+  const dayStatus = useCallback((r: Daily) => {
+    const zc = zeroByDay[r.day] ?? 0;
+    const up = r.unpaid_count;
+    if (up == null) return { kind: 'unknown' as const, zc, up: 0 };
+    if (up === 0 && zc === 0) return { kind: 'final' as const, zc, up };
+    return { kind: 'pending' as const, zc, up };
+  }, [zeroByDay]);
 
   // data (only for admins; RLS would block others anyway)
   useEffect(() => {
@@ -145,8 +197,14 @@ export default function NiagawanSalesPage() {
     <div>
       {/* KPI row — latest day */}
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-gray-700">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-700">
           {latest ? `Latest day · ${fmtDay(latest.day)}` : 'Latest day'}
+          {latest && (() => {
+            const s = dayStatus(latest);
+            if (s.kind === 'final') return <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">✓ final</span>;
+            if (s.kind === 'pending') return <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">⏳ not final</span>;
+            return null;
+          })()}
         </h2>
         <div className="flex items-center gap-3">
           <span className="text-xs text-gray-400">Last synced: {lastSynced}</span>
@@ -216,6 +274,7 @@ export default function NiagawanSalesPage() {
             <thead className="bg-gray-50">
               <tr className="text-left">
                 <th className="px-3 py-2 font-semibold text-gray-700">Date</th>
+                <th className="px-3 py-2 font-semibold text-gray-700">Status</th>
                 <th className="px-3 py-2 text-right font-semibold text-gray-700">Invoices</th>
                 <th className="px-3 py-2 text-right font-semibold text-gray-700">Sales</th>
                 <th className="px-3 py-2 text-right font-semibold text-gray-700">COGS</th>
@@ -228,13 +287,30 @@ export default function NiagawanSalesPage() {
                 const sales = n(r.sales);
                 const cogs = n(r.cogs);
                 const profit = n(r.profit);
+                const s = dayStatus(r);
+                const pending = s.kind === 'pending';
+                // Pending = the numbers WILL still change: zero-cost items mean COGS/profit are
+                // incomplete; unpaid invoices will be carried out of this day at 8pm.
+                const reason = pending
+                  ? [s.zc > 0 ? `${s.zc} item${s.zc === 1 ? '' : 's'} no cost` : '', s.up > 0 ? `${s.up} unpaid` : ''].filter(Boolean).join(' · ')
+                  : '';
+                const dim = pending ? 'text-gray-400' : 'text-gray-900';
                 return (
-                  <tr key={r.day}>
+                  <tr key={r.day} className={pending ? 'bg-amber-50/40' : ''}>
                     <td className="px-3 py-2 text-gray-900">{fmtDay(r.day)}</td>
-                    <td className="px-3 py-2 text-right text-gray-900">{r.invoices ?? 0}</td>
-                    <td className="px-3 py-2 text-right text-gray-900">{rm(sales)}</td>
-                    <td className="px-3 py-2 text-right text-gray-900">{rm(cogs)}</td>
-                    <td className={`px-3 py-2 text-right font-medium ${profit < 0 ? 'text-rose-600' : 'text-gray-900'}`}>
+                    <td className="px-3 py-2">
+                      {s.kind === 'final' && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">✓ final</span>}
+                      {s.kind === 'pending' && (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700" title="These numbers will still change — the clerk hasn't finished entering costs and/or unpaid invoices will be carried forward at 8pm.">
+                          ⏳ {reason}
+                        </span>
+                      )}
+                      {s.kind === 'unknown' && <span className="text-xs text-gray-300" title="Will be checked on the next sync.">—</span>}
+                    </td>
+                    <td className={`px-3 py-2 text-right ${dim}`}>{r.invoices ?? 0}</td>
+                    <td className={`px-3 py-2 text-right ${dim}`}>{rm(sales)}</td>
+                    <td className={`px-3 py-2 text-right ${dim}`}>{rm(cogs)}</td>
+                    <td className={`px-3 py-2 text-right font-medium ${profit < 0 ? 'text-rose-600' : dim}`}>
                       {rm(profit)}
                     </td>
                     <td className="px-3 py-2 text-right text-gray-500">{pctTxt(sales, profit)}</td>
