@@ -1,0 +1,133 @@
+// src/app/intake/page.tsx — customer check-in.
+// The supervisor opens this on his phone and hands it to the customer. The customer types
+// their car + phone, taps save, and the NAS creates the sale invoice in Niagawan within
+// ~30 seconds. Supervisors/admins only (the page runs under the supervisor's login).
+'use client';
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { supabase } from '@/lib/supabaseClient';
+
+type Phase = 'form' | 'saving' | 'done' | 'error';
+
+export default function IntakePage() {
+  const [allowed, setAllowed] = useState<boolean | null>(null);
+  const [plate, setPlate] = useState('');
+  const [model, setModel] = useState('');
+  const [phone, setPhone] = useState('');
+  const [name, setName] = useState('');
+  const [phase, setPhase] = useState<Phase>('form');
+  const [invNo, setInvNo] = useState<string | null>(null);
+  const [errMsg, setErrMsg] = useState<string | null>(null);
+  const [history, setHistory] = useState<{ last_day: string; customer: string } | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!data.session) { setAllowed(false); return; }
+      const { data: w } = await supabase.rpc('is_board_writer');
+      setAllowed(w === true);
+    })();
+  }, []);
+
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+
+  // Returning car? Greet them and warn the supervisor about a possible comeback.
+  const checkPlate = useCallback(async (p: string) => {
+    setHistory(null);
+    if (p.replace(/\s/g, '').length < 4) return;
+    const { data } = await supabase.rpc('intake_plate_lookup', { p });
+    const row = Array.isArray(data) && data.length ? data[0] : null;
+    if (row) setHistory(row as { last_day: string; customer: string });
+  }, []);
+
+  const save = useCallback(async () => {
+    if (!plate.trim()) { setErrMsg('Sila isi nombor plat / Please enter the plate number.'); return; }
+    setErrMsg(null);
+    setPhase('saving');
+    const { data: id, error } = await supabase.rpc('queue_intake', {
+      p_plate: plate, p_model: model, p_phone: phone, p_name: name,
+    });
+    if (error || !id) { setPhase('error'); setErrMsg(error?.message ?? 'failed'); return; }
+    const startedAt = Date.now();
+    pollRef.current = setInterval(async () => {
+      const { data: row } = await supabase.from('intake_requests').select('status,inv_no,note').eq('id', id).single();
+      if (row?.status === 'done') {
+        if (pollRef.current) clearInterval(pollRef.current);
+        setInvNo(row.inv_no ?? null);
+        setPhase('done');
+      } else if (row?.status === 'error') {
+        if (pollRef.current) clearInterval(pollRef.current);
+        setErrMsg(row.note ?? 'Niagawan error');
+        setPhase('error');
+      } else if (Date.now() - startedAt > 90000) {
+        if (pollRef.current) clearInterval(pollRef.current);
+        setErrMsg('Taking long — the invoice may still appear in Niagawan shortly.');
+        setPhase('error');
+      }
+    }, 3000);
+  }, [plate, model, phone, name]);
+
+  const reset = () => { setPlate(''); setModel(''); setPhone(''); setName(''); setInvNo(null); setErrMsg(null); setHistory(null); setPhase('form'); };
+
+  if (allowed === null) return <div className="p-6 text-sm text-gray-500">Checking…</div>;
+  if (!allowed) return <div className="p-6 text-sm text-gray-600">This page is for supervisors — please sign in with a supervisor account.</div>;
+
+  if (phase === 'done') {
+    return (
+      <div className="mx-auto flex min-h-[70vh] max-w-md flex-col items-center justify-center px-6 text-center">
+        <div className="text-6xl">✅</div>
+        <h1 className="mt-4 text-2xl font-bold text-gray-900">Terima kasih!</h1>
+        <p className="mt-2 text-gray-600">Kereta anda telah didaftarkan.<br />Your car has been registered.</p>
+        {invNo && <div className="mt-4 rounded-lg bg-gray-100 px-4 py-2 font-mono text-lg font-semibold text-gray-800">{invNo}</div>}
+        <button onClick={reset} className="mt-8 w-full rounded-xl bg-blue-600 px-6 py-4 text-lg font-semibold text-white hover:bg-blue-700">
+          Pelanggan seterusnya / Next customer
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-md px-5 py-6">
+      <h1 className="text-2xl font-bold text-gray-900">Daftar Kereta</h1>
+      <p className="mt-1 text-sm text-gray-500">Sila isi maklumat kereta anda / Please fill in your car details</p>
+
+      <div className="mt-5 space-y-4">
+        <label className="block">
+          <span className="text-sm font-medium text-gray-700">No. Plat *</span>
+          <input value={plate} onChange={(e) => setPlate(e.target.value.toUpperCase())} onBlur={(e) => checkPlate(e.target.value)}
+            placeholder="VBN 1234" autoCapitalize="characters" autoComplete="off"
+            className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3.5 font-mono text-xl uppercase tracking-wide" />
+        </label>
+        {history && (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+            👋 Selamat kembali! Last visit: {new Date(history.last_day).toLocaleDateString('en-MY')} ({history.customer})
+          </div>
+        )}
+        <label className="block">
+          <span className="text-sm font-medium text-gray-700">Model Kereta</span>
+          <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="cth: Myvi, Saga, Civic" autoComplete="off"
+            className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3.5 text-lg" />
+        </label>
+        <label className="block">
+          <span className="text-sm font-medium text-gray-700">No. Telefon</span>
+          <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="012-3456789" inputMode="tel" autoComplete="off"
+            className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3.5 text-lg" />
+        </label>
+        <label className="block">
+          <span className="text-sm font-medium text-gray-700">Nama (pilihan / optional)</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="" autoComplete="off"
+            className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3.5 text-lg" />
+        </label>
+
+        {errMsg && <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{errMsg}</div>}
+
+        <button onClick={save} disabled={phase === 'saving'}
+          className="w-full rounded-xl bg-blue-600 px-6 py-4 text-xl font-bold text-white hover:bg-blue-700 disabled:opacity-60">
+          {phase === 'saving' ? 'Mendaftar… / Registering…' : 'SIMPAN / SAVE'}
+        </button>
+        {phase === 'saving' && <p className="text-center text-sm text-gray-400">Creating the invoice in Niagawan (~30s)…</p>}
+      </div>
+    </div>
+  );
+}
