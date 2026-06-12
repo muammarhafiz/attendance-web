@@ -75,10 +75,8 @@ export default function NavBar() {
     { href: '/attendance/checkin', match: '/attendance', label: 'Attendance', badge: counts.mc + counts.offday },
     { href: '/niagawan/sales', match: '/niagawan', label: 'Niagawan', badge: counts.po },
     { href: '/employees', label: 'Employees' },
-  ];
-  const payrollLinks: NavItem[] = [
-    { href: '/payroll/v3', label: 'Payroll' },
-    { href: '/payroll/records', label: 'Payroll Records' },
+    // Records is a sub-tab inside the Payroll page now (PayrollTabs), not a navbar item.
+    { href: '/payroll/v3', match: '/payroll', label: 'Payroll' },
   ];
 
   const Badge = ({ n }: { n?: number }) =>
@@ -98,7 +96,7 @@ export default function NavBar() {
       isActive(item) ? 'bg-brand-700 text-white' : 'text-slate-700 hover:bg-slate-100 active:bg-slate-100'
     }`;
 
-  const allAdmin = isAdmin ? [...adminLinks, ...payrollLinks] : [];
+  const allAdmin = isAdmin ? adminLinks : [];
 
   return (
     <nav className="no-print sticky top-0 z-40 w-full border-b border-slate-200 bg-white/90 backdrop-blur">
@@ -164,12 +162,6 @@ export default function NavBar() {
                 <div className="px-4 pb-1 pt-4 text-xs font-semibold uppercase tracking-wide text-slate-400">Admin</div>
                 <div className="space-y-1">
                   {adminLinks.map((l) => (
-                    <Link key={l.href} href={l.href} prefetch={false} className={mobClass(l)}>{l.label}<Badge n={l.badge} /></Link>
-                  ))}
-                </div>
-                <div className="px-4 pb-1 pt-4 text-xs font-semibold uppercase tracking-wide text-slate-400">Payroll</div>
-                <div className="space-y-1">
-                  {payrollLinks.map((l) => (
                     <Link key={l.href} href={l.href} prefetch={false} className={mobClass(l)}>{l.label}<Badge n={l.badge} /></Link>
                   ))}
                 </div>
