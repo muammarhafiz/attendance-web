@@ -152,9 +152,12 @@ export default function WorkshopBoardPage() {
         <h1 className="text-2xl font-semibold text-gray-900">Workshop</h1>
         <span className="text-sm text-gray-400">{cards.filter((c) => c.status !== 'done').length} car(s) in the shop</span>
         {canWrite && (
-          <button onClick={() => setShowForm((v) => !v)} className="ml-auto rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700">
-            {showForm ? 'Close' : '+ New job card'}
-          </button>
+          <span className="ml-auto flex gap-2">
+            <a href="/intake" className="rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-100">📝 Customer check-in</a>
+            <button onClick={() => setShowForm((v) => !v)} className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700">
+              {showForm ? 'Close' : '+ New job card'}
+            </button>
+          </span>
         )}
       </div>
 
