@@ -70,6 +70,8 @@ export default function NavBar() {
 
   const mainLinks: NavItem[] = [
     { href: '/', label: 'Check-in' },
+    // The job board — visible to every signed-in staff PC, not just admins.
+    { href: '/workshop', label: 'Workshop' },
   ];
   const adminLinks: NavItem[] = [
     { href: '/attendance/checkin', match: '/attendance', label: 'Attendance', badge: counts.mc + counts.offday },
