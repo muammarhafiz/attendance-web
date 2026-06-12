@@ -111,7 +111,8 @@ export default function AddPartPage() {
 
   return (
     <div className="mx-auto max-w-md px-5 py-6">
-      <h1 className="text-2xl font-bold text-gray-900">🔩 Part Arrived</h1>
+      <a href="/workshop" className="text-sm text-gray-400 hover:text-gray-600">← Back</a>
+      <h1 className="mt-2 text-2xl font-bold text-gray-900">🔩 Part Arrived</h1>
 
       {/* 1) vehicle */}
       <div className="mt-4">
