@@ -151,14 +151,17 @@ export default function WorkshopBoardPage() {
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold text-gray-900">Workshop</h1>
         <span className="text-sm text-gray-400">{cards.filter((c) => c.status !== 'done').length} car(s) in the shop</span>
-        {canWrite && (
-          <span className="ml-auto flex gap-2">
-            <a href="/intake" className="rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-100">📝 Customer check-in</a>
-            <button onClick={() => setShowForm((v) => !v)} className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700">
-              {showForm ? 'Close' : '+ New job card'}
-            </button>
-          </span>
-        )}
+        <span className="ml-auto flex gap-2">
+          <a href="/add-part" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-700 hover:bg-amber-100">🔩 Part sampai</a>
+          {canWrite && (
+            <>
+              <a href="/intake" className="rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-100">📝 Customer check-in</a>
+              <button onClick={() => setShowForm((v) => !v)} className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700">
+                {showForm ? 'Close' : '+ New job card'}
+              </button>
+            </>
+          )}
+        </span>
       </div>
 
       {/* Memos */}
