@@ -152,7 +152,7 @@ export default function WorkshopBoardPage() {
         <h1 className="text-2xl font-semibold text-gray-900">Workshop</h1>
         <span className="text-sm text-gray-400">{cards.filter((c) => c.status !== 'done').length} car(s) in the shop</span>
         <span className="ml-auto flex gap-2">
-          <a href="/add-part" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-700 hover:bg-amber-100">🔩 Part sampai</a>
+          <a href="/add-part" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-700 hover:bg-amber-100">🔩 Part arrived</a>
           {canWrite && (
             <>
               <a href="/intake" className="rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-100">📝 Customer check-in</a>
