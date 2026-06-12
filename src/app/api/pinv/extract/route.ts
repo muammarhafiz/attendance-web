@@ -241,6 +241,11 @@ export async function POST(req: Request) {
         // Normalise the codes list (fallback to a single item_code if the model returned that).
         let codes = Array.isArray(it.codes) ? it.codes.map((c) => String(c ?? '').trim()).filter(Boolean) : [];
         if (codes.length === 0 && it.item_code) { const c = String(it.item_code).trim(); if (c) codes = [c]; }
+        // Workshop convention: when a line carries both a distributor shorthand (e.g. WHH's
+        // "EXB-BK") and a genuine Proton part number (PWxxxxxx), the PW number is the canonical
+        // item code in Niagawan — put it first so it becomes the primary code.
+        const pw = codes.find((c) => /^PW\d{5,}$/i.test(c));
+        if (pw && codes[0] !== pw) codes = [pw, ...codes.filter((c) => c !== pw)];
         // Verify every code actually appears in the invoice's own text layer. If a code is NOT
         // found, the AI likely misread it — flag it so the Review screen can highlight it red.
         const code_verified = codes.length > 0 && codes.every((c) => textNorm.includes(normForMatch(c)));
