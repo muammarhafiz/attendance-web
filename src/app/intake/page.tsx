@@ -97,7 +97,7 @@ export default function IntakePage() {
         <label className="block">
           <span className="text-sm font-medium text-gray-700">Plate Number *</span>
           <input value={plate} onChange={(e) => setPlate(e.target.value.toUpperCase())} onBlur={(e) => checkPlate(e.target.value)}
-            placeholder="VBN 1234" autoCapitalize="characters" autoComplete="off"
+            placeholder="WWW1234" autoCapitalize="characters" autoComplete="off"
             className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3.5 font-mono text-xl uppercase tracking-wide" />
         </label>
         {history && (
@@ -112,7 +112,7 @@ export default function IntakePage() {
         </label>
         <label className="block">
           <span className="text-sm font-medium text-gray-700">Phone Number</span>
-          <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="012-3456789" inputMode="tel" autoComplete="off"
+          <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="0123456789" inputMode="tel" autoComplete="off"
             className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3.5 text-lg" />
         </label>
 
