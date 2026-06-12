@@ -241,6 +241,12 @@ export async function POST(req: Request) {
         // Normalise the codes list (fallback to a single item_code if the model returned that).
         let codes = Array.isArray(it.codes) ? it.codes.map((c) => String(c ?? '').trim()).filter(Boolean) : [];
         if (codes.length === 0 && it.item_code) { const c = String(it.item_code).trim(); if (c) codes = [c]; }
+        // Narrow Item Code columns wrap long codes onto a second line (e.g. Grand prints
+        // "AU1006-" / "9LX2L/L588"); the AI then sees two codes. A code ending in "-" is
+        // really the first half of ONE wrapped code — join it with the next piece.
+        while (codes.length >= 2 && /-$/.test(codes[0])) {
+          codes = [codes[0] + codes[1], ...codes.slice(2)];
+        }
         // Workshop convention: when a line carries both a distributor shorthand (e.g. WHH's
         // "EXB-BK") and a genuine Proton part number (PWxxxxxx), the PW number is the canonical
         // item code in Niagawan — put it first so it becomes the primary code.
