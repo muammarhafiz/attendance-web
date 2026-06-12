@@ -35,7 +35,7 @@ A cloud/web Claude session **can** edit this repo and open PRs. It **cannot** re
 
 ## Niagawan gotchas (learned the hard way)
 
-- `updateSale` with a **future** sale date silently fails AND reverts the invoice to its original date — the KIV carry-forward must only move *backward-dated* invoices to **today** (it runs mornings: yesterday → today; Monday picks up Sat+Sun). Target date may never exceed today.
+- `updateSale` DOES accept a future sale date (proven 2026-06-12 on a dummy invoice — an earlier belief that future dates corrupt invoices was a misdiagnosis of manual re-dating). The KIV carry-forward runs **evenings at 20:00**: today's unpaid → next working day (Saturday's → Monday), then re-syncs the affected days. A 7-days-ahead cap guards against typos on manual runs.
 - `deliverDO` with an empty ship date sets it to **today**.
 - The KIV "delivered" date = the date the workshop received the car, not the invoice date.
 - Only **unpaid** invoices are carried forward (partials are tracked separately on the KIV page, scanned nightly per year).
