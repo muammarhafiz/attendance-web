@@ -14,7 +14,6 @@ export default function IntakePage() {
   const [plate, setPlate] = useState('');
   const [model, setModel] = useState('');
   const [phone, setPhone] = useState('');
-  const [name, setName] = useState('');
   const [phase, setPhase] = useState<Phase>('form');
   const [invNo, setInvNo] = useState<string | null>(null);
   const [errMsg, setErrMsg] = useState<string | null>(null);
@@ -42,11 +41,11 @@ export default function IntakePage() {
   }, []);
 
   const save = useCallback(async () => {
-    if (!plate.trim()) { setErrMsg('Sila isi nombor plat / Please enter the plate number.'); return; }
+    if (!plate.trim()) { setErrMsg('Please enter the plate number.'); return; }
     setErrMsg(null);
     setPhase('saving');
     const { data: id, error } = await supabase.rpc('queue_intake', {
-      p_plate: plate, p_model: model, p_phone: phone, p_name: name,
+      p_plate: plate, p_model: model, p_phone: phone, p_name: '',
     });
     if (error || !id) { setPhase('error'); setErrMsg(error?.message ?? 'failed'); return; }
     const startedAt = Date.now();
@@ -66,9 +65,9 @@ export default function IntakePage() {
         setPhase('error');
       }
     }, 3000);
-  }, [plate, model, phone, name]);
+  }, [plate, model, phone]);
 
-  const reset = () => { setPlate(''); setModel(''); setPhone(''); setName(''); setInvNo(null); setErrMsg(null); setHistory(null); setPhase('form'); };
+  const reset = () => { setPlate(''); setModel(''); setPhone(''); setInvNo(null); setErrMsg(null); setHistory(null); setPhase('form'); };
 
   if (allowed === null) return <div className="p-6 text-sm text-gray-500">Checking…</div>;
   if (!allowed) return <div className="p-6 text-sm text-gray-600">This page is for supervisors — please sign in with a supervisor account.</div>;
@@ -77,46 +76,43 @@ export default function IntakePage() {
     return (
       <div className="mx-auto flex min-h-[70vh] max-w-md flex-col items-center justify-center px-6 text-center">
         <div className="text-6xl">✅</div>
-        <h1 className="mt-4 text-2xl font-bold text-gray-900">Terima kasih!</h1>
-        <p className="mt-2 text-gray-600">Kereta anda telah didaftarkan.<br />Your car has been registered.</p>
+        <h1 className="mt-4 text-2xl font-bold text-gray-900">Thank you!</h1>
+        <p className="mt-2 text-gray-600">Your car has been registered.</p>
         {invNo && <div className="mt-4 rounded-lg bg-gray-100 px-4 py-2 font-mono text-lg font-semibold text-gray-800">{invNo}</div>}
         <button onClick={reset} className="mt-8 w-full rounded-xl bg-blue-600 px-6 py-4 text-lg font-semibold text-white hover:bg-blue-700">
-          Pelanggan seterusnya / Next customer
+          Next customer
         </button>
+        <a href="/workshop" className="mt-3 text-sm text-gray-400 underline">← Back to workshop</a>
       </div>
     );
   }
 
   return (
     <div className="mx-auto max-w-md px-5 py-6">
-      <h1 className="text-2xl font-bold text-gray-900">Daftar Kereta</h1>
-      <p className="mt-1 text-sm text-gray-500">Sila isi maklumat kereta anda / Please fill in your car details</p>
+      <a href="/workshop" className="text-sm text-gray-400 hover:text-gray-600">← Back</a>
+      <h1 className="mt-2 text-2xl font-bold text-gray-900">Car Check-in</h1>
+      <p className="mt-1 text-sm text-gray-500">Please fill in your car details</p>
 
       <div className="mt-5 space-y-4">
         <label className="block">
-          <span className="text-sm font-medium text-gray-700">No. Plat *</span>
+          <span className="text-sm font-medium text-gray-700">Plate Number *</span>
           <input value={plate} onChange={(e) => setPlate(e.target.value.toUpperCase())} onBlur={(e) => checkPlate(e.target.value)}
             placeholder="VBN 1234" autoCapitalize="characters" autoComplete="off"
             className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3.5 font-mono text-xl uppercase tracking-wide" />
         </label>
         {history && (
           <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
-            👋 Selamat kembali! Last visit: {new Date(history.last_day).toLocaleDateString('en-MY')} ({history.customer})
+            👋 Welcome back! Last visit: {new Date(history.last_day).toLocaleDateString('en-MY')} ({history.customer})
           </div>
         )}
         <label className="block">
-          <span className="text-sm font-medium text-gray-700">Model Kereta</span>
-          <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="cth: Myvi, Saga, Civic" autoComplete="off"
+          <span className="text-sm font-medium text-gray-700">Car Model</span>
+          <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="e.g. Myvi, Saga, Civic" autoComplete="off"
             className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3.5 text-lg" />
         </label>
         <label className="block">
-          <span className="text-sm font-medium text-gray-700">No. Telefon</span>
+          <span className="text-sm font-medium text-gray-700">Phone Number</span>
           <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="012-3456789" inputMode="tel" autoComplete="off"
-            className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3.5 text-lg" />
-        </label>
-        <label className="block">
-          <span className="text-sm font-medium text-gray-700">Nama (pilihan / optional)</span>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="" autoComplete="off"
             className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3.5 text-lg" />
         </label>
 
@@ -124,7 +120,7 @@ export default function IntakePage() {
 
         <button onClick={save} disabled={phase === 'saving'}
           className="w-full rounded-xl bg-blue-600 px-6 py-4 text-xl font-bold text-white hover:bg-blue-700 disabled:opacity-60">
-          {phase === 'saving' ? 'Mendaftar… / Registering…' : 'SIMPAN / SAVE'}
+          {phase === 'saving' ? 'Registering…' : 'SAVE'}
         </button>
         {phase === 'saving' && <p className="text-center text-sm text-gray-400">Creating the invoice in Niagawan (~30s)…</p>}
       </div>
