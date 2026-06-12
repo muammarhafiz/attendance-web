@@ -46,3 +46,8 @@ A cloud/web Claude session **can** edit this repo and open PRs. It **cannot** re
 - User-facing copy: short, plain English, no developer jargon (the owner reads it).
 - Status pills use the `STATUS_STYLE` maps; add new statuses there AND to the `pinv_status_check` DB constraint (via migration).
 - Commits/PRs: descriptive title, body explains the *why*; merging = deploying, so verify type-check before merge.
+
+## Backlog (owner-KIV'd — do not build until the owner asks)
+
+- **Customer source tracking** (KIV 2026-06-12): record how each customer found the workshop (referral / Facebook / passing by). Needs a front-desk habit + a small field somewhere (maybe on the sale invoice remark or a tiny website form). Goal: know which marketing works.
+- **Customer satisfaction follow-up** (KIV 2026-06-12): systematic after-job follow-up (likely WhatsApp message → rating). Goal: catch unhappy customers + collect Google reviews.
