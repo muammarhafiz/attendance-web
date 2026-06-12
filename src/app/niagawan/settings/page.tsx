@@ -4,12 +4,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-type Schedule = { period?: 'daily' | 'weekly'; day?: string; time?: string; window_days?: number };
+type Schedule = { period?: 'daily' | 'weekly'; day?: string; time?: string; window_days?: number; start?: string; end?: string };
 type Task = { key: string; label: string; enabled: boolean; schedule: Schedule };
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
-const META: Record<string, { title: string; desc: string; fields: Array<'period' | 'day' | 'time' | 'window'> }> = {
+const META: Record<string, { title: string; desc: string; fields: Array<'period' | 'day' | 'time' | 'window' | 'range'> }> = {
+  hourly_sync: {
+    title: 'Hourly payment sync (working hours)',
+    desc: 'During working hours (Mon–Sat), refreshes today’s sales and payment statuses from Niagawan every hour — so when a customer pays at the counter, the workshop job board moves that car to Done by itself even if nobody updates the card.',
+    fields: ['range'],
+  },
   nightly_sync: {
     title: 'Nightly data sync',
     desc: "Pulls sales, COGS and stock from Niagawan into the dashboard every night. The re-sync window also refreshes recent past days, so invoices that get carried forward (job delayed, no parts) stay accurate without manual fixing.",
@@ -35,6 +40,7 @@ const META: Record<string, { title: string; desc: string; fields: Array<'period'
 function summarise(t: Task): string {
   const s = t.schedule || {};
   const time = s.time || '—';
+  if (t.key === 'hourly_sync') return `Runs hourly ${s.start || '09:30'}–${s.end || '19:00'} (Mon–Sat)`;
   if (t.key === 'nightly_sync') {
     const w = Number(s.window_days) || 0;
     const win = w >= 1 ? ` · re-syncs last ${w === 30 ? '1 month' : w + ' days'}` : ' · yesterday only';
@@ -90,7 +96,7 @@ export default function NiagawanSettingsPage() {
   }, [tasks, persist]);
 
   const ordered = useMemo(() => {
-    const order = ['nightly_sync', 'auto_po', 'kiv_move', 'kiv_partial'];
+    const order = ['nightly_sync', 'hourly_sync', 'auto_po', 'kiv_move', 'kiv_partial'];
     return [...tasks].sort((a, b) => (order.indexOf(a.key) + 100) - (order.indexOf(b.key) + 100) || a.key.localeCompare(b.key));
   }, [tasks]);
 
@@ -173,6 +179,28 @@ export default function NiagawanSettingsPage() {
                           className="mt-1 block rounded-md border border-gray-300 px-2 py-1 text-sm"
                         />
                       </label>
+                    )}
+                    {meta.fields.includes('range') && (
+                      <>
+                        <label className="text-xs text-gray-600">
+                          From
+                          <input
+                            type="time"
+                            value={t.schedule?.start || '09:30'}
+                            onChange={(e) => setSchedule(t.key, { start: e.target.value })}
+                            className="mt-1 block rounded-md border border-gray-300 px-2 py-1 text-sm"
+                          />
+                        </label>
+                        <label className="text-xs text-gray-600">
+                          Until
+                          <input
+                            type="time"
+                            value={t.schedule?.end || '19:00'}
+                            onChange={(e) => setSchedule(t.key, { end: e.target.value })}
+                            className="mt-1 block rounded-md border border-gray-300 px-2 py-1 text-sm"
+                          />
+                        </label>
+                      </>
                     )}
                     {meta.fields.includes('window') && (
                       <label className="text-xs text-gray-600">
