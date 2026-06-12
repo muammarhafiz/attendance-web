@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import PayrollTabs from '@/components/PayrollTabs';
 
 /* -------------------------------- Types -------------------------------- */
 type Row = {
@@ -273,6 +274,7 @@ export default function PayrollRecordsPage() {
 
   return (
     <main className="mx-auto max-w-6xl p-6">
+      <PayrollTabs />
       {/* Header */}
       <header className="mb-6 flex flex-wrap items-end gap-4">
         <div>

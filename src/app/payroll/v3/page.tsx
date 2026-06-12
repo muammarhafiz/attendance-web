@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import PayrollTabs from '@/components/PayrollTabs';
 
 /* ---------- types ---------- */
 type Period = { id: string; year: number; month: number; status: 'OPEN' | 'LOCKED' | 'FINALIZED' | string };
@@ -213,6 +214,7 @@ export default function PayrollV3Page() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
+      <PayrollTabs />
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold">Payroll</h1>
         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusCls}`}>{status ?? 'Not generated'}</span>
