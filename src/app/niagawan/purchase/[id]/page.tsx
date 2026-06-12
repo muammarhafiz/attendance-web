@@ -21,6 +21,8 @@ type Pinv = {
   dup_pi_no: string | null;
 };
 
+type NiagawanMatch = { sku: string; code: string; descp: string; price: string; bal: string };
+
 type Item = {
   line_no: number;
   item_code: string;
@@ -36,8 +38,13 @@ type Item = {
   sold_on: string | null;
   in_niagawan: boolean | null;
   niagawan_category: string | null;
+  niagawan_matches: NiagawanMatch[] | null;
   code_verified: boolean | null;
 };
+
+// Same code normalisation the NAS uses — to tell whether the line's code already points at
+// exactly ONE of the matched Niagawan products.
+const normCode = (s: string) => String(s ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 const rm = (n: number) => `RM ${Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
@@ -91,6 +98,7 @@ export default function ReviewInvoicePage() {
         sold_on: (r.sold_on as string) ?? null,
         in_niagawan: (r.in_niagawan as boolean | null) ?? null,
         niagawan_category: (r.niagawan_category as string) ?? null,
+        niagawan_matches: Array.isArray(r.niagawan_matches) ? (r.niagawan_matches as NiagawanMatch[]) : null,
         code_verified: (r.code_verified as boolean | null) ?? null,
       }))
     );
@@ -105,7 +113,7 @@ export default function ReviewInvoicePage() {
   const setItem = (idx: number, patch: Partial<Item>) => {
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   };
-  const addRow = () => setItems((prev) => [...prev, { line_no: prev.length + 1, item_code: '', codes: [], description: '', qty: 1, unit_price: 0, discount: 0, amount: 0, category: 'SPARE PARTS ITEM', will_create: true, sold_status: null, sold_on: null, in_niagawan: null, niagawan_category: null, code_verified: null }]);
+  const addRow = () => setItems((prev) => [...prev, { line_no: prev.length + 1, item_code: '', codes: [], description: '', qty: 1, unit_price: 0, discount: 0, amount: 0, category: 'SPARE PARTS ITEM', will_create: true, sold_status: null, sold_on: null, in_niagawan: null, niagawan_category: null, niagawan_matches: null, code_verified: null }]);
   const removeRow = (idx: number) => setItems((prev) => prev.filter((_, i) => i !== idx).map((it, i) => ({ ...it, line_no: i + 1 })));
 
   const save = useCallback(async (approve: boolean) => {
@@ -269,6 +277,18 @@ export default function ReviewInvoicePage() {
           : <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">⚠️ Read by <b>backup AI</b> (<span className="font-mono">{head.read_model}</span>) because the primary was overloaded. Please <b>double-check the part codes</b> against the PDF before approving.</div>
       )}
 
+      {/* Ambiguous-product summary: lines whose code matches MORE THAN ONE Niagawan product */}
+      {(() => {
+        const amb = items.filter((it) => it.in_niagawan === true && (it.niagawan_matches?.length ?? 0) > 1
+          && !(it.niagawan_matches ?? []).some((m) => normCode(m.code) === normCode(it.item_code)));
+        if (amb.length === 0) return null;
+        return (
+          <div className="mb-3 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+            ⚠ <b>{amb.length} line{amb.length === 1 ? '' : 's'} match more than one Niagawan product</b> (lines {amb.map((b) => b.line_no).join(', ')}) — your stock is keyed in per-supplier variants. Pick the right product in the <b>Category</b> column below, then Save/Approve.
+          </div>
+        );
+      })()}
+
       {/* Code-verification summary: codes that weren't found verbatim in the PDF's own text */}
       {(() => {
         const bad = items.filter((it) => it.code_verified === false);
@@ -398,10 +418,36 @@ export default function ReviewInvoicePage() {
                     {resolving
                       ? <span className="text-xs text-gray-400">looking up…</span>
                       : it.in_niagawan === true
-                        ? <span className="inline-flex items-center gap-1.5" title="Already in Niagawan — its category is not changed">
-                            <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">{it.niagawan_category || '—'}</span>
-                            <span className="text-[10px] uppercase tracking-wide text-gray-400">in Niagawan</span>
-                          </span>
+                        ? (() => {
+                            const matches = it.niagawan_matches ?? [];
+                            const chosen = matches.find((m) => normCode(m.code) === normCode(it.item_code));
+                            // Several Niagawan products match this code (per-supplier variants like
+                            // PW990860-GRAND vs PW990860-ZP) — the owner must pick which one the
+                            // stock goes to. Picking sets the line's code to that exact product.
+                            if (matches.length > 1 && !chosen) {
+                              return (
+                                <select disabled={locked} value="" onChange={(e) => {
+                                    const m = matches.find((x) => x.sku === e.target.value);
+                                    if (m) setItem(idx, { item_code: m.code, codes: [m.code, ...it.codes.filter((c) => normCode(c) !== normCode(m.code))], code_verified: null });
+                                  }}
+                                  className="w-56 rounded border border-rose-400 bg-rose-50 px-1.5 py-1 text-xs font-medium disabled:bg-transparent"
+                                  title="More than one Niagawan product matches this code — choose which product this stock belongs to">
+                                  <option value="">⚠ {matches.length} products match — choose…</option>
+                                  {matches.map((m) => <option key={m.sku} value={m.sku}>{m.code} — {m.descp} (RM{m.price}, bal {m.bal})</option>)}
+                                </select>
+                              );
+                            }
+                            return (
+                              <span className="inline-flex items-center gap-1.5" title="Already in Niagawan — its category is not changed">
+                                <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">{it.niagawan_category || '—'}</span>
+                                <span className="text-[10px] uppercase tracking-wide text-gray-400">in Niagawan</span>
+                                {matches.length > 1 && chosen && !locked && (
+                                  <button onClick={() => setItem(idx, { item_code: it.codes.find((c) => !matches.some((m) => normCode(m.code) === normCode(c))) || '', code_verified: null })}
+                                    className="text-[10px] text-blue-500 underline" title="Pick a different matching product">change</button>
+                                )}
+                              </span>
+                            );
+                          })()
                         : <select disabled={locked} value={cats.includes(it.category) ? it.category : ''} onChange={(e) => setItem(idx, { category: e.target.value })}
                             className="w-44 rounded border border-amber-300 bg-amber-50 px-1.5 py-1 text-xs disabled:bg-transparent disabled:border-transparent" title="New item — pick the category it will be created in">
                             {!cats.includes(it.category) && <option value="">{it.category || '—'}</option>}
