@@ -17,7 +17,9 @@ export default function IntakePage() {
   const [phase, setPhase] = useState<Phase>('form');
   const [invNo, setInvNo] = useState<string | null>(null);
   const [errMsg, setErrMsg] = useState<string | null>(null);
-  const [history, setHistory] = useState<{ last_day: string; customer: string } | null>(null);
+  const [history, setHistory] = useState<{ last_day: string | null; customer: string; cust_id: string | null; phone: string | null } | null>(null);
+  const onFile = !!history?.cust_id; // already a registered Niagawan customer
+  const [showDetails, setShowDetails] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -31,13 +33,17 @@ export default function IntakePage() {
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
-  // Returning car? Greet them and warn the supervisor about a possible comeback.
+  // Returning car? Recognise the plate and pre-fill what we already have on file.
   const checkPlate = useCallback(async (p: string) => {
     setHistory(null);
     if (p.replace(/\s/g, '').length < 4) return;
     const { data } = await supabase.rpc('intake_plate_lookup', { p });
     const row = Array.isArray(data) && data.length ? data[0] : null;
-    if (row) setHistory(row as { last_day: string; customer: string });
+    if (row) {
+      const h = row as { last_day: string | null; customer: string; cust_id: string | null; phone: string | null };
+      setHistory(h);
+      if (h.phone) setPhone((cur) => cur || h.phone || ''); // pre-fill phone if we know it
+    }
   }, []);
 
   const save = useCallback(async () => {
@@ -67,7 +73,7 @@ export default function IntakePage() {
     }, 3000);
   }, [plate, model, phone]);
 
-  const reset = () => { setPlate(''); setModel(''); setPhone(''); setInvNo(null); setErrMsg(null); setHistory(null); setPhase('form'); };
+  const reset = () => { setPlate(''); setModel(''); setPhone(''); setInvNo(null); setErrMsg(null); setHistory(null); setShowDetails(false); setPhase('form'); };
 
   if (allowed === null) return <div className="p-6 text-sm text-gray-500">Checking…</div>;
   if (!allowed) return <div className="p-6 text-sm text-gray-600">This page is for supervisors — please sign in with a supervisor account.</div>;
@@ -100,21 +106,27 @@ export default function IntakePage() {
             placeholder="WWW1234" autoCapitalize="characters" autoComplete="off"
             className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3.5 font-mono text-xl uppercase tracking-wide" />
         </label>
-        {history && (
-          <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
-            👋 Welcome back! Last visit: {new Date(history.last_day).toLocaleDateString('en-MY')} ({history.customer})
+        {onFile && (
+          <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800">
+            👋 Welcome back, <span className="font-semibold">{history?.customer}</span>.<br />
+            We already have your details — just tap <span className="font-semibold">SAVE</span>.
+            <button onClick={() => setShowDetails((v) => !v)} className="ml-1 underline">{showDetails ? 'hide' : 'update details'}</button>
           </div>
         )}
-        <label className="block">
-          <span className="text-sm font-medium text-gray-700">Car Model</span>
-          <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="e.g. Myvi, Saga, Civic" autoComplete="off"
-            className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3.5 text-lg" />
-        </label>
-        <label className="block">
-          <span className="text-sm font-medium text-gray-700">Phone Number</span>
-          <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="0123456789" inputMode="tel" autoComplete="off"
-            className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3.5 text-lg" />
-        </label>
+        {(!onFile || showDetails) && (
+          <>
+            <label className="block">
+              <span className="text-sm font-medium text-gray-700">Car Model</span>
+              <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="e.g. Myvi, Saga, Civic" autoComplete="off"
+                className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3.5 text-lg" />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-gray-700">Phone Number</span>
+              <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="0123456789" inputMode="tel" autoComplete="off"
+                className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3.5 text-lg" />
+            </label>
+          </>
+        )}
 
         {errMsg && <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{errMsg}</div>}
 
