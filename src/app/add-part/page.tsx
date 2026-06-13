@@ -21,6 +21,7 @@ const carLabel = (c: OpenInv) => {
 
 export default function AddPartPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
+  const [allowed, setAllowed] = useState<boolean | null>(null); // supervisors/admins only
   const [cars, setCars] = useState<OpenInv[]>([]);
   const [picked, setPicked] = useState<OpenInv | null>(null);
   const [filter, setFilter] = useState('');
@@ -36,6 +37,10 @@ export default function AddPartPage() {
     (async () => {
       const { data } = await supabase.auth.getSession();
       setAuthed(!!data.session);
+      if (data.session) {
+        const { data: bw } = await supabase.rpc('is_board_writer');
+        setAllowed(bw === true);
+      } else setAllowed(false);
     })();
   }, []);
 
@@ -45,11 +50,11 @@ export default function AddPartPage() {
   }, []);
 
   useEffect(() => {
-    if (!authed) return;
+    if (!authed || allowed !== true) return;
     loadCars();
     const t = setInterval(loadCars, 30000);
     return () => clearInterval(t);
-  }, [authed, loadCars]);
+  }, [authed, allowed, loadCars]);
 
   // Instant product search against the synced catalog (no Niagawan round-trip).
   const search = useCallback((text: string) => {
@@ -104,8 +109,9 @@ export default function AddPartPage() {
     setQ(''); setResults([]); setChosen(null); setQty(1);
   }, [picked, chosen, qty]);
 
-  if (authed === null) return <div className="p-6 text-sm text-gray-500">Checking…</div>;
+  if (authed === null || (authed && allowed === null)) return <div className="p-6 text-sm text-gray-500">Checking…</div>;
   if (!authed) return <div className="p-6 text-sm text-gray-600">Please sign in first.</div>;
+  if (!allowed) return <div className="p-6 text-sm text-gray-600">This page is for supervisors only.</div>;
 
   const shown = cars.filter((c) => !filter.trim() || carLabel(c).toUpperCase().includes(filter.trim().toUpperCase()));
 
