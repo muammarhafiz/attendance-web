@@ -14,6 +14,7 @@ export default function NavBar() {
   const pathname = usePathname();
   const [email, setEmail] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [canBoard, setCanBoard] = useState<boolean>(false); // supervisor or admin -> sees Workshop
   const [counts, setCounts] = useState<{ mc: number; offday: number; po: number }>({ mc: 0, offday: 0, po: 0 });
   const [open, setOpen] = useState(false);
 
@@ -26,14 +27,18 @@ export default function NavBar() {
       if (userEmail) {
         const { data, error } = await supabase.rpc('is_admin');
         setIsAdmin(Boolean(data) && !error);
-      } else setIsAdmin(false);
+        const { data: bw } = await supabase.rpc('is_board_writer');
+        setCanBoard(bw === true);
+      } else { setIsAdmin(false); setCanBoard(false); }
     };
     readAuthAndRole();
     const { data } = supabase.auth.onAuthStateChange((_e, session) => {
       const userEmail = session?.user?.email ?? null;
       setEmail(userEmail);
-      if (userEmail) supabase.rpc('is_admin').then(({ data, error }) => setIsAdmin(Boolean(data) && !error));
-      else setIsAdmin(false);
+      if (userEmail) {
+        supabase.rpc('is_admin').then(({ data, error }) => setIsAdmin(Boolean(data) && !error));
+        supabase.rpc('is_board_writer').then(({ data }) => setCanBoard(data === true));
+      } else { setIsAdmin(false); setCanBoard(false); }
     });
     unsub = data?.subscription ?? null;
     return () => unsub?.unsubscribe();
@@ -70,8 +75,8 @@ export default function NavBar() {
 
   const mainLinks: NavItem[] = [
     { href: '/', label: 'Check-in' },
-    // The job board — visible to every signed-in staff PC, not just admins.
-    { href: '/workshop', label: 'Workshop' },
+    // The job board — supervisors and admins only.
+    ...(canBoard ? [{ href: '/workshop', label: 'Workshop' } as NavItem] : []),
   ];
   const adminLinks: NavItem[] = [
     { href: '/attendance/checkin', match: '/attendance', label: 'Attendance', badge: counts.mc + counts.offday },

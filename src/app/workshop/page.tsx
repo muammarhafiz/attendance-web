@@ -43,7 +43,7 @@ function ago(iso: string | null) {
 
 export default function WorkshopBoardPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
-  const [canWrite, setCanWrite] = useState(false);
+  const [canWrite, setCanWrite] = useState<boolean | null>(null); // null = still checking; supervisors/admins only
   const [cards, setCards] = useState<Card[]>([]);
   const [memos, setMemos] = useState<Memo[]>([]);
   const [staffNames, setStaffNames] = useState<StaffName[]>([]);
@@ -67,9 +67,11 @@ export default function WorkshopBoardPage() {
       if (data.session) {
         const { data: w } = await supabase.rpc('is_board_writer');
         setCanWrite(w === true);
-        const { data: names } = await supabase.rpc('board_staff_names');
-        setStaffNames((names ?? []) as StaffName[]);
-      }
+        if (w === true) {
+          const { data: names } = await supabase.rpc('board_staff_names');
+          setStaffNames((names ?? []) as StaffName[]);
+        }
+      } else setCanWrite(false);
     })();
   }, []);
 
@@ -83,13 +85,13 @@ export default function WorkshopBoardPage() {
     setMemos((m ?? []) as Memo[]);
   }, []);
 
-  // Live board: refresh every 15s so every PC stays current without anyone pressing anything.
+  // Live board: refresh every 15s so every supervisor PC stays current.
   useEffect(() => {
-    if (!authed) return;
+    if (!authed || canWrite !== true) return;
     load();
     const t = setInterval(load, 15000);
     return () => clearInterval(t);
-  }, [authed, load]);
+  }, [authed, canWrite, load]);
 
   // One refresh for the whole workshop system: pull latest payment status from Niagawan
   // (so paid cars move to Done, new check-ins appear) AND reload the board now. The same
@@ -164,8 +166,9 @@ export default function WorkshopBoardPage() {
     return map;
   }, [cards]);
 
-  if (authed === null) return <div className="p-6 text-sm text-gray-500">Checking session…</div>;
+  if (authed === null || (authed && canWrite === null)) return <div className="p-6 text-sm text-gray-500">Checking session…</div>;
   if (!authed) return <div className="p-6 text-sm text-gray-600">Please sign in to see the workshop board.</div>;
+  if (!canWrite) return <div className="p-6 text-sm text-gray-600">The workshop board is for supervisors only.</div>;
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-5">
