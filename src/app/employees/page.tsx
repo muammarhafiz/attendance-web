@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import PositionAccessMatrix from '@/components/PositionAccessMatrix';
 
 /* ---------- Types ---------- */
 type StaffBrief = {
@@ -532,6 +533,8 @@ export default function EmployeesPage() {
       </header>
 
       {msg && <div className="mb-3 rounded border border-sky-200 bg-sky-50 p-2 text-sm text-sky-800">{msg}</div>}
+
+      <div className="mb-5"><PositionAccessMatrix /></div>
 
       <section className="overflow-x-auto">
         {loading ? (

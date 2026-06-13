@@ -27,7 +27,7 @@ export default function NavBar() {
       if (userEmail) {
         const { data, error } = await supabase.rpc('is_admin');
         setIsAdmin(Boolean(data) && !error);
-        const { data: bw } = await supabase.rpc('is_board_writer');
+        const { data: bw } = await supabase.rpc('can_access', { p_feature: 'workshop' });
         setCanBoard(bw === true);
       } else { setIsAdmin(false); setCanBoard(false); }
     };
@@ -37,7 +37,7 @@ export default function NavBar() {
       setEmail(userEmail);
       if (userEmail) {
         supabase.rpc('is_admin').then(({ data, error }) => setIsAdmin(Boolean(data) && !error));
-        supabase.rpc('is_board_writer').then(({ data }) => setCanBoard(data === true));
+        supabase.rpc('can_access', { p_feature: 'workshop' }).then(({ data }) => setCanBoard(data === true));
       } else { setIsAdmin(false); setCanBoard(false); }
     });
     unsub = data?.subscription ?? null;

@@ -38,7 +38,7 @@ export default function AddPartPage() {
       const { data } = await supabase.auth.getSession();
       setAuthed(!!data.session);
       if (data.session) {
-        const { data: bw } = await supabase.rpc('is_board_writer');
+        const { data: bw } = await supabase.rpc('can_access', { p_feature: 'add_part' });
         setAllowed(bw === true);
       } else setAllowed(false);
     })();

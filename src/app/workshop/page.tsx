@@ -65,7 +65,7 @@ export default function WorkshopBoardPage() {
       const { data } = await supabase.auth.getSession();
       setAuthed(!!data.session);
       if (data.session) {
-        const { data: w } = await supabase.rpc('is_board_writer');
+        const { data: w } = await supabase.rpc('can_access', { p_feature: 'workshop' });
         setCanWrite(w === true);
         if (w === true) {
           const { data: names } = await supabase.rpc('board_staff_names');

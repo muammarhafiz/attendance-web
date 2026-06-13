@@ -27,7 +27,7 @@ export default function IntakePage() {
     (async () => {
       const { data } = await supabase.auth.getSession();
       if (!data.session) { setAllowed(false); return; }
-      const { data: w } = await supabase.rpc('is_board_writer');
+      const { data: w } = await supabase.rpc('can_access', { p_feature: 'intake' });
       setAllowed(w === true);
     })();
   }, []);
