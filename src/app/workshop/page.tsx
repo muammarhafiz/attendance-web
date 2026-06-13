@@ -48,6 +48,7 @@ export default function WorkshopBoardPage() {
   const [memos, setMemos] = useState<Memo[]>([]);
   const [staffNames, setStaffNames] = useState<StaffName[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
   // new-card form
   const [showForm, setShowForm] = useState(false);
@@ -89,6 +90,18 @@ export default function WorkshopBoardPage() {
     const t = setInterval(load, 15000);
     return () => clearInterval(t);
   }, [authed, load]);
+
+  // One refresh for the whole workshop system: pull latest payment status from Niagawan
+  // (so paid cars move to Done, new check-ins appear) AND reload the board now. The same
+  // sync also refreshes the data the Part Arrived page reads.
+  const refreshAll = useCallback(async () => {
+    setSyncMsg('Refreshing…');
+    await supabase.rpc('request_workshop_sync'); // board-writers trigger a Niagawan sync; others just reload
+    await load();
+    setSyncMsg('Syncing with Niagawan… paid cars move to Done and new check-ins appear within a few seconds.');
+    setTimeout(() => { load(); }, 10000);
+    setTimeout(() => { load(); setSyncMsg(null); }, 25000);
+  }, [load]);
 
   const move = useCallback(async (card: Card, to: Card['status']) => {
     const patch: Record<string, unknown> = { status: to };
@@ -152,6 +165,7 @@ export default function WorkshopBoardPage() {
         <h1 className="text-2xl font-semibold text-gray-900">Workshop</h1>
         <span className="text-sm text-gray-400">{cards.filter((c) => c.status !== 'done').length} car(s) in the shop</span>
         <span className="ml-auto flex gap-2">
+          <button onClick={refreshAll} className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">🔄 Refresh</button>
           <a href="/add-part" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-700 hover:bg-amber-100">🔩 Part arrived</a>
           {canWrite && (
             <>
@@ -163,6 +177,10 @@ export default function WorkshopBoardPage() {
           )}
         </span>
       </div>
+
+      {syncMsg && (
+        <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{syncMsg}</div>
+      )}
 
       {/* Memos */}
       {(memos.length > 0 || canWrite) && (
