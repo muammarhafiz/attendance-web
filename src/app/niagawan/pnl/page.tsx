@@ -27,6 +27,7 @@ export default function PnlPage() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [pay, setPay] = useState<Pay[]>([]);
+  const [staffMeals, setStaffMeals] = useState(0); // GrabFood staff lunch (auto from email receipts)
   const [targetNet, setTargetNet] = useState(50000);
   const [ptjPct, setPtjPct] = useState(5);
   const [loading, setLoading] = useState(true);
@@ -45,13 +46,14 @@ export default function PnlPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [d, s, t, b, p, st] = await Promise.all([
+    const [d, s, t, b, p, st, g] = await Promise.all([
       supabase.from('niagawan_daily').select('day,invoices,sales,cogs,profit,unpaid_count').gte('day', firstDay).lte('day', lastDay).order('day'),
       supabase.from('niagawan_sale_inv').select('inv,day,customer,amount,status,staff').gte('day', firstDay).lte('day', lastDay),
       supabase.from('trade_customers').select('*').order('match'),
       supabase.from('opex_bills').select('*').eq('month', monthKey).order('id'),
       supabase.from('v_payslip_admin_summary_v2').select('staff_name,total_earn,epf_er,socso_er,eis_er').eq('year', year).eq('month', month),
       supabase.from('pnl_settings').select('*'),
+      supabase.rpc('grab_meals_month_total', { p_month: monthKey }),
     ]);
     if (d.error) setErr(d.error.message); else setErr(null);
     setDaily((d.data ?? []) as Daily[]);
@@ -59,6 +61,7 @@ export default function PnlPage() {
     setTrades((t.data ?? []) as Trade[]);
     setBills((b.data ?? []) as Bill[]);
     setPay((p.data ?? []) as Pay[]);
+    setStaffMeals(n(g.data) || 0);
     for (const row of (st.data ?? []) as Array<{ key: string; value: unknown }>) {
       if (row.key === 'target_net') setTargetNet(n(row.value) || 50000);
       if (row.key === 'putrajaya_pct') setPtjPct(n(row.value));
@@ -96,15 +99,15 @@ export default function PnlPage() {
     const payrollGross = pay.reduce((s, r) => s + n(r.total_earn), 0);
     const employer = pay.reduce((s, r) => s + n(r.epf_er) + n(r.socso_er) + n(r.eis_er), 0);
     const billsTotal = bills.reduce((s, r) => s + n(r.amount), 0);
-    const costs = payrollGross + employer + billsTotal;
+    const costs = payrollGross + employer + billsTotal + staffMeals;
     // pace: profit per day with sales, projected over 26 working days
     const daysWithSales = daily.filter((r) => n(r.sales) > 0).length;
     const projProfit = daysWithSales > 0 ? (totalProfit / daysWithSales) * 26 : 0;
     const netSoFar = totalProfit - costs;
     const netProjected = projProfit - costs;
     const pendingDays = daily.filter((r) => (r.unpaid_count ?? 0) > 0).length;
-    return { totalSales, totalCogs, totalProfit, tradeSales, tradeRows, repairSales, carCount, aro, margin, mechanics, payrollGross, employer, billsTotal, costs, netSoFar, netProjected, daysWithSales, pendingDays };
-  }, [daily, salesInv, trades, bills, pay]);
+    return { totalSales, totalCogs, totalProfit, tradeSales, tradeRows, repairSales, carCount, aro, margin, mechanics, payrollGross, employer, billsTotal, staffMeals, costs, netSoFar, netProjected, daysWithSales, pendingDays };
+  }, [daily, salesInv, trades, bills, pay, staffMeals]);
 
   /* --------------------------------- actions -------------------------------- */
   const addBill = useCallback(async () => {
@@ -245,6 +248,10 @@ export default function PnlPage() {
                 <button onClick={addBill} className="rounded bg-gray-900 px-2.5 py-1 text-sm font-medium text-white hover:bg-gray-700">Add</button>
               </div>
               <div className="mt-2 flex justify-between border-t border-gray-100 pt-2 text-sm font-semibold"><span>Bills total</span><span>{rm(c.billsTotal)}</span></div>
+              <div className="mt-1.5 flex justify-between text-sm">
+                <span className="text-gray-600">Staff meals — GrabFood <span className="text-gray-400">· auto from email receipts</span></span>
+                <span className="font-semibold">{rm(c.staffMeals)}</span>
+              </div>
               <div className="mt-1 text-xs text-gray-400">Bonus/commission is already inside Payroll — don&rsquo;t add it here again.</div>
             </div>
           </div>
