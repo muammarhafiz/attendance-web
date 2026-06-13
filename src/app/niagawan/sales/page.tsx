@@ -14,31 +14,9 @@ type Daily = {
   updated_at: string | null;
 };
 
-type Zero = { audit_date: string; item: string | null; code: string | null; price: string | null };
-type Rule = { match_type: string; value: string };
+type ZeroCount = { audit_date: string; n: number };
 
-// Same ignore-rule logic as the COGS chase list (cashier note-lines etc. are not real parts,
-// so they don't block a day from being "final").
-function zeroIgnored(row: Zero, rules: Rule[]) {
-  const name = String(row.item || '').trim().toLowerCase();
-  const code = String(row.code || '').trim().toLowerCase();
-  const price = parseFloat(String(row.price ?? '').replace(/,/g, '')) || 0;
-  for (const r of rules) {
-    const t = String(r.match_type || '').trim().toLowerCase();
-    const v = String(r.value || '').trim().toLowerCase();
-    if (!t || !v) continue;
-    if (t === 'code_prefix' && code.startsWith(v)) return true;
-    if (t === 'code_exact' && code === v) return true;
-    if (t === 'code_contains' && code.includes(v)) return true;
-    if (t === 'name_prefix' && name.startsWith(v)) return true;
-    if (t === 'name_exact' && name === v) return true;
-    if (t === 'name_contains' && name.includes(v)) return true;
-    if (t === 'price_max' && price <= (parseFloat(v) || 0)) return true;
-  }
-  return false;
-}
-
-const n = (x: number | string | null | undefined) =>
+const n =(x: number | string | null | undefined) =>
   Number.isFinite(typeof x === 'string' ? Number(x) : (x ?? 0)) ? Number(x) : 0;
 
 const rm = (x: number) =>
@@ -65,8 +43,8 @@ export default function NiagawanSalesPage() {
   const [sync, setSync] = useState<SyncState>('idle');
   const [syncMsg, setSyncMsg] = useState<string>('');
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [zeros, setZeros] = useState<Zero[]>([]);
-  const [rules, setRules] = useState<Rule[]>([]);
+  // Per-day real zero-cost count, computed server-side (no 1000-row client cap).
+  const [zeroByDay, setZeroByDay] = useState<Record<string, number>>({});
 
   // auth + role
   useEffect(() => {
@@ -85,33 +63,24 @@ export default function NiagawanSalesPage() {
   const loadRows = useCallback(async () => {
     setLoading(true);
     setErr(null);
-    const [{ data, error }, { data: z }, { data: ru }] = await Promise.all([
+    const [{ data, error }, { data: zc }] = await Promise.all([
       supabase
         .from('niagawan_daily')
         .select('day,invoices,sales,cogs,profit,unpaid_count,updated_at')
         .order('day', { ascending: false })
         .limit(60),
-      supabase.from('niagawan_cogs_zeros').select('audit_date,item,code,price'),
-      supabase.from('niagawan_cogs_ignore').select('match_type,value'),
+      supabase.rpc('cogs_zero_day_counts'),
     ]);
     if (error) setErr(error.message);
     else setRows((data ?? []) as Daily[]);
-    setZeros((z ?? []) as Zero[]);
-    setRules((ru ?? []) as Rule[]);
+    const map: Record<string, number> = {};
+    for (const row of (zc ?? []) as ZeroCount[]) map[row.audit_date] = Number(row.n) || 0;
+    setZeroByDay(map);
     setLoading(false);
   }, []);
 
-  // Zero-cost items per day (ignore rules applied) — a day is only FINAL when this is 0
-  // AND it has no unpaid invoices left (they get carried forward at 8pm).
-  const zeroByDay = useMemo(() => {
-    const map: Record<string, number> = {};
-    for (const z of zeros) {
-      if (zeroIgnored(z, rules)) continue;
-      map[z.audit_date] = (map[z.audit_date] || 0) + 1;
-    }
-    return map;
-  }, [zeros, rules]);
-
+  // A day is only FINAL when it has no real zero-cost items (server-side count, ignore rules
+  // applied) AND no unpaid invoices left (they get carried forward at 8pm).
   const dayStatus = useCallback((r: Daily) => {
     const zc = zeroByDay[r.day] ?? 0;
     const up = r.unpaid_count;
