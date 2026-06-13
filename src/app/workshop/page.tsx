@@ -152,7 +152,15 @@ export default function WorkshopBoardPage() {
 
   const byCol = useMemo(() => {
     const map: Record<string, Card[]> = { waiting: [], doing: [], waiting_parts: [], done: [] };
-    for (const c of cards) (map[c.status] ?? map.waiting).push(c);
+    const todayStr = new Date().toDateString();
+    for (const c of cards) {
+      // Done shows only TODAY's completed cars (older ones stay in the data but don't clutter the board).
+      if (c.status === 'done') {
+        const when = c.done_at ?? c.created_at;
+        if (when && new Date(when).toDateString() !== todayStr) continue;
+      }
+      (map[c.status] ?? map.waiting).push(c);
+    }
     return map;
   }, [cards]);
 
