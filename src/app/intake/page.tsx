@@ -21,6 +21,7 @@ export default function IntakePage() {
   const onFile = !!history?.cust_id; // already a registered Niagawan customer
   const [showDetails, setShowDetails] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const plateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -31,20 +32,29 @@ export default function IntakePage() {
     })();
   }, []);
 
-  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); if (plateTimer.current) clearTimeout(plateTimer.current); }, []);
 
   // Returning car? Recognise the plate and pre-fill what we already have on file.
   const checkPlate = useCallback(async (p: string) => {
-    setHistory(null);
-    if (p.replace(/\s/g, '').length < 4) return;
+    if (p.replace(/\s/g, '').length < 4) { setHistory(null); return; }
     const { data } = await supabase.rpc('intake_plate_lookup', { p });
     const row = Array.isArray(data) && data.length ? data[0] : null;
     if (row) {
       const h = row as { last_day: string | null; customer: string; cust_id: string | null; phone: string | null };
       setHistory(h);
       if (h.phone) setPhone((cur) => cur || h.phone || ''); // pre-fill phone if we know it
+    } else {
+      setHistory(null);
     }
   }, []);
+
+  // Live recognition as the plate is typed (debounced, like the Part Arrived search).
+  const onPlateChange = useCallback((raw: string) => {
+    const v = raw.toUpperCase();
+    setPlate(v);
+    if (plateTimer.current) clearTimeout(plateTimer.current);
+    plateTimer.current = setTimeout(() => checkPlate(v), 300);
+  }, [checkPlate]);
 
   const save = useCallback(async () => {
     if (!plate.trim()) { setErrMsg('Please enter the plate number.'); return; }
@@ -102,7 +112,7 @@ export default function IntakePage() {
       <div className="mt-5 space-y-4">
         <label className="block">
           <span className="text-sm font-medium text-gray-700">Plate Number *</span>
-          <input value={plate} onChange={(e) => setPlate(e.target.value.toUpperCase())} onBlur={(e) => checkPlate(e.target.value)}
+          <input value={plate} onChange={(e) => onPlateChange(e.target.value)} onBlur={(e) => checkPlate(e.target.value)}
             placeholder="WWW1234" autoCapitalize="characters" autoComplete="off"
             className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3.5 font-mono text-xl uppercase tracking-wide" />
         </label>
