@@ -10,7 +10,7 @@ const DENOMS = [100, 50, 20, 10, 5, 1] as const;
 const rm = (n: number) => `RM ${n.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const klToday = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
 
-type HistRow = { day: string; counted: number; cashIn: number | null; by: string };
+type HistRow = { day: string; counted: number; cashIn: number | null; cashOut: number; by: string };
 
 export default function CashCountPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -18,6 +18,7 @@ export default function CashCountPage() {
   const [step, setStep] = useState(0); // 0..DENOMS.length-1 = denominations; DENOMS.length = summary
   const [counts, setCounts] = useState<Record<number, number>>({});
   const [cashIn, setCashIn] = useState<number | null>(null);
+  const [cashOut, setCashOut] = useState<number | null>(null);
   const [cashSyncing, setCashSyncing] = useState(true);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -28,8 +29,8 @@ export default function CashCountPage() {
 
   // load today's CASH-in figure; trigger a fresh sync since counting happens after hours
   const loadCashIn = useCallback(async () => {
-    const { data } = await supabase.from('niagawan_cash_daily').select('cash_in,updated_at').eq('day', today).maybeSingle();
-    if (data && data.cash_in != null) { setCashIn(Number(data.cash_in)); setCashSyncing(false); }
+    const { data } = await supabase.from('niagawan_cash_daily').select('cash_in,cash_out,updated_at').eq('day', today).maybeSingle();
+    if (data && data.cash_in != null) { setCashIn(Number(data.cash_in)); setCashOut(data.cash_out == null ? 0 : Number(data.cash_out)); setCashSyncing(false); }
   }, [today]);
 
   // load the last 30 days of saved counts, joined with that day's Niagawan cash for the variance
@@ -41,14 +42,18 @@ export default function CashCountPage() {
       .limit(30);
     if (!rows) return;
     const days = rows.map((r) => r.day as string);
-    const { data: daily } = await supabase.from('niagawan_cash_daily').select('day,cash_in').in('day', days);
-    const cashByDay = new Map((daily ?? []).map((d) => [d.day as string, d.cash_in == null ? null : Number(d.cash_in)]));
-    setHistory(rows.map((r) => ({
-      day: r.day as string,
-      counted: Number(r.counted_total),
-      cashIn: cashByDay.has(r.day as string) ? (cashByDay.get(r.day as string) as number | null) : null,
-      by: (r.counted_by as string) ?? '',
-    })));
+    const { data: daily } = await supabase.from('niagawan_cash_daily').select('day,cash_in,cash_out').in('day', days);
+    const dByDay = new Map((daily ?? []).map((d) => [d.day as string, { cin: d.cash_in == null ? null : Number(d.cash_in), cout: d.cash_out == null ? 0 : Number(d.cash_out) }]));
+    setHistory(rows.map((r) => {
+      const d = dByDay.get(r.day as string);
+      return {
+        day: r.day as string,
+        counted: Number(r.counted_total),
+        cashIn: d ? d.cin : null,
+        cashOut: d ? d.cout : 0,
+        by: (r.counted_by as string) ?? '',
+      };
+    }));
   }, []);
 
   useEffect(() => {
@@ -90,7 +95,8 @@ export default function CashCountPage() {
   if (!authed) return <div className="p-6 text-sm text-gray-600">Please sign in first.</div>;
   if (!allowed) return <div className="p-6 text-sm text-gray-600">This page is for supervisors only.</div>;
 
-  const variance = cashIn == null ? null : total - cashIn;
+  const net = cashIn == null ? null : cashIn - (cashOut ?? 0);
+  const variance = net == null ? null : total - net;
   const isSummary = step >= DENOMS.length;
 
   return (
@@ -105,7 +111,8 @@ export default function CashCountPage() {
           <h2 className="mt-3 text-xl font-bold text-gray-900">Saved</h2>
           <div className="mt-4 space-y-1 rounded-xl border border-gray-200 bg-white p-4 text-left text-sm">
             <Row label="Counted cash" value={rm(total)} bold />
-            <Row label="Niagawan cash today" value={cashIn == null ? '—' : rm(cashIn)} />
+            <Row label="Niagawan cash (in − out)" value={net == null ? '—' : rm(net)} />
+            {cashIn != null && <div className="text-right text-xs text-gray-400">in {rm(cashIn)} − out {rm(cashOut ?? 0)}</div>}
             <div className="mt-1 border-t border-gray-100 pt-2">
               <VarianceRow variance={variance} />
             </div>
@@ -153,7 +160,8 @@ export default function CashCountPage() {
           </div>
 
           <div className="mt-3 rounded-xl border border-gray-200 bg-white p-4 text-sm">
-            <Row label="Niagawan cash today" value={cashSyncing && cashIn == null ? 'fetching…' : cashIn == null ? 'not available' : rm(cashIn)} />
+            <Row label="Niagawan cash (in − out)" value={cashSyncing && cashIn == null ? 'fetching…' : cashIn == null ? 'not available' : rm(net as number)} />
+            {cashIn != null && <div className="text-right text-xs text-gray-400">in {rm(cashIn)} − out {rm(cashOut ?? 0)}</div>}
             <div className="mt-2 border-t border-gray-100 pt-2"><VarianceRow variance={variance} /></div>
           </div>
 
@@ -177,7 +185,8 @@ function RecentCounts({ rows, today }: { rows: HistRow[]; today: string }) {
       <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Recent counts</div>
       <div className="divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white">
         {rows.map((r) => {
-          const v = r.cashIn == null ? null : r.counted - r.cashIn;
+          const net = r.cashIn == null ? null : r.cashIn - r.cashOut;
+          const v = net == null ? null : r.counted - net;
           return (
             <div key={r.day} className="flex items-start justify-between px-4 py-2.5">
               <div className="min-w-0">
@@ -189,7 +198,8 @@ function RecentCounts({ rows, today }: { rows: HistRow[]; today: string }) {
               </div>
               <div className="shrink-0 text-right">
                 <div className="text-sm font-bold text-gray-900">{rm(r.counted)}</div>
-                <div className="text-xs text-gray-400">Niagawan {r.cashIn == null ? '—' : rm(r.cashIn)}</div>
+                <div className="text-xs text-gray-400">Niagawan net {net == null ? '—' : rm(net)}</div>
+                {r.cashIn != null && <div className="text-[11px] text-gray-300">in {rm(r.cashIn)} − out {rm(r.cashOut)}</div>}
                 <div className="text-xs">{histVariance(v)}</div>
               </div>
             </div>
