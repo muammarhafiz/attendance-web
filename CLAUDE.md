@@ -47,6 +47,16 @@ A cloud/web Claude session **can** edit this repo and open PRs. It **cannot** re
 - Status pills use the `STATUS_STYLE` maps; add new statuses there AND to the `pinv_status_check` DB constraint (via migration).
 - Commits/PRs: descriptive title, body explains the *why*; merging = deploying, so verify type-check before merge.
 
+## Handover & access control
+
+The owner plans to hand day-to-day admin to a staff member, so access control matters.
+
+- **Roles:** `is_admin()` = full access (sees salaries). `can_access(feature)` drives a per-position tick-box matrix on the Employees page (`position_access` table; features: checkin/workshop/add_part/intake/attendance/niagawan/payroll/employees). Admins always pass. Today only the **workshop** features (workshop/add_part/intake) are wired to the matrix end-to-end; the other sections are still `is_admin`-gated at the page level.
+- **Salaries are private.** The payslip views (`pay_v2.v_payslip_*`) were SECURITY DEFINER and leaked all salaries to any signed-in user via the public wrappers — fixed 2026-06-14 by `security_invoker=true` so they honour `pay_v2.items`/`periods` RLS (admin = all, non-admin = none). Verified by role simulation. **Do not** revert these to security-definer or loosen `staff`/`pay_v2` RLS. Every salary/payroll API route (`salary/api/run`, `salary/api/manual`, `api/payroll/{build,lock,unlock}`) also gates on `is_admin()` as defense in depth.
+- **Secrets** live only in server code (API routes), the `app_secrets` table (service-role only), or the NAS/Apps Script — **never** in client components or this file. The browser bundle ships only `NEXT_PUBLIC_*` (Supabase URL + anon key).
+- **Reliable local check before merging: `npx tsc --noEmit`** (passes). A clean `npm run build` currently fails on pre-existing ESLint `no-explicit-any`/unused-var debt even though Vercel deploys — so tsc is the gate, not build.
+- **NAS helper scripts** (`niagawan-scraper/check-*`, `test-*`, `probe-*`) log into Niagawan with the scraper account and **bypass the single-flight lock** — never run them while a NAS job is active (concurrent logins silently corrupt data).
+
 ## Backlog (owner-KIV'd — do not build until the owner asks)
 
 - **Customer source tracking** (KIV 2026-06-12): record how each customer found the workshop (referral / Facebook / passing by). Needs a front-desk habit + a small field somewhere (maybe on the sale invoice remark or a tiny website form). Goal: know which marketing works.

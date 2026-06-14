@@ -53,6 +53,12 @@ export async function POST(req: Request) {
   // IMPORTANT: pass the Request, not a string token
   const supabase = createClientServer(req);
 
+  // Admins only — this edits anyone's pay (defense in depth; pay_v2 RLS also enforces it).
+  const { data: isAdmin } = await supabase.rpc('is_admin');
+  if (isAdmin !== true) {
+    return NextResponse.json({ ok: false, where: 'auth', error: 'Admins only' }, { status: 403 });
+  }
+
   // who is the caller? (for created_by)
   const { data: userData, error: userErr } = await supabase.auth.getUser();
   if (userErr) {
