@@ -10,6 +10,8 @@ const DENOMS = [100, 50, 20, 10, 5, 1] as const;
 const rm = (n: number) => `RM ${n.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const klToday = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
 
+type HistRow = { day: string; counted: number; cashIn: number | null; by: string };
+
 export default function CashCountPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [allowed, setAllowed] = useState<boolean | null>(null);
@@ -19,6 +21,7 @@ export default function CashCountPage() {
   const [cashSyncing, setCashSyncing] = useState(true);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [history, setHistory] = useState<HistRow[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const today = klToday();
@@ -28,6 +31,25 @@ export default function CashCountPage() {
     const { data } = await supabase.from('niagawan_cash_daily').select('cash_in,updated_at').eq('day', today).maybeSingle();
     if (data && data.cash_in != null) { setCashIn(Number(data.cash_in)); setCashSyncing(false); }
   }, [today]);
+
+  // load the last 30 days of saved counts, joined with that day's Niagawan cash for the variance
+  const loadHistory = useCallback(async () => {
+    const { data: rows } = await supabase
+      .from('niagawan_cash_count')
+      .select('day,counted_total,counted_by')
+      .order('day', { ascending: false })
+      .limit(30);
+    if (!rows) return;
+    const days = rows.map((r) => r.day as string);
+    const { data: daily } = await supabase.from('niagawan_cash_daily').select('day,cash_in').in('day', days);
+    const cashByDay = new Map((daily ?? []).map((d) => [d.day as string, d.cash_in == null ? null : Number(d.cash_in)]));
+    setHistory(rows.map((r) => ({
+      day: r.day as string,
+      counted: Number(r.counted_total),
+      cashIn: cashByDay.has(r.day as string) ? (cashByDay.get(r.day as string) as number | null) : null,
+      by: (r.counted_by as string) ?? '',
+    })));
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -40,6 +62,7 @@ export default function CashCountPage() {
       // load any existing count for today
       const { data: existing } = await supabase.from('niagawan_cash_count').select('*').eq('day', today).maybeSingle();
       if (existing) setCounts({ 100: existing.n100, 50: existing.n50, 20: existing.n20, 10: existing.n10, 5: existing.n5, 1: existing.n1 });
+      await loadHistory();
       // ask the NAS to refresh today's cash book, then poll for it
       await supabase.rpc('request_cash_sync');
       await loadCashIn();
@@ -47,7 +70,7 @@ export default function CashCountPage() {
       setTimeout(() => { if (pollRef.current) clearInterval(pollRef.current); setCashSyncing(false); }, 45000);
     })();
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [today, loadCashIn]);
+  }, [today, loadCashIn, loadHistory]);
 
   const setCount = (denom: number, v: number) => setCounts((c) => ({ ...c, [denom]: Math.max(0, v) }));
   const total = DENOMS.reduce((s, d) => s + (counts[d] || 0) * d, 0);
@@ -60,7 +83,8 @@ export default function CashCountPage() {
     });
     if (error) { setErr(error.message); return; }
     setSaved(true);
-  }, [counts, today]);
+    loadHistory();
+  }, [counts, today, loadHistory]);
 
   if (authed === null || (authed && allowed === null)) return <div className="p-6 text-sm text-gray-500">Checking…</div>;
   if (!authed) return <div className="p-6 text-sm text-gray-600">Please sign in first.</div>;
@@ -141,8 +165,46 @@ export default function CashCountPage() {
           </div>
         </div>
       )}
+
+      {history.length > 0 && <RecentCounts rows={history} today={today} />}
     </div>
   );
+}
+
+function RecentCounts({ rows, today }: { rows: HistRow[]; today: string }) {
+  return (
+    <div className="mt-8">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Recent counts</div>
+      <div className="divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white">
+        {rows.map((r) => {
+          const v = r.cashIn == null ? null : r.counted - r.cashIn;
+          return (
+            <div key={r.day} className="flex items-start justify-between px-4 py-2.5">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-gray-900">
+                  {new Date(r.day).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  {r.day === today && <span className="ml-1.5 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">today</span>}
+                </div>
+                <div className="truncate text-xs text-gray-400">by {r.by.split('@')[0] || '—'}</div>
+              </div>
+              <div className="shrink-0 text-right">
+                <div className="text-sm font-bold text-gray-900">{rm(r.counted)}</div>
+                <div className="text-xs text-gray-400">Niagawan {r.cashIn == null ? '—' : rm(r.cashIn)}</div>
+                <div className="text-xs">{histVariance(v)}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function histVariance(v: number | null) {
+  if (v == null) return <span className="text-gray-400">no Niagawan figure</span>;
+  if (Math.abs(v) < 0.01) return <span className="font-semibold text-emerald-600">✅ match</span>;
+  const short = v < 0;
+  return <span className={`font-semibold ${short ? 'text-rose-600' : 'text-amber-600'}`}>{short ? '⚠️ short −' : '⚠️ over +'}{rm(Math.abs(v))}</span>;
 }
 
 function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
