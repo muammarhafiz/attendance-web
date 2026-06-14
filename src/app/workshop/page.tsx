@@ -181,7 +181,7 @@ export default function WorkshopBoardPage() {
           {canWrite && (
             <>
               <a href="/intake" className="rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-100">📝 Customer check-in</a>
-              <a href="/cash-count" className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">💵 Cash count</a>
+              <a href="/cash-count" className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">💵 Cash Book</a>
               <button onClick={() => setShowForm((v) => !v)} className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700">
                 {showForm ? 'Close' : '+ New job card'}
               </button>

@@ -119,7 +119,7 @@ export default function CashCountPage() {
   return (
     <div className="mx-auto max-w-md px-5 py-6">
       <a href="/workshop" className="text-sm text-gray-400 hover:text-gray-600">← Back</a>
-      <h1 className="mt-2 text-2xl font-bold text-gray-900">💵 Cash Count</h1>
+      <h1 className="mt-2 text-2xl font-bold text-gray-900">💵 Cash Book</h1>
       <p className="mt-1 text-sm text-gray-500">{new Date(today).toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
 
       {!saved && !isSummary && (
@@ -234,28 +234,36 @@ function RecentCounts({ rows, today }: { rows: HistRow[]; today: string }) {
         <div className="mt-1 flex justify-between text-xs text-gray-500"><span>Niagawan net (in − out)</span><span>{withNet.length ? rm(totalNet) : '—'}</span></div>
         <div className="mt-0.5 flex justify-between text-xs"><span className="text-gray-500">Variance</span><span>{withNet.length ? histVariance(totalVar) : <span className="text-gray-400">—</span>}</span></div>
       </div>
-      <div className="divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white">
-        {rows.map((r) => {
-          const net = r.cashIn == null ? null : r.cashIn - r.cashOut;
-          const v = net == null ? null : r.counted - net;
-          return (
-            <div key={r.day} className="flex items-start justify-between px-4 py-2.5">
-              <div className="min-w-0">
-                <div className="text-sm font-medium text-gray-900">
-                  {new Date(r.day).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  {r.day === today && <span className="ml-1.5 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">today</span>}
-                </div>
-                <div className="truncate text-xs text-gray-400">by {r.by.split('@')[0] || '—'}</div>
-              </div>
-              <div className="shrink-0 text-right">
-                <div className="text-sm font-bold text-gray-900">{rm(r.counted)}</div>
-                <div className="text-xs text-gray-400">Niagawan net {net == null ? '—' : rm(net)}</div>
-                {r.cashIn != null && <div className="text-[11px] text-gray-300">in {rm(r.cashIn)} − out {rm(r.cashOut)}</div>}
-                <div className="text-xs">{histVariance(v)}</div>
-              </div>
-            </div>
-          );
-        })}
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+        <div className="max-h-72 overflow-auto">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 z-10 bg-gray-50 text-xs text-gray-500">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium">Date</th>
+                <th className="px-3 py-2 text-right font-medium">Counted</th>
+                <th className="px-3 py-2 text-right font-medium">Niagawan</th>
+                <th className="px-3 py-2 text-right font-medium">+/−</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {rows.map((r) => {
+                const net = r.cashIn == null ? null : r.cashIn - r.cashOut;
+                const v = net == null ? null : r.counted - net;
+                return (
+                  <tr key={r.day}>
+                    <td className="whitespace-nowrap px-3 py-2 text-left text-gray-700">
+                      {new Date(r.day).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}
+                      {r.day === today && <span className="ml-1 text-[10px] font-semibold text-emerald-600">today</span>}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right font-semibold text-gray-900">{rm(r.counted)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right text-gray-500">{net == null ? '—' : rm(net)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right">{varCell(v)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -266,6 +274,14 @@ function histVariance(v: number | null) {
   if (Math.abs(v) < 0.01) return <span className="font-semibold text-emerald-600">✅ match</span>;
   const short = v < 0;
   return <span className={`font-semibold ${short ? 'text-rose-600' : 'text-amber-600'}`}>{short ? '⚠️ short −' : '⚠️ over +'}{rm(Math.abs(v))}</span>;
+}
+
+// compact variance for the table rows
+function varCell(v: number | null) {
+  if (v == null) return <span className="text-gray-300">—</span>;
+  if (Math.abs(v) < 0.01) return <span className="font-semibold text-emerald-600">✅</span>;
+  const short = v < 0;
+  return <span className={`font-semibold ${short ? 'text-rose-600' : 'text-amber-600'}`}>{short ? '−' : '+'}{rm(Math.abs(v))}</span>;
 }
 
 function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
