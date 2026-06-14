@@ -47,6 +47,12 @@ export async function GET() {
     // Use SSR client that reads Supabase auth cookies
     const supabase = createClientServer();
 
+    // Admins only — this returns everyone's payslips (defense in depth; pay_v2 RLS also enforces it).
+    const { data: isAdmin } = await supabase.rpc('is_admin');
+    if (isAdmin !== true) {
+      return NextResponse.json<RunErr>({ ok: false, where: 'auth', error: 'Admins only' }, { status: 403 });
+    }
+
     // 1) Find current payroll period (year/month = today)
     const now = new Date();
     const { data: period, error: perr } = await supabase
