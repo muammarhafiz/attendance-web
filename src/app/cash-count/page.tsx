@@ -180,9 +180,24 @@ export default function CashCountPage() {
 }
 
 function RecentCounts({ rows, today }: { rows: HistRow[]; today: string }) {
+  const totalCounted = rows.reduce((s, r) => s + r.counted, 0);
+  const withNet = rows.filter((r) => r.cashIn != null);
+  const totalNet = withNet.reduce((s, r) => s + ((r.cashIn as number) - r.cashOut), 0);
+  const totalVar = withNet.reduce((s, r) => s + (r.counted - ((r.cashIn as number) - r.cashOut)), 0);
   return (
     <div className="mt-8">
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Recent counts</div>
+      <div className="mb-2 flex items-baseline justify-between">
+        <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">Recent counts</span>
+        <span className="text-xs text-gray-400">{rows.length} day{rows.length === 1 ? '' : 's'}</span>
+      </div>
+      <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+        <div className="flex items-baseline justify-between">
+          <span className="text-sm font-semibold text-gray-700">Total counted so far</span>
+          <span className="text-lg font-extrabold text-gray-900">{rm(totalCounted)}</span>
+        </div>
+        <div className="mt-1 flex justify-between text-xs text-gray-500"><span>Niagawan net (in − out)</span><span>{withNet.length ? rm(totalNet) : '—'}</span></div>
+        <div className="mt-0.5 flex justify-between text-xs"><span className="text-gray-500">Variance</span><span>{withNet.length ? histVariance(totalVar) : <span className="text-gray-400">—</span>}</span></div>
+      </div>
       <div className="divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white">
         {rows.map((r) => {
           const net = r.cashIn == null ? null : r.cashIn - r.cashOut;
