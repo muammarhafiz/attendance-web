@@ -1,0 +1,162 @@
+// src/app/cash-count/page.tsx — end-of-day cash count (Tunai Harian).
+// The supervisor counts the notes; the app asks one denomination at a time, totals it,
+// then compares against today's CASH receipts in Niagawan and shows the variance.
+'use client';
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { supabase } from '@/lib/supabaseClient';
+
+const DENOMS = [100, 50, 20, 10, 5, 1] as const;
+const rm = (n: number) => `RM ${n.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const klToday = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+
+export default function CashCountPage() {
+  const [authed, setAuthed] = useState<boolean | null>(null);
+  const [allowed, setAllowed] = useState<boolean | null>(null);
+  const [step, setStep] = useState(0); // 0..DENOMS.length-1 = denominations; DENOMS.length = summary
+  const [counts, setCounts] = useState<Record<number, number>>({});
+  const [cashIn, setCashIn] = useState<number | null>(null);
+  const [cashSyncing, setCashSyncing] = useState(true);
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const today = klToday();
+
+  // load today's CASH-in figure; trigger a fresh sync since counting happens after hours
+  const loadCashIn = useCallback(async () => {
+    const { data } = await supabase.from('niagawan_cash_daily').select('cash_in,updated_at').eq('day', today).maybeSingle();
+    if (data && data.cash_in != null) { setCashIn(Number(data.cash_in)); setCashSyncing(false); }
+  }, [today]);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      setAuthed(!!data.session);
+      if (!data.session) { setAllowed(false); return; }
+      const { data: ok } = await supabase.rpc('can_access', { p_feature: 'workshop' });
+      setAllowed(ok === true);
+      if (ok !== true) return;
+      // load any existing count for today
+      const { data: existing } = await supabase.from('niagawan_cash_count').select('*').eq('day', today).maybeSingle();
+      if (existing) setCounts({ 100: existing.n100, 50: existing.n50, 20: existing.n20, 10: existing.n10, 5: existing.n5, 1: existing.n1 });
+      // ask the NAS to refresh today's cash book, then poll for it
+      await supabase.rpc('request_cash_sync');
+      await loadCashIn();
+      pollRef.current = setInterval(loadCashIn, 5000);
+      setTimeout(() => { if (pollRef.current) clearInterval(pollRef.current); setCashSyncing(false); }, 45000);
+    })();
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [today, loadCashIn]);
+
+  const setCount = (denom: number, v: number) => setCounts((c) => ({ ...c, [denom]: Math.max(0, v) }));
+  const total = DENOMS.reduce((s, d) => s + (counts[d] || 0) * d, 0);
+
+  const save = useCallback(async () => {
+    setErr(null);
+    const { error } = await supabase.rpc('save_cash_count', {
+      p_day: today, p_100: counts[100] || 0, p_50: counts[50] || 0, p_20: counts[20] || 0,
+      p_10: counts[10] || 0, p_5: counts[5] || 0, p_1: counts[1] || 0,
+    });
+    if (error) { setErr(error.message); return; }
+    setSaved(true);
+  }, [counts, today]);
+
+  if (authed === null || (authed && allowed === null)) return <div className="p-6 text-sm text-gray-500">Checking…</div>;
+  if (!authed) return <div className="p-6 text-sm text-gray-600">Please sign in first.</div>;
+  if (!allowed) return <div className="p-6 text-sm text-gray-600">This page is for supervisors only.</div>;
+
+  const variance = cashIn == null ? null : total - cashIn;
+  const isSummary = step >= DENOMS.length;
+
+  return (
+    <div className="mx-auto max-w-md px-5 py-6">
+      <a href="/workshop" className="text-sm text-gray-400 hover:text-gray-600">← Back</a>
+      <h1 className="mt-2 text-2xl font-bold text-gray-900">💵 Cash Count</h1>
+      <p className="mt-1 text-sm text-gray-500">{new Date(today).toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+
+      {saved ? (
+        <div className="mt-8 text-center">
+          <div className="text-6xl">{variance === 0 ? '✅' : '⚠️'}</div>
+          <h2 className="mt-3 text-xl font-bold text-gray-900">Saved</h2>
+          <div className="mt-4 space-y-1 rounded-xl border border-gray-200 bg-white p-4 text-left text-sm">
+            <Row label="Counted cash" value={rm(total)} bold />
+            <Row label="Niagawan cash today" value={cashIn == null ? '—' : rm(cashIn)} />
+            <div className="mt-1 border-t border-gray-100 pt-2">
+              <VarianceRow variance={variance} />
+            </div>
+          </div>
+          <button onClick={() => { setSaved(false); setStep(0); }} className="mt-6 w-full rounded-xl bg-gray-100 px-6 py-3 text-base font-semibold text-gray-700">Recount</button>
+        </div>
+      ) : !isSummary ? (
+        <div className="mt-6">
+          <div className="text-center text-sm font-medium text-gray-400">Note {step + 1} of {DENOMS.length}</div>
+          <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-6 text-center">
+            <div className="text-sm text-gray-500">How many</div>
+            <div className="my-1 text-4xl font-extrabold text-emerald-700">RM{DENOMS[step]}</div>
+            <div className="text-sm text-gray-500">notes?</div>
+            <div className="mt-5 flex items-center justify-center gap-4">
+              <button onClick={() => setCount(DENOMS[step], (counts[DENOMS[step]] || 0) - 1)} className="h-14 w-14 rounded-xl border border-gray-300 text-2xl font-bold text-gray-700">−</button>
+              <input type="number" inputMode="numeric" value={counts[DENOMS[step]] ?? 0}
+                onChange={(e) => setCount(DENOMS[step], parseInt(e.target.value || '0', 10))}
+                onFocus={(e) => e.target.select()}
+                className="w-28 rounded-xl border border-gray-300 px-2 py-3 text-center text-3xl font-bold" />
+              <button onClick={() => setCount(DENOMS[step], (counts[DENOMS[step]] || 0) + 1)} className="h-14 w-14 rounded-xl border border-gray-300 text-2xl font-bold text-gray-700">+</button>
+            </div>
+            <div className="mt-3 text-sm text-gray-500">= {rm((counts[DENOMS[step]] || 0) * DENOMS[step])}</div>
+          </div>
+
+          <div className="mt-4 rounded-lg bg-gray-50 px-3 py-2 text-center text-sm text-gray-600">Running total: <span className="font-bold text-gray-900">{rm(total)}</span></div>
+
+          <div className="mt-5 flex gap-3">
+            {step > 0 && <button onClick={() => setStep(step - 1)} className="flex-1 rounded-xl border border-gray-300 px-4 py-3.5 text-base font-semibold text-gray-700">Back</button>}
+            <button onClick={() => setStep(step + 1)} className="flex-[2] rounded-xl bg-blue-600 px-4 py-3.5 text-base font-bold text-white hover:bg-blue-700">
+              {step === DENOMS.length - 1 ? 'See result' : 'Next'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-6">
+          <div className="rounded-xl border border-gray-200 bg-white p-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">Breakdown</div>
+            {DENOMS.map((d) => (
+              <div key={d} className="flex justify-between py-0.5 text-sm">
+                <span className="text-gray-600">RM{d} × {counts[d] || 0}</span>
+                <span className="text-gray-800">{rm((counts[d] || 0) * d)}</span>
+              </div>
+            ))}
+            <div className="mt-2 flex justify-between border-t border-gray-100 pt-2 text-base font-bold"><span>Counted total</span><span>{rm(total)}</span></div>
+          </div>
+
+          <div className="mt-3 rounded-xl border border-gray-200 bg-white p-4 text-sm">
+            <Row label="Niagawan cash today" value={cashSyncing && cashIn == null ? 'fetching…' : cashIn == null ? 'not available' : rm(cashIn)} />
+            <div className="mt-2 border-t border-gray-100 pt-2"><VarianceRow variance={variance} /></div>
+          </div>
+
+          {err && <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{err}</div>}
+
+          <div className="mt-5 flex gap-3">
+            <button onClick={() => setStep(DENOMS.length - 1)} className="flex-1 rounded-xl border border-gray-300 px-4 py-3.5 text-base font-semibold text-gray-700">Back</button>
+            <button onClick={save} className="flex-[2] rounded-xl bg-emerald-600 px-4 py-3.5 text-base font-bold text-white hover:bg-emerald-700">Save count</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
+  return <div className="flex justify-between"><span className="text-gray-600">{label}</span><span className={bold ? 'font-bold text-gray-900' : 'text-gray-800'}>{value}</span></div>;
+}
+
+function VarianceRow({ variance }: { variance: number | null }) {
+  if (variance == null) return <div className="text-sm text-gray-400">Variance: waiting for Niagawan figure…</div>;
+  if (Math.abs(variance) < 0.01) return <div className="flex justify-between text-sm font-semibold text-emerald-700"><span>✅ Match</span><span>balanced</span></div>;
+  const short = variance < 0;
+  return (
+    <div className={`flex justify-between text-sm font-semibold ${short ? 'text-rose-700' : 'text-amber-700'}`}>
+      <span>{short ? '⚠️ SHORT' : '⚠️ OVER'}</span>
+      <span>{short ? '−' : '+'}{rm(Math.abs(variance)).replace('RM ', 'RM ')}</span>
+    </div>
+  );
+}
