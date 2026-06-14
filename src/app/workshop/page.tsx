@@ -20,10 +20,16 @@ type Card = {
   started_at: string | null;
   done_at: string | null;
   archived_at: string | null;
+  sale_inv: string | null;
 };
 
 type Memo = { id: number; text: string; created_at: string; active: boolean };
 type StaffName = { staff_name: string; staff_position: string };
+type Debt = {
+  sale_id: string; sale_inv_no: string | null; vehicle_label: string | null; ptoken: string | null;
+  total: number | null; paid: number | null; balance: number | null; status: string | null;
+  sale_date: string | null; age_days: number | null;
+};
 
 const COLS: { key: Card['status']; label: string; tint: string; head: string }[] = [
   { key: 'waiting', label: 'Waiting', tint: 'bg-gray-50', head: 'text-gray-600' },
@@ -41,11 +47,15 @@ function ago(iso: string | null) {
   return `${Math.floor(h / 24)}d ${h % 24}h`;
 }
 
+const rm = (n: number | null) => `RM${Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 export default function WorkshopBoardPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [canWrite, setCanWrite] = useState<boolean | null>(null); // null = still checking; supervisors/admins only
   const [cards, setCards] = useState<Card[]>([]);
   const [memos, setMemos] = useState<Memo[]>([]);
+  const [debts, setDebts] = useState<Debt[]>([]);
+  const [debtYear, setDebtYear] = useState(''); // '' = default to newest year present; 'all' = every year
   const [staffNames, setStaffNames] = useState<StaffName[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
@@ -76,13 +86,15 @@ export default function WorkshopBoardPage() {
   }, []);
 
   const load = useCallback(async () => {
-    const [{ data: c, error: ce }, { data: m }] = await Promise.all([
+    const [{ data: c, error: ce }, { data: m }, { data: d }] = await Promise.all([
       supabase.from('job_cards').select('*').is('archived_at', null).order('created_at', { ascending: true }),
       supabase.from('memos').select('*').eq('active', true).order('created_at', { ascending: false }).limit(5),
+      supabase.from('v_workshop_debts').select('*').order('sale_date', { ascending: true }),
     ]);
     if (ce) setErr(ce.message);
     else { setCards((c ?? []) as Card[]); setErr(null); }
     setMemos((m ?? []) as Memo[]);
+    setDebts((d ?? []) as Debt[]);
   }, []);
 
   // Live board: refresh every 15s so every supervisor PC stays current.
@@ -155,16 +167,34 @@ export default function WorkshopBoardPage() {
   const byCol = useMemo(() => {
     const map: Record<string, Card[]> = { waiting: [], doing: [], waiting_parts: [], done: [] };
     const todayStr = new Date().toDateString();
+    const debtInvs = new Set(debts.map((d) => d.sale_inv_no).filter(Boolean) as string[]);
+    const debtToks = debts.map((d) => (d.ptoken || '').toUpperCase()).filter(Boolean);
+    const norm = (s: string | null) => (s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     for (const c of cards) {
       // Done shows only TODAY's completed cars (older ones stay in the data but don't clutter the board).
       if (c.status === 'done') {
         const when = c.done_at ?? c.created_at;
         if (when && new Date(when).toDateString() !== todayStr) continue;
       }
+      // An aged unpaid/partial bill (>7 days) belongs in the Debts section, not Waiting.
+      if (c.status === 'waiting') {
+        const np = norm(c.plate), nv = norm(c.vehicle);
+        const isDebt = (c.sale_inv != null && debtInvs.has(c.sale_inv)) || debtToks.some((t) => (np && np.includes(t)) || (nv && nv.includes(t)));
+        if (isDebt) continue;
+      }
       (map[c.status] ?? map.waiting).push(c);
     }
     return map;
-  }, [cards]);
+  }, [cards, debts]);
+
+  // Debts grouped by year (default to the newest year so the board isn't flooded by old data).
+  const debtView = useMemo(() => {
+    const years = Array.from(new Set(debts.map((d) => (d.sale_date || '').slice(0, 4)).filter(Boolean))).sort().reverse();
+    const active = debtYear || years[0] || '';
+    const shown = active && active !== 'all' ? debts.filter((d) => (d.sale_date || '').startsWith(active)) : debts;
+    const total = shown.reduce((s, d) => s + Number(d.balance ?? d.total ?? 0), 0);
+    return { years, active, shown, total };
+  }, [debts, debtYear]);
 
   if (authed === null || (authed && canWrite === null)) return <div className="p-6 text-sm text-gray-500">Checking session…</div>;
   if (!authed) return <div className="p-6 text-sm text-gray-600">Please sign in to see the workshop board.</div>;
@@ -174,7 +204,7 @@ export default function WorkshopBoardPage() {
     <div className="mx-auto max-w-7xl px-4 py-5">
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold text-gray-900">Workshop</h1>
-        <span className="text-sm text-gray-400">{cards.filter((c) => c.status !== 'done').length} car(s) in the shop</span>
+        <span className="text-sm text-gray-400">{byCol.waiting.length + byCol.doing.length + byCol.waiting_parts.length} car(s) in the shop</span>
         <span className="ml-auto flex gap-2">
           <button onClick={refreshAll} className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">🔄 Refresh</button>
           <a href="/add-part" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-700 hover:bg-amber-100">🔩 Part arrived</a>
@@ -276,6 +306,37 @@ export default function WorkshopBoardPage() {
           </div>
         ))}
       </div>
+
+      {/* Debts — unpaid / partial bills older than 7 days (a plate, not trade). Read-only; clears when paid in Niagawan. */}
+      {debts.length > 0 && (
+        <div className="mt-6">
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-sm font-semibold text-rose-700">
+            <span>💸 Debts</span>
+            <select value={debtView.active} onChange={(e) => setDebtYear(e.target.value)} className="rounded-md border border-rose-300 bg-white px-2 py-1 text-xs font-semibold text-rose-700">
+              {debtView.years.map((y) => <option key={y} value={y}>{y}</option>)}
+              <option value="all">All years</option>
+            </select>
+            <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs">{debtView.shown.length}</span>
+            <span className="text-xs font-normal text-gray-400">owed {rm(debtView.total)} · unpaid / partial &gt; 7 days old</span>
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {debtView.shown.map((d) => (
+              <div key={d.sale_id} className="rounded-md border border-rose-200 bg-rose-50/60 p-2 shadow-sm">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="font-mono text-sm font-bold text-gray-900">{d.ptoken || d.vehicle_label}</span>
+                  <span className="text-[11px] font-semibold text-rose-600">{d.age_days}d old</span>
+                </div>
+                {d.vehicle_label && <div className="truncate text-xs text-gray-600">{d.vehicle_label}</div>}
+                <div className="mt-1 flex items-baseline justify-between text-xs">
+                  <span className="text-gray-500">{d.status === 'partial' ? 'Partial' : 'Unpaid'} · {d.sale_inv_no}</span>
+                  <span className="font-semibold text-rose-700">owes {rm(d.balance ?? d.total)}</span>
+                </div>
+                <div className="text-[11px] text-gray-400">bill {rm(d.total)}{d.status === 'partial' && d.paid != null ? ` · paid ${rm(d.paid)}` : ''} · {d.sale_date}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <p className="mt-3 text-xs text-gray-400">
         Supervisors add job cards and memos. Anyone can move a card: Start → Done (or Waiting parts when stuck). The board refreshes itself every 15 seconds on every PC.
