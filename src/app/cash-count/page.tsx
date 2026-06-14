@@ -56,6 +56,16 @@ export default function CashCountPage() {
     }));
   }, []);
 
+  // (re)trigger a fresh Niagawan cash-book scrape, then poll for the result
+  const syncCash = useCallback(async () => {
+    setCashSyncing(true);
+    await supabase.rpc('request_cash_sync');
+    await loadCashIn();
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(loadCashIn, 5000);
+    setTimeout(() => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } setCashSyncing(false); }, 45000);
+  }, [loadCashIn]);
+
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getSession();
@@ -69,13 +79,10 @@ export default function CashCountPage() {
       if (existing) setCounts({ 100: existing.n100, 50: existing.n50, 20: existing.n20, 10: existing.n10, 5: existing.n5, 1: existing.n1 });
       await loadHistory();
       // ask the NAS to refresh today's cash book, then poll for it
-      await supabase.rpc('request_cash_sync');
-      await loadCashIn();
-      pollRef.current = setInterval(loadCashIn, 5000);
-      setTimeout(() => { if (pollRef.current) clearInterval(pollRef.current); setCashSyncing(false); }, 45000);
+      await syncCash();
     })();
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [today, loadCashIn, loadHistory]);
+  }, [today, loadHistory, syncCash]);
 
   const setCount = (denom: number, v: number) => setCounts((c) => ({ ...c, [denom]: Math.max(0, v) }));
   const total = DENOMS.reduce((s, d) => s + (counts[d] || 0) * d, 0);
@@ -104,6 +111,17 @@ export default function CashCountPage() {
       <a href="/workshop" className="text-sm text-gray-400 hover:text-gray-600">← Back</a>
       <h1 className="mt-2 text-2xl font-bold text-gray-900">💵 Cash Count</h1>
       <p className="mt-1 text-sm text-gray-500">{new Date(today).toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+
+      {!saved && !isSummary && (
+        <div className="mt-4 flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3">
+          <div className="min-w-0">
+            <div className="text-xs text-gray-500">Niagawan cash so far today</div>
+            <div className="text-lg font-bold text-gray-900">{cashSyncing && cashIn == null ? 'fetching…' : cashIn == null ? 'not available' : rm(net as number)}</div>
+            {cashIn != null && <div className="text-xs text-gray-400">in {rm(cashIn)} − out {rm(cashOut ?? 0)}</div>}
+          </div>
+          <button onClick={syncCash} disabled={cashSyncing} className="shrink-0 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 disabled:opacity-50">{cashSyncing ? 'Refreshing…' : '🔄 Refresh'}</button>
+        </div>
+      )}
 
       {saved ? (
         <div className="mt-8 text-center">
