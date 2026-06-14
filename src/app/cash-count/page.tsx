@@ -124,20 +124,18 @@ export default function CashCountPage() {
 
       {!saved && !isSummary && (
         <div className="mt-4 rounded-xl border border-gray-200 bg-white px-4 py-3">
-          <div className="flex items-start justify-between">
-            <div className="min-w-0">
-              <div className="text-xs text-gray-500">Niagawan cash so far today</div>
-              <div className="text-lg font-bold text-gray-900">{cashSyncing && cashIn == null ? 'fetching…' : cashIn == null ? 'not available' : rm(net as number)}</div>
-              {cashIn != null && <div className="text-xs text-gray-400">in {rm(cashIn)} − out {rm(cashOut ?? 0)}</div>}
-            </div>
-            <button onClick={syncCash} disabled={cashSyncing} className="shrink-0 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 disabled:opacity-50">{cashSyncing ? 'Refreshing…' : '🔄 Refresh'}</button>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-gray-500">Niagawan so far today</span>
+            <button onClick={syncCash} disabled={cashSyncing} className="shrink-0 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-700 disabled:opacity-50">{cashSyncing ? 'Refreshing…' : '🔄 Refresh'}</button>
           </div>
-          {cashIn != null && (
-            <div className="mt-2 space-y-1 border-t border-gray-100 pt-2">
-              <div className="mb-0.5 text-xs text-gray-400">Other methods today</div>
-              <div className="flex justify-between text-sm"><span className="text-gray-500">QR</span><span className="font-medium text-gray-800">{qrIn == null ? '—' : rm(qrIn)}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-gray-500">Card</span><span className="font-medium text-gray-800">{cardIn == null ? '—' : rm(cardIn)}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-gray-500">Transfer</span><span className="font-medium text-gray-800">{transferIn == null ? '—' : rm(transferIn)}</span></div>
+          {cashIn == null ? (
+            <div className="mt-2 text-sm text-gray-400">{cashSyncing ? 'fetching…' : 'not available'}</div>
+          ) : (
+            <div className="mt-2 space-y-1.5">
+              <div className="flex justify-between text-sm"><span className="text-gray-600">Cash <span className="text-gray-400">(in − out)</span></span><span className="font-semibold text-gray-900">{rm(net as number)}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-gray-600">QR</span><span className="font-semibold text-gray-900">{qrIn == null ? '—' : rm(qrIn)}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-gray-600">Card</span><span className="font-semibold text-gray-900">{cardIn == null ? '—' : rm(cardIn)}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-gray-600">Transfer</span><span className="font-semibold text-gray-900">{transferIn == null ? '—' : rm(transferIn)}</span></div>
             </div>
           )}
         </div>
