@@ -19,6 +19,9 @@ export default function CashCountPage() {
   const [counts, setCounts] = useState<Record<number, number>>({});
   const [cashIn, setCashIn] = useState<number | null>(null);
   const [cashOut, setCashOut] = useState<number | null>(null);
+  const [qrIn, setQrIn] = useState<number | null>(null);
+  const [cardIn, setCardIn] = useState<number | null>(null);
+  const [transferIn, setTransferIn] = useState<number | null>(null);
   const [cashSyncing, setCashSyncing] = useState(true);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -29,8 +32,15 @@ export default function CashCountPage() {
 
   // load today's CASH-in figure; trigger a fresh sync since counting happens after hours
   const loadCashIn = useCallback(async () => {
-    const { data } = await supabase.from('niagawan_cash_daily').select('cash_in,cash_out,updated_at').eq('day', today).maybeSingle();
-    if (data && data.cash_in != null) { setCashIn(Number(data.cash_in)); setCashOut(data.cash_out == null ? 0 : Number(data.cash_out)); setCashSyncing(false); }
+    const { data } = await supabase.from('niagawan_cash_daily').select('cash_in,cash_out,qr_in,card_in,transfer_in,updated_at').eq('day', today).maybeSingle();
+    if (data && data.cash_in != null) {
+      setCashIn(Number(data.cash_in));
+      setCashOut(data.cash_out == null ? 0 : Number(data.cash_out));
+      setQrIn(data.qr_in == null ? null : Number(data.qr_in));
+      setCardIn(data.card_in == null ? null : Number(data.card_in));
+      setTransferIn(data.transfer_in == null ? null : Number(data.transfer_in));
+      setCashSyncing(false);
+    }
   }, [today]);
 
   // load the last 30 days of saved counts, joined with that day's Niagawan cash for the variance
@@ -113,13 +123,23 @@ export default function CashCountPage() {
       <p className="mt-1 text-sm text-gray-500">{new Date(today).toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
 
       {!saved && !isSummary && (
-        <div className="mt-4 flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3">
-          <div className="min-w-0">
-            <div className="text-xs text-gray-500">Niagawan cash so far today</div>
-            <div className="text-lg font-bold text-gray-900">{cashSyncing && cashIn == null ? 'fetching…' : cashIn == null ? 'not available' : rm(net as number)}</div>
-            {cashIn != null && <div className="text-xs text-gray-400">in {rm(cashIn)} − out {rm(cashOut ?? 0)}</div>}
+        <div className="mt-4 rounded-xl border border-gray-200 bg-white px-4 py-3">
+          <div className="flex items-start justify-between">
+            <div className="min-w-0">
+              <div className="text-xs text-gray-500">Niagawan cash so far today</div>
+              <div className="text-lg font-bold text-gray-900">{cashSyncing && cashIn == null ? 'fetching…' : cashIn == null ? 'not available' : rm(net as number)}</div>
+              {cashIn != null && <div className="text-xs text-gray-400">in {rm(cashIn)} − out {rm(cashOut ?? 0)}</div>}
+            </div>
+            <button onClick={syncCash} disabled={cashSyncing} className="shrink-0 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 disabled:opacity-50">{cashSyncing ? 'Refreshing…' : '🔄 Refresh'}</button>
           </div>
-          <button onClick={syncCash} disabled={cashSyncing} className="shrink-0 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 disabled:opacity-50">{cashSyncing ? 'Refreshing…' : '🔄 Refresh'}</button>
+          {cashIn != null && (
+            <div className="mt-2 space-y-1 border-t border-gray-100 pt-2">
+              <div className="mb-0.5 text-xs text-gray-400">Other methods today</div>
+              <div className="flex justify-between text-sm"><span className="text-gray-500">QR</span><span className="font-medium text-gray-800">{qrIn == null ? '—' : rm(qrIn)}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-gray-500">Card</span><span className="font-medium text-gray-800">{cardIn == null ? '—' : rm(cardIn)}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-gray-500">Transfer</span><span className="font-medium text-gray-800">{transferIn == null ? '—' : rm(transferIn)}</span></div>
+            </div>
+          )}
         </div>
       )}
 
