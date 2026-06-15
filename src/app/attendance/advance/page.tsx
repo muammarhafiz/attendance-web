@@ -1,0 +1,131 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { supabase } from '@/lib/supabaseClient';
+
+type Req = {
+  id: string;
+  staff_email: string;
+  amount: number;
+  reason: string | null;
+  status: 'pending' | 'approved' | 'rejected' | string;
+  review_note: string | null;
+  credit_by: string | null;
+  requested_at: string;
+};
+
+const rm = (n: number | null) => `RM${Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const fmtD = (d: string | null) => { if (!d) return ''; const [y, m, dd] = d.split('-'); return `${dd}/${m}/${y}`; };
+
+export default function AdvanceRequestsPage() {
+  const [authed, setAuthed] = useState<boolean | null>(null);
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [reqs, setReqs] = useState<Req[]>([]);
+  const [names, setNames] = useState<Map<string, string>>(new Map());
+  const [busy, setBusy] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [statusF, setStatusF] = useState('all');
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      setAuthed(!!data.session);
+      if (data.session) { const { data: ok } = await supabase.rpc('is_admin'); setIsAdmin(ok === true); }
+      else setIsAdmin(false);
+    })();
+  }, []);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [{ data: r }, { data: s }] = await Promise.all([
+      supabase.from('advance_requests').select('*').order('requested_at', { ascending: false }),
+      supabase.from('staff').select('email,name'),
+    ]);
+    setReqs((r ?? []) as Req[]);
+    const m = new Map<string, string>();
+    (s ?? []).forEach((x: { email: string; name: string | null }) => m.set(x.email.toLowerCase(), x.name ?? x.email));
+    setNames(m);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { if (isAdmin) load(); }, [isAdmin, load]);
+
+  const filtered = useMemo(() => {
+    const rank = (s: string) => (s === 'pending' ? 0 : 1);
+    return [...reqs]
+      .sort((a, b) => rank(a.status) - rank(b.status) || b.requested_at.localeCompare(a.requested_at))
+      .filter((r) => statusF === 'all' || r.status === statusF);
+  }, [reqs, statusF]);
+
+  const decide = useCallback(async (id: string, approve: boolean) => {
+    const note = window.prompt(approve
+      ? 'Note for the staff (required) — e.g. "Approved, credited Wed":'
+      : 'Reason for rejecting (required) — e.g. "requested before the 15th":');
+    if (note === null) return;
+    if (!note.trim()) { alert('A reason is required.'); return; }
+    setBusy(id);
+    const { error } = await supabase.rpc(approve ? 'approve_advance' : 'reject_advance', { p_id: id, p_note: note.trim() });
+    if (error) alert(error.message); else await load();
+    setBusy(null);
+  }, [load]);
+
+  if (authed === null || isAdmin === null) return <div className="text-sm text-gray-500">Checking…</div>;
+  if (!authed) return <div className="text-sm text-gray-600">Please sign in.</div>;
+  if (!isAdmin) return <div className="text-sm text-gray-600">This page is for admins only.</div>;
+
+  const pending = reqs.filter((r) => r.status === 'pending').length;
+
+  return (
+    <div>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <span className="text-sm text-gray-600">{pending} pending</span>
+        <select value={statusF} onChange={(e) => setStatusF(e.target.value)} className="rounded-md border border-gray-300 px-2 py-1.5 text-sm">
+          <option value="all">All statuses</option>
+          <option value="pending">Pending</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+        </select>
+        <button onClick={load} disabled={loading} className="ml-auto rounded-md border border-gray-300 px-2.5 py-1.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50">
+          {loading ? 'Loading…' : 'Refresh'}
+        </button>
+      </div>
+      <p className="mb-3 text-xs text-gray-400">Approving posts an <b>ADVANCE deduction</b> to that month&apos;s payslip and sets the credit-by date (+2 working days).</p>
+
+      {filtered.length === 0 ? (
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">No advance requests.</div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((r) => (
+            <div key={r.id} className={`rounded-lg border p-3 ${r.status === 'pending' ? 'border-amber-200 bg-amber-50/40' : 'border-gray-200 bg-white'}`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-sm font-medium text-gray-900">
+                    {names.get(r.staff_email.toLowerCase()) ?? r.staff_email}
+                    <span className="ml-2 text-sm font-bold text-gray-900">{rm(r.amount)}</span>
+                  </div>
+                  {r.reason && <div className="text-xs text-gray-500">{r.reason}</div>}
+                  {r.review_note && <div className="mt-0.5 text-xs text-gray-400">📝 {r.review_note}</div>}
+                  {r.status === 'approved' && r.credit_by && <div className="mt-0.5 text-xs font-medium text-emerald-600">Credit by {fmtD(r.credit_by)}</div>}
+                </div>
+                <div className="flex items-center gap-2">
+                  {r.status === 'pending' ? (
+                    <>
+                      <button onClick={() => decide(r.id, true)} disabled={busy === r.id} className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
+                        {busy === r.id ? '…' : 'Approve'}
+                      </button>
+                      <button onClick={() => decide(r.id, false)} disabled={busy === r.id} className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-500 hover:bg-gray-100 disabled:opacity-50">Reject</button>
+                    </>
+                  ) : (
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${r.status === 'approved' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                      {r.status === 'approved' ? 'Approved ✓' : 'Rejected'}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
