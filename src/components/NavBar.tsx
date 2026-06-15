@@ -15,7 +15,7 @@ export default function NavBar() {
   const [email, setEmail] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [canBoard, setCanBoard] = useState<boolean>(false); // supervisor or admin -> sees Workshop
-  const [counts, setCounts] = useState<{ mc: number; offday: number; po: number }>({ mc: 0, offday: 0, po: 0 });
+  const [counts, setCounts] = useState<{ mc: number; offday: number; advance: number; po: number }>({ mc: 0, offday: 0, advance: 0, po: 0 });
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -45,12 +45,12 @@ export default function NavBar() {
   }, []);
 
   useEffect(() => {
-    if (!isAdmin) { setCounts({ mc: 0, offday: 0, po: 0 }); return; }
+    if (!isAdmin) { setCounts({ mc: 0, offday: 0, advance: 0, po: 0 }); return; }
     let active = true;
     const load = async () => {
       const { data } = await supabase.rpc('notification_counts');
-      const d = (data ?? {}) as { mc?: number; offday?: number; po?: number };
-      if (active) setCounts({ mc: d.mc ?? 0, offday: d.offday ?? 0, po: d.po ?? 0 });
+      const d = (data ?? {}) as { mc?: number; offday?: number; advance?: number; po?: number };
+      if (active) setCounts({ mc: d.mc ?? 0, offday: d.offday ?? 0, advance: d.advance ?? 0, po: d.po ?? 0 });
     };
     load();
     const id = setInterval(load, 60000);
@@ -79,7 +79,7 @@ export default function NavBar() {
     ...(canBoard ? [{ href: '/workshop', label: 'Workshop' } as NavItem] : []),
   ];
   const adminLinks: NavItem[] = [
-    { href: '/attendance/checkin', match: '/attendance', label: 'Attendance', badge: counts.mc + counts.offday },
+    { href: '/attendance/checkin', match: '/attendance', label: 'Attendance', badge: counts.mc + counts.offday + counts.advance },
     { href: '/niagawan/sales', match: '/niagawan', label: 'Niagawan', badge: counts.po },
     { href: '/employees', label: 'Employees' },
     // Records is a sub-tab inside the Payroll page now (PayrollTabs), not a navbar item.
@@ -147,7 +147,7 @@ export default function NavBar() {
             ) : (
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
             )}
-            {!open && isAdmin && (counts.mc + counts.offday + counts.po) > 0 && (
+            {!open && isAdmin && (counts.mc + counts.offday + counts.advance + counts.po) > 0 && (
               <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-rose-500" />
             )}
           </button>
