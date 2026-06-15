@@ -42,6 +42,7 @@ function offStatusChip(s: string): string {
 const rm = (n: number | null) => `RM${Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 type AdvReq = { id: string; amount: number; reason: string | null; status: string; review_note: string | null; credit_by: string | null; requested_at: string };
 type AdvLimit = { cap: number; eligible_today: boolean; already_requested: boolean; day: number; absent_days: number; eligible_days: number };
+type Perf = { year: number; month: number; late_days: number; late_minutes: number; offday: number; mc: number; absent: number };
 
 function haversineM(aLat: number, aLon: number, bLat: number, bLon: number): number {
   const R = 6371000;
@@ -85,6 +86,7 @@ export default function CheckinV2() {
   const [advMsg, setAdvMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [advLimit, setAdvLimit] = useState<AdvLimit | null>(null);
   const [myAdv, setMyAdv] = useState<AdvReq[]>([]);
+  const [perf, setPerf] = useState<Perf | null>(null);
 
   useEffect(() => {
     setNow(new Date());
@@ -131,6 +133,14 @@ export default function CheckinV2() {
   }, [email]);
 
   useEffect(() => { if (email) loadAdv(); }, [email, loadAdv]);
+
+  const loadPerf = useCallback(async () => {
+    if (!email) return;
+    const { data } = await supabase.rpc('my_attendance_summary');
+    if (data) setPerf(data as Perf);
+  }, [email]);
+
+  useEffect(() => { if (email) loadPerf(); }, [email, loadPerf]);
 
   // Not signed in → send to the branded login page.
   useEffect(() => { if (email === null) router.replace('/login'); }, [email, router]);
@@ -298,6 +308,22 @@ export default function CheckinV2() {
 
       <p className="mt-3 text-center text-xs text-slate-400">Your location is checked on the server when you tap the button.</p>
 
+      {/* Attendance performance this month — late/absent highlighted */}
+      {perf && (
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex items-baseline justify-between">
+            <div className="text-sm font-medium text-slate-700">📊 My attendance</div>
+            <div className="text-xs text-slate-400">{new Date(perf.year, perf.month - 1, 1).toLocaleDateString('en-MY', { month: 'long', year: 'numeric' })}</div>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <PerfStat label="Late" value={perf.late_days === 0 ? 'None' : `${perf.late_days}× · ${perf.late_minutes} min`} bad={perf.late_days > 0} tone="amber" />
+            <PerfStat label="Absent" value={perf.absent === 0 ? 'None' : `${perf.absent} day${perf.absent === 1 ? '' : 's'}`} bad={perf.absent > 0} tone="rose" />
+            <PerfStat label="Off days" value={String(perf.offday)} />
+            <PerfStat label="MC" value={String(perf.mc)} />
+          </div>
+        </div>
+      )}
+
       {/* Request off day */}
       <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <button onClick={() => setShowOff((v) => !v)} className="flex w-full items-center justify-between text-sm font-medium text-slate-700">
@@ -445,6 +471,17 @@ export default function CheckinV2() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function PerfStat({ label, value, bad, tone }: { label: string; value: string; bad?: boolean; tone?: 'amber' | 'rose' }) {
+  const box = bad ? (tone === 'rose' ? 'border-rose-200 bg-rose-50' : 'border-amber-200 bg-amber-50') : 'border-slate-200 bg-slate-50';
+  const val = bad ? (tone === 'rose' ? 'text-rose-700' : 'text-amber-700') : 'text-slate-800';
+  return (
+    <div className={`rounded-lg border px-3 py-2 ${box}`}>
+      <div className="text-[11px] uppercase tracking-wide text-slate-400">{label}</div>
+      <div className={`text-sm font-semibold ${val}`}>{value}</div>
     </div>
   );
 }
