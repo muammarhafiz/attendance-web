@@ -37,6 +37,9 @@ function offStatusChip(s: string): string {
   const x = (s || '').toLowerCase();
   return 'shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ' + (x === 'approved' ? 'bg-emerald-100 text-emerald-700' : x === 'rejected' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-800');
 }
+const rm = (n: number | null) => `RM${Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+type AdvReq = { id: string; amount: number; reason: string | null; status: string; review_note: string | null; credit_by: string | null; requested_at: string };
+type AdvLimit = { cap: number; eligible_today: boolean; already_requested: boolean; day: number };
 
 function haversineM(aLat: number, aLon: number, bLat: number, bLon: number): number {
   const R = 6371000;
@@ -73,6 +76,13 @@ export default function CheckinV2() {
   const [offBusy, setOffBusy] = useState(false);
   const [offMsg, setOffMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [myOff, setMyOff] = useState<OffReq[]>([]);
+  const [showAdv, setShowAdv] = useState(false);
+  const [advAmount, setAdvAmount] = useState('');
+  const [advReason, setAdvReason] = useState('');
+  const [advBusy, setAdvBusy] = useState(false);
+  const [advMsg, setAdvMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [advLimit, setAdvLimit] = useState<AdvLimit | null>(null);
+  const [myAdv, setMyAdv] = useState<AdvReq[]>([]);
 
   useEffect(() => {
     setNow(new Date());
@@ -107,6 +117,18 @@ export default function CheckinV2() {
   }, [email]);
 
   useEffect(() => { if (email) loadOff(); }, [email, loadOff]);
+
+  const loadAdv = useCallback(async () => {
+    if (!email) return;
+    const [{ data: lim }, { data: rows }] = await Promise.all([
+      supabase.rpc('my_advance_limit'),
+      supabase.from('advance_requests').select('id,amount,reason,status,review_note,credit_by,requested_at').ilike('staff_email', email).order('requested_at', { ascending: false }).limit(6),
+    ]);
+    if (lim) setAdvLimit(lim as AdvLimit);
+    setMyAdv((rows ?? []) as AdvReq[]);
+  }, [email]);
+
+  useEffect(() => { if (email) loadAdv(); }, [email, loadAdv]);
 
   // Not signed in → send to the branded login page.
   useEffect(() => { if (email === null) router.replace('/login'); }, [email, router]);
@@ -178,6 +200,17 @@ export default function CheckinV2() {
     if (error) setOffMsg({ kind: 'err', text: error.message });
     else { setOffMsg({ kind: 'ok', text: 'Off-day request sent ✓ — waiting for approval.' }); setOffFrom(''); setOffTo(''); setOffReason(''); loadOff(); }
     setOffBusy(false);
+  };
+
+  const submitAdv = async () => {
+    if (!email) return;
+    const amt = Number(advAmount);
+    if (!amt || amt <= 0) { setAdvMsg({ kind: 'err', text: 'Enter an amount.' }); return; }
+    setAdvBusy(true); setAdvMsg(null);
+    const { error } = await supabase.rpc('request_advance', { p_amount: amt, p_reason: advReason || null });
+    if (error) setAdvMsg({ kind: 'err', text: error.message });
+    else { setAdvMsg({ kind: 'ok', text: 'Advance request sent ✓ — waiting for approval.' }); setAdvAmount(''); setAdvReason(''); loadAdv(); }
+    setAdvBusy(false);
   };
 
   if (email === undefined || email === null)
@@ -302,6 +335,62 @@ export default function CheckinV2() {
                   <div className="min-w-0">
                     <div className="text-slate-800">{r.date_from === r.date_to ? fmtDate(r.date_from) : `${fmtDate(r.date_from)} – ${fmtDate(r.date_to)}`}</div>
                     {r.reason && <div className="truncate text-xs text-slate-400">{r.reason}</div>}
+                  </div>
+                  <span className={offStatusChip(r.status)}>{offStatusLabel(r.status)}</span>
+                </div>
+                {r.review_note && (
+                  <div className={`mt-1 rounded-md px-2 py-1 text-xs ${(r.status || '').toLowerCase() === 'rejected' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                    {(r.status || '').toLowerCase() === 'rejected' ? 'Reason: ' : 'Note: '}{r.review_note}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Request salary advance */}
+      <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <button onClick={() => setShowAdv((v) => !v)} className="flex w-full items-center justify-between text-sm font-medium text-slate-700">
+          <span>💵 Request salary advance</span>
+          <span className="text-slate-400">{showAdv ? '−' : '+'}</span>
+        </button>
+        {showAdv && (
+          <div className="mt-3 space-y-2 text-sm">
+            {advLimit && (
+              <div className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">Max this month: <span className="font-semibold text-slate-900">{rm(advLimit.cap)}</span> · 15 days&apos; salary</div>
+            )}
+            {advLimit && !advLimit.eligible_today ? (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">Advances can be requested from the 15th of the month onward.</div>
+            ) : advLimit && advLimit.already_requested ? (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">You already have an advance request this month.</div>
+            ) : (
+              <>
+                <label className="block text-xs text-slate-500">Amount (RM)
+                  <input type="number" inputMode="decimal" value={advAmount} onChange={(e) => setAdvAmount(e.target.value)} placeholder="e.g. 500" className="mt-0.5 block w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm" />
+                </label>
+                <label className="block text-xs text-slate-500">Reason (optional)
+                  <input value={advReason} onChange={(e) => setAdvReason(e.target.value)} placeholder="e.g. medical bill" className="mt-0.5 block w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm" />
+                </label>
+                <button onClick={submitAdv} disabled={advBusy} className="w-full rounded-lg bg-brand-700 py-2.5 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-50">{advBusy ? 'Sending…' : 'Request advance'}</button>
+              </>
+            )}
+            {advMsg && <div className={`rounded-md border p-2 text-sm ${advMsg.kind === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>{advMsg.text}</div>}
+          </div>
+        )}
+      </div>
+
+      {/* My advance requests */}
+      {myAdv.length > 0 && (
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="text-sm font-medium text-slate-700">💵 My advance requests</div>
+          <div className="mt-2 space-y-1.5">
+            {myAdv.map((r) => (
+              <div key={r.id} className="text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-slate-800">{rm(r.amount)}{r.reason ? ` · ${r.reason}` : ''}</div>
+                    {r.status === 'approved' && r.credit_by && <div className="text-xs text-emerald-600">credited by {fmtDate(r.credit_by)}</div>}
                   </div>
                   <span className={offStatusChip(r.status)}>{offStatusLabel(r.status)}</span>
                 </div>
