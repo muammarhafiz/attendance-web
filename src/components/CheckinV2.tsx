@@ -21,6 +21,23 @@ function fmtTime(t: string | null | undefined): string {
   return `${h}:${mm} ${ampm}`;
 }
 
+type OffReq = { id: string; date_from: string; date_to: string; reason: string | null; status: string; created_at: string };
+
+// 'YYYY-MM-DD' -> '15 Jun'
+function fmtDate(d: string): string {
+  const p = (d || '').split('-');
+  const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][(Number(p[1]) || 1) - 1];
+  return `${Number(p[2]) || ''} ${mon}`.trim();
+}
+function offStatusLabel(s: string): string {
+  const x = (s || '').toLowerCase();
+  return x === 'approved' ? '✅ Approved' : x === 'rejected' ? '❌ Rejected' : '⏳ Pending';
+}
+function offStatusChip(s: string): string {
+  const x = (s || '').toLowerCase();
+  return 'shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ' + (x === 'approved' ? 'bg-emerald-100 text-emerald-700' : x === 'rejected' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-800');
+}
+
 function haversineM(aLat: number, aLon: number, bLat: number, bLon: number): number {
   const R = 6371000;
   const dLat = ((bLat - aLat) * Math.PI) / 180;
@@ -55,6 +72,7 @@ export default function CheckinV2() {
   const [offReason, setOffReason] = useState('');
   const [offBusy, setOffBusy] = useState(false);
   const [offMsg, setOffMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [myOff, setMyOff] = useState<OffReq[]>([]);
 
   useEffect(() => {
     setNow(new Date());
@@ -79,6 +97,16 @@ export default function CheckinV2() {
   }, []);
 
   useEffect(() => { if (email) loadStatus(); }, [email, loadStatus]);
+
+  const loadOff = useCallback(async () => {
+    if (!email) return;
+    const { data } = await supabase.from('offday_requests')
+      .select('id,date_from,date_to,reason,status,created_at')
+      .eq('staff_email', email).order('created_at', { ascending: false }).limit(8);
+    setMyOff((data ?? []) as OffReq[]);
+  }, [email]);
+
+  useEffect(() => { if (email) loadOff(); }, [email, loadOff]);
 
   // Not signed in → send to the branded login page.
   useEffect(() => { if (email === null) router.replace('/login'); }, [email, router]);
@@ -148,7 +176,7 @@ export default function CheckinV2() {
       staff_email: email, date_from: offFrom, date_to: offTo, reason: offReason || null,
     });
     if (error) setOffMsg({ kind: 'err', text: error.message });
-    else { setOffMsg({ kind: 'ok', text: 'Off-day request sent ✓ — waiting for approval.' }); setOffFrom(''); setOffTo(''); setOffReason(''); }
+    else { setOffMsg({ kind: 'ok', text: 'Off-day request sent ✓ — waiting for approval.' }); setOffFrom(''); setOffTo(''); setOffReason(''); loadOff(); }
     setOffBusy(false);
   };
 
@@ -262,6 +290,24 @@ export default function CheckinV2() {
           </div>
         )}
       </div>
+
+      {/* My off-day requests — staff see their own request status (pending / approved / rejected) */}
+      {myOff.length > 0 && (
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="text-sm font-medium text-slate-700">🌴 My off-day requests</div>
+          <div className="mt-2 space-y-1.5">
+            {myOff.map((r) => (
+              <div key={r.id} className="flex items-center justify-between gap-2 text-sm">
+                <div className="min-w-0">
+                  <div className="text-slate-800">{r.date_from === r.date_to ? fmtDate(r.date_from) : `${fmtDate(r.date_from)} – ${fmtDate(r.date_to)}`}</div>
+                  {r.reason && <div className="truncate text-xs text-slate-400">{r.reason}</div>}
+                </div>
+                <span className={offStatusChip(r.status)}>{offStatusLabel(r.status)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Submit MC */}
       <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
