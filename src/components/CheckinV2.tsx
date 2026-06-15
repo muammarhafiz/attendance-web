@@ -87,6 +87,7 @@ export default function CheckinV2() {
   const [advLimit, setAdvLimit] = useState<AdvLimit | null>(null);
   const [myAdv, setMyAdv] = useState<AdvReq[]>([]);
   const [perf, setPerf] = useState<Perf | null>(null);
+  const [perfOffset, setPerfOffset] = useState(0); // 0 = this month, 1 = last month, …
 
   useEffect(() => {
     setNow(new Date());
@@ -136,9 +137,11 @@ export default function CheckinV2() {
 
   const loadPerf = useCallback(async () => {
     if (!email) return;
-    const { data } = await supabase.rpc('my_attendance_summary');
+    const kl = new Date(Date.now() + 8 * 3600e3);                 // KL "now"
+    const t = new Date(Date.UTC(kl.getUTCFullYear(), kl.getUTCMonth() - perfOffset, 1));
+    const { data } = await supabase.rpc('my_attendance_summary', { p_year: t.getUTCFullYear(), p_month: t.getUTCMonth() + 1 });
     if (data) setPerf(data as Perf);
-  }, [email]);
+  }, [email, perfOffset]);
 
   useEffect(() => { if (email) loadPerf(); }, [email, loadPerf]);
 
@@ -311,9 +314,13 @@ export default function CheckinV2() {
       {/* Attendance performance this month — late/absent highlighted */}
       {perf && (
         <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex items-baseline justify-between">
+          <div className="flex items-center justify-between">
             <div className="text-sm font-medium text-slate-700">📊 My attendance</div>
-            <div className="text-xs text-slate-400">{new Date(perf.year, perf.month - 1, 1).toLocaleDateString('en-MY', { month: 'long', year: 'numeric' })}</div>
+            <div className="flex items-center gap-1">
+              <button onClick={() => setPerfOffset((o) => o + 1)} aria-label="Previous month" className="rounded px-1.5 py-0.5 text-base leading-none text-slate-500 hover:bg-slate-100">‹</button>
+              <span className="min-w-[64px] text-center text-xs font-medium text-slate-500">{new Date(perf.year, perf.month - 1, 1).toLocaleDateString('en-MY', { month: 'short', year: 'numeric' })}</span>
+              <button onClick={() => setPerfOffset((o) => Math.max(0, o - 1))} disabled={perfOffset === 0} aria-label="Next month" className="rounded px-1.5 py-0.5 text-base leading-none text-slate-500 hover:bg-slate-100 disabled:opacity-30">›</button>
+            </div>
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2">
             <PerfStat label="Late" value={perf.late_days === 0 ? 'None' : `${perf.late_days}× · ${perf.late_minutes} min`} bad={perf.late_days > 0} tone="amber" />
