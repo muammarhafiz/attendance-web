@@ -29,6 +29,8 @@ function fmtDate(d: string): string {
   const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][(Number(p[1]) || 1) - 1];
   return `${Number(p[2]) || ''} ${mon}`.trim();
 }
+// KL today + N days as 'YYYY-MM-DD' (off-day requests need >= 2 days' lead time).
+const klDatePlus = (days: number) => new Date(Date.now() + 8 * 3600e3 + days * 86400e3).toISOString().slice(0, 10);
 function offStatusLabel(s: string): string {
   const x = (s || '').toLowerCase();
   return x === 'approved' ? '✅ Approved' : x === 'rejected' ? '❌ Rejected' : '⏳ Pending';
@@ -193,6 +195,7 @@ export default function CheckinV2() {
     if (!email) return;
     if (!offFrom || !offTo) { setOffMsg({ kind: 'err', text: 'Pick the start and end dates.' }); return; }
     if (offFrom > offTo) { setOffMsg({ kind: 'err', text: 'The "From" date is after the "To" date.' }); return; }
+    if (offFrom < klDatePlus(2)) { setOffMsg({ kind: 'err', text: 'Off-day requests must be made at least 2 days in advance.' }); return; }
     setOffBusy(true); setOffMsg(null);
     const { error } = await supabase.from('offday_requests').insert({
       staff_email: email, date_from: offFrom, date_to: offTo, reason: offReason || null,
@@ -305,10 +308,10 @@ export default function CheckinV2() {
           <div className="mt-3 space-y-2">
             <div className="grid grid-cols-2 gap-2">
               <label className="text-xs text-slate-500">From
-                <input type="date" value={offFrom} onChange={(e) => setOffFrom(e.target.value)} className="mt-0.5 block w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm" />
+                <input type="date" value={offFrom} min={klDatePlus(2)} onChange={(e) => setOffFrom(e.target.value)} className="mt-0.5 block w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm" />
               </label>
               <label className="text-xs text-slate-500">To
-                <input type="date" value={offTo} onChange={(e) => setOffTo(e.target.value)} className="mt-0.5 block w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm" />
+                <input type="date" value={offTo} min={offFrom || klDatePlus(2)} onChange={(e) => setOffTo(e.target.value)} className="mt-0.5 block w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm" />
               </label>
             </div>
             <label className="block text-xs text-slate-500">Reason (optional)
