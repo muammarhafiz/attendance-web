@@ -10,6 +10,7 @@ type Req = {
   date_to: string;
   reason: string | null;
   status: 'pending' | 'approved' | 'rejected' | string;
+  review_note: string | null;
   created_at: string;
 };
 
@@ -63,9 +64,14 @@ export default function OffdayRequestsPage() {
   }, [reqs, staffF, statusF]);
 
   const decide = useCallback(async (id: string, approve: boolean) => {
+    const note = window.prompt(approve
+      ? 'Note for the staff (required) — e.g. "OK, approved":'
+      : 'Reason for rejecting (required) — e.g. "2 staff already off that date":');
+    if (note === null) return;                       // cancelled
+    if (!note.trim()) { alert('A reason is required.'); return; }
     setBusy(id);
-    const { error } = await supabase.rpc(approve ? 'approve_offday' : 'reject_offday', { p_id: id });
-    if (!error) await load();
+    const { error } = await supabase.rpc(approve ? 'approve_offday' : 'reject_offday', { p_id: id, p_note: note.trim() });
+    if (error) alert(error.message); else await load();
     setBusy(null);
   }, [load]);
 
@@ -109,6 +115,7 @@ export default function OffdayRequestsPage() {
                     </span>
                   </div>
                   {r.reason && <div className="text-xs text-gray-500">{r.reason}</div>}
+                  {r.review_note && <div className="mt-0.5 text-xs text-gray-400">📝 {r.review_note}</div>}
                 </div>
                 <div className="flex items-center gap-2">
                   {r.status === 'pending' ? (

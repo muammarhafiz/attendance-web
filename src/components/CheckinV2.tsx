@@ -21,7 +21,7 @@ function fmtTime(t: string | null | undefined): string {
   return `${h}:${mm} ${ampm}`;
 }
 
-type OffReq = { id: string; date_from: string; date_to: string; reason: string | null; status: string; created_at: string };
+type OffReq = { id: string; date_from: string; date_to: string; reason: string | null; status: string; review_note: string | null; created_at: string };
 
 // 'YYYY-MM-DD' -> '15 Jun'
 function fmtDate(d: string): string {
@@ -101,7 +101,7 @@ export default function CheckinV2() {
   const loadOff = useCallback(async () => {
     if (!email) return;
     const { data } = await supabase.from('offday_requests')
-      .select('id,date_from,date_to,reason,status,created_at')
+      .select('id,date_from,date_to,reason,status,review_note,created_at')
       .eq('staff_email', email).order('created_at', { ascending: false }).limit(8);
     setMyOff((data ?? []) as OffReq[]);
   }, [email]);
@@ -297,12 +297,19 @@ export default function CheckinV2() {
           <div className="text-sm font-medium text-slate-700">🌴 My off-day requests</div>
           <div className="mt-2 space-y-1.5">
             {myOff.map((r) => (
-              <div key={r.id} className="flex items-center justify-between gap-2 text-sm">
-                <div className="min-w-0">
-                  <div className="text-slate-800">{r.date_from === r.date_to ? fmtDate(r.date_from) : `${fmtDate(r.date_from)} – ${fmtDate(r.date_to)}`}</div>
-                  {r.reason && <div className="truncate text-xs text-slate-400">{r.reason}</div>}
+              <div key={r.id} className="text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-slate-800">{r.date_from === r.date_to ? fmtDate(r.date_from) : `${fmtDate(r.date_from)} – ${fmtDate(r.date_to)}`}</div>
+                    {r.reason && <div className="truncate text-xs text-slate-400">{r.reason}</div>}
+                  </div>
+                  <span className={offStatusChip(r.status)}>{offStatusLabel(r.status)}</span>
                 </div>
-                <span className={offStatusChip(r.status)}>{offStatusLabel(r.status)}</span>
+                {r.review_note && (
+                  <div className={`mt-1 rounded-md px-2 py-1 text-xs ${(r.status || '').toLowerCase() === 'rejected' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                    {(r.status || '').toLowerCase() === 'rejected' ? 'Reason: ' : 'Note: '}{r.review_note}
+                  </div>
+                )}
               </div>
             ))}
           </div>
