@@ -39,7 +39,7 @@ function offStatusChip(s: string): string {
 }
 const rm = (n: number | null) => `RM${Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 type AdvReq = { id: string; amount: number; reason: string | null; status: string; review_note: string | null; credit_by: string | null; requested_at: string };
-type AdvLimit = { cap: number; eligible_today: boolean; already_requested: boolean; day: number };
+type AdvLimit = { cap: number; eligible_today: boolean; already_requested: boolean; day: number; absent_days: number; eligible_days: number };
 
 function haversineM(aLat: number, aLon: number, bLat: number, bLon: number): number {
   const R = 6371000;
@@ -358,7 +358,7 @@ export default function CheckinV2() {
         {showAdv && (
           <div className="mt-3 space-y-2 text-sm">
             {advLimit && (
-              <div className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">Max this month: <span className="font-semibold text-slate-900">{rm(advLimit.cap)}</span> · 15 days&apos; salary</div>
+              <div className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">Max this month: <span className="font-semibold text-slate-900">{rm(advLimit.cap)}</span> · {advLimit.eligible_days} day{advLimit.eligible_days === 1 ? '' : 's'}{advLimit.absent_days > 0 ? ` (15 − ${advLimit.absent_days} absent)` : ''}</div>
             )}
             {advLimit && !advLimit.eligible_today ? (
               <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">Advances can be requested from the 15th of the month onward.</div>
