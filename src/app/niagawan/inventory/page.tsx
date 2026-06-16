@@ -28,7 +28,7 @@ type Row = {
   remarks: string | null;
 };
 
-const CAT_ORDER = ['Oil - Mannol', 'Oil - Liquimoly', 'Oil - Gulf', 'Oil - Shell', 'Proton X70', 'Proton X50', 'Proton S70', 'Other'];
+const CAT_ORDER = ['Oil - Mannol', 'Oil - Liquimoly', 'Oil - Gulf', 'Oil - Shell', 'Proton', 'Other'];
 const CATS = [...CAT_ORDER];
 function catRank(c: string) { const i = CAT_ORDER.indexOf(c); return i < 0 ? CAT_ORDER.length : i; }
 // Best-guess category for a new catalog item from its description.
@@ -40,9 +40,7 @@ function guessCategory(descp: string | null): string {
   if (d.includes('LIQUI')) return 'Oil - Liquimoly';
   if (d.includes('GULF')) return 'Oil - Gulf';
   if (d.includes('SHELL')) return 'Oil - Shell';
-  if (/\bX[\s-]?70\b/.test(d)) return 'Proton X70';
-  if (/\bX[\s-]?50\b/.test(d)) return 'Proton X50';
-  if (/\bS[\s-]?70\b/.test(d)) return 'Proton S70';
+  if (/(^|[^A-Z0-9])(X[ -]?70|X[ -]?50|S[ -]?70)([^0-9]|$)/.test(d)) return 'Proton';
   return 'Other';
 }
 
@@ -82,7 +80,7 @@ export default function NiagawanInventoryPage() {
   const [eDesc, setEDesc] = useState('');
   const [eMin, setEMin] = useState('4');
   const [eCat, setECat] = useState('Other');
-  const [bulkCat, setBulkCat] = useState('Proton X70');
+  const [bulkCat, setBulkCat] = useState('Proton');
   const [bulkSup, setBulkSup] = useState('');
   const [bulkMsg, setBulkMsg] = useState('');
 
