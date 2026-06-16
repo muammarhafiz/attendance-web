@@ -4,10 +4,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-type Watch = { code: string; description: string | null; min_balance: number; category: string | null; auto_po: boolean; supplier_id: string | null; supplier_name: string | null };
+type Watch = { code: string; description: string | null; min_balance: number; category: string | null; auto_po: boolean; supplier_id: string | null; supplier_name: string | null; remarks: string | null };
 type Bal = { code: string; balance: number | null; suppliers: number | null; checked_at: string | null; updated_at: string | null };
 type Supplier = { creditor_id: string; name: string };
 type PoSugg = { id: number; supplier_id: string; supplier_name: string | null; items: { code: string; desc?: string; qty: number }[]; period_from: string | null; period_to: string | null; status: string; po_number: string | null; note: string | null };
+type NewItem = { sku: string; code: string; descp: string | null; price: number | null; first_seen: string };
 const fmtD = (d: string | null) => { if (!d) return ''; const [y, m, dd] = d.split('-'); return dd ? `${dd}/${m}/${y}` : d; };
 const isoOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const thisMonday = () => { const d = new Date(); const dow = d.getDay(); d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow)); return isoOf(d); };
@@ -24,6 +25,7 @@ type Row = {
   stock: 'low' | 'ok' | 'unsure';
   po: 'on_po' | 'kiv' | null;
   note: string | null;
+  remarks: string | null;
 };
 
 const CAT_ORDER = ['Oil - Mannol', 'Oil - Liquimoly', 'Oil - Gulf', 'Oil - Shell', 'Proton X70', 'Proton X50', 'Proton S70', 'Other'];
@@ -39,6 +41,7 @@ export default function NiagawanInventoryPage() {
   const [statuses, setStatuses] = useState<Status[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [suggs, setSuggs] = useState<PoSugg[]>([]);
+  const [newItems, setNewItems] = useState<NewItem[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [filter, setFilter] = useState<'low' | 'all'>('low');
   const [showReview, setShowReview] = useState(false);
@@ -86,7 +89,7 @@ export default function NiagawanInventoryPage() {
     setLoading(true);
     setErr(null);
     const [w, b, s, sup, pg] = await Promise.all([
-      supabase.from('niagawan_min_stock').select('code,description,min_balance,category,auto_po,supplier_id,supplier_name'),
+      supabase.from('niagawan_min_stock').select('code,description,min_balance,category,auto_po,supplier_id,supplier_name,remarks'),
       supabase.from('niagawan_inventory').select('code,balance,suppliers,checked_at,updated_at'),
       supabase.from('niagawan_inventory_status').select('code,status,note'),
       supabase.from('niagawan_suppliers').select('creditor_id,name').order('name'),
@@ -105,11 +108,15 @@ export default function NiagawanInventoryPage() {
     const { data } = await supabase.from('po_suggestions').select('id,supplier_id,supplier_name,items,period_from,period_to,status,po_number,note').neq('status', 'rejected').order('id', { ascending: false }).limit(30);
     setSuggs((data ?? []) as PoSugg[]);
   }, []);
+  const loadNewItems = useCallback(async () => {
+    const { data } = await supabase.rpc('new_catalog_items');
+    setNewItems((Array.isArray(data) ? data : []) as NewItem[]);
+  }, []);
   const approveSugg = useCallback(async (id: number) => { await supabase.from('po_suggestions').update({ status: 'approved', updated_at: new Date().toISOString() }).eq('id', id); await loadSuggs(); }, [loadSuggs]);
   const rejectSugg = useCallback(async (id: number) => { await supabase.from('po_suggestions').update({ status: 'rejected', updated_at: new Date().toISOString() }).eq('id', id); await loadSuggs(); }, [loadSuggs]);
   const dismissSugg = useCallback(async (id: number) => { await supabase.from('po_suggestions').delete().eq('id', id); await loadSuggs(); }, [loadSuggs]);
 
-  useEffect(() => { if (!isAdmin) return; loadAll(); }, [isAdmin, loadAll]);
+  useEffect(() => { if (!isAdmin) return; loadAll(); loadNewItems(); }, [isAdmin, loadAll, loadNewItems]);
   useEffect(() => { if (!isAdmin) return; const t = setInterval(loadSuggs, 12000); return () => clearInterval(t); }, [isAdmin, loadSuggs]);
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); if (poPollRef.current) clearInterval(poPollRef.current); }, []);
 
@@ -135,6 +142,7 @@ export default function NiagawanInventoryPage() {
         stock,
         po: st?.status ?? null,
         note: st?.note ?? null,
+        remarks: w.remarks ?? null,
       };
     });
   }, [watch, balByCode, statByCode]);
@@ -200,6 +208,19 @@ export default function NiagawanInventoryPage() {
     await supabase.from('niagawan_inventory_status').update({ note }).eq('code', code);
     await loadStatuses();
   }, [loadStatuses]);
+
+  const saveRemarks = useCallback(async (code: string, remarks: string) => {
+    setWatch((ws) => ws.map((w) => (w.code === code ? { ...w, remarks } : w)));
+    await supabase.from('niagawan_min_stock').update({ remarks: remarks || null, updated_at: new Date().toISOString() }).eq('code', code);
+  }, []);
+  const addNewToWatchlist = useCallback(async (it: NewItem) => {
+    await supabase.from('niagawan_min_stock').insert({ code: it.code, description: it.descp || null, min_balance: 4, category: 'Other' });
+    await Promise.all([loadAll(), loadNewItems()]);
+  }, [loadAll, loadNewItems]);
+  const dismissNewItem = useCallback(async (sku: string) => {
+    await supabase.rpc('dismiss_new_item', { p_sku: sku });
+    await loadNewItems();
+  }, [loadNewItems]);
 
   const checkStockNow = useCallback(async () => {
     if (sync === 'running') return;
@@ -291,6 +312,19 @@ export default function NiagawanInventoryPage() {
 
   return (
     <div>
+      {newItems.length > 0 && (
+        <div className="mb-6 rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
+          <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-emerald-900">🆕 New items in Niagawan<span className="rounded-full bg-emerald-600 px-1.5 text-xs font-semibold text-white">{newItems.length}</span><span className="text-xs font-normal text-emerald-700/70">review → add to watchlist or dismiss</span></h2>
+          <div className="max-h-80 space-y-1.5 overflow-y-auto">
+            {newItems.map((it) => (
+              <div key={it.sku} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-200 bg-white p-2">
+                <div className="min-w-0"><div className="text-sm font-medium text-gray-900">{it.code}</div><div className="truncate text-xs text-gray-500">{it.descp}{it.price != null ? ` · RM${Number(it.price).toLocaleString('en-MY')}` : ''} · seen {fmtD(it.first_seen.slice(0, 10))}</div></div>
+                <div className="whitespace-nowrap"><button onClick={() => addNewToWatchlist(it)} className="mr-1 rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700">Add to watchlist</button><button onClick={() => dismissNewItem(it.sku)} className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-500 hover:bg-gray-100">Dismiss</button></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {suggs.length > 0 && (
         <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50/50 p-3">
           <h2 className="mb-2 text-sm font-semibold text-blue-900">
@@ -412,6 +446,7 @@ export default function NiagawanInventoryPage() {
                     <th className="px-3 py-2 font-semibold text-gray-700">Description</th>
                     <th className="px-3 py-2 text-right font-semibold text-gray-700">Bal</th>
                     <th className="px-3 py-2 text-right font-semibold text-gray-700">Min</th>
+                    <th className="px-3 py-2 font-semibold text-gray-700">Remarks</th>
                     <th className="px-3 py-2 text-right font-semibold text-gray-700">Action</th>
                   </tr>
                 </thead>
@@ -429,6 +464,9 @@ export default function NiagawanInventoryPage() {
                         <td className="px-3 py-2 text-gray-700">{r.description}</td>
                         <td className={`whitespace-nowrap px-3 py-2 text-right font-medium ${onPo ? 'text-blue-700' : low ? 'text-rose-600' : 'text-gray-900'}`}>{r.balance}</td>
                         <td className="whitespace-nowrap px-3 py-2 text-right text-gray-500">{r.min}</td>
+                        <td className="px-3 py-2">
+                          <input defaultValue={r.remarks || ''} placeholder="add a note…" onBlur={(e) => { if (e.target.value !== (r.remarks || '')) saveRemarks(r.code, e.target.value); }} className="w-full min-w-[120px] rounded border border-gray-200 px-1.5 py-0.5 text-xs" />
+                        </td>
                         <td className="whitespace-nowrap px-3 py-2 text-right">
                           {onPo ? (
                             <button onClick={() => clearStatus(r.code)} className="rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-500 hover:bg-gray-100">Undo PO</button>
