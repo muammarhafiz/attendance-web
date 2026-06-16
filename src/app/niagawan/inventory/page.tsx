@@ -40,9 +40,9 @@ function guessCategory(descp: string | null): string {
   if (d.includes('LIQUI')) return 'Oil - Liquimoly';
   if (d.includes('GULF')) return 'Oil - Gulf';
   if (d.includes('SHELL')) return 'Oil - Shell';
-  if (/\bX70\b/.test(d)) return 'Proton X70';
-  if (/\bX50\b/.test(d)) return 'Proton X50';
-  if (/\bS70\b/.test(d)) return 'Proton S70';
+  if (/\bX[\s-]?70\b/.test(d)) return 'Proton X70';
+  if (/\bX[\s-]?50\b/.test(d)) return 'Proton X50';
+  if (/\bS[\s-]?70\b/.test(d)) return 'Proton S70';
   return 'Other';
 }
 
