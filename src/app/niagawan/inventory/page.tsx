@@ -31,6 +31,20 @@ type Row = {
 const CAT_ORDER = ['Oil - Mannol', 'Oil - Liquimoly', 'Oil - Gulf', 'Oil - Shell', 'Proton X70', 'Proton X50', 'Proton S70', 'Other'];
 const CATS = [...CAT_ORDER];
 function catRank(c: string) { const i = CAT_ORDER.indexOf(c); return i < 0 ? CAT_ORDER.length : i; }
+// Best-guess category for a new catalog item from its description.
+// Oil brands are checked first: oil descriptions sometimes name an example vehicle
+// (e.g. "MANNOL ATF Multivehicle 1l eg. X70cbu") and the brand must win over the model.
+function guessCategory(descp: string | null): string {
+  const d = (descp || '').toUpperCase();
+  if (d.includes('MANNOL')) return 'Oil - Mannol';
+  if (d.includes('LIQUI')) return 'Oil - Liquimoly';
+  if (d.includes('GULF')) return 'Oil - Gulf';
+  if (d.includes('SHELL')) return 'Oil - Shell';
+  if (/\bX70\b/.test(d)) return 'Proton X70';
+  if (/\bX50\b/.test(d)) return 'Proton X50';
+  if (/\bS70\b/.test(d)) return 'Proton S70';
+  return 'Other';
+}
 
 export default function NiagawanInventoryPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -214,7 +228,7 @@ export default function NiagawanInventoryPage() {
     await supabase.from('niagawan_min_stock').update({ remarks: remarks || null, updated_at: new Date().toISOString() }).eq('code', code);
   }, []);
   const addNewToWatchlist = useCallback(async (it: NewItem) => {
-    await supabase.from('niagawan_min_stock').insert({ code: it.code, description: it.descp || null, min_balance: 4, category: 'Other' });
+    await supabase.from('niagawan_min_stock').insert({ code: it.code, description: it.descp || null, min_balance: 4, category: guessCategory(it.descp) });
     await Promise.all([loadAll(), loadNewItems()]);
   }, [loadAll, loadNewItems]);
   const dismissNewItem = useCallback(async (sku: string) => {
@@ -316,12 +330,18 @@ export default function NiagawanInventoryPage() {
         <div className="mb-6 rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
           <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-emerald-900">🆕 New items in Niagawan<span className="rounded-full bg-emerald-600 px-1.5 text-xs font-semibold text-white">{newItems.length}</span><span className="text-xs font-normal text-emerald-700/70">review → add to watchlist or dismiss</span></h2>
           <div className="max-h-80 space-y-1.5 overflow-y-auto">
-            {newItems.map((it) => (
+            {newItems.map((it) => {
+              const cat = guessCategory(it.descp);
+              return (
               <div key={it.sku} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-200 bg-white p-2">
-                <div className="min-w-0"><div className="text-sm font-medium text-gray-900">{it.code}</div><div className="truncate text-xs text-gray-500">{it.descp}{it.price != null ? ` · RM${Number(it.price).toLocaleString('en-MY')}` : ''} · seen {fmtD(it.first_seen.slice(0, 10))}</div></div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-sm font-medium text-gray-900">{it.code}{cat !== 'Other' && <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">→ {cat}</span>}</div>
+                  <div className="truncate text-xs text-gray-500">{it.descp}{it.price != null ? ` · RM${Number(it.price).toLocaleString('en-MY')}` : ''} · seen {fmtD(it.first_seen.slice(0, 10))}</div>
+                </div>
                 <div className="whitespace-nowrap"><button onClick={() => addNewToWatchlist(it)} className="mr-1 rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700">Add to watchlist</button><button onClick={() => dismissNewItem(it.sku)} className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-500 hover:bg-gray-100">Dismiss</button></div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
