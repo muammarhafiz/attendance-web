@@ -82,6 +82,9 @@ export default function NiagawanInventoryPage() {
   const [eDesc, setEDesc] = useState('');
   const [eMin, setEMin] = useState('4');
   const [eCat, setECat] = useState('Other');
+  const [bulkCat, setBulkCat] = useState('Proton X70');
+  const [bulkSup, setBulkSup] = useState('');
+  const [bulkMsg, setBulkMsg] = useState('');
 
   useEffect(() => {
     (async () => {
@@ -316,6 +319,17 @@ export default function NiagawanInventoryPage() {
     setWatch((ws) => ws.map((w) => (w.code === code ? { ...w, supplier_id: supplier_id || null, supplier_name: sup?.name ?? null } : w)));
     await supabase.from('niagawan_min_stock').update({ supplier_id: supplier_id || null, supplier_name: sup?.name ?? null, updated_at: new Date().toISOString() }).eq('code', code);
   }, [suppliers]);
+  // Set one supplier + turn on Auto-PO for every item in a category → makes that section scannable.
+  const bulkAssignSupplier = useCallback(async (cat: string, supplier_id: string) => {
+    const sup = suppliers.find((s) => s.creditor_id === supplier_id) || null;
+    if (!sup) { setBulkMsg('Pick a supplier first.'); return; }
+    const n = watch.filter((w) => w.category === cat).length;
+    if (!n) { setBulkMsg(`No items in “${cat}”.`); return; }
+    setBulkMsg('Updating…');
+    setWatch((ws) => ws.map((w) => (w.category === cat ? { ...w, supplier_id, supplier_name: sup.name, auto_po: true } : w)));
+    const { error } = await supabase.from('niagawan_min_stock').update({ supplier_id, supplier_name: sup.name, auto_po: true, updated_at: new Date().toISOString() }).eq('category', cat);
+    setBulkMsg(error ? `Error: ${error.message}` : `✓ Set ${sup.name} + Auto-PO on all ${n} “${cat}” item(s) — it’s now scannable in Draft POs.`);
+  }, [suppliers, watch]);
   const autoPoCount = useMemo(() => watch.filter((w) => w.auto_po).length, [watch]);
 
   if (authed === null || isAdmin === null) return <div className="text-sm text-gray-500">Checking session…</div>;
@@ -589,6 +603,20 @@ export default function NiagawanInventoryPage() {
                 <select value={nCat} onChange={(e) => setNCat(e.target.value)} className="mt-1 block rounded-md border border-gray-300 px-2 py-1 text-xs">{CATS.map((c) => <option key={c} value={c}>{c}</option>)}</select>
               </label>
               <button onClick={addItem} disabled={!nCode.trim()} className="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-700 disabled:opacity-40">Add item</button>
+            </div>
+            <div className="mb-3 flex flex-wrap items-end gap-2 rounded-md border border-blue-100 bg-blue-50/60 p-2">
+              <div className="w-full text-xs font-medium text-blue-900">Bulk-assign a supplier to a whole category — turns on Auto-PO for every item in it, so the section becomes scannable in “Draft POs from sales”.</div>
+              <label className="text-xs text-gray-600">Category
+                <select value={bulkCat} onChange={(e) => { setBulkCat(e.target.value); setBulkMsg(''); }} className="mt-1 block rounded-md border border-gray-300 px-2 py-1 text-xs">{CATS.map((c) => <option key={c} value={c}>{c}</option>)}</select>
+              </label>
+              <label className="text-xs text-gray-600">Supplier
+                <select value={bulkSup} onChange={(e) => { setBulkSup(e.target.value); setBulkMsg(''); }} className="mt-1 block rounded-md border border-gray-300 px-2 py-1 text-xs">
+                  <option value="">— pick —</option>
+                  {suppliers.map((s) => <option key={s.creditor_id} value={s.creditor_id}>{s.name}</option>)}
+                </select>
+              </label>
+              <button onClick={() => bulkAssignSupplier(bulkCat, bulkSup)} disabled={!bulkSup} className="rounded-md bg-blue-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-800 disabled:opacity-40">Apply to all {watch.filter((w) => w.category === bulkCat).length} items</button>
+              {bulkMsg && <span className="w-full text-xs text-gray-700">{bulkMsg}</span>}
             </div>
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search code or description…" className="mb-2 w-full rounded-md border border-gray-300 px-2 py-1 text-xs" />
             <div className="max-h-96 overflow-y-auto rounded-md border border-gray-100">
