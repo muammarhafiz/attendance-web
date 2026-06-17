@@ -12,9 +12,11 @@ type SaleInv = { inv: string; day: string; customer: string | null; amount: numb
 type Trade = { id: number; match: string; note: string | null };
 type Bill = { id: number; month: string; label: string; amount: number | string };
 type Pay = { staff_name: string; total_earn: number | string; epf_er: number | string | null; socso_er: number | string | null; eis_er: number | string | null };
+type Meal = { meal_date: string; amount: number | string; restaurant: string | null };
 
 const n = (x: unknown) => { const v = Number(x); return Number.isFinite(v) ? v : 0; };
 const rm = (x: number) => `RM ${x.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const fmtDate = (d: string) => { const [y, m, dd] = String(d).split('-'); return dd && m && y ? `${dd}/${m}/${y}` : String(d); };
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 export default function PnlPage() {
@@ -27,7 +29,8 @@ export default function PnlPage() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [pay, setPay] = useState<Pay[]>([]);
-  const [staffMeals, setStaffMeals] = useState(0); // GrabFood staff lunch (auto from email receipts)
+  const [staffMeals, setStaffMeals] = useState(0); // GrabFood staff lunch total (auto from email receipts)
+  const [meals, setMeals] = useState<Meal[]>([]);   // individual GrabFood receipts for the month
   const [targetNet, setTargetNet] = useState(50000);
   const [ptjPct, setPtjPct] = useState(5);
   const [loading, setLoading] = useState(true);
@@ -46,7 +49,7 @@ export default function PnlPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [d, s, t, b, p, st, g] = await Promise.all([
+    const [d, s, t, b, p, st, g, ml] = await Promise.all([
       supabase.from('niagawan_daily').select('day,invoices,sales,cogs,profit,unpaid_count').gte('day', firstDay).lte('day', lastDay).order('day'),
       supabase.from('niagawan_sale_inv').select('inv,day,customer,amount,status,staff').gte('day', firstDay).lte('day', lastDay),
       supabase.from('trade_customers').select('*').order('match'),
@@ -54,6 +57,7 @@ export default function PnlPage() {
       supabase.from('v_payslip_admin_summary_v2').select('staff_name,total_earn,epf_er,socso_er,eis_er').eq('year', year).eq('month', month),
       supabase.from('pnl_settings').select('*'),
       supabase.rpc('grab_meals_month_total', { p_month: monthKey }),
+      supabase.from('grab_meals').select('meal_date,amount,restaurant').gte('meal_date', firstDay).lte('meal_date', lastDay).order('meal_date', { ascending: true }),
     ]);
     if (d.error) setErr(d.error.message); else setErr(null);
     setDaily((d.data ?? []) as Daily[]);
@@ -62,6 +66,7 @@ export default function PnlPage() {
     setBills((b.data ?? []) as Bill[]);
     setPay((p.data ?? []) as Pay[]);
     setStaffMeals(n(g.data) || 0);
+    setMeals((ml.data ?? []) as Meal[]);
     for (const row of (st.data ?? []) as Array<{ key: string; value: unknown }>) {
       if (row.key === 'target_net') setTargetNet(n(row.value) || 50000);
       if (row.key === 'putrajaya_pct') setPtjPct(n(row.value));
@@ -254,6 +259,42 @@ export default function PnlPage() {
               </div>
               <div className="mt-1 text-xs text-gray-400">Bonus/commission is already inside Payroll — don&rsquo;t add it here again.</div>
             </div>
+          </div>
+
+          {/* Staff meals — GrabFood, per-receipt breakdown */}
+          <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm font-semibold text-gray-700">Staff meals — GrabFood <span className="font-normal text-gray-400">· {meals.length} order{meals.length === 1 ? '' : 's'} this month, auto from email receipts</span></span>
+              <span className="text-sm font-semibold">{rm(c.staffMeals)}</span>
+            </div>
+            {meals.length === 0 ? (
+              <div className="text-xs text-gray-400">No GrabFood receipts found for this month.</div>
+            ) : (
+              <div className="max-h-72 overflow-y-auto rounded border border-gray-100">
+                <table className="min-w-full text-sm">
+                  <thead className="sticky top-0 bg-gray-50 text-left text-gray-500">
+                    <tr><th className="px-3 py-1.5 font-semibold">Date</th><th className="px-3 py-1.5 text-right font-semibold">Amount</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {meals.map((mm, i) => (
+                      <tr key={i}>
+                        <td className="px-3 py-1.5">
+                          <div className="text-gray-800">{fmtDate(mm.meal_date)}</div>
+                          {mm.restaurant && <div className="max-w-[18rem] truncate text-xs text-gray-400">{mm.restaurant}</div>}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-gray-700">{rm(n(mm.amount))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-gray-200 font-semibold">
+                      <td className="px-3 py-1.5">Total</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums">{rm(c.staffMeals)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
           </div>
 
           {/* Summary + settings */}
