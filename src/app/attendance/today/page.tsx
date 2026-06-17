@@ -11,6 +11,7 @@ type Row = {
   check_in_kl: string | null;
   check_out_kl: string | null;
   late_min: number | null;
+  half: 'AM' | 'PM' | null;
 };
 
 function fmtTime(t: string | null | undefined): string {
@@ -33,6 +34,7 @@ function klNowMinutes(): number {
 }
 
 const DEFAULT_START_MIN = 9 * 60 + 30; // 09:30 default start
+const PM_HALF_START_MIN = 13 * 60 + 30; // afternoon half-day expects 1:30pm
 const GRACE_MIN = 60; // "Absent" shows 1 hour after each person's start
 
 export default function AttendanceTodayPage() {
@@ -91,10 +93,13 @@ export default function AttendanceTodayPage() {
     });
   }, [isAdmin]);
 
-  const cutoffFor = useCallback(
-    (emailAddr: string) => (startByEmail.get(emailAddr) ?? DEFAULT_START_MIN) + GRACE_MIN,
+  // Expected start (minutes) — an afternoon half-day expects 1:30pm, else the staff's normal start.
+  const expStartFor = useCallback(
+    (r: Row) => (r.half === 'PM' ? PM_HALF_START_MIN : (startByEmail.get(r.staff_email) ?? DEFAULT_START_MIN)),
     [startByEmail]
   );
+  // "Absent" only shows 1 hour after the expected start (so an afternoon half-day isn't flagged in the morning).
+  const cutoffFor = useCallback((r: Row) => expStartFor(r) + GRACE_MIN, [expStartFor]);
 
   const counts = useMemo(() => {
     const nowMin = klNowMinutes();
@@ -105,7 +110,7 @@ export default function AttendanceTodayPage() {
         present++;
         if ((r.late_min ?? 0) > 0) late++;
       } else if (r.status === 'ABSENT') {
-        if (nowMin >= cutoffFor(r.staff_email)) absent++;
+        if (nowMin >= cutoffFor(r)) absent++;
         else notYet++;
       }
     }
@@ -160,9 +165,10 @@ export default function AttendanceTodayPage() {
             {rows.map((r) => {
               const isAbsent = r.status === 'ABSENT';
               const nowMin = klNowMinutes();
-              const showAbsent = isAbsent && nowMin >= cutoffFor(r.staff_email);
-              const showNotYet = isAbsent && nowMin < cutoffFor(r.staff_email);
+              const showAbsent = isAbsent && nowMin >= cutoffFor(r);
+              const showNotYet = isAbsent && nowMin < cutoffFor(r);
               const isLate = r.status === 'PRESENT' && (r.late_min ?? 0) > 0;
+              const halfLabel = r.half === 'AM' ? 'Half day · AM (9:30–1:30)' : r.half === 'PM' ? 'Half day · PM (1:30–6:00)' : null;
               return (
                 <tr key={r.staff_email} className="border-t border-gray-100">
                   <td className="px-3 py-2 text-gray-900">{r.display_name ?? r.staff_email}</td>
@@ -174,6 +180,7 @@ export default function AttendanceTodayPage() {
                     {(r.status === 'OFFDAY' || r.status === 'MC') && <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{r.status === 'OFFDAY' ? 'Off day' : 'MC'}</span>}
                     {showAbsent && <span className="rounded-full bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700">Absent</span>}
                     {showNotYet && <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">Not in yet</span>}
+                    {halfLabel && <span className="ml-1 rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700" title={halfLabel}>½ {r.half}</span>}
                   </td>
                   <td className="px-3 py-2 text-gray-700">{fmtTime(r.check_in_kl)}</td>
                   <td className="px-3 py-2 text-gray-700">{fmtTime(r.check_out_kl)}</td>

@@ -19,9 +19,12 @@ const STATUSES = [
   { value: 'PH', label: 'Public holiday (government)' },
   { value: 'MC', label: 'Medical leave (MC)' },
   { value: 'ABSENT', label: 'Absent' },
+  { value: 'HALF_AM', label: 'Half day — morning (9:30–1:30)' },
+  { value: 'HALF_PM', label: 'Half day — afternoon (1:30–6:00)' },
 ];
 const STATUS_LABEL: Record<string, string> = {
   OFFDAY: 'Off day', PH: 'Public holiday', MC: 'MC', ABSENT: 'Absent',
+  HALF_AM: 'Half day (AM)', HALF_PM: 'Half day (PM)',
 };
 
 export default function AttendanceOffdayPage() {
@@ -67,13 +70,16 @@ export default function AttendanceOffdayPage() {
     const start = `${y}-${String(m).padStart(2, '0')}-01`;
     const endD = new Date(y, m, 1);
     const end = `${endD.getFullYear()}-${String(endD.getMonth() + 1).padStart(2, '0')}-01`;
-    const { data } = await supabase
-      .from('day_status')
-      .select('day,staff_email,status,note')
-      .gte('day', start)
-      .lt('day', end)
-      .order('day', { ascending: false });
-    setExisting((data ?? []) as DSRow[]);
+    const [{ data: ds }, { data: dh }] = await Promise.all([
+      supabase.from('day_status').select('day,staff_email,status,note').gte('day', start).lt('day', end),
+      supabase.from('day_half').select('day,staff_email,half,note').gte('day', start).lt('day', end),
+    ]);
+    const merged: DSRow[] = [
+      ...((ds ?? []) as DSRow[]),
+      ...((dh ?? []) as Array<{ day: string; staff_email: string; half: string; note: string | null }>)
+        .map((h) => ({ day: h.day, staff_email: h.staff_email, status: `HALF_${h.half}`, note: h.note })),
+    ].sort((a, b) => (a.day < b.day ? 1 : -1));
+    setExisting(merged);
   }, [from]);
 
   useEffect(() => {
@@ -95,9 +101,16 @@ export default function AttendanceOffdayPage() {
     if (!from || !to || from > to) { setMsg({ kind: 'err', text: 'Pick a valid date range.' }); return; }
     setBusy(true); setMsg(null);
     try {
+      const isHalf = status === 'HALF_AM' || status === 'HALF_PM';
+      const half = status === 'HALF_PM' ? 'PM' : 'AM';
       const days = eachDay(from, to);
       for (const d of days) {
-        if (who === 'ALL') {
+        if (isHalf) {
+          const { error } = who === 'ALL'
+            ? await supabase.rpc('set_day_half_all', { p_day: d, p_half: half, p_note: note || null })
+            : await supabase.rpc('set_day_half', { p_email: who, p_day: d, p_half: half, p_note: note || null });
+          if (error) throw error;
+        } else if (who === 'ALL') {
           const { error } = await supabase.rpc('set_day_status_all', { p_day: d, p_status: status, p_note: note || null });
           if (error) throw error;
         } else {
@@ -106,7 +119,7 @@ export default function AttendanceOffdayPage() {
         }
       }
       await supabase.rpc('attendance_v2_recompute', { p_from: from, p_to: to });
-      setMsg({ kind: 'ok', text: `Set ${status} for ${days.length} day(s).` });
+      setMsg({ kind: 'ok', text: `Set ${STATUS_LABEL[status] ?? status} for ${days.length} day(s).` });
       setNote('');
       await loadExisting();
     } catch (e: any) {
@@ -119,7 +132,10 @@ export default function AttendanceOffdayPage() {
   const clearOne = useCallback(async (r: DSRow) => {
     setBusy(true); setMsg(null);
     try {
-      const { error } = await supabase.from('day_status').delete().eq('day', r.day).eq('staff_email', r.staff_email);
+      const isHalf = r.status === 'HALF_AM' || r.status === 'HALF_PM';
+      const { error } = isHalf
+        ? await supabase.rpc('clear_day_half', { p_email: r.staff_email, p_day: r.day })
+        : await supabase.from('day_status').delete().eq('day', r.day).eq('staff_email', r.staff_email);
       if (error) throw error;
       await supabase.rpc('attendance_v2_recompute', { p_from: r.day, p_to: r.day });
       await loadExisting();
