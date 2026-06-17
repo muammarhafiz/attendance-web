@@ -82,7 +82,7 @@ export default function IntakePage() {
         setPhase('error');
       }
     }, 3000);
-  }, [plate, model, phone]);
+  }, [plate, model, phone, note]);
 
   const reset = () => { setPlate(''); setModel(''); setPhone(''); setNote(''); setInvNo(null); setErrMsg(null); setHistory(null); setShowDetails(false); setPhase('form'); };
 
