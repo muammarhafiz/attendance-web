@@ -11,6 +11,7 @@ const TABS = [
   { href: '/attendance/report', label: 'Report' },
   { href: '/attendance/offday', label: 'Off-day' },
   { href: '/attendance/leave', label: 'Off-day req' },
+  { href: '/attendance/halfday-req', label: 'Half-day req' },
   { href: '/attendance/advance', label: 'Advance' },
   { href: '/attendance/mc', label: 'MC' },
   { href: '/attendance/settings', label: 'Settings' },
