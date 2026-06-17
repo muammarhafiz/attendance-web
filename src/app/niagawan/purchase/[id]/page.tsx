@@ -34,6 +34,7 @@ type Item = {
   amount: number;
   category: string;
   will_create: boolean;
+  sku_id: string | null;       // owner's chosen Niagawan product (authoritative at create time)
   sold_status: string | null;
   sold_on: string | null;
   in_niagawan: boolean | null;
@@ -62,6 +63,10 @@ export default function ReviewInvoicePage() {
   const [head, setHead] = useState<Pinv | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [cats, setCats] = useState<string[]>([]);
+  // Candidate products from OUR catalog (niagawan_products), keyed by normalised code.
+  // This is what tells us a line's code is ambiguous (e.g. 9 products share the code "DRIER").
+  const [catMatches, setCatMatches] = useState<Record<string, NiagawanMatch[]>>({});
+  const [candsLoaded, setCandsLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
@@ -94,6 +99,7 @@ export default function ReviewInvoicePage() {
         amount: Number(r.amount) || 0,
         category: String(r.category ?? '') || 'SPARE PARTS ITEM',
         will_create: Boolean(r.will_create),
+        sku_id: (r.sku_id as string) ?? null,
         sold_status: (r.sold_status as string) ?? null,
         sold_on: (r.sold_on as string) ?? null,
         in_niagawan: (r.in_niagawan as boolean | null) ?? null,
@@ -107,13 +113,63 @@ export default function ReviewInvoicePage() {
 
   useEffect(() => { if (isAdmin) load(); }, [isAdmin, load]);
 
+  // Every distinct raw code across all lines (the typed code + any alternate codes).
+  const allCodes = useMemo(() => {
+    const s = new Set<string>();
+    items.forEach((it) => { if (it.item_code.trim()) s.add(it.item_code.trim()); it.codes.forEach((c) => c.trim() && s.add(c.trim())); });
+    return [...s];
+  }, [items]);
+  const codeKey = useMemo(() => allCodes.slice().sort().join('|'), [allCodes]);
+
+  // Load candidate products from our catalog for every line code, keyed by normalised code.
+  useEffect(() => {
+    let cancelled = false;
+    setCandsLoaded(false);
+    (async () => {
+      if (!allCodes.length) { if (!cancelled) { setCatMatches({}); setCandsLoaded(true); } return; }
+      const { data } = await supabase.from('niagawan_products').select('sku,code,descp,price').in('code', allCodes);
+      if (cancelled) return;
+      const map: Record<string, NiagawanMatch[]> = {};
+      ((data ?? []) as Array<{ sku: string; code: string; descp: string | null; price: number | string | null }>).forEach((p) => {
+        const k = normCode(p.code); if (!k) return;
+        (map[k] = map[k] || []).push({ sku: String(p.sku), code: String(p.code), descp: String(p.descp ?? ''), price: String(p.price ?? ''), bal: '' });
+      });
+      setCatMatches(map); setCandsLoaded(true);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [codeKey]);
+
+  // Candidate products for one line = catalog products sharing any of its (normalised) codes.
+  const candsFor = useCallback((it: Item): NiagawanMatch[] => {
+    const keys = Array.from(new Set([it.item_code, ...it.codes].map(normCode).filter(Boolean)));
+    const map = new Map<string, NiagawanMatch>();
+    keys.forEach((k) => (catMatches[k] || []).forEach((m) => map.set(m.sku, m)));
+    return [...map.values()];
+  }, [catMatches]);
+
+  // How a line resolves: link to one product, create new, or (ambiguous) needs the owner to choose.
+  type Res = { kind: 'link'; sku: string; auto: boolean } | { kind: 'create'; auto: boolean } | { kind: 'unresolved' };
+  const resolutionFor = useCallback((it: Item): Res => {
+    const cands = candsFor(it);
+    if (it.sku_id) return { kind: 'link', sku: it.sku_id, auto: false };
+    if (it.will_create) return { kind: 'create', auto: false };
+    if (cands.length === 1) return { kind: 'link', sku: cands[0].sku, auto: true };
+    if (cands.length === 0) return { kind: 'create', auto: true };
+    return { kind: 'unresolved' };
+  }, [candsFor]);
+
+  const unresolvedLines = useMemo(
+    () => (candsLoaded ? items.filter((it) => resolutionFor(it).kind === 'unresolved').map((it) => it.line_no) : []),
+    [items, resolutionFor, candsLoaded]);
+
   const computedTotal = useMemo(() => round2(items.reduce((s, it) => s + lineAmount(it.qty, it.unit_price, it.discount), 0)), [items]);
   const totalMismatch = head?.total != null && Math.abs(round2(head.total) - computedTotal) > 0.01;
 
   const setItem = (idx: number, patch: Partial<Item>) => {
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   };
-  const addRow = () => setItems((prev) => [...prev, { line_no: prev.length + 1, item_code: '', codes: [], description: '', qty: 1, unit_price: 0, discount: 0, amount: 0, category: 'SPARE PARTS ITEM', will_create: true, sold_status: null, sold_on: null, in_niagawan: null, niagawan_category: null, niagawan_matches: null, code_verified: null }]);
+  const addRow = () => setItems((prev) => [...prev, { line_no: prev.length + 1, item_code: '', codes: [], description: '', qty: 1, unit_price: 0, discount: 0, amount: 0, category: 'SPARE PARTS ITEM', will_create: true, sku_id: null, sold_status: null, sold_on: null, in_niagawan: null, niagawan_category: null, niagawan_matches: null, code_verified: null }]);
   const removeRow = (idx: number) => setItems((prev) => prev.filter((_, i) => i !== idx).map((it, i) => ({ ...it, line_no: i + 1 })));
 
   const save = useCallback(async (approve: boolean) => {
@@ -126,6 +182,7 @@ export default function ReviewInvoicePage() {
       if (approve) {
         if (cleaned.length === 0) throw new Error('Add at least one line item before approving.');
         if (cleaned.some((it) => !it.item_code.trim() && it.codes.length === 0)) throw new Error('Every item needs at least one code before approving.');
+        if (cleaned.some((it) => resolutionFor(it).kind === 'unresolved')) throw new Error('Some lines match several products — choose the right one (or “create new”) before approving.');
       }
       const { error: hErr } = await supabase.from('pinv').update({
         supplier_name: head.supplier_name?.trim() || null,
@@ -140,20 +197,26 @@ export default function ReviewInvoicePage() {
       const { error: dErr } = await supabase.from('pinv_item').delete().eq('pinv_id', id);
       if (dErr) throw dErr;
       if (cleaned.length) {
-        const rows = cleaned.map((it) => ({
-          pinv_id: id,
-          line_no: it.line_no,
-          item_code: it.item_code.trim() || it.codes[0] || null,
-          codes: it.codes,
-          description: it.description.trim() || null,
-          qty: it.qty,
-          unit_price: it.unit_price,
-          discount: it.discount,
-          amount: it.amount,
-          category: it.category || 'SPARE PARTS ITEM',
-          code_verified: it.code_verified, // keep the read-time flag (cleared to null when the code is edited)
-          // matched / will_create are decided authoritatively by the NAS at create time
-        }));
+        const rows = cleaned.map((it) => {
+          // The owner's decision is now authoritative: link to the chosen product (sku_id) or
+          // create a new one (will_create). Single catalog match auto-links; no match auto-creates.
+          const res = resolutionFor(it);
+          return {
+            pinv_id: id,
+            line_no: it.line_no,
+            item_code: it.item_code.trim() || it.codes[0] || null,
+            codes: it.codes,
+            description: it.description.trim() || null,
+            qty: it.qty,
+            unit_price: it.unit_price,
+            discount: it.discount,
+            amount: it.amount,
+            category: it.category || 'SPARE PARTS ITEM',
+            code_verified: it.code_verified, // keep the read-time flag (cleared to null when the code is edited)
+            sku_id: res.kind === 'link' ? res.sku : null,
+            will_create: res.kind === 'create',
+          };
+        });
         const { error: iErr } = await supabase.from('pinv_item').insert(rows);
         if (iErr) throw iErr;
       }
@@ -169,7 +232,7 @@ export default function ReviewInvoicePage() {
     } finally {
       setBusy(false);
     }
-  }, [id, head, items, load, router]);
+  }, [id, head, items, load, router, resolutionFor]);
 
   const runCheck = useCallback(async () => {
     if (!id) return;
@@ -277,17 +340,13 @@ export default function ReviewInvoicePage() {
           : <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">⚠️ Read by <b>backup AI</b> (<span className="font-mono">{head.read_model}</span>) because the primary was overloaded. Please <b>double-check the part codes</b> against the PDF before approving.</div>
       )}
 
-      {/* Ambiguous-product summary: lines whose code matches MORE THAN ONE Niagawan product */}
-      {(() => {
-        const amb = items.filter((it) => it.in_niagawan === true && (it.niagawan_matches?.length ?? 0) > 1
-          && !(it.niagawan_matches ?? []).some((m) => normCode(m.code) === normCode(it.item_code)));
-        if (amb.length === 0) return null;
-        return (
-          <div className="mb-3 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-            ⚠ <b>{amb.length} line{amb.length === 1 ? '' : 's'} match more than one Niagawan product</b> (lines {amb.map((b) => b.line_no).join(', ')}) — your stock is keyed in per-supplier variants. Pick the right product in the <b>Category</b> column below, then Save/Approve.
-          </div>
-        );
-      })()}
+      {/* Needs-decision summary: lines whose code matches MORE THAN ONE product in the catalog.
+          These block approval until the owner picks the right product (or chooses create-new). */}
+      {candsLoaded && unresolvedLines.length > 0 && (
+        <div className="mb-3 rounded-md border-2 border-rose-400 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+          ⚠ <b>{unresolvedLines.length} line{unresolvedLines.length === 1 ? '' : 's'} need a decision</b> (line{unresolvedLines.length === 1 ? '' : 's'} {unresolvedLines.join(', ')}) — the code matches several products. Pick the right one (or choose <b>create new</b>) in the <b>Product</b> column below. Approving is blocked until then.
+        </div>
+      )}
 
       {/* Code-verification summary: codes that weren't found verbatim in the PDF's own text */}
       {(() => {
@@ -370,7 +429,7 @@ export default function ReviewInvoicePage() {
               <th className="px-2 py-2 text-right font-medium text-gray-600">Unit price</th>
               <th className="px-2 py-2 text-right font-medium text-gray-600">Disc %</th>
               <th className="px-2 py-2 text-right font-medium text-gray-600">Amount</th>
-              <th className="px-2 py-2 font-medium text-gray-600">Category <span className="font-normal text-gray-400">(Niagawan · or pick if new)</span></th>
+              <th className="px-2 py-2 font-medium text-gray-600">Product <span className="font-normal text-gray-400">(link existing · or create new)</span></th>
               {showBilled && <th className="px-2 py-2 font-medium text-gray-600">Billed?</th>}
               {!locked && <th className="px-2 py-2"></th>}
             </tr>
@@ -389,7 +448,7 @@ export default function ReviewInvoicePage() {
                         // list (which is what the NAS matches/creates by). Leaving stale alt
                         // codes there made Niagawan ignore the owner's typed code (2026-06-12).
                         const v = e.target.value;
-                        setItem(idx, { item_code: v, codes: v.trim() ? [v.trim()] : [], code_verified: null });
+                        setItem(idx, { item_code: v, codes: v.trim() ? [v.trim()] : [], code_verified: null, sku_id: null, will_create: false });
                       }}
                       className={`w-36 rounded border px-1.5 py-1 font-mono text-xs disabled:bg-transparent ${it.code_verified === false ? 'border-rose-400 bg-rose-50' : 'border-gray-200 disabled:border-transparent'}`} />
                     {it.code_verified === false && (
@@ -422,44 +481,55 @@ export default function ReviewInvoicePage() {
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-gray-700">{rm(lineAmount(it.qty, it.unit_price, it.discount))}</td>
                   <td className="px-2 py-1.5">
-                    {resolving
-                      ? <span className="text-xs text-gray-400">looking up…</span>
-                      : it.in_niagawan === true
-                        ? (() => {
-                            const matches = it.niagawan_matches ?? [];
-                            const chosen = matches.find((m) => normCode(m.code) === normCode(it.item_code));
-                            // Several Niagawan products match this code (per-supplier variants like
-                            // PW990860-GRAND vs PW990860-ZP) — the owner must pick which one the
-                            // stock goes to. Picking sets the line's code to that exact product.
-                            if (matches.length > 1 && !chosen) {
-                              return (
-                                <select disabled={locked} value="" onChange={(e) => {
-                                    const m = matches.find((x) => x.sku === e.target.value);
-                                    if (m) setItem(idx, { item_code: m.code, codes: [m.code, ...it.codes.filter((c) => normCode(c) !== normCode(m.code))], code_verified: null });
-                                  }}
-                                  className="w-56 rounded border border-rose-400 bg-rose-50 px-1.5 py-1 text-xs font-medium disabled:bg-transparent"
-                                  title="More than one Niagawan product matches this code — choose which product this stock belongs to">
-                                  <option value="">⚠ {matches.length} products match — choose…</option>
-                                  {matches.map((m) => <option key={m.sku} value={m.sku}>{m.code} — {m.descp} (RM{m.price}, bal {m.bal})</option>)}
-                                </select>
-                              );
-                            }
-                            return (
-                              <span className="inline-flex items-center gap-1.5" title="Already in Niagawan — its category is not changed">
-                                <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">{it.niagawan_category || '—'}</span>
-                                <span className="text-[10px] uppercase tracking-wide text-gray-400">in Niagawan</span>
-                                {matches.length > 1 && chosen && !locked && (
-                                  <button onClick={() => setItem(idx, { item_code: it.codes.find((c) => !matches.some((m) => normCode(m.code) === normCode(c))) || '', code_verified: null })}
-                                    className="text-[10px] text-blue-500 underline" title="Pick a different matching product">change</button>
-                                )}
-                              </span>
-                            );
-                          })()
-                        : <select disabled={locked} value={cats.includes(it.category) ? it.category : ''} onChange={(e) => setItem(idx, { category: e.target.value })}
-                            className="w-44 rounded border border-amber-300 bg-amber-50 px-1.5 py-1 text-xs disabled:bg-transparent disabled:border-transparent" title="New item — pick the category it will be created in">
-                            {!cats.includes(it.category) && <option value="">{it.category || '—'}</option>}
-                            {cats.map((c) => <option key={c} value={c}>{c}</option>)}
-                          </select>}
+                    {!candsLoaded ? <span className="text-xs text-gray-400">checking…</span> : (() => {
+                      const cands = candsFor(it);
+                      const res = resolutionFor(it);
+                      if (res.kind === 'create') {
+                        // No catalog match (or owner chose to create) → make a new product.
+                        return (
+                          <div className="flex flex-col gap-1">
+                            <span className="text-[10px] font-medium uppercase tracking-wide text-amber-600">🆕 create new product</span>
+                            <select disabled={locked} value={cats.includes(it.category) ? it.category : ''} onChange={(e) => setItem(idx, { category: e.target.value })}
+                              className="w-44 rounded border border-amber-300 bg-amber-50 px-1.5 py-1 text-xs disabled:bg-transparent disabled:border-transparent" title="New item — pick the category it will be created in">
+                              {!cats.includes(it.category) && <option value="">{it.category || '—'}</option>}
+                              {cats.map((c) => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                            {cands.length > 0 && !locked && (
+                              <button onClick={() => setItem(idx, { will_create: false, sku_id: cands.length === 1 ? cands[0].sku : null })}
+                                className="text-left text-[10px] text-blue-500 underline">{cands.length} existing match{cands.length > 1 ? 'es' : ''} — link instead</button>
+                            )}
+                          </div>
+                        );
+                      }
+                      if (res.kind === 'link') {
+                        const m = cands.find((c) => c.sku === res.sku) || (it.niagawan_matches ?? []).find((c) => c.sku === res.sku);
+                        return (
+                          <div className="flex flex-col gap-1">
+                            <span className="rounded bg-emerald-50 px-1.5 py-0.5 font-mono text-[11px] text-emerald-700" title="This purchase line will be booked to this exact product">
+                              → {m ? `${m.code} — ${m.descp}` : `sku ${res.sku}`}
+                            </span>
+                            {!locked && (
+                              <div className="flex gap-2">
+                                {cands.length > 1 && <button onClick={() => setItem(idx, { sku_id: null, will_create: false })} className="text-[10px] text-blue-500 underline">change</button>}
+                                <button onClick={() => setItem(idx, { will_create: true, sku_id: null })} className="text-[10px] text-blue-500 underline">create new instead</button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      }
+                      // Unresolved: several products share this code — the owner must choose one.
+                      return (
+                        <div className="flex flex-col gap-1">
+                          <select disabled={locked} value="" onChange={(e) => { if (e.target.value) setItem(idx, { sku_id: e.target.value, will_create: false }); }}
+                            className="w-64 rounded border border-rose-400 bg-rose-50 px-1.5 py-1 text-xs font-medium disabled:bg-transparent"
+                            title="Several products share this code — choose which one this stock belongs to">
+                            <option value="">⚠ {cands.length} products share this code — choose…</option>
+                            {cands.map((m) => <option key={m.sku} value={m.sku}>{m.code} — {m.descp}{m.price ? ` (RM${m.price})` : ''}</option>)}
+                          </select>
+                          {!locked && <button onClick={() => setItem(idx, { will_create: true, sku_id: null })} className="text-left text-[10px] text-blue-500 underline">none of these — create new</button>}
+                        </div>
+                      );
+                    })()}
                   </td>
                   {showBilled && (
                     <td className="px-2 py-1.5">
@@ -485,7 +555,7 @@ export default function ReviewInvoicePage() {
       </div>
 
       <p className="mt-2 text-xs text-gray-400">
-        When you approve, the system checks each item code against Niagawan directly: existing items are added as-is, and any code Niagawan doesn&rsquo;t have yet is created as a new product first (in the chosen <b>Category</b>, selling price RM 0 for you to set later). The category is only used for items that need creating. No duplicates.
+        Each line is booked to the product shown in the <b>Product</b> column: a single catalog match links automatically, no match creates a new product (in the chosen <b>Category</b>, selling price RM&nbsp;0 for you to set later), and when several products share a code you pick the right one. The importer uses exactly what you chose here — it doesn&rsquo;t re-guess. No duplicates.
       </p>
 
       {msg && <div className={`mt-3 rounded-md border p-2 text-sm ${msg.kind === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>{msg.text}</div>}
@@ -495,9 +565,12 @@ export default function ReviewInvoicePage() {
           <button onClick={() => save(false)} disabled={busy} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
             {busy ? 'Saving…' : 'Save changes'}
           </button>
-          <button onClick={() => save(true)} disabled={busy} className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
+          <button onClick={() => save(true)} disabled={busy || !candsLoaded || unresolvedLines.length > 0}
+            title={unresolvedLines.length > 0 ? `Resolve line${unresolvedLines.length === 1 ? '' : 's'} ${unresolvedLines.join(', ')} first` : undefined}
+            className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
             {busy ? 'Working…' : 'Approve → create in Niagawan'}
           </button>
+          {unresolvedLines.length > 0 && <span className="text-xs text-rose-600">Pick a product for line{unresolvedLines.length === 1 ? '' : 's'} {unresolvedLines.join(', ')} to approve.</span>}
         </div>
       )}
     </div>
