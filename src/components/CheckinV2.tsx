@@ -22,6 +22,7 @@ function fmtTime(t: string | null | undefined): string {
 }
 
 type OffReq = { id: string; date_from: string; date_to: string; reason: string | null; status: string; review_note: string | null; created_at: string };
+type HalfReq = { id: string; date_from: string; date_to: string; half: string; reason: string | null; status: string; review_note: string | null; created_at: string };
 
 // 'YYYY-MM-DD' -> '15 Jun'
 function fmtDate(d: string): string {
@@ -79,6 +80,14 @@ export default function CheckinV2() {
   const [offBusy, setOffBusy] = useState(false);
   const [offMsg, setOffMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [myOff, setMyOff] = useState<OffReq[]>([]);
+  const [showHalf, setShowHalf] = useState(false);
+  const [halfFrom, setHalfFrom] = useState('');
+  const [halfTo, setHalfTo] = useState('');
+  const [halfWhich, setHalfWhich] = useState<'AM' | 'PM'>('PM');
+  const [halfReason, setHalfReason] = useState('');
+  const [halfBusy, setHalfBusy] = useState(false);
+  const [halfMsg, setHalfMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [myHalf, setMyHalf] = useState<HalfReq[]>([]);
   const [showAdv, setShowAdv] = useState(false);
   const [advAmount, setAdvAmount] = useState('');
   const [advReason, setAdvReason] = useState('');
@@ -122,6 +131,16 @@ export default function CheckinV2() {
   }, [email]);
 
   useEffect(() => { if (email) loadOff(); }, [email, loadOff]);
+
+  const loadHalf = useCallback(async () => {
+    if (!email) return;
+    const { data } = await supabase.from('halfday_requests')
+      .select('id,date_from,date_to,half,reason,status,review_note,created_at')
+      .eq('staff_email', email).order('created_at', { ascending: false }).limit(8);
+    setMyHalf((data ?? []) as HalfReq[]);
+  }, [email]);
+
+  useEffect(() => { if (email) loadHalf(); }, [email, loadHalf]);
 
   const loadAdv = useCallback(async () => {
     if (!email) return;
@@ -216,6 +235,20 @@ export default function CheckinV2() {
     if (error) setOffMsg({ kind: 'err', text: error.message });
     else { setOffMsg({ kind: 'ok', text: 'Off-day request sent ✓ — waiting for approval.' }); setOffFrom(''); setOffTo(''); setOffReason(''); loadOff(); }
     setOffBusy(false);
+  };
+
+  const submitHalf = async () => {
+    if (!email) return;
+    if (!halfFrom || !halfTo) { setHalfMsg({ kind: 'err', text: 'Pick the start and end dates.' }); return; }
+    if (halfFrom > halfTo) { setHalfMsg({ kind: 'err', text: 'The "From" date is after the "To" date.' }); return; }
+    if (halfFrom < klDatePlus(2)) { setHalfMsg({ kind: 'err', text: 'Half-day requests must be made at least 2 days in advance.' }); return; }
+    setHalfBusy(true); setHalfMsg(null);
+    const { error } = await supabase.from('halfday_requests').insert({
+      staff_email: email, date_from: halfFrom, date_to: halfTo, half: halfWhich, reason: halfReason || null,
+    });
+    if (error) setHalfMsg({ kind: 'err', text: error.message });
+    else { setHalfMsg({ kind: 'ok', text: 'Half-day request sent ✓ — waiting for approval.' }); setHalfFrom(''); setHalfTo(''); setHalfReason(''); loadHalf(); }
+    setHalfBusy(false);
   };
 
   const submitAdv = async () => {
@@ -370,6 +403,67 @@ export default function CheckinV2() {
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <div className="text-slate-800">{r.date_from === r.date_to ? fmtDate(r.date_from) : `${fmtDate(r.date_from)} – ${fmtDate(r.date_to)}`}</div>
+                    {r.reason && <div className="truncate text-xs text-slate-400">{r.reason}</div>}
+                  </div>
+                  <span className={offStatusChip(r.status)}>{offStatusLabel(r.status)}</span>
+                </div>
+                {r.review_note && (
+                  <div className={`mt-1 rounded-md px-2 py-1 text-xs ${(r.status || '').toLowerCase() === 'rejected' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                    {(r.status || '').toLowerCase() === 'rejected' ? 'Reason: ' : 'Note: '}{r.review_note}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Request half day */}
+      <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <button onClick={() => setShowHalf((v) => !v)} className="flex w-full items-center justify-between text-sm font-medium text-slate-700">
+          <span>🕧 Request half day</span>
+          <span className="text-slate-400">{showHalf ? '−' : '+'}</span>
+        </button>
+        {showHalf && (
+          <div className="mt-3 space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={() => setHalfWhich('AM')} className={`rounded-md border px-2 py-1.5 text-xs font-medium ${halfWhich === 'AM' ? 'border-brand-700 bg-brand-50 text-brand-800' : 'border-slate-300 text-slate-500'}`}>Morning · 9:30–1:30</button>
+              <button onClick={() => setHalfWhich('PM')} className={`rounded-md border px-2 py-1.5 text-xs font-medium ${halfWhich === 'PM' ? 'border-brand-700 bg-brand-50 text-brand-800' : 'border-slate-300 text-slate-500'}`}>Afternoon · 1:30–6:00</button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="text-xs text-slate-500">From
+                <input type="date" value={halfFrom} min={klDatePlus(2)} onChange={(e) => setHalfFrom(e.target.value)} className="mt-0.5 block w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm" />
+              </label>
+              <label className="text-xs text-slate-500">To
+                <input type="date" value={halfTo} min={halfFrom || klDatePlus(2)} onChange={(e) => setHalfTo(e.target.value)} className="mt-0.5 block w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm" />
+              </label>
+            </div>
+            <label className="block text-xs text-slate-500">Reason (optional)
+              <input value={halfReason} onChange={(e) => setHalfReason(e.target.value)} placeholder="e.g. clinic appointment" className="mt-0.5 block w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm" />
+            </label>
+            <button onClick={submitHalf} disabled={halfBusy} className="w-full rounded-lg bg-brand-700 py-2.5 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-50">
+              {halfBusy ? 'Sending…' : 'Request half day'}
+            </button>
+            {halfMsg && (
+              <div className={`rounded-md border p-2 text-sm ${halfMsg.kind === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>{halfMsg.text}</div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* My half-day requests */}
+      {myHalf.length > 0 && (
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="text-sm font-medium text-slate-700">🕧 My half-day requests</div>
+          <div className="mt-2 space-y-1.5">
+            {myHalf.map((r) => (
+              <div key={r.id} className="text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-slate-800">
+                      <span className="mr-1 rounded bg-sky-50 px-1.5 py-0.5 text-xs font-medium text-sky-700">{r.half}</span>
+                      {r.date_from === r.date_to ? fmtDate(r.date_from) : `${fmtDate(r.date_from)} – ${fmtDate(r.date_to)}`}
+                    </div>
                     {r.reason && <div className="truncate text-xs text-slate-400">{r.reason}</div>}
                   </div>
                   <span className={offStatusChip(r.status)}>{offStatusLabel(r.status)}</span>
