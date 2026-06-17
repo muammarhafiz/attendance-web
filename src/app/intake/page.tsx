@@ -14,6 +14,7 @@ export default function IntakePage() {
   const [plate, setPlate] = useState('');
   const [model, setModel] = useState('');
   const [phone, setPhone] = useState('');
+  const [note, setNote] = useState('');
   const [phase, setPhase] = useState<Phase>('form');
   const [invNo, setInvNo] = useState<string | null>(null);
   const [errMsg, setErrMsg] = useState<string | null>(null);
@@ -61,7 +62,7 @@ export default function IntakePage() {
     setErrMsg(null);
     setPhase('saving');
     const { data: id, error } = await supabase.rpc('queue_intake', {
-      p_plate: plate, p_model: model, p_phone: phone, p_name: '',
+      p_plate: plate, p_model: model, p_phone: phone, p_name: '', p_note: note,
     });
     if (error || !id) { setPhase('error'); setErrMsg(error?.message ?? 'failed'); return; }
     const startedAt = Date.now();
@@ -83,7 +84,7 @@ export default function IntakePage() {
     }, 3000);
   }, [plate, model, phone]);
 
-  const reset = () => { setPlate(''); setModel(''); setPhone(''); setInvNo(null); setErrMsg(null); setHistory(null); setShowDetails(false); setPhase('form'); };
+  const reset = () => { setPlate(''); setModel(''); setPhone(''); setNote(''); setInvNo(null); setErrMsg(null); setHistory(null); setShowDetails(false); setPhase('form'); };
 
   if (allowed === null) return <div className="p-6 text-sm text-gray-500">Checking…</div>;
   if (!allowed) return <div className="p-6 text-sm text-gray-600">This page is for supervisors — please sign in with a supervisor account.</div>;
@@ -137,6 +138,14 @@ export default function IntakePage() {
             </label>
           </>
         )}
+
+        <label className="block">
+          <span className="text-sm font-medium text-gray-700">Notes / remark (optional)</span>
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} autoComplete="off"
+            placeholder="e.g. customer complaint, things to check…"
+            className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-base" />
+          <span className="mt-1 block text-xs text-gray-400">If filled, it&rsquo;s added to the invoice as a line for the cashier to price.</span>
+        </label>
 
         {errMsg && <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{errMsg}</div>}
 
