@@ -11,6 +11,7 @@ type Row = {
   check_in_kl: string | null;  // 'HH:MM'
   check_out_kl: string | null; // 'HH:MM'
   late_min: number | null;
+  half: 'AM' | 'PM' | null;
 };
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -227,6 +228,7 @@ export default function AttendanceReportPage() {
                       {r.status === 'OFFDAY' && <span className="text-blue-700">Off day</span>}
                       {r.status === 'PH' && <span className="text-indigo-700">Public holiday</span>}
                       {r.status === 'MC' && <span className="text-blue-700">MC</span>}
+                      {r.half && <span className="ml-1 rounded-full bg-sky-50 px-1.5 py-0.5 text-xs font-medium text-sky-700" title={r.half === 'AM' ? 'Half day · morning (9:30–1:30)' : 'Half day · afternoon (1:30–6:00)'}>½ {r.half}</span>}
                     </td>
                     <td className="px-3 py-2 text-gray-700">{fmt12(r.check_in_kl)}</td>
                     <td className="px-3 py-2 text-gray-700">{fmt12(r.check_out_kl)}</td>
