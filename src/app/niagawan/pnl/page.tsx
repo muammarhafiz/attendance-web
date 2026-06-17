@@ -35,6 +35,7 @@ export default function PnlPage() {
   const [ptjPct, setPtjPct] = useState(5);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [tab, setTab] = useState<'overview' | 'costs'>('overview');
   const [newLabel, setNewLabel] = useState('');
   const [newAmount, setNewAmount] = useState('');
   const [newTrade, setNewTrade] = useState('');
@@ -183,7 +184,18 @@ export default function PnlPage() {
       {err && <div className="mb-3 rounded-md border border-rose-200 bg-rose-50 p-2 text-sm text-rose-700">{err}</div>}
       {loading ? <div className="text-sm text-gray-500">Loading…</div> : (
         <>
+          {/* Tabs */}
+          <div className="mb-4 flex gap-1 border-b border-gray-200">
+            {([['overview', 'Overview'], ['costs', 'Operating costs']] as const).map(([k, label]) => (
+              <button key={k} onClick={() => setTab(k)}
+                className={`-mb-px border-b-2 px-3 py-1.5 text-sm font-medium ${tab === k ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+
           {/* Verdict */}
+          {tab === 'overview' && (<>
           <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-lg border border-gray-200 bg-white p-3">
               <div className="text-xs font-medium text-gray-500">Net so far <span className="text-gray-400">(full-month costs vs {c.daysWithSales} day(s) of profit)</span></div>
@@ -223,18 +235,22 @@ export default function PnlPage() {
               </div>
             </div>
           </div>
+          </>)}
 
-          {/* Costs */}
-          <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <div className="rounded-lg border border-gray-200 bg-white p-4">
+          {/* Payroll (auto) — Overview tab */}
+          {tab === 'overview' && (
+            <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
               <div className="mb-2 text-sm font-semibold text-gray-700">Payroll (auto, from the Payroll module)</div>
               <div className="flex justify-between text-sm"><span className="text-gray-600">Salaries + bonus/allowance ({pay.length} staff)</span><span className="font-semibold">{rm(c.payrollGross)}</span></div>
               <div className="flex justify-between text-sm"><span className="text-gray-600">Employer EPF / SOCSO / EIS</span><span className="font-semibold">{rm(c.employer)}</span></div>
               <div className="mt-2 flex justify-between border-t border-gray-100 pt-2 text-sm font-semibold"><span>Payroll total</span><span>{rm(c.payrollGross + c.employer)}</span></div>
               {pay.length === 0 && <div className="mt-2 text-xs text-amber-600">No payroll generated for this month yet — costs are incomplete.</div>}
             </div>
+          )}
 
-            <div className="rounded-lg border border-gray-200 bg-white p-4">
+          {/* Bills & others (manual) — Operating costs tab */}
+          {tab === 'costs' && (
+            <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-sm font-semibold text-gray-700">Bills &amp; others (manual)</span>
                 {bills.length === 0 && <button onClick={copyLastMonth} className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50">Copy last month</button>}
@@ -253,15 +269,12 @@ export default function PnlPage() {
                 <button onClick={addBill} className="rounded bg-gray-900 px-2.5 py-1 text-sm font-medium text-white hover:bg-gray-700">Add</button>
               </div>
               <div className="mt-2 flex justify-between border-t border-gray-100 pt-2 text-sm font-semibold"><span>Bills total</span><span>{rm(c.billsTotal)}</span></div>
-              <div className="mt-1.5 flex justify-between text-sm">
-                <span className="text-gray-600">Staff meals — GrabFood <span className="text-gray-400">· auto from email receipts</span></span>
-                <span className="font-semibold">{rm(c.staffMeals)}</span>
-              </div>
               <div className="mt-1 text-xs text-gray-400">Bonus/commission is already inside Payroll — don&rsquo;t add it here again.</div>
             </div>
-          </div>
+          )}
 
-          {/* Staff meals — GrabFood, per-receipt breakdown */}
+          {/* Staff meals — GrabFood, per-receipt breakdown — Operating costs tab */}
+          {tab === 'costs' && (
           <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-sm font-semibold text-gray-700">Staff meals — GrabFood <span className="font-normal text-gray-400">· {meals.length} order{meals.length === 1 ? '' : 's'} this month, auto from email receipts</span></span>
@@ -296,8 +309,21 @@ export default function PnlPage() {
               </div>
             )}
           </div>
+          )}
+
+          {/* Total operation cost — Operating costs tab */}
+          {tab === 'costs' && (
+            <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
+              <div className="mb-2 text-sm font-semibold text-gray-700">Total operation cost</div>
+              <div className="flex justify-between text-sm"><span className="text-gray-600">Payroll (salaries + employer)</span><span className="font-semibold">{rm(c.payrollGross + c.employer)}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-gray-600">Bills &amp; others (manual)</span><span className="font-semibold">{rm(c.billsTotal)}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-gray-600">Staff meals — GrabFood</span><span className="font-semibold">{rm(c.staffMeals)}</span></div>
+              <div className="mt-2 flex justify-between border-t border-gray-200 pt-2 text-base font-semibold"><span>Total operation cost</span><span>{rm(c.costs)}</span></div>
+            </div>
+          )}
 
           {/* Summary + settings */}
+          {tab === 'overview' && (
           <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4 text-sm">
             <div className="grid grid-cols-1 gap-1 sm:max-w-md">
               <div className="flex justify-between"><span className="text-gray-600">Total operation cost</span><span className="font-semibold">{rm(c.costs)}</span></div>
@@ -316,8 +342,10 @@ export default function PnlPage() {
               </label>
             </div>
           </div>
+          )}
 
           {/* Trade customers */}
+          {tab === 'overview' && (
           <div className="rounded-lg border border-gray-200 bg-white p-4">
             <div className="mb-1 text-sm font-semibold text-gray-700">Trade customers (other workshops buying stock — excluded from repair KPIs)</div>
             <div className="flex flex-wrap items-center gap-1.5">
@@ -333,6 +361,7 @@ export default function PnlPage() {
             </div>
             <div className="mt-1 text-xs text-gray-400">Invoices whose customer name contains any of these are counted as trade sales (pass-through), with their unpaid total tracked as trade debt.</div>
           </div>
+          )}
         </>
       )}
     </div>
