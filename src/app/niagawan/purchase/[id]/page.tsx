@@ -127,12 +127,17 @@ export default function ReviewInvoicePage() {
     setCandsLoaded(false);
     (async () => {
       if (!allCodes.length) { if (!cancelled) { setCatMatches({}); setCandsLoaded(true); } return; }
-      const { data } = await supabase.from('niagawan_products').select('sku,code,descp,price').in('code', allCodes);
+      // Token-aware match: pinv_candidates splits each product's code on spaces/commas and matches
+      // any normalised token — so a combined code like "M1515-10040 M1515-A0110" is found by "M1515-10040".
+      const { data } = await supabase.rpc('pinv_candidates', { p_codes: allCodes });
       if (cancelled) return;
       const map: Record<string, NiagawanMatch[]> = {};
       ((data ?? []) as Array<{ sku: string; code: string; descp: string | null; price: number | string | null }>).forEach((p) => {
-        const k = normCode(p.code); if (!k) return;
-        (map[k] = map[k] || []).push({ sku: String(p.sku), code: String(p.code), descp: String(p.descp ?? ''), price: String(p.price ?? ''), bal: '' });
+        const m: NiagawanMatch = { sku: String(p.sku), code: String(p.code), descp: String(p.descp ?? ''), price: String(p.price ?? ''), bal: '' };
+        // Index the product under EVERY token of its code, so a line code matches it via that token.
+        Array.from(new Set(String(p.code ?? '').split(/[\s,]+/).map(normCode).filter(Boolean))).forEach((k) => {
+          (map[k] = map[k] || []).push(m);
+        });
       });
       setCatMatches(map); setCandsLoaded(true);
     })();
