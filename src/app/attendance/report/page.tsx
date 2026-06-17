@@ -96,7 +96,8 @@ export default function AttendanceReportPage() {
 
   const startEdit = useCallback((r: Row) => {
     setEditDay(r.day);
-    setEStatus(r.status === 'OFFDAY' ? 'OFFDAY' : r.status === 'MC' ? 'MC' : r.status === 'ABSENT' ? 'ABSENT' : 'WORKING');
+    setEStatus(r.half === 'AM' ? 'HALF_AM' : r.half === 'PM' ? 'HALF_PM'
+      : r.status === 'OFFDAY' ? 'OFFDAY' : r.status === 'MC' ? 'MC' : r.status === 'ABSENT' ? 'ABSENT' : 'WORKING');
     setEIn(r.check_in_kl ?? '');
     setEOut(r.check_out_kl ?? '');
     setENote('');
@@ -105,20 +106,28 @@ export default function AttendanceReportPage() {
   const saveEdit = useCallback(async (email: string, day: string) => {
     setSaving(true);
     try {
-      if (eStatus === 'WORKING') {
-        // no status override -> use real check-ins; optionally override the times
+      if (eStatus === 'HALF_AM' || eStatus === 'HALF_PM') {
+        // half day = a shift marker; clear any full-day override so it doesn't hide PRESENT/late
         await supabase.from('day_status').delete().eq('day', day).eq('staff_email', email);
-        if (eIn || eOut) {
-          await supabase.from('day_time_override').upsert(
-            { day, staff_email: email, check_in_kl: eIn || null, check_out_kl: eOut || null, note: eNote || null },
-            { onConflict: 'day,staff_email' }
-          );
-        } else {
-          await supabase.from('day_time_override').delete().eq('day', day).eq('staff_email', email);
-        }
+        await supabase.rpc('set_day_half', { p_email: email, p_day: day, p_half: eStatus === 'HALF_PM' ? 'PM' : 'AM', p_note: eNote || null });
       } else {
-        // OFFDAY / MC / ABSENT
-        await supabase.rpc('set_day_status', { p_email: email, p_day: day, p_status: eStatus, p_note: eNote || null });
+        // any non-half status removes a half-day marker if one was set
+        await supabase.rpc('clear_day_half', { p_email: email, p_day: day });
+        if (eStatus === 'WORKING') {
+          // no status override -> use real check-ins; optionally override the times
+          await supabase.from('day_status').delete().eq('day', day).eq('staff_email', email);
+          if (eIn || eOut) {
+            await supabase.from('day_time_override').upsert(
+              { day, staff_email: email, check_in_kl: eIn || null, check_out_kl: eOut || null, note: eNote || null },
+              { onConflict: 'day,staff_email' }
+            );
+          } else {
+            await supabase.from('day_time_override').delete().eq('day', day).eq('staff_email', email);
+          }
+        } else {
+          // OFFDAY / MC / ABSENT
+          await supabase.rpc('set_day_status', { p_email: email, p_day: day, p_status: eStatus, p_note: eNote || null });
+        }
       }
       await supabase.rpc('attendance_v2_recompute', { p_from: day, p_to: day });
       setEditDay(null);
@@ -251,6 +260,8 @@ export default function AttendanceReportPage() {
                           <label className="text-xs text-gray-500">Status
                             <select value={eStatus} onChange={(e) => setEStatus(e.target.value)} className="mt-0.5 block rounded-md border border-gray-300 px-2 py-1 text-sm">
                               <option value="WORKING">Working day</option>
+                              <option value="HALF_AM">Half day — morning (9:30–1:30)</option>
+                              <option value="HALF_PM">Half day — afternoon (1:30–6:00)</option>
                               <option value="OFFDAY">Off day</option>
                               <option value="MC">Sick leave (MC)</option>
                               <option value="ABSENT">Absent</option>
