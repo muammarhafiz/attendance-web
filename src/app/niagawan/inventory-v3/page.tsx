@@ -77,10 +77,11 @@ export default function InventoryV3Page() {
                 <th className="px-3 py-2 font-semibold">Item Code</th>
                 <th className="px-3 py-2 font-semibold">Item Description</th>
                 <th className="px-3 py-2 text-right font-semibold">Balance</th>
+                <th className="px-3 py-2 font-semibold">Supplier</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400">No items yet.</td></tr>
+              <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400">No items yet.</td></tr>
             </tbody>
           </table>
         </div>
