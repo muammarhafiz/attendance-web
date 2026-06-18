@@ -132,6 +132,14 @@ export default function WorkshopBoardPage() {
     await load();
   }, [load]);
 
+  // Remove a card that shouldn't be on the board (cancelled invoice, mistaken/duplicate
+  // check-in, no-show). Confirm first since it's a one-tap dismissal; it only archives
+  // (kept in history, reversible) and never touches Niagawan.
+  const removeCard = useCallback(async (card: Card) => {
+    if (!window.confirm(`Remove ${card.plate} from the board?`)) return;
+    await archive(card);
+  }, [archive]);
+
   const createCard = useCallback(async () => {
     if (!plate.trim()) { setErr('Plate number is required.'); return; }
     setSaving(true);
@@ -298,6 +306,7 @@ export default function WorkshopBoardPage() {
                       )}
                       {c.status === 'waiting_parts' && <button onClick={() => move(c, 'doing')} className="rounded bg-blue-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-blue-700">Resume</button>}
                       {c.status === 'done' && canWrite && <button onClick={() => archive(c)} className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-50" title="Remove from the board (kept in history)">Clear</button>}
+                      {c.status !== 'done' && canWrite && <button onClick={() => removeCard(c)} className="rounded border border-gray-200 px-1.5 py-0.5 text-xs text-gray-400 hover:bg-rose-50 hover:text-rose-600" title="Remove from the board — for a cancelled / mistaken check-in (kept in history)">✕</button>}
                     </span>
                   </div>
                 </div>
