@@ -19,6 +19,7 @@ export default function IntakePage() {
   const [invNo, setInvNo] = useState<string | null>(null);
   const [errMsg, setErrMsg] = useState<string | null>(null);
   const [history, setHistory] = useState<{ last_day: string | null; customer: string; cust_id: string | null; phone: string | null } | null>(null);
+  const [dupCheckin, setDupCheckin] = useState<{ inv_no: string | null; created_at: string } | null>(null); // already checked in today
   const onFile = !!history?.cust_id; // already a registered Niagawan customer
   const [showDetails, setShowDetails] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -37,8 +38,11 @@ export default function IntakePage() {
 
   // Returning car? Recognise the plate and pre-fill what we already have on file.
   const checkPlate = useCallback(async (p: string) => {
-    if (p.replace(/\s/g, '').length < 4) { setHistory(null); return; }
-    const { data } = await supabase.rpc('intake_plate_lookup', { p });
+    if (p.replace(/\s/g, '').length < 4) { setHistory(null); setDupCheckin(null); return; }
+    const [{ data }, { data: dup }] = await Promise.all([
+      supabase.rpc('intake_plate_lookup', { p }),
+      supabase.rpc('intake_today_checkin', { p }), // already checked in today? -> warn before a 2nd invoice
+    ]);
     const row = Array.isArray(data) && data.length ? data[0] : null;
     if (row) {
       const h = row as { last_day: string | null; customer: string; cust_id: string | null; phone: string | null };
@@ -47,6 +51,8 @@ export default function IntakePage() {
     } else {
       setHistory(null);
     }
+    const drow = Array.isArray(dup) && dup.length ? (dup[0] as { inv_no: string | null; created_at: string }) : null;
+    setDupCheckin(drow ? { inv_no: drow.inv_no, created_at: drow.created_at } : null);
   }, []);
 
   // Live recognition as the plate is typed (debounced, like the Part Arrived search).
@@ -84,7 +90,7 @@ export default function IntakePage() {
     }, 3000);
   }, [plate, model, phone, note]);
 
-  const reset = () => { setPlate(''); setModel(''); setPhone(''); setNote(''); setInvNo(null); setErrMsg(null); setHistory(null); setShowDetails(false); setPhase('form'); };
+  const reset = () => { setPlate(''); setModel(''); setPhone(''); setNote(''); setInvNo(null); setErrMsg(null); setHistory(null); setDupCheckin(null); setShowDetails(false); setPhase('form'); };
 
   if (allowed === null) return <div className="p-6 text-sm text-gray-500">Checking…</div>;
   if (!allowed) return <div className="p-6 text-sm text-gray-600">This page is for supervisors — please sign in with a supervisor account.</div>;
@@ -146,6 +152,15 @@ export default function IntakePage() {
             className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3 text-base" />
           <span className="mt-1 block text-xs text-gray-400">If filled, it&rsquo;s added to the invoice as a line for the cashier to price.</span>
         </label>
+
+        {dupCheckin && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+            ⚠️ <span className="font-semibold">{plate}</span> was already checked in today
+            {dupCheckin.created_at ? ` at ${new Date(dupCheckin.created_at).toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit' })}` : ''}
+            {dupCheckin.inv_no ? <> (invoice <span className="font-mono font-semibold">{dupCheckin.inv_no}</span>)</> : ''}.
+            <br />Saving again creates a <span className="font-semibold">second invoice</span> — only continue if you really need one.
+          </div>
+        )}
 
         {errMsg && <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{errMsg}</div>}
 
