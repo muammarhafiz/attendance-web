@@ -16,6 +16,8 @@ type Pinv = {
   created_at: string;
 };
 
+type MailSupplier = { id: string; name: string; match_terms: string[]; enabled: boolean; note: string | null };
+
 const STATUS_STYLE: Record<string, string> = {
   uploaded: 'bg-gray-100 text-gray-600',
   extracting: 'bg-amber-100 text-amber-700',
@@ -43,6 +45,12 @@ export default function PurchaseInvoicePage() {
   const [mailCheck, setMailCheck] = useState<'idle' | 'running'>('idle');
   const [showDismissed, setShowDismissed] = useState(false);
   const [supplierFilter, setSupplierFilter] = useState<string | null>(null);
+  // self-service auto-import supplier list (read live by the mailbox script)
+  const [suppliers, setSuppliers] = useState<MailSupplier[]>([]);
+  const [showSuppliers, setShowSuppliers] = useState(false);
+  const [supName, setSupName] = useState('');
+  const [supTerms, setSupTerms] = useState('');
+  const [supBusy, setSupBusy] = useState(false);
 
   // Tick a live elapsed-seconds counter while a read is in progress, so the user can see the
   // system is actively working (an AI read can take 15–50s) and isn't frozen.
@@ -179,6 +187,39 @@ export default function PurchaseInvoicePage() {
     if (data?.signedUrl) window.open(data.signedUrl, '_blank', 'noopener');
   }, []);
 
+  // --- self-service auto-import suppliers (the mailbox script reads this list live) ---
+  const loadSuppliers = useCallback(async () => {
+    const { data } = await supabase.from('mail_suppliers').select('id,name,match_terms,enabled,note').order('name');
+    setSuppliers((data ?? []) as MailSupplier[]);
+  }, []);
+  useEffect(() => { if (isAdmin) loadSuppliers(); }, [isAdmin, loadSuppliers]);
+
+  const addSupplier = useCallback(async () => {
+    const name = supName.trim();
+    const terms = supTerms.split(/[,\n]+/).map((t) => t.trim().toLowerCase()).filter(Boolean);
+    if (!name) { setMsg({ kind: 'err', text: 'Enter the supplier name.' }); return; }
+    if (!terms.length) { setMsg({ kind: 'err', text: 'Enter at least one word that identifies them (e.g. their name).' }); return; }
+    setSupBusy(true);
+    const { data: sess } = await supabase.auth.getSession();
+    const { error } = await supabase.from('mail_suppliers').insert({ name, match_terms: terms, created_by: sess.session?.user?.email ?? null });
+    setSupBusy(false);
+    if (error) { setMsg({ kind: 'err', text: error.message }); return; }
+    setSupName(''); setSupTerms('');
+    setMsg({ kind: 'ok', text: `Added ${name} ✓ — their emailed invoices will auto-import from now on.` });
+    await loadSuppliers();
+  }, [supName, supTerms, loadSuppliers]);
+
+  const toggleSupplier = useCallback(async (s: MailSupplier) => {
+    await supabase.from('mail_suppliers').update({ enabled: !s.enabled, updated_at: new Date().toISOString() }).eq('id', s.id);
+    await loadSuppliers();
+  }, [loadSuppliers]);
+
+  const deleteSupplier = useCallback(async (s: MailSupplier) => {
+    if (!window.confirm(`Remove ${s.name} from auto-import?`)) return;
+    await supabase.from('mail_suppliers').delete().eq('id', s.id);
+    await loadSuppliers();
+  }, [loadSuppliers]);
+
   if (authed === null || isAdmin === null) return <div className="text-sm text-gray-500">Checking…</div>;
   if (!authed) return <div className="text-sm text-gray-600">Please sign in.</div>;
   if (!isAdmin) return <div className="text-sm text-gray-600">This page is for admins only.</div>;
@@ -206,6 +247,59 @@ export default function PurchaseInvoicePage() {
           </button>
         </div>
         {msg && <div className={`mt-2 rounded-md border p-2 text-sm ${msg.kind === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>{msg.text}</div>}
+      </div>
+
+      {/* Auto-import suppliers — self-service list the mailbox reads to recognise senders */}
+      <div className="mb-4 rounded-lg border border-gray-200 bg-white">
+        <button onClick={() => setShowSuppliers((v) => !v)} className="flex w-full items-center justify-between px-4 py-3 text-left">
+          <span className="text-sm font-medium text-gray-800">📥 Auto-import suppliers <span className="text-gray-400">({suppliers.length})</span></span>
+          <span className="text-xs text-gray-400">{showSuppliers ? 'hide' : 'manage'}</span>
+        </button>
+        {showSuppliers && (
+          <div className="border-t border-gray-100 px-4 py-3">
+            <p className="text-xs text-gray-500">
+              Invoices emailed from these suppliers to the workshop inbox are picked up &amp; read automatically.
+              Add one by name + a word or two that appears in their email (their name, or part of their address).
+            </p>
+            <div className="mt-3 flex flex-wrap items-end gap-2">
+              <label className="block">
+                <span className="block text-xs font-medium text-gray-600">Supplier name</span>
+                <input value={supName} onChange={(e) => setSupName(e.target.value)} placeholder="e.g. Tat Seng"
+                  className="mt-0.5 w-44 rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+              </label>
+              <label className="block min-w-0 flex-1">
+                <span className="block text-xs font-medium text-gray-600">Recognise by (comma-separated)</span>
+                <input value={supTerms} onChange={(e) => setSupTerms(e.target.value)} placeholder="e.g. tat seng, tatseng"
+                  className="mt-0.5 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+              </label>
+              <button onClick={addSupplier} disabled={supBusy}
+                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+                {supBusy ? 'Adding…' : 'Add'}
+              </button>
+            </div>
+            <div className="mt-3 space-y-1.5">
+              {suppliers.length === 0 ? (
+                <div className="text-xs text-gray-400">No custom suppliers added yet.</div>
+              ) : suppliers.map((s) => (
+                <div key={s.id} className={`flex items-center justify-between rounded-md border px-3 py-1.5 text-sm ${s.enabled ? 'border-gray-200 bg-white' : 'border-gray-200 bg-gray-50 opacity-60'}`}>
+                  <div className="min-w-0">
+                    <span className="font-medium text-gray-800">{s.name}</span>
+                    <span className="ml-2 text-xs text-gray-400">{(s.match_terms || []).join(', ')}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="flex cursor-pointer items-center gap-1 text-xs text-gray-500">
+                      <input type="checkbox" checked={s.enabled} onChange={() => toggleSupplier(s)} className="h-3.5 w-3.5" /> on
+                    </label>
+                    <button onClick={() => deleteSupplier(s)} title="Remove" className="rounded border border-gray-200 px-2 py-0.5 text-xs text-rose-500 hover:bg-rose-50">✕</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="mt-3 text-[11px] text-gray-400">
+              Built-in (always recognised): Grand Auto, Liqui Moly, Mannol, Gulf, Atomlubes — no need to add these.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Live processing banner — shows the AI read is actively working (not stuck) */}
