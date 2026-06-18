@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -69,6 +69,14 @@ export default function ReviewInvoicePage() {
   const [candsLoaded, setCandsLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  // Per-line product picker: search the full catalog (niagawan_products) to link an existing
+  // product to a line — for code-less invoices (e.g. Tat Seng) the owner picks from the list
+  // instead of creating duplicates. `picked` caches the chosen products for display.
+  const [pickerLine, setPickerLine] = useState<number | null>(null);
+  const [pq, setPq] = useState('');
+  const [presults, setPresults] = useState<NiagawanMatch[]>([]);
+  const [picked, setPicked] = useState<Record<string, NiagawanMatch>>({});
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -108,6 +116,16 @@ export default function ReviewInvoicePage() {
         code_verified: (r.code_verified as boolean | null) ?? null,
       }))
     );
+    // For lines already linked to a product, fetch its name so the Product column shows it
+    // (instead of a bare sku) — covers products picked via search on a previous visit.
+    const skuIds = [...new Set(((its ?? []) as Array<Record<string, unknown>>).map((r) => r.sku_id).filter(Boolean).map(String))];
+    if (skuIds.length) {
+      const { data: prods } = await supabase.from('niagawan_products').select('sku,code,descp,price').in('sku', skuIds);
+      const pmap: Record<string, NiagawanMatch> = {};
+      ((prods ?? []) as Array<{ sku: string; code: string | null; descp: string | null; price: number | string | null }>)
+        .forEach((p) => { pmap[String(p.sku)] = { sku: String(p.sku), code: String(p.code ?? ''), descp: String(p.descp ?? ''), price: String(p.price ?? ''), bal: '' }; });
+      setPicked((prev) => ({ ...prev, ...pmap }));
+    }
     setLoading(false);
   }, [id]);
 
@@ -176,6 +194,35 @@ export default function ReviewInvoicePage() {
   };
   const addRow = () => setItems((prev) => [...prev, { line_no: prev.length + 1, item_code: '', codes: [], description: '', qty: 1, unit_price: 0, discount: 0, amount: 0, category: 'SPARE PARTS ITEM', will_create: true, sku_id: null, sold_status: null, sold_on: null, in_niagawan: null, niagawan_category: null, niagawan_matches: null, code_verified: null }]);
   const removeRow = (idx: number) => setItems((prev) => prev.filter((_, i) => i !== idx).map((it, i) => ({ ...it, line_no: i + 1 })));
+
+  // Token-ranked search of the full catalog: split into words, fetch products matching any word,
+  // rank by how many words each contains — so "PROTON X50 SPARK PLUG" finds the product even
+  // though Niagawan stores it as "SPARK PLUG ... PROTON X50" (different word order).
+  const searchProducts = useCallback((text: string) => {
+    setPq(text);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    const tokens = String(text || '').toUpperCase().split(/[^A-Z0-9]+/).filter((t) => t.length >= 2);
+    if (!tokens.length) { setPresults([]); return; }
+    searchTimer.current = setTimeout(async () => {
+      const ors = tokens.slice(0, 6).flatMap((t) => [`descp.ilike.%${t}%`, `code.ilike.%${t}%`]).join(',');
+      const { data } = await supabase.from('niagawan_products').select('sku,code,descp,price').or(ors).limit(60);
+      const ranked = ((data ?? []) as Array<{ sku: string; code: string | null; descp: string | null; price: number | string | null }>)
+        .map((p) => {
+          const hay = (String(p.descp ?? '') + ' ' + String(p.code ?? '')).toUpperCase();
+          return { p, score: tokens.reduce((s, t) => s + (hay.includes(t) ? 1 : 0), 0) };
+        })
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 15)
+        .map(({ p }) => ({ sku: String(p.sku), code: String(p.code ?? ''), descp: String(p.descp ?? ''), price: String(p.price ?? ''), bal: '' }));
+      setPresults(ranked);
+    }, 250);
+  }, []);
+  const openPicker = (idx: number, it: Item) => { setPickerLine(idx); setPresults([]); searchProducts(it.description || it.item_code || ''); };
+  const pickProduct = (idx: number, p: NiagawanMatch) => {
+    setPicked((prev) => ({ ...prev, [p.sku]: p }));
+    setItem(idx, { sku_id: p.sku, will_create: false });
+    setPickerLine(null); setPq(''); setPresults([]);
+  };
 
   const save = useCallback(async (approve: boolean) => {
     if (!id || !head) return;
@@ -486,11 +533,28 @@ export default function ReviewInvoicePage() {
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-gray-700">{rm(lineAmount(it.qty, it.unit_price, it.discount))}</td>
                   <td className="px-2 py-1.5">
-                    {!candsLoaded ? <span className="text-xs text-gray-400">checking…</span> : (() => {
+                    {!candsLoaded ? <span className="text-xs text-gray-400">checking…</span> : pickerLine === idx ? (
+                      <div className="flex w-64 flex-col gap-1">
+                        <input autoFocus value={pq} onChange={(e) => searchProducts(e.target.value)} placeholder="search item name or code…"
+                          className="rounded border border-blue-400 px-1.5 py-1 text-xs" />
+                        {presults.length > 0 ? (
+                          <div className="max-h-48 overflow-y-auto rounded border border-gray-200">
+                            {presults.map((p) => (
+                              <button key={p.sku} onClick={() => pickProduct(idx, p)}
+                                className="block w-full border-b border-gray-100 px-1.5 py-1 text-left text-[11px] last:border-0 hover:bg-blue-50">
+                                <span className="font-mono text-gray-500">{p.code || '—'}</span> {p.descp}{p.price ? ` · RM${p.price}` : ''}
+                              </button>
+                            ))}
+                          </div>
+                        ) : pq.trim().length >= 2 ? <span className="text-[10px] text-gray-400">No match — try fewer / different words.</span> : null}
+                        <button onClick={() => { setPickerLine(null); setPq(''); setPresults([]); }} className="text-left text-[10px] text-gray-400 underline">cancel</button>
+                      </div>
+                    ) : (() => {
                       const cands = candsFor(it);
                       const res = resolutionFor(it);
                       if (res.kind === 'create') {
-                        // No catalog match (or owner chose to create) → make a new product.
+                        // No catalog code-match (or owner chose to create) → make a new product,
+                        // OR pick an existing one from the full list (for code-less invoices).
                         return (
                           <div className="flex flex-col gap-1">
                             <span className="text-[10px] font-medium uppercase tracking-wide text-amber-600">🆕 create new product</span>
@@ -499,23 +563,24 @@ export default function ReviewInvoicePage() {
                               {!cats.includes(it.category) && <option value="">{it.category || '—'}</option>}
                               {cats.map((c) => <option key={c} value={c}>{c}</option>)}
                             </select>
+                            {!locked && <button onClick={() => openPicker(idx, it)} className="text-left text-[10px] font-medium text-blue-600 underline">🔎 or choose from existing items</button>}
                             {cands.length > 0 && !locked && (
                               <button onClick={() => setItem(idx, { will_create: false, sku_id: cands.length === 1 ? cands[0].sku : null })}
-                                className="text-left text-[10px] text-blue-500 underline">{cands.length} existing match{cands.length > 1 ? 'es' : ''} — link instead</button>
+                                className="text-left text-[10px] text-blue-500 underline">{cands.length} code match{cands.length > 1 ? 'es' : ''} — link</button>
                             )}
                           </div>
                         );
                       }
                       if (res.kind === 'link') {
-                        const m = cands.find((c) => c.sku === res.sku) || (it.niagawan_matches ?? []).find((c) => c.sku === res.sku);
+                        const m = cands.find((c) => c.sku === res.sku) || (it.niagawan_matches ?? []).find((c) => c.sku === res.sku) || picked[res.sku];
                         return (
                           <div className="flex flex-col gap-1">
                             <span className="rounded bg-emerald-50 px-1.5 py-0.5 font-mono text-[11px] text-emerald-700" title="This purchase line will be booked to this exact product">
                               → {m ? `${m.code} — ${m.descp}` : `sku ${res.sku}`}
                             </span>
                             {!locked && (
-                              <div className="flex gap-2">
-                                {cands.length > 1 && <button onClick={() => setItem(idx, { sku_id: null, will_create: false })} className="text-[10px] text-blue-500 underline">change</button>}
+                              <div className="flex flex-wrap gap-2">
+                                <button onClick={() => openPicker(idx, it)} className="text-[10px] text-blue-500 underline">change / search</button>
                                 <button onClick={() => setItem(idx, { will_create: true, sku_id: null })} className="text-[10px] text-blue-500 underline">create new instead</button>
                               </div>
                             )}
@@ -531,7 +596,12 @@ export default function ReviewInvoicePage() {
                             <option value="">⚠ {cands.length} products share this code — choose…</option>
                             {cands.map((m) => <option key={m.sku} value={m.sku}>{m.code} — {m.descp}{m.price ? ` (RM${m.price})` : ''}</option>)}
                           </select>
-                          {!locked && <button onClick={() => setItem(idx, { will_create: true, sku_id: null })} className="text-left text-[10px] text-blue-500 underline">none of these — create new</button>}
+                          {!locked && (
+                            <div className="flex flex-wrap gap-2">
+                              <button onClick={() => openPicker(idx, it)} className="text-[10px] text-blue-500 underline">🔎 search all items</button>
+                              <button onClick={() => setItem(idx, { will_create: true, sku_id: null })} className="text-[10px] text-blue-500 underline">none — create new</button>
+                            </div>
+                          )}
                         </div>
                       );
                     })()}
@@ -560,7 +630,7 @@ export default function ReviewInvoicePage() {
       </div>
 
       <p className="mt-2 text-xs text-gray-400">
-        Each line is booked to the product shown in the <b>Product</b> column: a single catalog match links automatically, no match creates a new product (in the chosen <b>Category</b>, selling price RM&nbsp;0 for you to set later), and when several products share a code you pick the right one. The importer uses exactly what you chose here — it doesn&rsquo;t re-guess. No duplicates.
+        Each line is booked to the product in the <b>Product</b> column. A code match links automatically; if there&rsquo;s no code (or no match) you can <b>🔎 choose an existing item</b> from the list (the search is pre-filled from the description) instead of creating a duplicate — or create a new product in the chosen <b>Category</b>. When several products share a code you pick the right one. The importer uses exactly what you chose here — no re-guessing, no duplicates.
       </p>
 
       {msg && <div className={`mt-3 rounded-md border p-2 text-sm ${msg.kind === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>{msg.text}</div>}
