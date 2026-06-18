@@ -16,7 +16,8 @@ type Pinv = {
   created_at: string;
 };
 
-type MailSupplier = { id: string; name: string; match_terms: string[]; enabled: boolean; note: string | null };
+type MailSupplier = { id: string; name: string; match_terms: string[]; enabled: boolean; note: string | null; folder_id: string | null; folder_name: string | null };
+type DriveFolder = { folder_id: string; name: string };
 
 const STATUS_STYLE: Record<string, string> = {
   uploaded: 'bg-gray-100 text-gray-600',
@@ -50,7 +51,9 @@ export default function PurchaseInvoicePage() {
   const [showSuppliers, setShowSuppliers] = useState(false);
   const [supName, setSupName] = useState('');
   const [supTerms, setSupTerms] = useState('');
+  const [supFolder, setSupFolder] = useState(''); // picked Drive folder id for the new supplier (required)
   const [supBusy, setSupBusy] = useState(false);
+  const [folders, setFolders] = useState<DriveFolder[]>([]); // DOWNLOAD-SHARED subfolders, reported by the mailbox script
 
   // Tick a live elapsed-seconds counter while a read is in progress, so the user can see the
   // system is actively working (an AI read can take 15–50s) and isn't frozen.
@@ -189,25 +192,40 @@ export default function PurchaseInvoicePage() {
 
   // --- self-service auto-import suppliers (the mailbox script reads this list live) ---
   const loadSuppliers = useCallback(async () => {
-    const { data } = await supabase.from('mail_suppliers').select('id,name,match_terms,enabled,note').order('name');
+    const { data } = await supabase.from('mail_suppliers').select('id,name,match_terms,enabled,note,folder_id,folder_name').order('name');
     setSuppliers((data ?? []) as MailSupplier[]);
   }, []);
-  useEffect(() => { if (isAdmin) loadSuppliers(); }, [isAdmin, loadSuppliers]);
+  const loadFolders = useCallback(async () => {
+    const { data } = await supabase.from('drive_folders').select('folder_id,name').order('name');
+    setFolders((data ?? []) as DriveFolder[]);
+  }, []);
+  useEffect(() => { if (isAdmin) { loadSuppliers(); loadFolders(); } }, [isAdmin, loadSuppliers, loadFolders]);
 
   const addSupplier = useCallback(async () => {
     const name = supName.trim();
     const terms = supTerms.split(/[,\n]+/).map((t) => t.trim().toLowerCase()).filter(Boolean);
     if (!name) { setMsg({ kind: 'err', text: 'Enter the supplier name.' }); return; }
     if (!terms.length) { setMsg({ kind: 'err', text: 'Enter at least one word that identifies them (e.g. their name).' }); return; }
+    if (!supFolder) { setMsg({ kind: 'err', text: 'Pick the folder where this supplier’s invoices save (and are watched).' }); return; }
+    const folder = folders.find((f) => f.folder_id === supFolder) || null;
     setSupBusy(true);
     const { data: sess } = await supabase.auth.getSession();
-    const { error } = await supabase.from('mail_suppliers').insert({ name, match_terms: terms, created_by: sess.session?.user?.email ?? null });
+    const { error } = await supabase.from('mail_suppliers').insert({
+      name, match_terms: terms, folder_id: supFolder, folder_name: folder?.name ?? null,
+      created_by: sess.session?.user?.email ?? null,
+    });
     setSupBusy(false);
     if (error) { setMsg({ kind: 'err', text: error.message }); return; }
-    setSupName(''); setSupTerms('');
-    setMsg({ kind: 'ok', text: `Added ${name} ✓ — their emailed invoices will auto-import from now on.` });
+    setSupName(''); setSupTerms(''); setSupFolder('');
+    setMsg({ kind: 'ok', text: `Added ${name} ✓ — emailed invoices auto-import, and PDFs dropped into ${folder?.name ?? 'the folder'} import too.` });
     await loadSuppliers();
-  }, [supName, supTerms, loadSuppliers]);
+  }, [supName, supTerms, supFolder, folders, loadSuppliers]);
+
+  const setSupplierFolder = useCallback(async (s: MailSupplier, folderId: string) => {
+    const folder = folders.find((f) => f.folder_id === folderId) || null;
+    await supabase.from('mail_suppliers').update({ folder_id: folderId || null, folder_name: folder?.name ?? null, updated_at: new Date().toISOString() }).eq('id', s.id);
+    await loadSuppliers();
+  }, [folders, loadSuppliers]);
 
   const toggleSupplier = useCallback(async (s: MailSupplier) => {
     await supabase.from('mail_suppliers').update({ enabled: !s.enabled, updated_at: new Date().toISOString() }).eq('id', s.id);
@@ -258,35 +276,55 @@ export default function PurchaseInvoicePage() {
         {showSuppliers && (
           <div className="border-t border-gray-100 px-4 py-3">
             <p className="text-xs text-gray-500">
-              Invoices emailed from these suppliers to the workshop inbox are picked up &amp; read automatically.
-              Add one by name + a word or two that appears in their email (their name, or part of their address).
+              Invoices emailed from these suppliers are picked up &amp; read automatically. Add one by name + a word
+              that appears in their email, and pick the <b>folder</b> where their invoices save — that folder is also
+              <b> watched</b>, so any PDF you drop into it imports too.
             </p>
             <div className="mt-3 flex flex-wrap items-end gap-2">
               <label className="block">
                 <span className="block text-xs font-medium text-gray-600">Supplier name</span>
                 <input value={supName} onChange={(e) => setSupName(e.target.value)} placeholder="e.g. Tat Seng"
-                  className="mt-0.5 w-44 rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+                  className="mt-0.5 w-40 rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
               </label>
               <label className="block min-w-0 flex-1">
                 <span className="block text-xs font-medium text-gray-600">Recognise by (comma-separated)</span>
                 <input value={supTerms} onChange={(e) => setSupTerms(e.target.value)} placeholder="e.g. tat seng, tatseng"
                   className="mt-0.5 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
               </label>
+              <label className="block">
+                <span className="block text-xs font-medium text-gray-600">Folder (save + watch) *</span>
+                <select value={supFolder} onChange={(e) => setSupFolder(e.target.value)}
+                  className="mt-0.5 w-48 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm">
+                  <option value="">— pick folder —</option>
+                  {folders.map((f) => <option key={f.folder_id} value={f.folder_id}>{f.name}</option>)}
+                </select>
+              </label>
               <button onClick={addSupplier} disabled={supBusy}
                 className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
                 {supBusy ? 'Adding…' : 'Add'}
               </button>
             </div>
+            {folders.length === 0 && (
+              <p className="mt-1 text-[11px] text-amber-600">
+                Folder list is empty — it fills in after the next email check (runs every 15 min, or click &ldquo;📧 Check email now&rdquo; above), then pick a folder.
+              </p>
+            )}
             <div className="mt-3 space-y-1.5">
               {suppliers.length === 0 ? (
                 <div className="text-xs text-gray-400">No custom suppliers added yet.</div>
               ) : suppliers.map((s) => (
-                <div key={s.id} className={`flex items-center justify-between rounded-md border px-3 py-1.5 text-sm ${s.enabled ? 'border-gray-200 bg-white' : 'border-gray-200 bg-gray-50 opacity-60'}`}>
-                  <div className="min-w-0">
+                <div key={s.id} className={`flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-sm ${s.enabled ? 'border-gray-200 bg-white' : 'border-gray-200 bg-gray-50 opacity-60'}`}>
+                  <div className="min-w-0 flex-1">
                     <span className="font-medium text-gray-800">{s.name}</span>
                     <span className="ml-2 text-xs text-gray-400">{(s.match_terms || []).join(', ')}</span>
                   </div>
                   <div className="flex items-center gap-2">
+                    <select value={s.folder_id ?? ''} onChange={(e) => setSupplierFolder(s, e.target.value)}
+                      title="Folder where invoices save & are watched"
+                      className={`rounded-md border px-2 py-0.5 text-xs ${s.folder_id ? 'border-gray-300 bg-white text-gray-700' : 'border-amber-300 bg-amber-50 text-amber-700'}`}>
+                      <option value="">⚠ pick folder</option>
+                      {folders.map((f) => <option key={f.folder_id} value={f.folder_id}>{f.name}</option>)}
+                    </select>
                     <label className="flex cursor-pointer items-center gap-1 text-xs text-gray-500">
                       <input type="checkbox" checked={s.enabled} onChange={() => toggleSupplier(s)} className="h-3.5 w-3.5" /> on
                     </label>
