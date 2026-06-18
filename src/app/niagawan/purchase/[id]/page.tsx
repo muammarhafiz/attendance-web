@@ -233,7 +233,10 @@ export default function ReviewInvoicePage() {
         .filter((it) => it.item_code.trim() || it.codes.length || it.description.trim());
       if (approve) {
         if (cleaned.length === 0) throw new Error('Add at least one line item before approving.');
-        if (cleaned.some((it) => !it.item_code.trim() && it.codes.length === 0)) throw new Error('Every item needs at least one code before approving.');
+        // A line is fine if it's LINKED to an existing product (booked by sku, no code needed)
+        // OR it has a code (needed to create a new product). Only code-less create-new lines block.
+        if (cleaned.some((it) => resolutionFor(it).kind !== 'link' && !it.item_code.trim() && it.codes.length === 0))
+          throw new Error('Each line needs a code or a linked product. Add a code, or use “🔎 choose existing item” to link the line.');
         if (cleaned.some((it) => resolutionFor(it).kind === 'unresolved')) throw new Error('Some lines match several products — choose the right one (or “create new”) before approving.');
       }
       const { error: hErr } = await supabase.from('pinv').update({
