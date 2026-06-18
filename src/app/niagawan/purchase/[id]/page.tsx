@@ -77,6 +77,16 @@ export default function ReviewInvoicePage() {
   const [presults, setPresults] = useState<NiagawanMatch[]>([]);
   const [picked, setPicked] = useState<Record<string, NiagawanMatch>>({});
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Product-catalog refresh: re-sync niagawan_products from Niagawan on demand (same sync_requests
+  // mechanism the inventory/sales pages use; a products sync runs in ~1–2 min). Used when a line
+  // shows "create new" for an item that IS in Niagawan but was created after the last nightly
+  // catalog sync (the stale-catalog trap). Bumping refreshNonce re-runs the candidate lookup.
+  const [catSync, setCatSync] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const [catSyncMsg, setCatSyncMsg] = useState('');
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const catPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const catCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (catPollRef.current) clearInterval(catPollRef.current); if (catCooldownRef.current) clearTimeout(catCooldownRef.current); }, []);
 
   useEffect(() => {
     (async () => {
@@ -161,7 +171,7 @@ export default function ReviewInvoicePage() {
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [codeKey]);
+  }, [codeKey, refreshNonce]);
 
   // Candidate products for one line = catalog products sharing any of its (normalised) codes.
   const candsFor = useCallback((it: Item): NiagawanMatch[] => {
@@ -185,6 +195,28 @@ export default function ReviewInvoicePage() {
   const unresolvedLines = useMemo(
     () => (candsLoaded ? items.filter((it) => resolutionFor(it).kind === 'unresolved').map((it) => it.line_no) : []),
     [items, resolutionFor, candsLoaded]);
+
+  // Would a catalog refresh actually auto-link this line? Only if the live Niagawan lookup
+  // (niagawan_matches, already stored on the row) found a product whose code TOKEN-matches the line
+  // code the SAME way pinv_candidates does: collapse the line code; split the product code on
+  // space/comma and normalise each token; require equality. This deliberately EXCLUDES the shop's
+  // per-supplier suffix/variant codes (line "16260-BZ020" vs product "16260-BZ020-YCW") and
+  // space-packed codes, where in_niagawan is true (the NAS uses a broad substring match on code OR
+  // description) but a refresh can never produce a token candidate — so we must not tell the owner
+  // to refresh those; the 🔎 picker is the right tool for them and is already offered.
+  const refreshLinkable = useCallback((it: Item): boolean => {
+    const wants = new Set([it.item_code, ...it.codes].map(normCode).filter(Boolean));
+    if (!wants.size) return false;
+    return (it.niagawan_matches ?? []).some((m) =>
+      String(m.code ?? '').split(/[\s,]+/).map(normCode).filter(Boolean).some((tok) => wants.has(tok)));
+  }, []);
+
+  // The real "stale catalog" trap: the line IS in Niagawan (live lookup) but missing from our synced
+  // catalog AND a refresh would genuinely token-link it (refreshLinkable). Defaulting to create-new
+  // here risks a duplicate; one refresh fixes it. (Suppressed once linked / create-new chosen.)
+  const staleLines = useMemo(
+    () => (candsLoaded ? items.filter((it) => it.in_niagawan === true && !it.sku_id && !it.will_create && candsFor(it).length === 0 && refreshLinkable(it)).map((it) => it.line_no) : []),
+    [items, candsFor, refreshLinkable, candsLoaded]);
 
   const computedTotal = useMemo(() => round2(items.reduce((s, it) => s + lineAmount(it.qty, it.unit_price, it.discount), 0)), [items]);
   const totalMismatch = head?.total != null && Math.abs(round2(head.total) - computedTotal) > 0.01;
@@ -310,6 +342,34 @@ export default function ReviewInvoicePage() {
     if (!error) setHead((h) => (h ? { ...h, resolve_status: 'queued' } : h));
   }, [id]);
 
+  // Re-sync the product catalog (niagawan_products) from Niagawan, then re-run the candidate lookup
+  // so freshly-created Niagawan items link instead of defaulting to "create new". Mirrors the
+  // inventory page's sync lifecycle (insert sync_request -> poll every 4s -> reload, 5-min cap).
+  const refreshCatalog = useCallback(async () => {
+    if (catSync !== 'idle') return; // also blocks the brief done/error cooldown window (no re-entrancy)
+    if (catPollRef.current) clearInterval(catPollRef.current);
+    if (catCooldownRef.current) clearTimeout(catCooldownRef.current);
+    const cooldown = () => { catCooldownRef.current = setTimeout(() => { setCatSync('idle'); setCatSyncMsg(''); }, 6000); };
+    setCatSync('running'); setCatSyncMsg('Refreshing the product list from Niagawan… ~1–2 min. You can keep editing.');
+    const { data, error } = await supabase.from('sync_requests').insert({ which: 'products', source: 'website-review-refresh' }).select('id').single();
+    if (error || !data) { setCatSync('error'); setCatSyncMsg('Could not start the refresh: ' + (error?.message ?? 'unknown')); cooldown(); return; }
+    const sid = data.id as number;
+    const started = Date.now();
+    catPollRef.current = setInterval(async () => {
+      const { data: r } = await supabase.from('sync_requests').select('status').eq('id', sid).single();
+      if (r?.status === 'done' || r?.status === 'error') {
+        if (catPollRef.current) clearInterval(catPollRef.current);
+        if (r.status === 'done') { setRefreshNonce((n) => n + 1); setCatSync('done'); setCatSyncMsg('Product list updated ✓ — re-checking matches…'); }
+        else { setCatSync('error'); setCatSyncMsg('Refresh ran but reported an error.'); }
+        cooldown();
+      } else if (Date.now() - started > 5 * 60 * 1000) {
+        if (catPollRef.current) clearInterval(catPollRef.current);
+        setCatSync('idle'); setCatSyncMsg('Still running in the background — press Refresh again in a bit.');
+        catCooldownRef.current = setTimeout(() => setCatSyncMsg(''), 10000);
+      }
+    }, 4000);
+  }, [catSync]);
+
   // Auto-look-up Niagawan categories once if this invoice has never been resolved.
   useEffect(() => {
     if (head && (head.resolve_status === null || head.resolve_status === undefined)) runResolve();
@@ -362,6 +422,9 @@ export default function ReviewInvoicePage() {
           {(head.check_status === 'queued' || head.check_status === 'checking')
             ? <span className="rounded border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">Checking sales… (~1 min)</span>
             : <button onClick={runCheck} className="rounded border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">{head.check_status === 'checked' ? '↻ Re-check sales' : 'Check against sales'}</button>}
+          {!locked && (catSync === 'idle'
+            ? <button onClick={refreshCatalog} title="Re-sync the product list from Niagawan. Use this if a line shows 'create new' for an item that IS already in Niagawan (e.g. just created there)." className="rounded border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">🔄 Refresh product list</button>
+            : <span className="rounded border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">{catSync === 'running' ? 'Refreshing products… (~1–2 min)' : catSync === 'done' ? 'Products updated ✓' : 'Refresh failed'}</span>)}
           {head.file_path && <button onClick={viewPdf} className="rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50">View PDF</button>}
           {(head.status === 'uploaded' || head.status === 'extracted' || head.status === 'error') && (
             <button onClick={dismissInvoice} title="Hide this invoice (e.g. it's already in Niagawan). Nothing is changed in Niagawan." className="rounded border border-gray-200 px-2.5 py-1 text-xs text-rose-500 hover:bg-rose-50">✕ Dismiss</button>
@@ -372,6 +435,10 @@ export default function ReviewInvoicePage() {
           <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{head.status === 'created' && head.niagawan_pi_no ? head.niagawan_pi_no : head.status}</span>
         </div>
       </div>
+
+      {catSyncMsg && (
+        <div className={`mb-3 rounded-md border p-2 text-sm ${catSync === 'error' ? 'border-rose-200 bg-rose-50 text-rose-800' : catSync === 'done' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>{catSyncMsg}</div>
+      )}
 
       {locked && (
         <div className="mb-3 rounded-md border border-indigo-200 bg-indigo-50 p-2 text-sm text-indigo-800">
@@ -400,6 +467,14 @@ export default function ReviewInvoicePage() {
       {candsLoaded && unresolvedLines.length > 0 && (
         <div className="mb-3 rounded-md border-2 border-rose-400 bg-rose-50 px-3 py-2 text-sm text-rose-800">
           ⚠ <b>{unresolvedLines.length} line{unresolvedLines.length === 1 ? '' : 's'} need a decision</b> (line{unresolvedLines.length === 1 ? '' : 's'} {unresolvedLines.join(', ')}) — the code matches several products. Pick the right one (or choose <b>create new</b>) in the <b>Product</b> column below. Approving is blocked until then.
+        </div>
+      )}
+
+      {/* Stale-catalog guard: lines that ARE in Niagawan (per the live lookup) but missing from our
+          synced product list — they'd default to create-new and risk a duplicate. One click refreshes. */}
+      {candsLoaded && staleLines.length > 0 && (
+        <div className="mb-3 rounded-md border-2 border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          ⚠ <b>{staleLines.length} line{staleLines.length === 1 ? '' : 's'} (line{staleLines.length === 1 ? '' : 's'} {staleLines.join(', ')}) {staleLines.length === 1 ? 'is' : 'are'} in Niagawan but missing from your synced product list</b> — {staleLines.length === 1 ? 'it' : 'they'}&rsquo;ll default to <b>create new</b> and risk a duplicate. This usually means the item was created in Niagawan very recently. Press <b>🔄 Refresh product list</b> above{catSync === 'running' ? ' (running now…)' : ''}, then {staleLines.length === 1 ? 'it' : 'they'}&rsquo;ll link automatically. (If a line still shows after refreshing, use <b>🔎 choose existing item</b> on it.)
         </div>
       )}
 
@@ -503,7 +578,10 @@ export default function ReviewInvoicePage() {
                         // list (which is what the NAS matches/creates by). Leaving stale alt
                         // codes there made Niagawan ignore the owner's typed code (2026-06-12).
                         const v = e.target.value;
-                        setItem(idx, { item_code: v, codes: v.trim() ? [v.trim()] : [], code_verified: null, sku_id: null, will_create: false });
+                        // Editing the code invalidates the live-lookup signals tied to the OLD code:
+                        // clear in_niagawan/niagawan_matches so the stale-catalog warning can't make a
+                        // false claim about an unverified/changed code.
+                        setItem(idx, { item_code: v, codes: v.trim() ? [v.trim()] : [], code_verified: null, sku_id: null, will_create: false, in_niagawan: null, niagawan_matches: null });
                       }}
                       className={`w-36 rounded border px-1.5 py-1 font-mono text-xs disabled:bg-transparent ${it.code_verified === false ? 'border-rose-400 bg-rose-50' : 'border-gray-200 disabled:border-transparent'}`} />
                     {it.code_verified === false && (
@@ -561,6 +639,11 @@ export default function ReviewInvoicePage() {
                         return (
                           <div className="flex flex-col gap-1">
                             <span className="text-[10px] font-medium uppercase tracking-wide text-amber-600">🆕 create new product</span>
+                            {it.in_niagawan === true && !it.sku_id && !it.will_create && cands.length === 0 && refreshLinkable(it) && (
+                              <span className="max-w-[11rem] text-[10px] font-medium leading-tight text-amber-700" title="This code exists in Niagawan but isn't in the synced product list yet. Press “🔄 Refresh product list” up top to link it instead of creating a duplicate.">
+                                ⚠ in Niagawan, not in synced list — Refresh ↑
+                              </span>
+                            )}
                             <select disabled={locked} value={cats.includes(it.category) ? it.category : ''} onChange={(e) => setItem(idx, { category: e.target.value })}
                               className="w-44 rounded border border-amber-300 bg-amber-50 px-1.5 py-1 text-xs disabled:bg-transparent disabled:border-transparent" title="New item — pick the category it will be created in">
                               {!cats.includes(it.category) && <option value="">{it.category || '—'}</option>}
