@@ -37,7 +37,7 @@ type Row = {
   code: string; description: string; category: string; min: number;
   balance: number | null; sold30: number; sold7: number; lastSold: string | null;
   stock: 'low' | 'ok' | 'unsure'; po: 'on_po' | 'kiv' | null; note: string | null; remarks: string | null;
-  suggest: number;
+  suggest: number; supplier_id: string | null; supplier_name: string | null;
 };
 
 export default function InventoryV2Page() {
@@ -91,6 +91,8 @@ export default function InventoryV2Page() {
   const [bulkCat, setBulkCat] = useState('Proton');
   const [bulkSup, setBulkSup] = useState('');
   const [bulkMsg, setBulkMsg] = useState('');
+  const [qtyEdits, setQtyEdits] = useState<Record<string, number>>({}); // per-code order qty override
+  const [drafting, setDrafting] = useState<string | null>(null);        // category currently being drafted
 
   useEffect(() => {
     (async () => {
@@ -165,7 +167,7 @@ export default function InventoryV2Page() {
       code: w.code, description: w.description || '', category: w.category || 'Other', min,
       balance, sold30: v?.sold_30d != null ? Number(v.sold_30d) : 0, sold7: v?.sold_7d != null ? Number(v.sold_7d) : 0,
       lastSold: v?.last_sold ?? null, stock, po: st?.status ?? null, note: st?.note ?? null, remarks: w.remarks ?? null,
-      suggest: balance == null ? 0 : Math.max(min - balance, 0),
+      suggest: balance == null ? 0 : Math.max(min - balance, 0), supplier_id: w.supplier_id, supplier_name: w.supplier_name,
     };
   }), [watch, balByCode, veloByCode, statByCode]);
 
@@ -175,7 +177,12 @@ export default function InventoryV2Page() {
 
   // The reorder worklist = LOW + (sold recently, when we have velocity data), excluding KIV/on_po.
   // Until the velocity feed is populated, fall back to "all low" so the page is still useful.
-  const orderable = useMemo(() => rows.filter((r) => r.stock === 'low' && r.po == null), [rows]);
+  // Codes already sitting in a non-rejected PO draft (pending/approved/created) — keep them OFF
+  // the worklist so nothing gets ordered twice; they show in the inbox / in-progress instead.
+  const draftedCodes = useMemo(() => { const s = new Set<string>(); for (const g of suggs) for (const it of (g.items || [])) s.add(it.code); return s; }, [suggs]);
+  const orderable = useMemo(() => rows.filter((r) => r.stock === 'low' && r.po == null && !draftedCodes.has(r.code)), [rows, draftedCodes]);
+  const qtyFor = useCallback((r: Row) => { const v = qtyEdits[r.code]; return v != null ? v : Math.max(r.suggest, 1); }, [qtyEdits]);
+  const setQty = useCallback((code: string, val: string) => { const n = Math.max(0, Math.floor(Number(val) || 0)); setQtyEdits((p) => ({ ...p, [code]: n })); }, []);
   const soldLow = useMemo(() => (haveVelocity ? orderable.filter((r) => r.sold30 > 0) : orderable), [orderable, haveVelocity]);
   const slowLow = useMemo(() => (haveVelocity ? orderable.filter((r) => r.sold30 <= 0) : []), [orderable, haveVelocity]);
   const onPoList = useMemo(() => rows.filter((r) => r.po === 'on_po').sort((a, b) => catRank(a.category) - catRank(b.category) || a.code.localeCompare(b.code)), [rows]);
@@ -197,6 +204,30 @@ export default function InventoryV2Page() {
     const list = q ? watch.filter((w) => w.code.toLowerCase().includes(q) || (w.description || '').toLowerCase().includes(q)) : watch;
     return [...list].sort((a, b) => catRank(a.category || 'Other') - catRank(b.category || 'Other') || a.code.localeCompare(b.code));
   }, [watch, search]);
+
+  // Draft a PO straight from the live worklist: group this category's items by their supplier and
+  // write one pending po_suggestions row per supplier. Flows through the same approve -> NAS-create
+  // path as the sales scan. Items with no supplier are skipped (set one in Setup).
+  const draftCategoryPO = useCallback(async (items: Row[], cat: string) => {
+    const bySup = new Map<string, { supplier_id: string; supplier_name: string | null; items: { code: string; desc: string; qty: number }[] }>();
+    let noSup = 0;
+    for (const r of items) {
+      if (!r.supplier_id) { noSup++; continue; }
+      const q = qtyFor(r); if (q <= 0) continue;
+      const g = bySup.get(r.supplier_id) || { supplier_id: r.supplier_id, supplier_name: r.supplier_name, items: [] };
+      g.items.push({ code: r.code, desc: r.description || r.code, qty: q });
+      bySup.set(r.supplier_id, g);
+    }
+    if (bySup.size === 0) { flash({ kind: 'err', msg: noSup ? 'No supplier set for these — set one in Setup → Manage watchlist.' : 'Nothing to draft.' }); return; }
+    setDrafting(cat);
+    const t = today();
+    const insertRows = [...bySup.values()].map((g) => ({ supplier_id: g.supplier_id, supplier_name: g.supplier_name, items: g.items, status: 'pending', period_from: t, period_to: t }));
+    const { error } = await supabase.from('po_suggestions').insert(insertRows);
+    setDrafting(null);
+    if (error) { flash({ kind: 'err', msg: 'Could not draft PO: ' + error.message }); return; }
+    await loadSuggs();
+    flash({ kind: 'ok', msg: `Drafted ${insertRows.length} PO${insertRows.length > 1 ? 's' : ''} for ${cat} — approve in the inbox above.${noSup ? ` (${noSup} item(s) skipped — no supplier)` : ''}` });
+  }, [qtyFor, flash, loadSuggs]);
 
   // ---- status writes (with error surfacing) ----
   const setPO = useCallback(async (code: string) => {
@@ -356,7 +387,7 @@ export default function InventoryV2Page() {
                 <div key={s.id} className="rounded-md border border-gray-200 bg-white p-2.5">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="text-sm font-medium text-gray-900">{s.supplier_name}
-                      <span className="ml-2 text-xs font-normal text-gray-500">{(s.items || []).length} item{(s.items || []).length !== 1 ? 's' : ''}{s.period_from ? ` · sold last ${fmtD(s.period_from)}–${fmtD(s.period_to)}` : ''}</span>
+                      <span className="ml-2 text-xs font-normal text-gray-500">{(s.items || []).length} item{(s.items || []).length !== 1 ? 's' : ''}{s.period_from && s.period_from !== s.period_to ? ` · sold ${fmtD(s.period_from)}–${fmtD(s.period_to)}` : ''}</span>
                     </div>
                     <div className="whitespace-nowrap">
                       {s.status === 'pending' && (<>
@@ -407,7 +438,8 @@ export default function InventoryV2Page() {
           {groups.map((g) => (
             <div key={g.cat} className="overflow-hidden rounded-lg border border-gray-200">
               <div className="flex items-center justify-between bg-blue-50 px-3 py-2 text-sm font-semibold text-gray-800">
-                <span>{g.cat}</span><span className="text-xs font-medium text-gray-500">{g.items.length} to order</span>
+                <span>{g.cat} <span className="font-normal text-gray-500">· {g.items.length} to order</span></span>
+                <button onClick={() => draftCategoryPO(g.items, g.cat)} disabled={drafting === g.cat} title="Create a draft PO per supplier from these items — appears in the inbox to approve" className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50">{drafting === g.cat ? 'Drafting…' : 'Draft PO →'}</button>
               </div>
               <div className="divide-y divide-gray-100 bg-white">
                 {g.items.map((r) => (
@@ -417,12 +449,13 @@ export default function InventoryV2Page() {
                       <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
                         <span className="font-mono text-xs text-gray-400">{r.code}</span>
                         {stockChip(r)}
-                        {r.suggest > 0 && <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">order ~{r.suggest}</span>}
                         {haveVelocity && r.sold30 > 0 && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">sold {r.sold30} (30d)</span>}
+                        {!r.supplier_id && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">no supplier</span>}
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5">
-                      <button onClick={() => setPO(r.code)} className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">✓ Ordered</button>
+                      <label className="flex items-center gap-1 text-[11px] text-gray-400">qty<input type="number" min={0} value={qtyFor(r)} onChange={(e) => setQty(r.code, e.target.value)} title="Order quantity for the draft PO" className="w-14 rounded border border-gray-300 px-1.5 py-1 text-right text-xs text-gray-700" /></label>
+                      <button onClick={() => setPO(r.code)} title="Mark as already ordered (no PO created)" className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">✓ Ordered</button>
                       <button onClick={() => setKIV(r.code)} className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50">⏸ Hold</button>
                     </div>
                   </div>
