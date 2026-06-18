@@ -259,9 +259,9 @@ export default function PurchaseInvoicePage() {
           <button onClick={upload} disabled={busy || !file} className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
             {busy ? 'Uploading…' : 'Upload'}
           </button>
-          <button onClick={checkEmail} disabled={mailCheck === 'running'} title="Fetch supplier invoice PDFs from zordaqputrajaya@gmail.com into the Drive “Supplier Invoices” folder"
+          <button onClick={checkEmail} disabled={mailCheck === 'running'} title="Pull supplier invoices now — scans the workshop email AND your watched supplier folders (PDFs dropped into them)"
             className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
-            {mailCheck === 'running' ? 'Checking email…' : '📧 Check email now'}
+            {mailCheck === 'running' ? 'Checking…' : '📧 Check email & folders now'}
           </button>
         </div>
         {msg && <div className={`mt-2 rounded-md border p-2 text-sm ${msg.kind === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>{msg.text}</div>}
