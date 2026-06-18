@@ -28,6 +28,9 @@ export default function AddPartPage() {
   const [q, setQ] = useState('');
   const [results, setResults] = useState<Product[]>([]);
   const [chosen, setChosen] = useState<Product | null>(null);
+  const [priceOverride, setPriceOverride] = useState(''); // feature 1: per-line selling-price override
+  const [editPrice, setEditPrice] = useState(false);
+  const [newItem, setNewItem] = useState<{ descp: string; price: string } | null>(null); // feature 2: item not in catalog
   const [qty, setQty] = useState(1);
   const [queue, setQueue] = useState<Queued[]>([]);
   const [errMsg, setErrMsg] = useState<string | null>(null);
@@ -60,6 +63,8 @@ export default function AddPartPage() {
   const search = useCallback((text: string) => {
     setQ(text);
     setChosen(null);
+    setEditPrice(false);
+    setPriceOverride('');
     if (searchTimer.current) clearTimeout(searchTimer.current);
     const term = text.trim();
     if (term.length < 2) { setResults([]); return; }
@@ -93,21 +98,40 @@ export default function AddPartPage() {
 
   const add = useCallback(async () => {
     if (!picked) { setErrMsg('Pick a vehicle first.'); return; }
-    if (!chosen) { setErrMsg('Pick an item from the list.'); return; }
+    let rpcArgs: Record<string, unknown>;
+    let label: string;
+    if (newItem) {
+      // brand-new item not in Niagawan -> the "--" placeholder with a typed descp + price
+      if (!newItem.descp.trim()) { setErrMsg('Enter the item description.'); return; }
+      const priceN = Number(newItem.price);
+      if (newItem.price.trim() === '' || !Number.isFinite(priceN) || priceN < 0) { setErrMsg('Enter a valid selling price.'); return; }
+      rpcArgs = {
+        p_inv: picked.inv, p_sale_id: picked.sale_id, p_plate: picked.customer ?? '',
+        p_code: '', p_qty: qty, p_sku: null, p_descp: newItem.descp.trim(), p_price: priceN, p_is_new: true,
+      };
+      label = newItem.descp.trim();
+    } else {
+      if (!chosen) { setErrMsg('Pick an item from the list.'); return; }
+      let priceN: number | null = null;
+      if (editPrice && priceOverride.trim() !== '') {
+        priceN = Number(priceOverride);
+        if (!Number.isFinite(priceN) || priceN < 0) { setErrMsg('Enter a valid price.'); return; }
+      }
+      rpcArgs = {
+        p_inv: picked.inv, p_sale_id: picked.sale_id, p_plate: picked.customer ?? '',
+        p_code: chosen.code ?? '', p_qty: qty, p_sku: chosen.sku, p_descp: chosen.descp ?? '', p_price: priceN, p_is_new: false,
+      };
+      label = chosen.descp || chosen.code || '?';
+    }
     setErrMsg(null);
-    const { data: id, error } = await supabase.rpc('queue_add_item', {
-      p_inv: picked.inv, p_sale_id: picked.sale_id, p_plate: picked.customer ?? '',
-      p_code: chosen.code ?? '', p_qty: qty, p_sku: chosen.sku, p_descp: chosen.descp ?? '',
-    });
+    const { data: id, error } = await supabase.rpc('queue_add_item', rpcArgs);
     if (error || !id) { setErrMsg(error?.message ?? 'failed'); return; }
-    const entry: Queued = {
-      id: id as number, item: chosen.descp || chosen.code || '?', qty,
-      car: carLabel(picked), status: 'pending',
-    };
+    const entry: Queued = { id: id as number, item: label, qty, car: carLabel(picked), status: 'pending' };
     setQueue((prev) => [entry, ...prev].slice(0, 8));
     // fire-and-forget: reset the item immediately, keep the same vehicle selected
     setQ(''); setResults([]); setChosen(null); setQty(1);
-  }, [picked, chosen, qty]);
+    setEditPrice(false); setPriceOverride(''); setNewItem(null);
+  }, [picked, chosen, qty, editPrice, priceOverride, newItem]);
 
   if (authed === null || (authed && allowed === null)) return <div className="p-6 text-sm text-gray-500">Checking…</div>;
   if (!authed) return <div className="p-6 text-sm text-gray-600">Please sign in first.</div>;
@@ -145,31 +169,69 @@ export default function AddPartPage() {
         )}
       </div>
 
-      {/* 2) part search */}
+      {/* 2) part search OR new item */}
       <div className="mt-5">
-        <span className="text-sm font-medium text-gray-700">2. Search item (code or name)</span>
-        <input value={q} onChange={(e) => search(e.target.value)} placeholder="e.g. MRDB or BRAKE PAD" autoComplete="off"
-          className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3.5 text-lg uppercase" />
-        {chosen ? (
-          <div className="mt-2 flex items-center justify-between rounded-xl border border-emerald-400 bg-emerald-50 px-3 py-2.5">
-            <span className="min-w-0">
-              <span className="block truncate text-sm font-semibold text-emerald-900">{chosen.descp}</span>
-              <span className="font-mono text-xs text-emerald-600">{chosen.code || '—'} · Price {rm(chosen.price)} · Cost {rm(chosen.cost)}</span>
-            </span>
-            <button onClick={() => { setChosen(null); setQ(''); }} className="shrink-0 text-xs text-emerald-600 underline">change</button>
+        <span className="text-sm font-medium text-gray-700">2. {newItem ? 'New item (not in Niagawan yet)' : 'Search item (code or name)'}</span>
+        {newItem ? (
+          <div className="mt-1 space-y-2">
+            <input value={newItem.descp} onChange={(e) => setNewItem({ ...newItem, descp: e.target.value })}
+              placeholder="Item description (printed on the invoice)" autoComplete="off"
+              className="w-full rounded-xl border border-gray-300 px-4 py-3 text-base" />
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-600">Selling price RM</span>
+              <input type="number" inputMode="decimal" step="0.01" min="0" value={newItem.price}
+                onChange={(e) => setNewItem({ ...newItem, price: e.target.value })} placeholder="0.00"
+                className="w-32 rounded-lg border border-gray-300 px-2 py-1.5 text-base" />
+            </div>
+            <div className="flex items-center justify-between">
+              <button onClick={() => setNewItem(null)} className="text-xs text-gray-500 underline">← back to search</button>
+            </div>
+            <p className="text-xs text-gray-400">Added on the &ldquo;--&rdquo; item with this description &amp; price — same as keying a new item in Niagawan.</p>
           </div>
-        ) : results.length > 0 ? (
-          <div className="mt-2 grid max-h-64 grid-cols-1 gap-1.5 overflow-y-auto">
-            {results.map((p) => (
-              <button key={p.sku} onClick={() => { setChosen(p); setResults([]); }} className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-left hover:border-gray-300">
-                <span className="block truncate text-sm text-gray-900">{p.descp || '(no name)'}</span>
-                <span className="font-mono text-xs text-gray-400">{p.code || '—'} · <span className="text-gray-600">Price {rm(p.price)}</span> · <span className="text-amber-700">Cost {rm(p.cost)}</span></span>
+        ) : (
+          <>
+            <input value={q} onChange={(e) => search(e.target.value)} placeholder="e.g. MRDB or BRAKE PAD" autoComplete="off"
+              className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3.5 text-lg uppercase" />
+            {chosen ? (
+              <div className="mt-2 rounded-xl border border-emerald-400 bg-emerald-50 px-3 py-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold text-emerald-900">{chosen.descp}</span>
+                    <span className="font-mono text-xs text-emerald-600">{chosen.code || '—'} · Price {rm(editPrice && priceOverride !== '' ? priceOverride : chosen.price)} · Cost {rm(chosen.cost)}</span>
+                  </span>
+                  <button onClick={() => { setChosen(null); setQ(''); setEditPrice(false); setPriceOverride(''); }} className="shrink-0 text-xs text-emerald-600 underline">change</button>
+                </div>
+                {editPrice ? (
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-xs text-gray-600">Selling price RM</span>
+                    <input type="number" inputMode="decimal" step="0.01" min="0" autoFocus value={priceOverride}
+                      onChange={(e) => setPriceOverride(e.target.value)} className="w-28 rounded-lg border border-gray-300 px-2 py-1 text-sm" />
+                    <button onClick={() => { setEditPrice(false); setPriceOverride(''); }} className="text-xs text-gray-400 underline">cancel</button>
+                  </div>
+                ) : (
+                  <button onClick={() => { setEditPrice(true); setPriceOverride(String(chosen.price ?? '')); }} className="mt-1.5 text-xs font-medium text-blue-600 underline">change price</button>
+                )}
+              </div>
+            ) : results.length > 0 ? (
+              <div className="mt-2 grid max-h-64 grid-cols-1 gap-1.5 overflow-y-auto">
+                {results.map((p) => (
+                  <button key={p.sku} onClick={() => { setChosen(p); setResults([]); setEditPrice(false); setPriceOverride(''); }} className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-left hover:border-gray-300">
+                    <span className="block truncate text-sm text-gray-900">{p.descp || '(no name)'}</span>
+                    <span className="font-mono text-xs text-gray-400">{p.code || '—'} · <span className="text-gray-600">Price {rm(p.price)}</span> · <span className="text-amber-700">Cost {rm(p.cost)}</span></span>
+                  </button>
+                ))}
+              </div>
+            ) : q.trim().length >= 2 ? (
+              <div className="mt-2 text-sm text-gray-400">No matching item… check the spelling.</div>
+            ) : null}
+            {!chosen && (
+              <button onClick={() => { setNewItem({ descp: q.trim(), price: '' }); setQ(''); setResults([]); }}
+                className="mt-2 text-xs font-medium text-blue-600 underline">
+                ➕ Item not in the list — add as a new item
               </button>
-            ))}
-          </div>
-        ) : q.trim().length >= 2 ? (
-          <div className="mt-2 text-sm text-gray-400">No matching item… check the spelling.</div>
-        ) : null}
+            )}
+          </>
+        )}
       </div>
 
       {/* 3) qty + go */}
@@ -182,7 +244,7 @@ export default function AddPartPage() {
 
       {errMsg && <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{errMsg}</div>}
 
-      <button onClick={add} disabled={!picked || !chosen}
+      <button onClick={add} disabled={!picked || (!chosen && !newItem)}
         className="mt-4 w-full rounded-xl bg-blue-600 px-6 py-4 text-xl font-bold text-white hover:bg-blue-700 disabled:opacity-40">
         ADD TO INVOICE
       </button>
