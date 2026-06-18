@@ -9,6 +9,7 @@ const TABS = [
   { href: '/niagawan/sales', label: 'Sales' },
   { href: '/niagawan/cogs', label: 'COGS' },
   { href: '/niagawan/inventory', label: 'Inventory' },
+  { href: '/niagawan/inventory-v2', label: 'Inventory v2' },
   { href: '/niagawan/purchase', label: 'Purchase Invoice' },
   { href: '/niagawan/kiv', label: 'KIV Invoices' },
   { href: '/niagawan/pnl', label: 'P&L' },
