@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 type Item = { sku: string; code: string | null; descp: string | null; balance: number | null };
+type Group = { id: number; name: string; sort_order: number };
 
 const SHOW_CAP = 1000; // rows rendered at once (the full catalog is ~12.7k — search to narrow)
 
@@ -14,6 +15,7 @@ export default function InventoryV3Page() {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [groups, setGroups] = useState<Group[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -23,6 +25,11 @@ export default function InventoryV3Page() {
         setIsAdmin(ok === true);
       } else setIsAdmin(false);
     })();
+  }, []);
+
+  const loadGroups = useCallback(async () => {
+    const { data } = await supabase.from('inventory_po_groups').select('id,name,sort_order').order('sort_order').order('id');
+    setGroups((data ?? []) as Group[]);
   }, []);
 
   const loadCatalog = useCallback(async () => {
@@ -36,7 +43,6 @@ export default function InventoryV3Page() {
       products.push(...(data as { sku: string; code: string | null; descp: string | null }[]));
       if (data.length < PAGE) break;
     }
-    // Live balances keyed by code (≤1000 rows — single request).
     const { data: bal } = await supabase.from('niagawan_inventory').select('code,balance');
     const balByCode = new Map<string, number | null>();
     for (const r of (bal ?? []) as { code: string; balance: number | null }[]) balByCode.set(r.code, r.balance != null ? Number(r.balance) : null);
@@ -47,7 +53,22 @@ export default function InventoryV3Page() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { if (isAdmin) loadCatalog(); }, [isAdmin, loadCatalog]);
+  useEffect(() => { if (isAdmin) { loadGroups(); loadCatalog(); } }, [isAdmin, loadGroups, loadCatalog]);
+
+  const addGroup = useCallback(async () => {
+    const name = window.prompt('Name the new group card (e.g. PROTON PO):');
+    if (!name || !name.trim()) return;
+    const nextSort = groups.reduce((m, g) => Math.max(m, g.sort_order), 0) + 1;
+    const { error } = await supabase.from('inventory_po_groups').insert({ name: name.trim(), sort_order: nextSort });
+    if (error) { window.alert('Could not add: ' + error.message); return; }
+    await loadGroups();
+  }, [groups, loadGroups]);
+
+  const deleteGroup = useCallback(async (id: number, name: string) => {
+    if (!window.confirm(`Delete the "${name}" card? (the items aren't deleted)`)) return;
+    await supabase.from('inventory_po_groups').delete().eq('id', id);
+    await loadGroups();
+  }, [loadGroups]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -66,47 +87,36 @@ export default function InventoryV3Page() {
         <h2 className="text-sm font-semibold text-gray-800">PO CARD</h2>
       </div>
 
-      {/* ENGINE OIL PO */}
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
-        <h2 className="mb-3 text-sm font-semibold text-gray-800">ENGINE OIL PO</h2>
-        <div className="overflow-auto rounded border border-gray-100">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead className="bg-gray-50 text-left text-gray-600">
-              <tr>
-                <th className="px-3 py-2 font-semibold">No.</th>
-                <th className="px-3 py-2 font-semibold">Item Code</th>
-                <th className="px-3 py-2 font-semibold">Item Description</th>
-                <th className="px-3 py-2 text-right font-semibold">Balance</th>
-                <th className="px-3 py-2 font-semibold">Supplier</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400">No items yet.</td></tr>
-            </tbody>
-          </table>
+      {/* GROUP PO CARDS (data-driven — add/remove your own) */}
+      {groups.map((g) => (
+        <div key={g.id} className="rounded-lg border border-gray-200 bg-white p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-800">{g.name}</h2>
+            <button onClick={() => deleteGroup(g.id, g.name)} title="Remove this group card" className="rounded border border-gray-200 px-2 py-0.5 text-xs text-rose-500 hover:bg-rose-50">✕ delete</button>
+          </div>
+          <div className="overflow-auto rounded border border-gray-100">
+            <table className="min-w-full divide-y divide-gray-200 text-sm">
+              <thead className="bg-gray-50 text-left text-gray-600">
+                <tr>
+                  <th className="px-3 py-2 font-semibold">No.</th>
+                  <th className="px-3 py-2 font-semibold">Item Code</th>
+                  <th className="px-3 py-2 font-semibold">Item Description</th>
+                  <th className="px-3 py-2 text-right font-semibold">Balance</th>
+                  <th className="px-3 py-2 font-semibold">Supplier</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400">No items yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      ))}
 
-      {/* X-Series PO */}
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
-        <h2 className="mb-3 text-sm font-semibold text-gray-800">X-Series PO</h2>
-        <div className="overflow-auto rounded border border-gray-100">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead className="bg-gray-50 text-left text-gray-600">
-              <tr>
-                <th className="px-3 py-2 font-semibold">No.</th>
-                <th className="px-3 py-2 font-semibold">Item Code</th>
-                <th className="px-3 py-2 font-semibold">Item Description</th>
-                <th className="px-3 py-2 text-right font-semibold">Balance</th>
-                <th className="px-3 py-2 font-semibold">Supplier</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400">No items yet.</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {/* Add a new group card */}
+      <button onClick={addGroup} className="w-full rounded-lg border border-dashed border-gray-300 bg-white px-3 py-2.5 text-sm font-medium text-gray-600 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700">
+        + Add a new group card
+      </button>
 
       {/* INVENTORY LIST CARD */}
       <div className="rounded-lg border border-gray-200 bg-white p-4">
