@@ -87,6 +87,27 @@ export default function InventoryV3Page() {
         </div>
       </div>
 
+      {/* X-Series PO */}
+      <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <h2 className="mb-3 text-sm font-semibold text-gray-800">X-Series PO</h2>
+        <div className="overflow-auto rounded border border-gray-100">
+          <table className="min-w-full divide-y divide-gray-200 text-sm">
+            <thead className="bg-gray-50 text-left text-gray-600">
+              <tr>
+                <th className="px-3 py-2 font-semibold">No.</th>
+                <th className="px-3 py-2 font-semibold">Item Code</th>
+                <th className="px-3 py-2 font-semibold">Item Description</th>
+                <th className="px-3 py-2 text-right font-semibold">Balance</th>
+                <th className="px-3 py-2 font-semibold">Supplier</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400">No items yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {/* INVENTORY LIST CARD */}
       <div className="rounded-lg border border-gray-200 bg-white p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
