@@ -12,7 +12,7 @@ type SaleInv = { inv: string; day: string; customer: string | null; amount: numb
 type Trade = { id: number; match: string; note: string | null };
 type Bill = { id: number; month: string; label: string; amount: number | string };
 type Pay = { staff_name: string; total_earn: number | string; epf_er: number | string | null; socso_er: number | string | null; eis_er: number | string | null };
-type Meal = { meal_date: string; amount: number | string; item_count: number | null };
+type Meal = { meal_date: string; amount: number | string; item_count: number | null; drink_count: number | null };
 
 const n = (x: unknown) => { const v = Number(x); return Number.isFinite(v) ? v : 0; };
 const rm = (x: number) => `RM ${x.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -58,7 +58,7 @@ export default function PnlPage() {
       supabase.from('v_payslip_admin_summary_v2').select('staff_name,total_earn,epf_er,socso_er,eis_er').eq('year', year).eq('month', month),
       supabase.from('pnl_settings').select('*'),
       supabase.rpc('grab_meals_month_total', { p_month: monthKey }),
-      supabase.from('grab_meals').select('meal_date,amount,item_count').gte('meal_date', firstDay).lte('meal_date', lastDay).order('meal_date', { ascending: true }),
+      supabase.from('grab_meals').select('meal_date,amount,item_count,drink_count').gte('meal_date', firstDay).lte('meal_date', lastDay).order('meal_date', { ascending: true }),
     ]);
     if (d.error) setErr(d.error.message); else setErr(null);
     setDaily((d.data ?? []) as Daily[]);
@@ -169,6 +169,9 @@ export default function PnlPage() {
 
   const c = calc;
   const onTargetProjected = c.netProjected - targetNet;
+  // Staff-meal portions split into food vs drinks (drinks classified at parse time).
+  const mealDrink = meals.reduce((s, m) => s + n(m.drink_count), 0);
+  const mealFood = meals.reduce((s, m) => s + (m.item_count == null ? 0 : n(m.item_count) - n(m.drink_count)), 0);
 
   return (
     <div>
@@ -277,7 +280,7 @@ export default function PnlPage() {
           {tab === 'costs' && (
           <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm font-semibold text-gray-700">Staff meals — GrabFood <span className="font-normal text-gray-400">· {meals.reduce((s, m) => s + n(m.item_count), 0)} food · {meals.length} order{meals.length === 1 ? '' : 's'} this month, auto from email receipts</span></span>
+              <span className="text-sm font-semibold text-gray-700">Staff meals — GrabFood <span className="font-normal text-gray-400">· {mealFood} food{mealDrink > 0 ? ` · ${mealDrink} drink` : ''} · {meals.length} order{meals.length === 1 ? '' : 's'} this month, auto from email receipts</span></span>
               <span className="text-sm font-semibold">{rm(c.staffMeals)}</span>
             </div>
             {meals.length === 0 ? (
@@ -286,21 +289,27 @@ export default function PnlPage() {
               <div className="max-h-72 overflow-y-auto rounded border border-gray-100">
                 <table className="min-w-full text-sm">
                   <thead className="sticky top-0 bg-gray-50 text-left text-gray-500">
-                    <tr><th className="px-3 py-1.5 font-semibold">Date</th><th className="px-3 py-1.5 text-right font-semibold">Food</th><th className="px-3 py-1.5 text-right font-semibold">Amount</th></tr>
+                    <tr><th className="px-3 py-1.5 font-semibold">Date</th><th className="px-3 py-1.5 text-right font-semibold">Food</th><th className="px-3 py-1.5 text-right font-semibold">Drink</th><th className="px-3 py-1.5 text-right font-semibold">Amount</th></tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {meals.map((mm, i) => (
-                      <tr key={i}>
-                        <td className="px-3 py-1.5 text-gray-800">{fmtDate(mm.meal_date)}</td>
-                        <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{mm.item_count == null ? '—' : mm.item_count}</td>
-                        <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-gray-700">{rm(n(mm.amount))}</td>
-                      </tr>
-                    ))}
+                    {meals.map((mm, i) => {
+                      const dr = n(mm.drink_count);
+                      const fd = mm.item_count == null ? null : n(mm.item_count) - dr;
+                      return (
+                        <tr key={i}>
+                          <td className="px-3 py-1.5 text-gray-800">{fmtDate(mm.meal_date)}</td>
+                          <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{fd == null ? '—' : fd}</td>
+                          <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{dr > 0 ? dr : '·'}</td>
+                          <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-gray-700">{rm(n(mm.amount))}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                   <tfoot>
                     <tr className="border-t border-gray-200 font-semibold">
                       <td className="px-3 py-1.5">Total</td>
-                      <td className="px-3 py-1.5 text-right tabular-nums">{meals.reduce((s, m) => s + n(m.item_count), 0)}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums">{mealFood}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums">{mealDrink}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums">{rm(c.staffMeals)}</td>
                     </tr>
                   </tfoot>
