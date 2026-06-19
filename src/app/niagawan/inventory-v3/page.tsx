@@ -5,7 +5,7 @@
 // turns a row RED (with a carton-rounded suggested order qty) once the threshold is hit.
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 type Item = { sku: string; code: string | null; descp: string | null; balance: number | null };
@@ -53,6 +53,9 @@ export default function InventoryV3Page() {
   const [poLines, setPoLines] = useState<PoLine[]>([]);
   const [busyPo, setBusyPo] = useState<number | null>(null);
   const [editingLine, setEditingLine] = useState<number | null>(null);
+  const [refreshState, setRefreshState] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const [balanceAsOf, setBalanceAsOf] = useState<string | null>(null);
+  const refreshPoll = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -77,6 +80,11 @@ export default function InventoryV3Page() {
   const loadSuppliers = useCallback(async () => {
     const { data } = await supabase.from('niagawan_suppliers').select('creditor_id,name').order('name');
     setSuppliers((data ?? []) as Supplier[]);
+  }, []);
+
+  const loadFreshness = useCallback(async () => {
+    const { data } = await supabase.from('niagawan_inventory').select('updated_at').order('updated_at', { ascending: false }).limit(1);
+    setBalanceAsOf((data && data[0]?.updated_at) ? String(data[0].updated_at) : null);
   }, []);
 
   const loadVelocity = useCallback(async () => {
@@ -149,9 +157,38 @@ export default function InventoryV3Page() {
       loadSuppliers();
       loadVelocity();
       loadCatalog();
+      loadFreshness();
       reloadPOs();
     }
-  }, [isAdmin, loadGroups, loadGroupItems, loadSuppliers, loadVelocity, loadCatalog, reloadPOs]);
+  }, [isAdmin, loadGroups, loadGroupItems, loadSuppliers, loadVelocity, loadCatalog, loadFreshness, reloadPOs]);
+
+  // Clean up the balance-refresh poll on unmount.
+  useEffect(() => () => { if (refreshPoll.current) clearInterval(refreshPoll.current); }, []);
+
+  // "Update balances" — refresh stock for ONLY the group-card items (fast). Queues a
+  // groupbal scrape job for the NAS, polls the request row, then reloads the balances.
+  const updateBalances = useCallback(async () => {
+    if (refreshState === 'running') return;
+    setRefreshState('running');
+    const { data, error } = await supabase.from('sync_requests').insert({ source: 'inventory-v3', which: 'groupbal' }).select('id').single();
+    if (error || !data) { setRefreshState('error'); window.setTimeout(() => setRefreshState('idle'), 5000); return; }
+    const id = data.id as number;
+    const started = Date.now();
+    if (refreshPoll.current) clearInterval(refreshPoll.current);
+    refreshPoll.current = setInterval(async () => {
+      const { data: r } = await supabase.from('sync_requests').select('status').eq('id', id).single();
+      if (r?.status === 'done' || r?.status === 'error') {
+        if (refreshPoll.current) clearInterval(refreshPoll.current);
+        await loadCatalog();
+        await loadFreshness();
+        setRefreshState(r.status === 'done' ? 'done' : 'error');
+        window.setTimeout(() => setRefreshState('idle'), 5000);
+      } else if (Date.now() - started > 4 * 60 * 1000) {
+        if (refreshPoll.current) clearInterval(refreshPoll.current);
+        setRefreshState('idle');
+      }
+    }, 4000);
+  }, [refreshState, loadCatalog, loadFreshness]);
 
   // While any PO is open (being created, or on order awaiting delivery), poll so the PO number
   // and auto cross-off receipts show up. Skip the lines refresh while a qty input is focused
@@ -423,6 +460,26 @@ export default function InventoryV3Page() {
 
   return (
     <div className="space-y-4">
+      {/* Toolbar: refresh balances for just the items in your cards */}
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          onClick={updateBalances}
+          disabled={refreshState === 'running'}
+          title="Pull current Niagawan stock for the items in your cards (~under a minute)"
+          className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        >
+          {refreshState === 'running' ? 'Updating balances…' : '↻ Update balances'}
+        </button>
+        {balanceAsOf && (
+          <span className="text-xs text-gray-400">
+            balances as of {new Date(balanceAsOf).toLocaleString('en-MY', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kuala_Lumpur' })}
+          </span>
+        )}
+        {refreshState === 'done' && <span className="text-xs text-emerald-600">updated ✓</span>}
+        {refreshState === 'error' && <span className="text-xs text-rose-600">couldn’t update — try again</span>}
+        {refreshState === 'running' && <span className="text-xs text-gray-400">checking live stock in Niagawan…</span>}
+      </div>
+
       {/* READY FOR PO — staged drafts awaiting your approval */}
       <div className="rounded-lg border border-gray-200 bg-white p-4">
         <h2 className="mb-3 text-sm font-semibold text-gray-800">READY FOR PO</h2>
