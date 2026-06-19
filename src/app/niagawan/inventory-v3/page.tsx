@@ -15,6 +15,19 @@ type GroupItem = {
   carton_size: number | null; reorder_threshold: number | null; reset_at: string; sold_baseline: number;
 };
 type Supplier = { creditor_id: string; name: string };
+type PoSuggItem = { code: string | null; desc?: string | null; qty: number; sku?: string | null };
+type PoSugg = {
+  id: number; supplier_id: string; supplier_name: string | null; status: string;
+  po_number: string | null; po_id: string | null; note: string | null;
+  items: PoSuggItem[]; created_at: string; updated_at: string;
+};
+type PoLine = {
+  id: number; suggestion_id: number; sku: string | null; code: string | null; descp: string | null;
+  ordered_qty: number; received_qty: number;
+};
+
+// PO lifecycle: pending (staged, awaiting approval) -> approved (creating in Niagawan) -> created (has PO no).
+const OPEN_STATUSES = new Set(['pending', 'approved', 'created']);
 
 const SHOW_CAP = 1000; // rows rendered at once (the full catalog is ~12.7k — search to narrow)
 
@@ -36,6 +49,9 @@ export default function InventoryV3Page() {
   const [selected, setSelected] = useState<Set<string>>(new Set()); // sku set
   const [targetGroupId, setTargetGroupId] = useState<number | ''>('');
   const [inserting, setInserting] = useState(false);
+  const [poSuggs, setPoSuggs] = useState<PoSugg[]>([]);
+  const [poLines, setPoLines] = useState<PoLine[]>([]);
+  const [busyPo, setBusyPo] = useState<number | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -71,6 +87,39 @@ export default function InventoryV3Page() {
     setSoldByCode(m);
   }, []);
 
+  const PO_COLS = 'id,supplier_id,supplier_name,status,po_number,po_id,note,items,created_at,updated_at';
+
+  // Refresh suggestions only (used by the in-flight poll — does NOT touch poLines,
+  // so a poll can never clobber an order-qty edit the user is mid-typing).
+  const reloadSuggsOnly = useCallback(async () => {
+    const { data } = await supabase
+      .from('po_suggestions').select(PO_COLS)
+      .eq('source', 'inventory-v3').neq('status', 'rejected')
+      .order('id', { ascending: false }).limit(60);
+    setPoSuggs((data ?? []) as PoSugg[]);
+  }, []);
+
+  // Refresh suggestions AND their lines (used after explicit PO actions). Lines are
+  // scoped to the loaded suggestion ids so the query is bounded.
+  const reloadPOs = useCallback(async () => {
+    const { data: ss } = await supabase
+      .from('po_suggestions').select(PO_COLS)
+      .eq('source', 'inventory-v3').neq('status', 'rejected')
+      .order('id', { ascending: false }).limit(60);
+    const suggs = (ss ?? []) as PoSugg[];
+    const ids = suggs.map((s) => s.id);
+    let lines: PoLine[] = [];
+    if (ids.length) {
+      const { data: ls } = await supabase
+        .from('inventory_po_lines')
+        .select('id,suggestion_id,sku,code,descp,ordered_qty,received_qty')
+        .in('suggestion_id', ids).order('id');
+      lines = (ls ?? []) as PoLine[];
+    }
+    setPoSuggs(suggs);
+    setPoLines(lines);
+  }, []);
+
   const loadCatalog = useCallback(async () => {
     setLoading(true);
     // Full product catalog — paginated (Supabase caps each request at 1000 rows).
@@ -99,8 +148,17 @@ export default function InventoryV3Page() {
       loadSuppliers();
       loadVelocity();
       loadCatalog();
+      reloadPOs();
     }
-  }, [isAdmin, loadGroups, loadGroupItems, loadSuppliers, loadVelocity, loadCatalog]);
+  }, [isAdmin, loadGroups, loadGroupItems, loadSuppliers, loadVelocity, loadCatalog, reloadPOs]);
+
+  // While any PO is being created in Niagawan (status 'approved'), poll for the PO number.
+  const hasCreating = poSuggs.some((s) => s.status === 'approved');
+  useEffect(() => {
+    if (!isAdmin || !hasCreating) return;
+    const t = setInterval(() => { reloadSuggsOnly(); }, 8000);
+    return () => clearInterval(t);
+  }, [isAdmin, hasCreating, reloadSuggsOnly]);
 
   // Live lookup: sku -> catalog row (for fresh description / balance in the group cards).
   const itemBySku = useMemo(() => {
@@ -115,6 +173,27 @@ export default function InventoryV3Page() {
   const resolveCode = useCallback((gi: GroupItem): string | null => {
     return itemBySku.get(gi.sku)?.code ?? gi.code ?? null;
   }, [itemBySku]);
+
+  const linesBySugg = useMemo(() => {
+    const m = new Map<number, PoLine[]>();
+    for (const l of poLines) { const a = m.get(l.suggestion_id) ?? []; a.push(l); m.set(l.suggestion_id, a); }
+    return m;
+  }, [poLines]);
+
+  // Codes currently on an OPEN PO (pending/approved/created) with stock still outstanding.
+  // Such items show "on order" instead of red, so the same item is never ordered twice.
+  const openByCode = useMemo(() => {
+    const m = new Map<string, { status: string; po_number: string | null }>();
+    const openIds = new Map<number, PoSugg>();
+    for (const s of poSuggs) if (OPEN_STATUSES.has(s.status)) openIds.set(s.id, s);
+    for (const l of poLines) {
+      const s = openIds.get(l.suggestion_id);
+      if (s && l.code && Number(l.received_qty) < Number(l.ordered_qty)) {
+        if (!m.has(l.code)) m.set(l.code, { status: s.status, po_number: s.po_number });
+      }
+    }
+    return m;
+  }, [poSuggs, poLines]);
 
   const addGroup = useCallback(async () => {
     const name = window.prompt('Name the new group card (e.g. GULF):');
@@ -164,6 +243,107 @@ export default function InventoryV3Page() {
     setGroupItems((prev) => prev.map((x) => (x.id === gi.id ? { ...x, sold_baseline: sold, reset_at } : x)));
     await supabase.from('inventory_po_group_items').update({ sold_baseline: sold, reset_at }).eq('id', gi.id);
   }, [soldByCode, resolveCode]);
+
+  // ----- Step 2: stage red items into a PO, approve, track -----
+
+  // Take all ready-to-order (red, not already on order) items in a card into a new draft PO.
+  const stageCardPO = useCallback(async (g: Group) => {
+    if (!g.creditor_id) { window.alert('Set a supplier for this card first.'); return; }
+    const cardRows = groupItems.filter((gi) => gi.group_id === g.id);
+    const lines: { code: string; sku: string; descp: string; qty: number }[] = [];
+    const seen = new Set<string>(); // one line per code (many skus can share a code — never double-order)
+    for (const gi of cardRows) {
+      const code = resolveCode(gi);
+      if (!code || openByCode.has(code) || seen.has(code)) continue;
+      const sold = soldByCode.get(code);
+      const net = sold == null ? null : Math.max(0, sold - Number(gi.sold_baseline || 0));
+      const thr = gi.reorder_threshold;
+      if (!(thr != null && thr > 0 && net != null && net >= thr)) continue;
+      const qty = suggestOrderQty(net, gi.carton_size);
+      if (qty <= 0) continue;
+      seen.add(code);
+      lines.push({ code, sku: gi.sku, descp: (itemBySku.get(gi.sku)?.descp ?? gi.descp) || '', qty });
+    }
+    if (!lines.length) { window.alert('No items ready to order in this card.'); return; }
+    setBusyPo(-g.id);
+    const today = new Date().toISOString().slice(0, 10);
+    const { data: sugg, error } = await supabase.from('po_suggestions').insert({
+      source: 'inventory-v3', supplier_id: g.creditor_id, supplier_name: g.supplier_name,
+      items: lines.map((l) => ({ code: l.code, desc: l.descp, qty: l.qty, sku: l.sku })),
+      status: 'pending', period_from: today, period_to: today,
+    }).select('id').single();
+    if (error || !sugg) { setBusyPo(null); window.alert('Could not stage PO: ' + (error?.message ?? '')); return; }
+    const lineRows = lines.map((l) => ({ suggestion_id: sugg.id, sku: l.sku, code: l.code, descp: l.descp, ordered_qty: l.qty, received_qty: 0 }));
+    const { error: le } = await supabase.from('inventory_po_lines').insert(lineRows);
+    if (le) {
+      // Don't leave a half-built PO behind — roll the suggestion back.
+      await supabase.from('po_suggestions').delete().eq('id', sugg.id);
+      setBusyPo(null);
+      window.alert('Could not stage PO lines: ' + le.message);
+      return;
+    }
+    setBusyPo(null);
+    await reloadPOs();
+  }, [groupItems, resolveCode, openByCode, soldByCode, itemBySku, reloadPOs]);
+
+  const setLineQtyLocal = useCallback((id: number, qty: number) => {
+    setPoLines((prev) => prev.map((l) => (l.id === id ? { ...l, ordered_qty: qty } : l)));
+  }, []);
+  const persistLineQty = useCallback(async (id: number, qty: number) => {
+    const v = Math.max(0, Math.floor(qty || 0));
+    setPoLines((prev) => prev.map((l) => (l.id === id ? { ...l, ordered_qty: v } : l)));
+    await supabase.from('inventory_po_lines').update({ ordered_qty: v }).eq('id', id);
+  }, []);
+  const removeLine = useCallback(async (id: number) => {
+    await supabase.from('inventory_po_lines').delete().eq('id', id);
+    await reloadPOs();
+  }, [reloadPOs]);
+
+  const cancelPO = useCallback(async (s: PoSugg) => {
+    if (!window.confirm('Discard this draft PO? (the items go back to needing re-order)')) return;
+    await supabase.from('po_suggestions').delete().eq('id', s.id);
+    await reloadPOs();
+  }, [reloadPOs]);
+
+  // Approve: rebuild items from the (possibly edited) lines, reset the sold counter for every
+  // tracked item in this PO ("submit = reset"), and flip to 'approved' so the NAS creates it.
+  const approvePO = useCallback(async (s: PoSugg) => {
+    const rawLines = linesBySugg.get(s.id) ?? [];
+    if (!rawLines.length) { window.alert('Add at least one item first.'); return; }
+    if (!window.confirm(`Approve this PO to ${s.supplier_name ?? s.supplier_id}? It will be created in Niagawan and the sold counters reset to zero.`)) return;
+    setBusyPo(s.id);
+    // Rebuild items from the (possibly edited) lines: clamp each qty to >=1 (never silently drop a line)
+    // and merge by code (a backstop — lines are already deduped by code at stage time).
+    const byCode = new Map<string, PoSuggItem>();
+    for (const l of rawLines) {
+      const qty = Math.max(1, Math.floor(Number(l.ordered_qty) || 1));
+      const key = l.code ?? `__nosku_${l.id}`;
+      const existing = byCode.get(key);
+      if (existing) existing.qty = Number(existing.qty) + qty;
+      else byCode.set(key, { code: l.code, desc: l.descp, qty, sku: l.sku });
+    }
+    const items = [...byCode.values()];
+    // 1) Flip status FIRST — if this fails, no counter is touched, so the items stay orderable.
+    const { error } = await supabase.from('po_suggestions').update({ items, status: 'approved', updated_at: new Date().toISOString() }).eq('id', s.id);
+    if (error) { setBusyPo(null); window.alert('Could not approve: ' + error.message); return; }
+    // 2) Now reset the sold counter ("submit = reset"). Best-effort: the code is on an approved PO,
+    //    so it stays suppressed (on order) regardless of whether every counter write lands.
+    const codes = new Set(rawLines.map((l) => l.code).filter(Boolean) as string[]);
+    const reset_at = new Date().toISOString();
+    const resets = groupItems.filter((gi) => { const c = resolveCode(gi); return c != null && codes.has(c); });
+    for (const gi of resets) {
+      const c = resolveCode(gi); const sold = c ? soldByCode.get(c) ?? 0 : 0;
+      setGroupItems((prev) => prev.map((x) => (x.id === gi.id ? { ...x, sold_baseline: sold, reset_at } : x)));
+      await supabase.from('inventory_po_group_items').update({ sold_baseline: sold, reset_at }).eq('id', gi.id);
+    }
+    setBusyPo(null);
+    await reloadPOs();
+  }, [linesBySugg, groupItems, resolveCode, soldByCode, reloadPOs]);
+
+  const retryPO = useCallback(async (s: PoSugg) => {
+    await supabase.from('po_suggestions').update({ status: 'approved', note: null, updated_at: new Date().toISOString() }).eq('id', s.id);
+    await reloadSuggsOnly();
+  }, [reloadSuggsOnly]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -219,17 +399,134 @@ export default function InventoryV3Page() {
 
   return (
     <div className="space-y-4">
-      {/* PO CARD */}
+      {/* READY FOR PO — staged drafts awaiting your approval */}
       <div className="rounded-lg border border-gray-200 bg-white p-4">
-        <h2 className="text-sm font-semibold text-gray-800">PO CARD</h2>
+        <h2 className="mb-3 text-sm font-semibold text-gray-800">READY FOR PO</h2>
+        {poSuggs.filter((s) => s.status === 'pending').length === 0 ? (
+          <div className="text-sm text-gray-400">Nothing staged yet — when items go red, use “Add → PO” on a card.</div>
+        ) : (
+          <div className="space-y-3">
+            {poSuggs.filter((s) => s.status === 'pending').map((s) => {
+              const lines = linesBySugg.get(s.id) ?? [];
+              const totalUnits = lines.reduce((n, l) => n + Number(l.ordered_qty || 0), 0);
+              return (
+                <div key={s.id} className="rounded-md border border-gray-200 p-3">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-sm font-medium text-gray-800">{s.supplier_name ?? s.supplier_id}
+                      <span className="ml-1 text-xs font-normal text-gray-400">· {lines.length} item{lines.length === 1 ? '' : 's'} · {totalUnits} unit{totalUnits === 1 ? '' : 's'}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => cancelPO(s)} className="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-50">Discard</button>
+                      <button onClick={() => approvePO(s)} disabled={busyPo === s.id || lines.length === 0} className="rounded-md bg-emerald-600 px-3 py-0.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
+                        {busyPo === s.id ? 'Approving…' : 'Approve → create PO'}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="overflow-auto rounded border border-gray-100">
+                    <table className="min-w-full divide-y divide-gray-200 text-sm">
+                      <thead className="bg-gray-50 text-left text-gray-600">
+                        <tr>
+                          <th className="px-3 py-2 font-semibold">Item Code</th>
+                          <th className="px-3 py-2 font-semibold">Item Description</th>
+                          <th className="px-3 py-2 text-center font-semibold">Order qty</th>
+                          <th className="px-3 py-2"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {lines.map((l) => (
+                          <tr key={l.id} className="group">
+                            <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-gray-900">{l.code || '—'}</td>
+                            <td className="px-3 py-1.5 text-gray-700">{l.descp || '—'}</td>
+                            <td className="px-3 py-1.5 text-center">
+                              <input
+                                type="number" min={1} inputMode="numeric"
+                                value={l.ordered_qty}
+                                onChange={(e) => setLineQtyLocal(l.id, Math.floor(Number(e.target.value)))}
+                                onBlur={(e) => persistLineQty(l.id, Math.max(1, Math.floor(Number(e.target.value) || 1)))}
+                                className="w-20 rounded border border-gray-200 px-1.5 py-0.5 text-center text-xs"
+                              />
+                            </td>
+                            <td className="px-3 py-1.5 text-right">
+                              <button onClick={() => removeLine(l.id)} title="Remove this line" className="rounded px-1 text-xs text-rose-400 opacity-40 transition hover:bg-rose-50 hover:text-rose-600 group-hover:opacity-100">✕</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* PO TRACKER — submitted POs being created / awaiting delivery */}
+      <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <h2 className="mb-3 text-sm font-semibold text-gray-800">PO TRACKER <span className="font-normal text-gray-400">· waiting to be received</span></h2>
+        {poSuggs.filter((s) => ['approved', 'created', 'error'].includes(s.status)).length === 0 ? (
+          <div className="text-sm text-gray-400">No POs in progress.</div>
+        ) : (
+          <div className="space-y-3">
+            {poSuggs.filter((s) => ['approved', 'created', 'error'].includes(s.status)).map((s) => {
+              const lines = linesBySugg.get(s.id) ?? [];
+              return (
+                <div key={s.id} className="rounded-md border border-gray-200 p-3">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-gray-800">
+                      {s.status === 'created' && s.po_number ? (
+                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">{s.po_number}</span>
+                      ) : s.status === 'approved' ? (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">creating in Niagawan…</span>
+                      ) : (
+                        <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">failed</span>
+                      )}
+                      <span>{s.supplier_name ?? s.supplier_id}</span>
+                      <span className="text-xs font-normal text-gray-400">· {lines.length} item{lines.length === 1 ? '' : 's'}</span>
+                    </div>
+                    {s.status === 'error' && (
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => retryPO(s)} className="rounded-md bg-amber-600 px-2.5 py-0.5 text-xs font-medium text-white hover:bg-amber-700">Retry</button>
+                        <button onClick={() => cancelPO(s)} className="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-50">Discard</button>
+                      </div>
+                    )}
+                  </div>
+                  {s.status === 'error' && s.note && <div className="mb-2 text-xs text-rose-600">{s.note}</div>}
+                  <div className="overflow-auto rounded border border-gray-100">
+                    <table className="min-w-full divide-y divide-gray-200 text-sm">
+                      <thead className="bg-gray-50 text-left text-gray-600">
+                        <tr>
+                          <th className="px-3 py-2 font-semibold">Item Code</th>
+                          <th className="px-3 py-2 font-semibold">Item Description</th>
+                          <th className="px-3 py-2 text-center font-semibold">Ordered</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {lines.map((l) => (
+                          <tr key={l.id}>
+                            <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-gray-900">{l.code || '—'}</td>
+                            <td className="px-3 py-1.5 text-gray-700">{l.descp || '—'}</td>
+                            <td className="px-3 py-1.5 text-center tabular-nums text-gray-700">{Number(l.ordered_qty)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* SUPPLIER GROUP CARDS (each bound to one supplier; items tracked + flagged red) */}
       {groups.map((g) => {
         const rows = groupItems.filter((gi) => gi.group_id === g.id);
+        // "ready to re-order" = red AND not already on an open PO.
         const redCount = rows.reduce((n, gi) => {
           const code = resolveCode(gi);
-          const sold = code ? soldByCode.get(code) : undefined;
+          if (!code || openByCode.has(code)) return n;
+          const sold = soldByCode.get(code);
           const net = sold == null ? null : Math.max(0, sold - Number(gi.sold_baseline || 0));
           const thr = gi.reorder_threshold;
           return n + (thr != null && thr > 0 && net != null && net >= thr ? 1 : 0);
@@ -241,6 +538,16 @@ export default function InventoryV3Page() {
                 <h2 className="text-sm font-semibold text-gray-800">{g.name}</h2>
                 <span className="text-xs text-gray-400">· {rows.length} item{rows.length === 1 ? '' : 's'}</span>
                 {redCount > 0 && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">{redCount} to re-order</span>}
+                {redCount > 0 && (
+                  <button
+                    onClick={() => stageCardPO(g)}
+                    disabled={busyPo === -g.id || !g.creditor_id}
+                    title={g.creditor_id ? 'Stage these into a draft PO' : 'Set a supplier first'}
+                    className="rounded-md bg-rose-600 px-2.5 py-0.5 text-xs font-medium text-white hover:bg-rose-700 disabled:opacity-50"
+                  >
+                    {busyPo === -g.id ? 'Adding…' : `Add ${redCount} → PO`}
+                  </button>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <label className="text-xs text-gray-500">Supplier</label>
@@ -287,10 +594,11 @@ export default function InventoryV3Page() {
                       const net = sold == null ? null : Math.max(0, sold - Number(gi.sold_baseline || 0));
                       const thr = gi.reorder_threshold;
                       const tracked = thr != null && thr > 0;
-                      const isRed = tracked && net != null && net >= thr;
+                      const onOrder = code ? openByCode.get(code) : undefined;
+                      const isRed = tracked && net != null && net >= thr && !onOrder;
                       const orderQty = net != null ? suggestOrderQty(net, gi.carton_size) : 0;
                       return (
-                        <tr key={gi.id} className={`group ${isRed ? 'bg-rose-50' : ''}`}>
+                        <tr key={gi.id} className={`group ${isRed ? 'bg-rose-50' : onOrder ? 'bg-sky-50' : ''}`}>
                           <td className="px-3 py-1.5 text-gray-400">{i + 1}</td>
                           <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-gray-900">{code || '—'}</td>
                           <td className="px-3 py-1.5 text-gray-700">{descp || '—'}</td>
@@ -329,7 +637,11 @@ export default function InventoryV3Page() {
                           <td className="whitespace-nowrap px-3 py-1.5">
                             <span className="inline-flex w-full items-center justify-between gap-2">
                               <span>
-                                {!tracked ? (
+                                {onOrder ? (
+                                  <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700">
+                                    {onOrder.po_number ? `on order · ${onOrder.po_number}` : onOrder.status === 'pending' ? 'in draft PO' : 'ordering…'}
+                                  </span>
+                                ) : !tracked ? (
                                   <span className="text-xs text-gray-400">set re-order point</span>
                                 ) : isRed ? (
                                   <span className="rounded-full bg-rose-600 px-2 py-0.5 text-xs font-semibold text-white">RE-ORDER · {orderQty}</span>
