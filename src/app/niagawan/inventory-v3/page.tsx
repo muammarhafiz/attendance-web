@@ -1,15 +1,28 @@
 // src/app/niagawan/inventory-v3/page.tsx
-// Inventory v3 — a new inventory tracker built to the owner's weekly routine, step by step.
+// Inventory v3 — a re-order tracker built to the owner's weekly routine.
+// Step 1: each group card is bound to ONE supplier; each item carries a carton size
+// and a re-order threshold; the system counts "units sold since the last reset" and
+// turns a row RED (with a carton-rounded suggested order qty) once the threshold is hit.
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 type Item = { sku: string; code: string | null; descp: string | null; balance: number | null };
-type Group = { id: number; name: string; sort_order: number };
-type GroupItem = { id: number; group_id: number; sku: string; code: string | null; descp: string | null };
+type Group = { id: number; name: string; sort_order: number; creditor_id: string | null; supplier_name: string | null };
+type GroupItem = {
+  id: number; group_id: number; sku: string; code: string | null; descp: string | null;
+  carton_size: number | null; reorder_threshold: number | null; reset_at: string; sold_baseline: number;
+};
+type Supplier = { creditor_id: string; name: string };
 
 const SHOW_CAP = 1000; // rows rendered at once (the full catalog is ~12.7k — search to narrow)
+
+// Units to order = whole cartons covering what sold (round up); no-carton items order by units sold.
+function suggestOrderQty(netSold: number, carton: number | null): number {
+  if (carton && carton > 1) return Math.ceil(netSold / carton) * carton;
+  return Math.ceil(netSold);
+}
 
 export default function InventoryV3Page() {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
@@ -18,7 +31,8 @@ export default function InventoryV3Page() {
   const [search, setSearch] = useState('');
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupItems, setGroupItems] = useState<GroupItem[]>([]);
-  const [supplierByCode, setSupplierByCode] = useState<Map<string, string>>(new Map());
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [soldByCode, setSoldByCode] = useState<Map<string, number>>(new Map());
   const [selected, setSelected] = useState<Set<string>>(new Set()); // sku set
   const [targetGroupId, setTargetGroupId] = useState<number | ''>('');
   const [inserting, setInserting] = useState(false);
@@ -34,13 +48,27 @@ export default function InventoryV3Page() {
   }, []);
 
   const loadGroups = useCallback(async () => {
-    const { data } = await supabase.from('inventory_po_groups').select('id,name,sort_order').order('sort_order').order('id');
+    const { data } = await supabase.from('inventory_po_groups').select('id,name,sort_order,creditor_id,supplier_name').order('sort_order').order('id');
     setGroups((data ?? []) as Group[]);
   }, []);
 
   const loadGroupItems = useCallback(async () => {
-    const { data } = await supabase.from('inventory_po_group_items').select('id,group_id,sku,code,descp').order('id');
+    const { data } = await supabase.from('inventory_po_group_items').select('id,group_id,sku,code,descp,carton_size,reorder_threshold,reset_at,sold_baseline').order('id');
     setGroupItems((data ?? []) as GroupItem[]);
+  }, []);
+
+  const loadSuppliers = useCallback(async () => {
+    const { data } = await supabase.from('niagawan_suppliers').select('creditor_id,name').order('name');
+    setSuppliers((data ?? []) as Supplier[]);
+  }, []);
+
+  const loadVelocity = useCallback(async () => {
+    const { data } = await supabase.from('niagawan_sales_velocity').select('code,sold_30d');
+    const m = new Map<string, number>();
+    for (const r of (data ?? []) as { code: string; sold_30d: number | null }[]) {
+      if (r.code) m.set(r.code, r.sold_30d != null ? Number(r.sold_30d) : 0);
+    }
+    setSoldByCode(m);
   }, []);
 
   const loadCatalog = useCallback(async () => {
@@ -57,13 +85,6 @@ export default function InventoryV3Page() {
     const { data: bal } = await supabase.from('niagawan_inventory').select('code,balance');
     const balByCode = new Map<string, number | null>();
     for (const r of (bal ?? []) as { code: string; balance: number | null }[]) balByCode.set(r.code, r.balance != null ? Number(r.balance) : null);
-    // Supplier name comes from the watchlist (niagawan_min_stock), keyed by code.
-    const { data: sup } = await supabase.from('niagawan_min_stock').select('code,supplier_name');
-    const supMap = new Map<string, string>();
-    for (const r of (sup ?? []) as { code: string; supplier_name: string | null }[]) {
-      if (r.code && r.supplier_name) supMap.set(r.code, r.supplier_name);
-    }
-    setSupplierByCode(supMap);
     const list: Item[] = products
       .map((p) => ({ sku: p.sku, code: p.code, descp: p.descp, balance: p.code && balByCode.has(p.code) ? balByCode.get(p.code) ?? null : null }))
       .sort((a, b) => (a.code || '￿').localeCompare(b.code || '￿') || a.sku.localeCompare(b.sku));
@@ -75,9 +96,11 @@ export default function InventoryV3Page() {
     if (isAdmin) {
       loadGroups();
       loadGroupItems();
+      loadSuppliers();
+      loadVelocity();
       loadCatalog();
     }
-  }, [isAdmin, loadGroups, loadGroupItems, loadCatalog]);
+  }, [isAdmin, loadGroups, loadGroupItems, loadSuppliers, loadVelocity, loadCatalog]);
 
   // Live lookup: sku -> catalog row (for fresh description / balance in the group cards).
   const itemBySku = useMemo(() => {
@@ -86,8 +109,15 @@ export default function InventoryV3Page() {
     return m;
   }, [items]);
 
+  // The ONE join key used everywhere (sold lookup, red tally, reset): prefer the live
+  // catalog code, fall back to the insert-time snapshot if the live row lost its code.
+  // Using this in all three places keeps the header tally, row highlight and reset in sync.
+  const resolveCode = useCallback((gi: GroupItem): string | null => {
+    return itemBySku.get(gi.sku)?.code ?? gi.code ?? null;
+  }, [itemBySku]);
+
   const addGroup = useCallback(async () => {
-    const name = window.prompt('Name the new group card (e.g. PROTON PO):');
+    const name = window.prompt('Name the new group card (e.g. GULF):');
     if (!name || !name.trim()) return;
     const nextSort = groups.reduce((m, g) => Math.max(m, g.sort_order), 0) + 1;
     const { error } = await supabase.from('inventory_po_groups').insert({ name: name.trim(), sort_order: nextSort });
@@ -102,10 +132,38 @@ export default function InventoryV3Page() {
     await loadGroupItems();
   }, [loadGroups, loadGroupItems]);
 
+  const setGroupSupplier = useCallback(async (groupId: number, creditorId: string) => {
+    const sup = suppliers.find((s) => s.creditor_id === creditorId);
+    const creditor = creditorId || null;
+    const name = sup?.name ?? null;
+    setGroups((prev) => prev.map((g) => (g.id === groupId ? { ...g, creditor_id: creditor, supplier_name: name } : g)));
+    const { error } = await supabase.from('inventory_po_groups').update({ creditor_id: creditor, supplier_name: name }).eq('id', groupId);
+    if (error) { window.alert('Could not set supplier: ' + error.message); await loadGroups(); }
+  }, [suppliers, loadGroups]);
+
   const removeGroupItem = useCallback(async (id: number) => {
     await supabase.from('inventory_po_group_items').delete().eq('id', id);
     await loadGroupItems();
   }, [loadGroupItems]);
+
+  // Optimistic local update for an inline carton/threshold edit; caller persists onBlur.
+  const setItemLocal = useCallback((id: number, patch: Partial<GroupItem>) => {
+    setGroupItems((prev) => prev.map((gi) => (gi.id === id ? { ...gi, ...patch } : gi)));
+  }, []);
+  const persistItemField = useCallback(async (id: number, field: 'carton_size' | 'reorder_threshold', value: number | null) => {
+    const { error } = await supabase.from('inventory_po_group_items').update({ [field]: value }).eq('id', id);
+    if (error) { window.alert('Could not save: ' + error.message); await loadGroupItems(); }
+  }, [loadGroupItems]);
+
+  // Manually zero an item's counter (e.g. after restocking outside the system).
+  // Baseline is snapshotted off the SAME code the display uses, so net truly reaches 0.
+  const resetItemCount = useCallback(async (gi: GroupItem) => {
+    const code = resolveCode(gi);
+    const sold = code ? soldByCode.get(code) ?? 0 : 0;
+    const reset_at = new Date().toISOString();
+    setGroupItems((prev) => prev.map((x) => (x.id === gi.id ? { ...x, sold_baseline: sold, reset_at } : x)));
+    await supabase.from('inventory_po_group_items').update({ sold_baseline: sold, reset_at }).eq('id', gi.id);
+  }, [soldByCode, resolveCode]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -166,14 +224,41 @@ export default function InventoryV3Page() {
         <h2 className="text-sm font-semibold text-gray-800">PO CARD</h2>
       </div>
 
-      {/* GROUP PO CARDS (data-driven — add/remove your own) */}
+      {/* SUPPLIER GROUP CARDS (each bound to one supplier; items tracked + flagged red) */}
       {groups.map((g) => {
         const rows = groupItems.filter((gi) => gi.group_id === g.id);
+        const redCount = rows.reduce((n, gi) => {
+          const code = resolveCode(gi);
+          const sold = code ? soldByCode.get(code) : undefined;
+          const net = sold == null ? null : Math.max(0, sold - Number(gi.sold_baseline || 0));
+          const thr = gi.reorder_threshold;
+          return n + (thr != null && thr > 0 && net != null && net >= thr ? 1 : 0);
+        }, 0);
         return (
           <div key={g.id} className="rounded-lg border border-gray-200 bg-white p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-gray-800">{g.name} <span className="font-normal text-gray-400">· {rows.length} item{rows.length === 1 ? '' : 's'}</span></h2>
-              <button onClick={() => deleteGroup(g.id, g.name)} title="Remove this group card" className="rounded border border-gray-200 px-2 py-0.5 text-xs text-rose-500 hover:bg-rose-50">✕ delete</button>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-sm font-semibold text-gray-800">{g.name}</h2>
+                <span className="text-xs text-gray-400">· {rows.length} item{rows.length === 1 ? '' : 's'}</span>
+                {redCount > 0 && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">{redCount} to re-order</span>}
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-gray-500">Supplier</label>
+                <select
+                  value={g.creditor_id ?? ''}
+                  onChange={(e) => setGroupSupplier(g.id, e.target.value)}
+                  className={`rounded-md border px-2 py-1 text-xs ${g.creditor_id ? 'border-gray-300 text-gray-800' : 'border-amber-300 bg-amber-50 text-amber-700'}`}
+                >
+                  <option value="">— choose supplier —</option>
+                  {g.creditor_id && !suppliers.some((s) => s.creditor_id === g.creditor_id) && (
+                    <option value={g.creditor_id}>{g.supplier_name ?? g.creditor_id} (not in list)</option>
+                  )}
+                  {suppliers.map((s) => (
+                    <option key={s.creditor_id} value={s.creditor_id}>{s.name}</option>
+                  ))}
+                </select>
+                <button onClick={() => deleteGroup(g.id, g.name)} title="Remove this group card" className="rounded border border-gray-200 px-2 py-0.5 text-xs text-rose-500 hover:bg-rose-50">✕ delete</button>
+              </div>
             </div>
             <div className="overflow-auto rounded border border-gray-100">
               <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -183,36 +268,79 @@ export default function InventoryV3Page() {
                     <th className="px-3 py-2 font-semibold">Item Code</th>
                     <th className="px-3 py-2 font-semibold">Item Description</th>
                     <th className="px-3 py-2 text-right font-semibold">Balance</th>
-                    <th className="px-3 py-2 font-semibold">Supplier</th>
+                    <th className="px-3 py-2 text-right font-semibold" title="Units sold since the last reset">Sold</th>
+                    <th className="px-3 py-2 text-center font-semibold" title="Bottles per carton (blank = no carton)">Carton</th>
+                    <th className="px-3 py-2 text-center font-semibold" title="Units sold that triggers re-order">Re-order at</th>
+                    <th className="px-3 py-2 font-semibold">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {rows.length === 0 ? (
-                    <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400">No items yet.</td></tr>
+                    <tr><td colSpan={8} className="px-3 py-4 text-center text-gray-400">No items yet — add from the Inventory List below.</td></tr>
                   ) : (
                     rows.map((gi, i) => {
                       const live = itemBySku.get(gi.sku);
-                      // Trust the live catalog whenever the sku still exists (membership identity is sku).
-                      // Only fall back to the insert-time snapshot if the sku has vanished from the catalog
-                      // — otherwise a code that genuinely reloaded as NULL would resurrect a stale code.
-                      const code = live ? live.code : gi.code;
+                      const code = resolveCode(gi);
                       const descp = live ? live.descp : gi.descp;
                       const balance = live ? live.balance : null;
-                      const supplier = code ? supplierByCode.get(code) : undefined;
+                      const sold = code ? soldByCode.get(code) : undefined;
+                      const net = sold == null ? null : Math.max(0, sold - Number(gi.sold_baseline || 0));
+                      const thr = gi.reorder_threshold;
+                      const tracked = thr != null && thr > 0;
+                      const isRed = tracked && net != null && net >= thr;
+                      const orderQty = net != null ? suggestOrderQty(net, gi.carton_size) : 0;
                       return (
-                        <tr key={gi.id} className="group">
+                        <tr key={gi.id} className={`group ${isRed ? 'bg-rose-50' : ''}`}>
                           <td className="px-3 py-1.5 text-gray-400">{i + 1}</td>
                           <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-gray-900">{code || '—'}</td>
                           <td className="px-3 py-1.5 text-gray-700">{descp || '—'}</td>
                           <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-gray-700">{balance == null ? '—' : balance}</td>
-                          <td className="whitespace-nowrap px-3 py-1.5 text-gray-600">
+                          <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-gray-700" title={sold == null ? 'no sales data yet' : `${sold} sold in last 30 days`}>
+                            {net == null ? '—' : net}
+                          </td>
+                          <td className="px-3 py-1.5 text-center">
+                            <input
+                              type="number" min={1} inputMode="numeric"
+                              value={gi.carton_size == null ? '' : gi.carton_size}
+                              onChange={(e) => setItemLocal(gi.id, { carton_size: e.target.value === '' ? null : Math.floor(Number(e.target.value)) })}
+                              onBlur={(e) => {
+                                const v = e.target.value === '' ? null : Math.max(1, Math.floor(Number(e.target.value) || 1));
+                                setItemLocal(gi.id, { carton_size: v });
+                                persistItemField(gi.id, 'carton_size', v);
+                              }}
+                              placeholder="—"
+                              className="w-16 rounded border border-gray-200 px-1.5 py-0.5 text-center text-xs"
+                            />
+                          </td>
+                          <td className="px-3 py-1.5 text-center">
+                            <input
+                              type="number" min={1} inputMode="numeric"
+                              value={gi.reorder_threshold == null ? '' : gi.reorder_threshold}
+                              onChange={(e) => setItemLocal(gi.id, { reorder_threshold: e.target.value === '' ? null : Math.floor(Number(e.target.value)) })}
+                              onBlur={(e) => {
+                                const v = e.target.value === '' ? null : Math.max(1, Math.floor(Number(e.target.value) || 1));
+                                setItemLocal(gi.id, { reorder_threshold: v });
+                                persistItemField(gi.id, 'reorder_threshold', v);
+                              }}
+                              placeholder="—"
+                              className="w-16 rounded border border-gray-200 px-1.5 py-0.5 text-center text-xs"
+                            />
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-1.5">
                             <span className="inline-flex w-full items-center justify-between gap-2">
-                              <span>{supplier || '—'}</span>
-                              <button
-                                onClick={() => removeGroupItem(gi.id)}
-                                title="Remove from this card"
-                                className="rounded px-1 text-xs text-rose-400 opacity-40 transition hover:bg-rose-50 hover:text-rose-600 focus-visible:opacity-100 group-hover:opacity-100"
-                              >✕</button>
+                              <span>
+                                {!tracked ? (
+                                  <span className="text-xs text-gray-400">set re-order point</span>
+                                ) : isRed ? (
+                                  <span className="rounded-full bg-rose-600 px-2 py-0.5 text-xs font-semibold text-white">RE-ORDER · {orderQty}</span>
+                                ) : (
+                                  <span className="text-xs text-emerald-600">ok · {net ?? 0}/{thr}</span>
+                                )}
+                              </span>
+                              <span className="flex items-center gap-1 opacity-40 transition group-hover:opacity-100">
+                                <button onClick={() => resetItemCount(gi)} title="Reset the sold counter to zero (e.g. after restocking)" className="rounded px-1 text-xs text-gray-400 hover:bg-gray-100 hover:text-gray-700">↺</button>
+                                <button onClick={() => removeGroupItem(gi.id)} title="Remove from this card" className="rounded px-1 text-xs text-rose-400 hover:bg-rose-50 hover:text-rose-600">✕</button>
+                              </span>
                             </span>
                           </td>
                         </tr>
