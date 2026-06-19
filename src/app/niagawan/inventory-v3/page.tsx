@@ -52,6 +52,7 @@ export default function InventoryV3Page() {
   const [poSuggs, setPoSuggs] = useState<PoSugg[]>([]);
   const [poLines, setPoLines] = useState<PoLine[]>([]);
   const [busyPo, setBusyPo] = useState<number | null>(null);
+  const [editingLine, setEditingLine] = useState<number | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -152,13 +153,15 @@ export default function InventoryV3Page() {
     }
   }, [isAdmin, loadGroups, loadGroupItems, loadSuppliers, loadVelocity, loadCatalog, reloadPOs]);
 
-  // While any PO is being created in Niagawan (status 'approved'), poll for the PO number.
-  const hasCreating = poSuggs.some((s) => s.status === 'approved');
+  // While any PO is open (being created, or on order awaiting delivery), poll so the PO number
+  // and auto cross-off receipts show up. Skip the lines refresh while a qty input is focused
+  // so a poll can't clobber an in-progress edit.
+  const hasOpenPo = poSuggs.some((s) => s.status === 'approved' || s.status === 'created');
   useEffect(() => {
-    if (!isAdmin || !hasCreating) return;
-    const t = setInterval(() => { reloadSuggsOnly(); }, 8000);
+    if (!isAdmin || !hasOpenPo) return;
+    const t = setInterval(() => { if (editingLine != null) reloadSuggsOnly(); else reloadPOs(); }, 12000);
     return () => clearInterval(t);
-  }, [isAdmin, hasCreating, reloadSuggsOnly]);
+  }, [isAdmin, hasOpenPo, editingLine, reloadSuggsOnly, reloadPOs]);
 
   // Live lookup: sku -> catalog row (for fresh description / balance in the group cards).
   const itemBySku = useMemo(() => {
@@ -345,6 +348,27 @@ export default function InventoryV3Page() {
     await reloadSuggsOnly();
   }, [reloadSuggsOnly]);
 
+  // Manual receipt (fallback for invoices keyed straight into Niagawan, which the auto
+  // cross-off never sees). A DB trigger closes the PO once every line is received and
+  // re-zeroes the sold counters, so the UI just records the line and reloads.
+  const markLineReceived = useCallback(async (l: PoLine) => {
+    await supabase.from('inventory_po_lines').update({ received_qty: l.ordered_qty }).eq('id', l.id);
+    await reloadPOs();
+  }, [reloadPOs]);
+
+  const markPOReceived = useCallback(async (s: PoSugg) => {
+    if (!window.confirm('Mark this whole PO as received? It will drop off the tracker.')) return;
+    setBusyPo(s.id);
+    for (const l of linesBySugg.get(s.id) ?? []) {
+      if (Number(l.received_qty) < Number(l.ordered_qty)) {
+        await supabase.from('inventory_po_lines').update({ received_qty: l.ordered_qty }).eq('id', l.id);
+      }
+    }
+    await supabase.from('po_suggestions').update({ status: 'received', updated_at: new Date().toISOString() }).eq('id', s.id);
+    setBusyPo(null);
+    await reloadPOs();
+  }, [linesBySugg, reloadPOs]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return items;
@@ -441,8 +465,9 @@ export default function InventoryV3Page() {
                               <input
                                 type="number" min={1} inputMode="numeric"
                                 value={l.ordered_qty}
+                                onFocus={() => setEditingLine(l.id)}
                                 onChange={(e) => setLineQtyLocal(l.id, Math.floor(Number(e.target.value)))}
-                                onBlur={(e) => persistLineQty(l.id, Math.max(1, Math.floor(Number(e.target.value) || 1)))}
+                                onBlur={(e) => { setEditingLine(null); persistLineQty(l.id, Math.max(1, Math.floor(Number(e.target.value) || 1))); }}
                                 className="w-20 rounded border border-gray-200 px-1.5 py-0.5 text-center text-xs"
                               />
                             </td>
@@ -470,6 +495,7 @@ export default function InventoryV3Page() {
           <div className="space-y-3">
             {poSuggs.filter((s) => ['approved', 'created', 'error'].includes(s.status)).map((s) => {
               const lines = linesBySugg.get(s.id) ?? [];
+              const doneCount = lines.filter((l) => Number(l.received_qty) >= Number(l.ordered_qty)).length;
               return (
                 <div key={s.id} className="rounded-md border border-gray-200 p-3">
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -482,14 +508,18 @@ export default function InventoryV3Page() {
                         <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">failed</span>
                       )}
                       <span>{s.supplier_name ?? s.supplier_id}</span>
-                      <span className="text-xs font-normal text-gray-400">· {lines.length} item{lines.length === 1 ? '' : 's'}</span>
+                      <span className="text-xs font-normal text-gray-400">· {doneCount}/{lines.length} received</span>
                     </div>
-                    {s.status === 'error' && (
+                    {s.status === 'error' ? (
                       <div className="flex items-center gap-2">
                         <button onClick={() => retryPO(s)} className="rounded-md bg-amber-600 px-2.5 py-0.5 text-xs font-medium text-white hover:bg-amber-700">Retry</button>
                         <button onClick={() => cancelPO(s)} className="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-50">Discard</button>
                       </div>
-                    )}
+                    ) : s.status === 'created' ? (
+                      <button onClick={() => markPOReceived(s)} disabled={busyPo === s.id} className="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50" title="If the invoice was keyed straight into Niagawan, mark it received here">
+                        Mark all received
+                      </button>
+                    ) : null}
                   </div>
                   {s.status === 'error' && s.note && <div className="mb-2 text-xs text-rose-600">{s.note}</div>}
                   <div className="overflow-auto rounded border border-gray-100">
@@ -498,17 +528,29 @@ export default function InventoryV3Page() {
                         <tr>
                           <th className="px-3 py-2 font-semibold">Item Code</th>
                           <th className="px-3 py-2 font-semibold">Item Description</th>
-                          <th className="px-3 py-2 text-center font-semibold">Ordered</th>
+                          <th className="px-3 py-2 text-center font-semibold">Received</th>
+                          <th className="px-3 py-2"></th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {lines.map((l) => (
-                          <tr key={l.id}>
-                            <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-gray-900">{l.code || '—'}</td>
-                            <td className="px-3 py-1.5 text-gray-700">{l.descp || '—'}</td>
-                            <td className="px-3 py-1.5 text-center tabular-nums text-gray-700">{Number(l.ordered_qty)}</td>
-                          </tr>
-                        ))}
+                        {lines.map((l) => {
+                          const done = Number(l.received_qty) >= Number(l.ordered_qty);
+                          return (
+                            <tr key={l.id} className={done ? 'text-gray-400' : ''}>
+                              <td className={`whitespace-nowrap px-3 py-1.5 font-mono text-xs ${done ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{l.code || '—'}</td>
+                              <td className={`px-3 py-1.5 ${done ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{l.descp || '—'}</td>
+                              <td className="px-3 py-1.5 text-center tabular-nums">
+                                <span className={done ? 'text-emerald-600' : 'text-gray-700'}>{Number(l.received_qty)}/{Number(l.ordered_qty)}</span>
+                              </td>
+                              <td className="px-3 py-1.5 text-right">
+                                {s.status === 'created' && !done && (
+                                  <button onClick={() => markLineReceived(l)} title="Mark this line received" className="rounded px-1.5 py-0.5 text-xs text-emerald-600 hover:bg-emerald-50">✓ receive</button>
+                                )}
+                                {done && <span className="text-xs text-emerald-600">✓</span>}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
