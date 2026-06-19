@@ -116,7 +116,7 @@ export default function InventoryV2Page() {
       supabase.from('niagawan_sales_velocity').select('code,sold_7d,sold_30d,last_sold'),
       supabase.from('niagawan_inventory_status').select('code,status,note'),
       supabase.from('niagawan_suppliers').select('creditor_id,name').order('name'),
-      supabase.from('po_suggestions').select('id,supplier_id,supplier_name,items,period_from,period_to,status,po_number,note,updated_at').neq('status', 'rejected').order('id', { ascending: false }).limit(40),
+      supabase.from('po_suggestions').select('id,supplier_id,supplier_name,items,period_from,period_to,status,po_number,note,updated_at').neq('status', 'rejected').or('source.is.null,source.neq.inventory-v3').order('id', { ascending: false }).limit(40),
     ]);
     if (w.error) setErr(w.error.message); else setWatch((w.data ?? []) as Watch[]);
     setBals((b.data ?? []) as Bal[]);
@@ -133,7 +133,7 @@ export default function InventoryV2Page() {
   }, []);
 
   const loadSuggs = useCallback(async () => {
-    const { data } = await supabase.from('po_suggestions').select('id,supplier_id,supplier_name,items,period_from,period_to,status,po_number,note,updated_at').neq('status', 'rejected').order('id', { ascending: false }).limit(40);
+    const { data } = await supabase.from('po_suggestions').select('id,supplier_id,supplier_name,items,period_from,period_to,status,po_number,note,updated_at').neq('status', 'rejected').or('source.is.null,source.neq.inventory-v3').order('id', { ascending: false }).limit(40);
     setSuggs((data ?? []) as PoSugg[]);
   }, []);
   const loadNewItems = useCallback(async () => {
@@ -221,7 +221,8 @@ export default function InventoryV2Page() {
     if (bySup.size === 0) { flash({ kind: 'err', msg: noSup ? 'No supplier set for these — set one in Setup → Manage watchlist.' : 'Nothing to draft.' }); return; }
     setDrafting(cat);
     const t = today();
-    const insertRows = [...bySup.values()].map((g) => ({ supplier_id: g.supplier_id, supplier_name: g.supplier_name, items: g.items, status: 'pending', period_from: t, period_to: t }));
+    // Tag manual drafts with a source so the auto-PO scan's (source IS NULL) purge can't delete them.
+    const insertRows = [...bySup.values()].map((g) => ({ supplier_id: g.supplier_id, supplier_name: g.supplier_name, items: g.items, status: 'pending', period_from: t, period_to: t, source: 'inventory-v2' }));
     const { error } = await supabase.from('po_suggestions').insert(insertRows);
     setDrafting(null);
     if (error) { flash({ kind: 'err', msg: 'Could not draft PO: ' + error.message }); return; }
