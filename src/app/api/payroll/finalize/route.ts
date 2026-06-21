@@ -217,6 +217,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'This period is not OPEN (already finalized?)' }, { status: 400 });
     }
 
+    // Refresh unpaid-leave deductions from the LATEST attendance before issuing payslips, so a
+    // stale snapshot (attendance edited since the last "Generate") can never be finalized.
+    // The period is still OPEN here, so the write is allowed; this recomputes UNPAID + statutories
+    // and leaves manual earnings/deductions untouched.
+    const { error: syncErr } = await supabaseAdmin
+      .schema('pay_v2')
+      .rpc('sync_absent_deductions', { p_year: year, p_month: month });
+    if (syncErr) throw new Error('Could not refresh attendance deductions before finalizing: ' + syncErr.message);
+
     const rows = await fetchSummary(year, month);
     const items = await fetchItems(period.id);
     const staffMap = await fetchStaff();
