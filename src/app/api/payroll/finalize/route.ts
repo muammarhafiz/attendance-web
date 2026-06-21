@@ -142,34 +142,98 @@ function summaryPdf(year: number, month: number, rows: Row[]) {
   });
 }
 
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+function money(x: string | number | null | undefined): string {
+  return `RM ${toNum(x).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 function payslipPdf(year: number, month: number, staff: any, summaryRow: Row, lines: any[]) {
   return makePdfBuffer((doc) => {
     const ym = `${year}-${String(month).padStart(2, '0')}`;
-    doc.fontSize(14).text('Payslip', { underline: true });
-    doc.moveDown(0.5);
-    doc.fontSize(10).text(`Period: ${ym}`);
-    doc.text(`Employee: ${staff?.full_name || staff?.name || summaryRow.staff_name || summaryRow.staff_email}`);
+    const monthLabel = `${MONTH_NAMES[month - 1] || ''} ${year}`.trim();
+    const left = doc.page.margins.left;
+    const rightEdge = doc.page.width - doc.page.margins.right;
+    const fullW = rightEdge - left;
+
+    // label on the left, amount right-aligned on the same line
+    const row = (label: string, amount: string, opts: { bold?: boolean; size?: number; color?: string } = {}) => {
+      doc.font(opts.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(opts.size ?? 10).fillColor(opts.color ?? '#000');
+      const y = doc.y;
+      doc.text(label, left, y, { width: fullW * 0.66 });
+      const yLabelEnd = doc.y;
+      doc.text(amount, left, y, { width: fullW, align: 'right' });
+      doc.y = Math.max(yLabelEnd, doc.y);
+    };
+    const rule = (color = '#cccccc', w = 0.6) => {
+      doc.moveDown(0.25);
+      const y = doc.y;
+      doc.moveTo(left, y).lineTo(rightEdge, y).lineWidth(w).strokeColor(color).stroke();
+      doc.moveDown(0.3);
+    };
+
+    // ---- Letterhead ----
+    doc.font('Helvetica-Bold').fontSize(16).fillColor('#0f172a').text('ZORDAQ AUTO SERVICES', left, doc.y);
+    doc.font('Helvetica').fontSize(9).fillColor('#666').text('No. 1, Jalan Industri Putra 1, Presint 14, 62050 Putrajaya');
+    rule('#0f172a', 1.2);
+
+    // ---- Title + employee ----
+    doc.font('Helvetica-Bold').fontSize(13).fillColor('#0f172a').text(`Payslip — ${monthLabel}`);
+    doc.moveDown(0.4);
+    const name = staff?.full_name || staff?.name || summaryRow.staff_name || summaryRow.staff_email;
+    doc.font('Helvetica').fontSize(10).fillColor('#000').text(`Employee: ${name}`);
     if (staff?.position) doc.text(`Position: ${staff.position}`);
-    if (staff?.nric) doc.text(`NRIC: ${staff.nric}`);
-    if (staff?.epf_no) doc.text(`EPF No: ${staff.epf_no}`);
-    if (staff?.socso_no) doc.text(`SOCSO No: ${staff.socso_no}`);
-    doc.moveDown();
+    const idLine = [
+      staff?.nric ? `NRIC: ${staff.nric}` : '',
+      staff?.epf_no ? `EPF: ${staff.epf_no}` : '',
+      staff?.socso_no ? `SOCSO: ${staff.socso_no}` : '',
+    ].filter(Boolean).join('     ');
+    if (idLine) doc.fontSize(9).fillColor('#666').text(idLine).fillColor('#000');
+    doc.moveDown(0.5);
 
-    doc.font('Helvetica-Bold').text('Earnings');
-    doc.font('Helvetica');
-    lines.filter((l: any) => l.kind === 'EARN').forEach((l: any) => {
-      doc.text(`${l.label || l.code}  —  RM ${Number(l.amount).toFixed(2)}`);
-    });
+    // ---- Earnings ----
+    const earnLines = lines.filter((l: any) => l.kind === 'EARN');
+    doc.font('Helvetica-Bold').fontSize(11).text('Earnings');
+    doc.moveDown(0.15);
+    let earnSum = 0;
+    earnLines.forEach((l: any) => { earnSum += toNum(l.amount); row(l.label || l.code, money(l.amount)); });
+    if (!earnLines.length) row('—', money(0));
+    rule();
+    row('Gross earnings', money(earnSum), { bold: true });
+    doc.moveDown(0.5);
 
-    doc.moveDown();
-    doc.font('Helvetica-Bold').text('Deductions');
-    doc.font('Helvetica');
-    lines.filter((l: any) => l.kind === 'DEDUCT' || (l.kind || '').startsWith('STAT_EMP_')).forEach((l: any) => {
-      doc.text(`${l.label || l.code}  —  RM ${Number(l.amount).toFixed(2)}`);
-    });
+    // ---- Deductions (employee only) ----
+    const dedLines = lines.filter((l: any) => l.kind === 'DEDUCT' || (l.kind || '').startsWith('STAT_EMP_'));
+    doc.font('Helvetica-Bold').fontSize(11).text('Deductions');
+    doc.moveDown(0.15);
+    let dedSum = 0;
+    dedLines.forEach((l: any) => { dedSum += toNum(l.amount); row(l.label || l.code, money(l.amount)); });
+    if (!dedLines.length) row('None', money(0), { color: '#666' });
+    rule();
+    row('Total deductions', money(dedSum), { bold: true });
+    doc.moveDown(0.5);
 
-    doc.moveDown();
-    doc.font('Helvetica-Bold').text(`Net Pay: RM ${toNum(summaryRow.net_pay).toFixed(2)}`);
+    // ---- Net pay ----
+    rule('#0f172a', 1);
+    row('NET PAY', money(summaryRow.net_pay), { bold: true, size: 13, color: '#0f172a' });
+    doc.moveDown(0.8);
+
+    // ---- Employer contributions (informational — NOT deducted from the employee) ----
+    const erLines = lines.filter((l: any) => (l.kind || '').startsWith('STAT_ER_'));
+    if (erLines.length) {
+      doc.font('Helvetica-Bold').fontSize(10).fillColor('#000').text("Employer's Contributions");
+      doc.font('Helvetica').fontSize(8).fillColor('#888').text('Paid by the company on top of your pay — not deducted from you.').fillColor('#000');
+      doc.moveDown(0.15);
+      let erSum = 0;
+      erLines.forEach((l: any) => { erSum += toNum(l.amount); row(l.label || l.code, money(l.amount), { size: 9 }); });
+      rule();
+      row('Total employer contributions', money(erSum), { bold: true, size: 9 });
+      doc.moveDown(0.6);
+    }
+
+    // ---- Footer ----
+    doc.font('Helvetica').fontSize(8).fillColor('#999')
+      .text(`Generated for ${ym} · Computer-generated payslip; no signature required.`, left, doc.y, { width: fullW });
+    doc.fillColor('#000');
   });
 }
 
