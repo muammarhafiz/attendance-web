@@ -151,27 +151,32 @@ export default function AttendanceReportPage() {
     <div>
       <style dangerouslySetInnerHTML={{ __html: `
         @media print {
-          @page { margin: 14mm; }
+          /* Lock the layout to A4 so a full month always fits one page. */
+          @page { size: A4 portrait; margin: 11mm; }
           body { background: #fff; }
-          table { width: 100%; border-collapse: collapse; font-size: 11px; }
+          table { width: 100%; border-collapse: collapse; font-size: 9.5px; }
           thead { display: table-header-group; }
           tr { break-inside: avoid; }
-          thead th { background: #eef2f7 !important; border-bottom: 1.5px solid #334155; padding: 6px 8px; color: #0f172a;
+          thead th { background: #eef2f7 !important; border-bottom: 1.4px solid #334155; padding: 3px 7px; color: #0f172a;
                      -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          tbody td { border-bottom: 1px solid #e5e7eb; padding: 5px 8px; }
+          tbody td { border-bottom: 1px solid #e5e7eb; padding: 2.5px 7px; line-height: 1.25; }
           tbody tr:nth-child(even) td { background: #f8fafc !important;
                      -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
       ` }} />
       {/* Print-only letterhead (hidden on screen) */}
-      <div className="mb-5 hidden print:block">
-        <div className="flex items-start justify-between border-b-2 border-slate-800 pb-2">
-          <div>
-            <div className="text-xl font-bold tracking-tight text-slate-900">ZORDAQ AUTO SERVICES</div>
-            <div className="text-[11px] leading-snug text-slate-500">No. 1, Jalan Industri Putra 1, Presint 14, 62050 Putrajaya</div>
+      <div className="mb-3 hidden print:block">
+        <div className="flex items-start justify-between border-b-2 border-slate-800 pb-1.5">
+          <div className="flex items-center gap-2.5">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/zordaq-auto.png" alt="ZORDAQ Auto Services" className="h-11 w-auto" />
+            <div>
+              <div className="text-base font-bold tracking-tight text-slate-900">ZORDAQ AUTO SERVICES</div>
+              <div className="text-[10px] leading-snug text-slate-500">No. 1, Jalan Industri Putra 1, Presint 14, 62050 Putrajaya</div>
+            </div>
           </div>
-          <div className="text-right text-[11px] leading-snug text-slate-500">
-            <div className="text-sm font-semibold text-slate-900">Monthly Attendance Report</div>
+          <div className="text-right text-[10px] leading-snug text-slate-500">
+            <div className="text-[13px] font-semibold text-slate-900">Monthly Attendance Report</div>
             <div>{MONTHS[month - 1]} {year} &middot; {printStaffName}</div>
             <div>Printed {printedOn}</div>
           </div>
