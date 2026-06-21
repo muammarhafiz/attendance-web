@@ -144,10 +144,19 @@ export default function AttendanceReportPage() {
   if (!authed) return <div className="text-sm text-gray-600">Please sign in.</div>;
   if (!isAdmin) return <div className="text-sm text-gray-600">This page is for admins only.</div>;
 
+  const printStaffName = staffFilter === 'ALL' ? 'All staff' : (staffList.find(([e]) => e === staffFilter)?.[1] ?? staffFilter);
+
   return (
     <div>
-      {/* Controls */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <style dangerouslySetInnerHTML={{ __html: '@media print { @page { margin: 12mm; } table { font-size: 11px; } tr { break-inside: avoid; } thead { display: table-header-group; } }' }} />
+      {/* Print-only header (hidden on screen) */}
+      <div className="mb-4 hidden print:block">
+        <div className="text-lg font-bold text-gray-900">ZORDAQ Auto Services</div>
+        <div className="text-sm text-gray-700">Attendance Report — {MONTHS[month - 1]} {year} · {printStaffName}</div>
+      </div>
+
+      {/* Controls (not printed) */}
+      <div className="mb-4 flex flex-wrap items-center gap-2 print:hidden">
         <button onClick={prevMonth} className="rounded-md border border-gray-300 px-2.5 py-1.5 text-sm hover:bg-gray-50">◀</button>
         <span className="min-w-[110px] text-center text-sm font-semibold text-gray-900">{MONTHS[month - 1]} {year}</span>
         <button onClick={nextMonth} className="rounded-md border border-gray-300 px-2.5 py-1.5 text-sm hover:bg-gray-50">▶</button>
@@ -165,6 +174,9 @@ export default function AttendanceReportPage() {
 
         <button onClick={load} disabled={loading} className="ml-auto rounded-md border border-gray-300 px-2.5 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50">
           {loading ? 'Loading…' : 'Refresh'}
+        </button>
+        <button onClick={() => window.print()} disabled={rows.length === 0} title="Print or save as PDF" className="rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+          🖨 Print
         </button>
       </div>
 
@@ -203,12 +215,12 @@ export default function AttendanceReportPage() {
               ))}
             </tbody>
           </table>
-          <div className="border-t border-gray-100 px-3 py-2 text-xs text-gray-400">Tap a staff name to see their daily detail.</div>
+          <div className="border-t border-gray-100 px-3 py-2 text-xs text-gray-400 print:hidden">Tap a staff name to see their daily detail.</div>
         </div>
       ) : (
         /* Per-staff daily detail (editable) */
         <>
-        <div className="mb-2 flex items-center gap-2">
+        <div className="mb-2 flex items-center gap-2 print:hidden">
           <button onClick={() => setStaffFilter('ALL')} className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2.5 py-1 text-sm text-gray-600 hover:bg-gray-50">← All staff</button>
           <span className="text-sm font-medium text-gray-900">{staffList.find(([e]) => e === staffFilter)?.[1] ?? staffFilter}</span>
         </div>
@@ -221,7 +233,7 @@ export default function AttendanceReportPage() {
                 <th className="px-3 py-2 font-medium text-gray-600">In</th>
                 <th className="px-3 py-2 font-medium text-gray-600">Out</th>
                 <th className="px-3 py-2 text-right font-medium text-gray-600">Late</th>
-                <th className="px-3 py-2"></th>
+                <th className="px-3 py-2 print:hidden"></th>
               </tr>
             </thead>
             <tbody>
@@ -244,7 +256,7 @@ export default function AttendanceReportPage() {
                     <td className={`px-3 py-2 text-right ${(r.late_min ?? 0) > 0 ? 'font-semibold text-rose-600' : 'text-gray-400'}`}>
                       {(r.late_min ?? 0) > 0 ? `${r.late_min} min` : '—'}
                     </td>
-                    <td className="px-3 py-2 text-right">
+                    <td className="px-3 py-2 text-right print:hidden">
                       <button
                         onClick={() => (editDay === r.day ? setEditDay(null) : startEdit(r))}
                         className="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-100"
@@ -254,7 +266,7 @@ export default function AttendanceReportPage() {
                     </td>
                   </tr>
                   {editDay === r.day && (
-                    <tr className="border-t border-gray-100 bg-gray-50">
+                    <tr className="border-t border-gray-100 bg-gray-50 print:hidden">
                       <td colSpan={6} className="px-3 py-3">
                         <div className="flex flex-wrap items-end gap-3">
                           <label className="text-xs text-gray-500">Status
