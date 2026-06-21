@@ -35,6 +35,8 @@ type StaffRow = {
   position: string | null;
   nric: string | null;
   phone: string | null;
+  epf_no?: string | null;
+  socso_no?: string | null;
 };
 
 type ManualItem = {
@@ -62,6 +64,44 @@ function cur(x: number | string | null | undefined): string {
 
 function ymText(y: number, m: number) {
   return `${y}-${String(m).padStart(2, '0')}`;
+}
+
+const MONTHS_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+function netInWords(amount: number): string {
+  const ones = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+  const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+  const below1000 = (n: number): string => {
+    let s = '';
+    if (n >= 100) { s += ones[Math.floor(n / 100)] + ' hundred'; n %= 100; if (n) s += ' '; }
+    if (n >= 20) { s += tens[Math.floor(n / 10)]; if (n % 10) s += '-' + ones[n % 10]; }
+    else if (n > 0) { s += ones[n]; }
+    return s;
+  };
+  const whole = (n: number): string => {
+    if (n === 0) return 'zero';
+    const parts: string[] = [];
+    const th = Math.floor(n / 1000);
+    const r = n % 1000;
+    if (th) parts.push(below1000(th) + ' thousand');
+    if (r) parts.push(below1000(r));
+    return parts.join(' ');
+  };
+  const rm = Math.floor(amount);
+  const sen = Math.round((amount - rm) * 100);
+  let w = 'Ringgit ' + whole(rm);
+  if (sen > 0) w += ' and ' + below1000(sen) + ' sen';
+  w += ' only';
+  return w.charAt(0).toUpperCase() + w.slice(1);
+}
+
+function SlipRow({ label, amount, bold, small }: { label: string; amount: string; bold?: boolean; small?: boolean }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: small ? '2px 0' : '4px 0', borderTop: bold ? '1px solid #cbd5e1' : undefined, borderBottom: bold ? undefined : '0.5px solid #f1f2f4', marginTop: bold ? 3 : 0 }}>
+      <span style={{ color: bold ? '#0f172a' : '#64748b', fontWeight: bold ? 600 : 400 }}>{label}</span>
+      <span style={{ color: '#0f172a', fontWeight: bold ? 600 : 400, fontVariantNumeric: 'tabular-nums' }}>{amount}</span>
+    </div>
+  );
 }
 
 function isPlumbingCode(code?: string | null) {
@@ -194,7 +234,7 @@ export default function PayslipPage() {
         // 2) Staff details for header
         const { data: stData, error: stErr } = await supabase
           .from('staff')
-          .select('email, full_name, name, position, nric, phone')
+          .select('email, full_name, name, position, nric, phone, epf_no, socso_no')
           .eq('email', email)
           .maybeSingle();
 
@@ -271,9 +311,17 @@ export default function PayslipPage() {
 
   const pos = staff?.position || '—';
   const nric = staff?.nric || '—';
-  const phone = staff?.phone || '—';
+  const epfNo = staff?.epf_no || '—';
+  const socsoNo = staff?.socso_no || '—';
+  const monthYear = `${MONTHS_FULL[month - 1] || ''} ${year}`.trim();
+  const lastDayOfMonth = new Date(year, month, 0).getDate();
+  const payPeriod = `1–${lastDayOfMonth} ${MONTHS_FULL[month - 1] || ''} ${year}`;
+  const paymentDate = `${lastDayOfMonth} ${MONTHS_FULL[month - 1] || ''} ${year}`;
 
   const base = asNum(sum?.base_wage);
+  const dailyRate = base > 0 ? base / 26 : 0;
+  const daysUnpaid = dailyRate > 0 ? Math.round(unpaidFinal / dailyRate) : 0;
+  const netWords = netInWords(displayNetPay);
 
   const epfEmp = asNum(sum?.epf_emp);
   const socsoEmp = asNum(sum?.socso_emp);
@@ -282,8 +330,6 @@ export default function PayslipPage() {
   const epfEr = asNum(sum?.epf_er);
   const socsoEr = asNum(sum?.socso_er);
   const eisEr = asNum(sum?.eis_er);
-
-  const unpaidHasAnyAdjustment = unpaidAdj !== 0 || unpaidExtra !== 0;
 
   // Optional: don’t show negative/meaningless lines if there is no data
   const hasData = !!sum;
@@ -513,214 +559,91 @@ export default function PayslipPage() {
         <div id="a5-inner">
           {/* scaled content */}
           <div id="payslip-content" className="card">
-            {/* Company header */}
-            <div style={{ textAlign: 'center' }}>
-              <div className="h1">
-                Zordaq Auto Services <span style={{ fontSize: 10, fontWeight: 500 }}>(KT0429873-U)</span>
+            {/* Letterhead */}
+            <div style={{ background: '#1e3a8a', borderRadius: 8, padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/zordaq-auto.png" alt="ZORDAQ Auto Services" style={{ height: 40, width: 'auto', background: '#fff', borderRadius: 6, padding: 3 }} />
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>Zordaq Auto Services</div>
+                  <div style={{ fontSize: 11, color: '#c7d2fe' }}>Co. Reg. KT0429873-U</div>
+                </div>
               </div>
-              <div className="small-muted">
-                NO 1, JALAN INDUSTRI PUTRA 1, PRESINT 14, 62050 WILAYAH PERSEKUTUAN PUTRAJAYA
+              <div style={{ textAlign: 'right', fontSize: 10, color: '#c7d2fe', lineHeight: 1.5 }}>
+                No. 1, Jalan Industri Putra 1, Presint 14<br />62050 Putrajaya, Malaysia<br />017-933 3995 · zordaqputrajaya@gmail.com
               </div>
-              <div className="small-muted">Phone: 017-9333995 · Email: zordaqputrajaya@gmail.com</div>
             </div>
 
+            {/* Title */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+              <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: 0.3, color: '#0f172a' }}>Payslip <span style={{ fontSize: 12, fontWeight: 500, color: '#64748b' }}>· {monthYear}</span></div>
+              <span style={{ fontSize: 10, color: '#64748b', border: '1px solid #cbd5e1', borderRadius: 6, padding: '2px 9px' }}>Confidential</span>
+            </div>
             <hr className="hr" />
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+            {/* Employee details */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px 22px' }}>
+              {([['Employee', staffName], ['Position', pos], ['NRIC', nric], ['EPF no.', epfNo], ['SOCSO no.', socsoNo], ['Pay period', payPeriod], ['Payment date', paymentDate], ['Days unpaid', String(daysUnpaid)]] as [string, string][]).map(([k, v]) => (
+                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 11.5, padding: '1px 0' }}>
+                  <span style={{ color: '#64748b' }}>{k}</span>
+                  <span style={{ color: '#0f172a', fontWeight: 500, textAlign: 'right' }}>{v || '—'}</span>
+                </div>
+              ))}
+            </div>
+            <hr className="hr" />
+
+            {/* Earnings + Deductions */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
               <div>
-                <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: 0.5 }}>PAYSLIP</div>
-                <div className="small-muted">
-                  Period: <b>{periodLabel}</b>
-                </div>
-                <div className="small-muted">
-                  Status: <span className="badge">OPEN</span>
-                </div>
-              </div>
-
-              <div style={{ textAlign: 'right' }}>
-                <div className="small-muted">Generated</div>
-                <div className="mono" style={{ fontSize: 11 }}>
-                  {new Date().toLocaleString('en-GB')}
-                </div>
-              </div>
-            </div>
-
-            <div style={{ marginTop: 10 }} className="grid2">
-              {/* Employee */}
-              <div className="block">
-                <div className="h2">Employee</div>
-                <div className="kv">
-                  <span>NAME</span>
-                  <b>{staffName}</b>
-                </div>
-                <div className="kv">
-                  <span>POSITION</span>
-                  <b>{pos}</b>
-                </div>
-                <div className="kv">
-                  <span>NRIC</span>
-                  <b>{nric}</b>
-                </div>
-                <div className="kv">
-                  <span>PHONE</span>
-                  <b>{phone}</b>
-                </div>
-                <div className="note">{email || '—'}</div>
-              </div>
-
-              {/* Summary */}
-              <div className="block">
-                <div className="h2">Summary</div>
-                <div className="kv">
-                  <span>Base</span>
-                  <b className="mono">RM {cur(base)}</b>
-                </div>
-                <div className="kv">
-                  <span>Total Earn</span>
-                  <b className="mono">RM {cur(displayTotalEarn)}</b>
-                </div>
-                <div className="kv">
-                  <span>Total Deduct</span>
-                  <b className="mono">RM {cur(displayTotalDeduct)}</b>
-                </div>
-                <div className="kv">
-                  <span>Net Pay</span>
-                  <b className="mono" style={{ fontSize: 13 }}>
-                    RM {cur(displayNetPay)}
-                  </b>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ marginTop: 10 }} className="grid2">
-              {/* Earnings */}
-              <div className="block">
                 <div className="h2">Earnings</div>
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Item</th>
-                      <th className="right">Amount (RM)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>Base salary</td>
-                      <td className="right mono">{cur(base)}</td>
-                    </tr>
-
-                    {manualEarn.map((it) => (
-                      <tr key={it.id}>
-                        <td>{it.label || it.code || '—'}</td>
-                        <td className="right mono">{cur(it.amount)}</td>
-                      </tr>
-                    ))}
-
-                    <tr>
-                      <td style={{ fontWeight: 700, background: '#f9fafb' }}>Total earnings</td>
-                      <td style={{ fontWeight: 700, background: '#f9fafb' }} className="right mono">
-                        {cur(displayTotalEarn)}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+                <div style={{ fontSize: 11.5 }}>
+                  <SlipRow label="Basic salary" amount={cur(base)} />
+                  {manualEarn.map((it) => (
+                    <SlipRow key={it.id} label={it.label || it.code || '—'} amount={cur(it.amount)} />
+                  ))}
+                  <SlipRow label="Gross earnings" amount={cur(displayTotalEarn)} bold />
+                </div>
               </div>
-
-              {/* Deductions */}
-              <div className="block">
+              <div>
                 <div className="h2">Deductions</div>
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Item</th>
-                      <th className="right">Amount (RM)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {/* Unpaid Leave (ONE LINE ONLY) */}
-                    <tr>
-                      <td>
-                        Unpaid leave
-                        <div className="note">
-                          {unpaidHasAnyAdjustment ? (
-                            <>
-                              auto {cur(unpaidAuto)}
-                              {unpaidAdj !== 0 ? <> – adj {cur(unpaidAdj)}</> : null}
-                              {unpaidExtra !== 0 ? <> + extra {cur(unpaidExtra)}</> : null}
-                            </>
-                          ) : (
-                            <>auto {cur(unpaidAuto)}</>
-                          )}
-                        </div>
-                      </td>
-                      <td className="right mono">{cur(unpaidFinal)}</td>
-                    </tr>
-
-                    {manualDeduct.map((it) => (
-                      <tr key={it.id}>
-                        <td>{it.label || it.code || '—'}</td>
-                        <td className="right mono">{cur(it.amount)}</td>
-                      </tr>
-                    ))}
-
-                    <tr>
-                      <td>EPF (Emp)</td>
-                      <td className="right mono">{cur(epfEmp)}</td>
-                    </tr>
-                    <tr>
-                      <td>SOCSO (Emp)</td>
-                      <td className="right mono">{cur(socsoEmp)}</td>
-                    </tr>
-                    <tr>
-                      <td>EIS (Emp)</td>
-                      <td className="right mono">{cur(eisEmp)}</td>
-                    </tr>
-
-                    <tr>
-                      <td style={{ fontWeight: 700, background: '#f9fafb' }}>Total deductions</td>
-                      <td style={{ fontWeight: 700, background: '#f9fafb' }} className="right mono">
-                        {cur(displayTotalDeduct)}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Net Pay + Employer contribs */}
-            <div style={{ marginTop: 10 }} className="grid2">
-              <div className="block">
-                <div className="h2">Net Pay</div>
-                <div className="mono" style={{ fontSize: 18, fontWeight: 800 }}>
-                  RM {cur(displayNetPay)}
-                </div>
-                <div className="note">This is the amount payable to the employee.</div>
-              </div>
-
-              <div className="block">
-                <div className="h2">Employer contributions (info)</div>
-                <div className="kv">
-                  <span>EPF (Er)</span>
-                  <b className="mono">RM {cur(epfEr)}</b>
-                </div>
-                <div className="kv">
-                  <span>SOCSO (Er)</span>
-                  <b className="mono">RM {cur(socsoEr)}</b>
-                </div>
-                <div className="kv">
-                  <span>EIS (Er)</span>
-                  <b className="mono">RM {cur(eisEr)}</b>
+                <div style={{ fontSize: 11.5 }}>
+                  {unpaidFinal > 0 && <SlipRow label="Unpaid leave" amount={cur(unpaidFinal)} />}
+                  {manualDeduct.map((it) => (
+                    <SlipRow key={it.id} label={it.label || it.code || '—'} amount={cur(it.amount)} />
+                  ))}
+                  <SlipRow label="EPF (Employee)" amount={cur(epfEmp)} />
+                  <SlipRow label="SOCSO (Employee)" amount={cur(socsoEmp)} />
+                  <SlipRow label="EIS (Employee)" amount={cur(eisEmp)} />
+                  <SlipRow label="Total deductions" amount={cur(displayTotalDeduct)} bold />
                 </div>
               </div>
             </div>
 
-            <div className="footer">This is a computer-generated payslip. No signature is required.</div>
+            {/* Net pay */}
+            <div style={{ background: '#1e3a8a', borderRadius: 8, padding: '12px 16px', marginTop: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 11, color: '#c7d2fe' }}>Net pay</div>
+                <div style={{ fontSize: 10, color: '#aab4e6', marginTop: 2 }}>{netWords}</div>
+              </div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap' }}>RM {cur(displayNetPay)}</div>
+            </div>
 
-            {/* Error hint inside print (optional small) */}
+            {/* Employer contributions + footer */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 0.9fr', gap: 18, marginTop: 12, alignItems: 'end' }}>
+              <div>
+                <div className="h2" style={{ marginBottom: 2 }}>Employer&rsquo;s contributions</div>
+                <div style={{ fontSize: 9.5, color: '#94a3b8', marginBottom: 4 }}>Paid by the company — not deducted from your pay</div>
+                <SlipRow label="EPF (Employer)" amount={cur(epfEr)} small />
+                <SlipRow label="SOCSO (Employer)" amount={cur(socsoEr)} small />
+                <SlipRow label="EIS (Employer)" amount={cur(eisEr)} small />
+              </div>
+              <div style={{ fontSize: 9.5, color: '#94a3b8', textAlign: 'right', lineHeight: 1.6 }}>
+                Issued on {paymentDate}<br />Computer-generated payslip;<br />no signature required.
+              </div>
+            </div>
+
             {!hasData && err && (
-              <div style={{ marginTop: 8, fontSize: 10, color: '#b91c1c' }}>
-                Error: {err}
-              </div>
+              <div style={{ marginTop: 8, fontSize: 10, color: '#b91c1c' }}>Error: {err}</div>
             )}
           </div>
         </div>
