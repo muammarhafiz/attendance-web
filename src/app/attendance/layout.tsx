@@ -23,12 +23,12 @@ export default function AttendanceLayout({ children }: { children: React.ReactNo
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-6">
-      <h1 className="text-2xl font-semibold text-gray-900">Attendance</h1>
-      <p className="mt-1 mb-4 text-sm text-gray-500">
+      <h1 className="text-2xl font-semibold text-gray-900 no-print">Attendance</h1>
+      <p className="mt-1 mb-4 text-sm text-gray-500 no-print">
         New attendance system (v2) — running in parallel. The old pages stay live until this is proven.
       </p>
 
-      <div className="mb-6 flex flex-wrap gap-1 border-b border-gray-200">
+      <div className="mb-6 flex flex-wrap gap-1 border-b border-gray-200 no-print">
         {TABS.map((t) => (
           <Link
             key={t.href}
