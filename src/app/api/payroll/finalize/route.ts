@@ -147,55 +147,105 @@ function money(x: string | number | null | undefined): string {
   return `RM ${toNum(x).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+const STAT_LABELS: Record<string, string> = {
+  STAT_EMP_EPF: 'EPF (Employee)', STAT_EMP_SOCSO: 'SOCSO (Employee)', STAT_EMP_EIS: 'EIS (Employee)',
+  STAT_ER_EPF: 'EPF (Employer)', STAT_ER_SOCSO: 'SOCSO (Employer)', STAT_ER_EIS: 'EIS (Employer)',
+  BASE: 'Basic salary', UNPAID: 'Unpaid leave',
+};
+function proLabel(l: any): string {
+  const c = String(l.code || l.kind || '').toUpperCase();
+  return STAT_LABELS[c] || l.label || l.code || '—';
+}
+
+function netInWords(amount: number): string {
+  const ones = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+  const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+  const below1000 = (n: number): string => {
+    let s = '';
+    if (n >= 100) { s += ones[Math.floor(n / 100)] + ' hundred'; n %= 100; if (n) s += ' '; }
+    if (n >= 20) { s += tens[Math.floor(n / 10)]; if (n % 10) s += '-' + ones[n % 10]; }
+    else if (n > 0) { s += ones[n]; }
+    return s;
+  };
+  const whole = (n: number): string => {
+    if (n === 0) return 'zero';
+    const parts: string[] = [];
+    const th = Math.floor(n / 1000);
+    const r = n % 1000;
+    if (th) parts.push(below1000(th) + ' thousand');
+    if (r) parts.push(below1000(r));
+    return parts.join(' ');
+  };
+  const rm = Math.floor(amount);
+  const sen = Math.round((amount - rm) * 100);
+  let w = 'Ringgit ' + whole(rm);
+  if (sen > 0) w += ' and ' + below1000(sen) + ' sen';
+  w += ' only';
+  return w.charAt(0).toUpperCase() + w.slice(1);
+}
+
 function payslipPdf(year: number, month: number, staff: any, summaryRow: Row, lines: any[]) {
   return makePdfBuffer((doc) => {
-    const ym = `${year}-${String(month).padStart(2, '0')}`;
+    const navy = '#1e3a8a';
     const monthLabel = `${MONTH_NAMES[month - 1] || ''} ${year}`.trim();
+    const lastDay = new Date(year, month, 0).getDate();
+    const payPeriod = `1–${lastDay} ${monthLabel}`;
+    const paymentDate = `${lastDay} ${monthLabel}`;
     const left = doc.page.margins.left;
     const rightEdge = doc.page.width - doc.page.margins.right;
     const fullW = rightEdge - left;
+    const name = staff?.full_name || staff?.name || summaryRow.staff_name || summaryRow.staff_email;
+    const baseWage = toNum(summaryRow.base_wage);
+    const unpaidLine = lines.find((l: any) => l.kind === 'DEDUCT' && String(l.code || '').toUpperCase() === 'UNPAID');
+    const daysUnpaid = baseWage > 0 && unpaidLine ? Math.round(toNum(unpaidLine.amount) / (baseWage / 26)) : 0;
 
-    // label on the left, amount right-aligned on the same line
     const row = (label: string, amount: string, opts: { bold?: boolean; size?: number; color?: string } = {}) => {
-      doc.font(opts.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(opts.size ?? 10).fillColor(opts.color ?? '#000');
+      doc.font(opts.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(opts.size ?? 10).fillColor(opts.color ?? '#0f172a');
       const y = doc.y;
       doc.text(label, left, y, { width: fullW * 0.66 });
       const yLabelEnd = doc.y;
       doc.text(amount, left, y, { width: fullW, align: 'right' });
       doc.y = Math.max(yLabelEnd, doc.y);
+      doc.fillColor('#000000');
     };
-    const rule = (color = '#cccccc', w = 0.6) => {
+    const rule = (color = '#cbd5e1', w = 0.6) => {
       doc.moveDown(0.25);
       const y = doc.y;
       doc.moveTo(left, y).lineTo(rightEdge, y).lineWidth(w).strokeColor(color).stroke();
       doc.moveDown(0.3);
     };
 
-    // ---- Letterhead ----
-    doc.font('Helvetica-Bold').fontSize(16).fillColor('#0f172a').text('ZORDAQ AUTO SERVICES', left, doc.y);
-    doc.font('Helvetica').fontSize(9).fillColor('#666').text('No. 1, Jalan Industri Putra 1, Presint 14, 62050 Putrajaya');
-    rule('#0f172a', 1.2);
+    // ---- Navy letterhead band ----
+    const top = doc.y;
+    const headerH = 50;
+    doc.save(); doc.rect(left, top, fullW, headerH).fill(navy); doc.restore();
+    doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(15).text('Zordaq Auto Services', left + 12, top + 10, { width: fullW * 0.55, lineBreak: false });
+    doc.fillColor('#c7d2fe').font('Helvetica').fontSize(8).text('Co. Reg. KT0429873-U', left + 12, top + 30, { lineBreak: false });
+    doc.fillColor('#c7d2fe').font('Helvetica').fontSize(8).text('No. 1, Jalan Industri Putra 1, Presint 14\n62050 Putrajaya, Malaysia\n017-933 3995 · zordaqputrajaya@gmail.com', left, top + 8, { width: fullW - 12, align: 'right' });
+    doc.y = top + headerH + 14;
+    doc.fillColor('#000000');
 
-    // ---- Title + employee ----
-    doc.font('Helvetica-Bold').fontSize(13).fillColor('#0f172a').text(`Payslip — ${monthLabel}`);
-    doc.moveDown(0.4);
-    const name = staff?.full_name || staff?.name || summaryRow.staff_name || summaryRow.staff_email;
-    doc.font('Helvetica').fontSize(10).fillColor('#000').text(`Employee: ${name}`);
-    if (staff?.position) doc.text(`Position: ${staff.position}`);
-    const idLine = [
-      staff?.nric ? `NRIC: ${staff.nric}` : '',
-      staff?.epf_no ? `EPF: ${staff.epf_no}` : '',
-      staff?.socso_no ? `SOCSO: ${staff.socso_no}` : '',
-    ].filter(Boolean).join('     ');
-    if (idLine) doc.fontSize(9).fillColor('#666').text(idLine).fillColor('#000');
-    doc.moveDown(0.5);
+    // ---- Title + confidential ----
+    const ty = doc.y;
+    doc.fillColor('#0f172a').font('Helvetica-Bold').fontSize(14).text('Payslip', left, ty, { continued: true });
+    doc.font('Helvetica').fontSize(10).fillColor('#64748b').text(`   ·   ${monthLabel}`);
+    doc.font('Helvetica').fontSize(8).fillColor('#64748b').text('Confidential', left, ty + 3, { width: fullW, align: 'right' });
+    doc.y = ty + 22;
+
+    // ---- Employee details ----
+    doc.font('Helvetica').fontSize(9.5).fillColor('#0f172a').text(`Employee: ${name}${staff?.position ? '     Position: ' + staff.position : ''}`, left, doc.y);
+    const ids = [staff?.nric ? `NRIC: ${staff.nric}` : '', staff?.epf_no ? `EPF no.: ${staff.epf_no}` : '', staff?.socso_no ? `SOCSO no.: ${staff.socso_no}` : ''].filter(Boolean).join('     ');
+    if (ids) doc.fillColor('#64748b').text(ids, left, doc.y);
+    doc.fillColor('#64748b').text(`Pay period: ${payPeriod}     Payment date: ${paymentDate}     Days unpaid: ${daysUnpaid}`, left, doc.y);
+    doc.fillColor('#000000');
+    rule();
 
     // ---- Earnings ----
     const earnLines = lines.filter((l: any) => l.kind === 'EARN');
-    doc.font('Helvetica-Bold').fontSize(11).text('Earnings');
+    doc.font('Helvetica-Bold').fontSize(11).fillColor('#0f172a').text('Earnings');
     doc.moveDown(0.15);
     let earnSum = 0;
-    earnLines.forEach((l: any) => { earnSum += toNum(l.amount); row(l.label || l.code, money(l.amount)); });
+    earnLines.forEach((l: any) => { earnSum += toNum(l.amount); row(proLabel(l), money(l.amount)); });
     if (!earnLines.length) row('—', money(0));
     rule();
     row('Gross earnings', money(earnSum), { bold: true });
@@ -203,37 +253,42 @@ function payslipPdf(year: number, month: number, staff: any, summaryRow: Row, li
 
     // ---- Deductions (employee only) ----
     const dedLines = lines.filter((l: any) => l.kind === 'DEDUCT' || (l.kind || '').startsWith('STAT_EMP_'));
-    doc.font('Helvetica-Bold').fontSize(11).text('Deductions');
+    doc.font('Helvetica-Bold').fontSize(11).fillColor('#0f172a').text('Deductions');
     doc.moveDown(0.15);
     let dedSum = 0;
-    dedLines.forEach((l: any) => { dedSum += toNum(l.amount); row(l.label || l.code, money(l.amount)); });
-    if (!dedLines.length) row('None', money(0), { color: '#666' });
+    dedLines.forEach((l: any) => { dedSum += toNum(l.amount); row(proLabel(l), money(l.amount)); });
+    if (!dedLines.length) row('None', money(0), { color: '#64748b' });
     rule();
     row('Total deductions', money(dedSum), { bold: true });
-    doc.moveDown(0.5);
+    doc.moveDown(0.4);
 
-    // ---- Net pay ----
-    rule('#0f172a', 1);
-    row('NET PAY', money(summaryRow.net_pay), { bold: true, size: 13, color: '#0f172a' });
-    doc.moveDown(0.8);
+    // ---- Net pay — navy band ----
+    const ny = doc.y;
+    const netH = 38;
+    doc.save(); doc.rect(left, ny, fullW, netH).fill(navy); doc.restore();
+    doc.fillColor('#c7d2fe').font('Helvetica').fontSize(9).text('Net pay', left + 12, ny + 7, { lineBreak: false });
+    doc.fillColor('#aab4e6').fontSize(8).text(netInWords(toNum(summaryRow.net_pay)), left + 12, ny + 20, { width: fullW * 0.62, lineBreak: false });
+    doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(16).text(money(summaryRow.net_pay), left, ny + 12, { width: fullW - 12, align: 'right' });
+    doc.y = ny + netH + 14;
+    doc.fillColor('#000000');
 
     // ---- Employer contributions (informational — NOT deducted from the employee) ----
     const erLines = lines.filter((l: any) => (l.kind || '').startsWith('STAT_ER_'));
     if (erLines.length) {
-      doc.font('Helvetica-Bold').fontSize(10).fillColor('#000').text("Employer's Contributions");
-      doc.font('Helvetica').fontSize(8).fillColor('#888').text('Paid by the company on top of your pay — not deducted from you.').fillColor('#000');
+      doc.font('Helvetica-Bold').fontSize(10).fillColor('#0f172a').text("Employer's contributions");
+      doc.font('Helvetica').fontSize(8).fillColor('#94a3b8').text('Paid by the company — not deducted from your pay.').fillColor('#000000');
       doc.moveDown(0.15);
       let erSum = 0;
-      erLines.forEach((l: any) => { erSum += toNum(l.amount); row(l.label || l.code, money(l.amount), { size: 9 }); });
+      erLines.forEach((l: any) => { erSum += toNum(l.amount); row(proLabel(l), money(l.amount), { size: 9 }); });
       rule();
       row('Total employer contributions', money(erSum), { bold: true, size: 9 });
       doc.moveDown(0.6);
     }
 
     // ---- Footer ----
-    doc.font('Helvetica').fontSize(8).fillColor('#999')
-      .text(`Generated for ${ym} · Computer-generated payslip; no signature required.`, left, doc.y, { width: fullW });
-    doc.fillColor('#000');
+    doc.font('Helvetica').fontSize(8).fillColor('#999999')
+      .text(`Issued on ${paymentDate} · Computer-generated payslip; no signature required.`, left, doc.y, { width: fullW });
+    doc.fillColor('#000000');
   });
 }
 
