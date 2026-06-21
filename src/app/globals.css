@@ -32,3 +32,11 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
+
+/* Printing: drop site chrome so only the page content prints.
+   Anything tagged `.no-print` (the nav bar, section headers, tabs, on-screen
+   controls) is hidden; Tailwind's `print:hidden` works too. */
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff; }
+}
