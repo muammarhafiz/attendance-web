@@ -111,6 +111,25 @@ export default function PayrollV3Page() {
     finally { setBusy(''); }
   };
 
+  const sendPayslips = async () => {
+    if (!window.confirm(`Email each staff their own ${MONTHS[month - 1]} ${year} payslip now? Each person only receives their own.`)) return;
+    setBusy('Send'); setMsg(null);
+    try {
+      const tok = (await supabase.auth.getSession()).data.session?.access_token;
+      const res = await fetch(`/api/payroll/send-payslips?year=${year}&month=${month}`, {
+        method: 'POST', headers: tok ? { Authorization: `Bearer ${tok}` } : {},
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || 'Send failed');
+      const failedList = (json.results || []).filter((r: { status: string }) => r.status === 'error').map((r: { email: string }) => r.email).join(', ');
+      setMsg({
+        kind: json.failed ? 'err' : 'ok',
+        text: `Payslips emailed — ${json.sent} sent${json.failed ? ` · ${json.failed} failed: ${failedList}` : ''}.`,
+      });
+    } catch (e) { setMsg({ kind: 'err', text: e instanceof Error ? e.message : String(e) }); }
+    finally { setBusy(''); }
+  };
+
   const prevMonth = () => { const d = new Date(year, month - 2, 1); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); };
   const nextMonth = () => { const d = new Date(year, month, 1); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); };
 
@@ -242,7 +261,12 @@ export default function PayrollV3Page() {
             </>
           )}
           {(status === 'LOCKED' || status === 'FINALIZED') && (
-            <button onClick={unlock} disabled={!!busy} className="rounded-md border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50">Unlock to edit</button>
+            <>
+              <button onClick={unlock} disabled={!!busy} className="rounded-md border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50">Unlock to edit</button>
+              <button onClick={sendPayslips} disabled={!!busy} className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+                {busy === 'Send' ? 'Sending…' : 'Email payslips to staff'}
+              </button>
+            </>
           )}
           <button onClick={refresh} className="ml-auto rounded-md border px-3 py-2 text-sm hover:bg-gray-50">Refresh</button>
         </div>
