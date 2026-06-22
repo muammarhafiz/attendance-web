@@ -37,6 +37,9 @@ export async function POST(req: Request) {
     const { searchParams } = new URL(req.url);
     const year = Number(searchParams.get('year'));
     const month = Number(searchParams.get('month'));
+    // Test mode: send ONE email to the admin's own inbox so they can verify
+    // formatting + delivery before emailing real staff. Never sends to staff.
+    const isTest = searchParams.get('test') === '1';
     if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
       return NextResponse.json({ error: 'valid year & month required' }, { status: 400 });
     }
@@ -46,7 +49,7 @@ export async function POST(req: Request) {
     // Payslips only exist once a period is finalized (locked).
     const { data: period } = await supabaseAdmin.schema('pay_v2').from('periods').select('status').eq('year', year).eq('month', month).maybeSingle();
     if (!period) return NextResponse.json({ error: 'Period not found' }, { status: 404 });
-    if (period.status === 'OPEN') return NextResponse.json({ error: 'Finalize this period first — payslips have not been generated yet.' }, { status: 400 });
+    if (!isTest && period.status === 'OPEN') return NextResponse.json({ error: 'Finalize this period first — payslips have not been generated yet.' }, { status: 400 });
 
     const { data: rows, error: sErr } = await supabaseAdmin
       .schema('pay_v2').from('v_payslip_admin_summary')
@@ -58,6 +61,36 @@ export async function POST(req: Request) {
     const { data: staffData } = await supabaseAdmin.from('staff').select('email, full_name, name');
     const nameByEmail = new Map<string, string>();
     (staffData ?? []).forEach((s: { email: string; full_name: string | null; name: string | null }) => nameByEmail.set(s.email, s.full_name || s.name || s.email));
+
+    // ---- TEST MODE: one email to the admin's own inbox, using any existing payslip PDF ----
+    if (isTest) {
+      for (const r of (rows ?? []) as SummaryRow[]) {
+        const email = r.staff_email;
+        const name = nameByEmail.get(email) || r.staff_name || email;
+        const path = `${basePath}/payslips/${safe(name)}_${basePath}.pdf`;
+        const { data: file } = await supabaseAdmin.storage.from('payroll').download(path);
+        if (!file) continue;
+        const pdfBase64 = Buffer.from(await file.arrayBuffer()).toString('base64');
+        const body = `This is a TEST of the payslip email feature.\n\nAttached is the ${monthLabel} payslip for ${name}, sent only to you (${actor}) so you can confirm the formatting and delivery before emailing real staff. No staff member received this message.\n\nZordaq Auto Services`;
+        const res = await fetch(notifyUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token: notifyToken,
+            action: 'sendMail',
+            to: actor,
+            subject: `[TEST] Payslip — ${monthLabel}`,
+            body,
+            filename: `TEST_Payslip_${safe(name)}_${basePath}.pdf`,
+            pdfBase64,
+          }),
+        });
+        const j = await res.json().catch(() => null);
+        if (!res.ok || !j?.ok) return NextResponse.json({ error: j?.error || `mail send failed (${res.status})` }, { status: 502 });
+        return NextResponse.json({ test: true, sentTo: actor, usedPayslipOf: name }, { status: 200 });
+      }
+      return NextResponse.json({ error: 'No payslip PDF found for this period to test with — finalize a period that has generated payslips first.' }, { status: 404 });
+    }
 
     const results: { email: string; status: 'sent' | 'error'; error?: string }[] = [];
 

@@ -130,6 +130,21 @@ export default function PayrollV3Page() {
     finally { setBusy(''); }
   };
 
+  const sendTest = async () => {
+    if (!window.confirm(`Send a TEST payslip to your own email only? No staff will receive anything — this just lets you check the email + PDF.`)) return;
+    setBusy('Test'); setMsg(null);
+    try {
+      const tok = (await supabase.auth.getSession()).data.session?.access_token;
+      const res = await fetch(`/api/payroll/send-payslips?year=${year}&month=${month}&test=1`, {
+        method: 'POST', headers: tok ? { Authorization: `Bearer ${tok}` } : {},
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || 'Test send failed');
+      setMsg({ kind: 'ok', text: `Test sent to ${json.sentTo} (using ${json.usedPayslipOf}'s payslip). Check your inbox.` });
+    } catch (e) { setMsg({ kind: 'err', text: e instanceof Error ? e.message : String(e) }); }
+    finally { setBusy(''); }
+  };
+
   const prevMonth = () => { const d = new Date(year, month - 2, 1); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); };
   const nextMonth = () => { const d = new Date(year, month, 1); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); };
 
@@ -268,6 +283,9 @@ export default function PayrollV3Page() {
               </button>
             </>
           )}
+          <button onClick={sendTest} disabled={!!busy} title="Sends one payslip to your own email so you can check it before emailing staff." className="rounded-md border border-blue-300 px-3 py-2 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50">
+            {busy === 'Test' ? 'Sending test…' : 'Send test to my email'}
+          </button>
           <button onClick={refresh} className="ml-auto rounded-md border px-3 py-2 text-sm hover:bg-gray-50">Refresh</button>
         </div>
         <p className="mt-2 text-xs text-gray-500">
