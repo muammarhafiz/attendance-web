@@ -13,6 +13,8 @@ const supabaseAdmin = createClient(
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const money = (x: unknown) => `RM ${Number(x ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const safe = (s: string) => s.replace(/[^\w\-]+/g, '_');
+// Office copy: every payslip email is CC'd here for the workshop's records.
+const CC_COPY = 'zordaqputrajaya@gmail.com';
 
 type SummaryRow = { staff_name: string | null; staff_email: string; net_pay: string | number };
 
@@ -79,6 +81,7 @@ export async function POST(req: Request) {
             token: notifyToken,
             action: 'sendMail',
             to: actor,
+            cc: CC_COPY,
             subject: `[TEST] Payslip — ${monthLabel}`,
             body,
             filename: `TEST_Payslip_${safe(name)}_${basePath}.pdf`,
@@ -112,6 +115,7 @@ export async function POST(req: Request) {
             token: notifyToken,
             action: 'sendMail',
             to: email,
+            cc: CC_COPY,
             subject: `Payslip — ${monthLabel}`,
             body,
             filename: `Payslip_${safe(name)}_${basePath}.pdf`,
