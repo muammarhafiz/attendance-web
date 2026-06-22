@@ -22,6 +22,9 @@ export default function CashCountPage() {
   const [qrIn, setQrIn] = useState<number | null>(null);
   const [cardIn, setCardIn] = useState<number | null>(null);
   const [transferIn, setTransferIn] = useState<number | null>(null);
+  const [cardActual, setCardActual] = useState<number | null>(null);
+  const [qrActual, setQrActual] = useState<number | null>(null);
+  const [transferActual, setTransferActual] = useState<number | null>(null);
   const [cashSyncing, setCashSyncing] = useState(true);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -33,13 +36,14 @@ export default function CashCountPage() {
   // load today's CASH-in figure; trigger a fresh sync since counting happens after hours
   const loadCashIn = useCallback(async () => {
     const { data } = await supabase.from('niagawan_cash_daily').select('cash_in,cash_out,qr_in,card_in,transfer_in,updated_at').eq('day', today).maybeSingle();
-    if (data && data.cash_in != null) {
-      setCashIn(Number(data.cash_in));
+    if (data) {
+      // load every figure that's present — card/QR/transfer must not depend on cash being there
+      setCashIn(data.cash_in == null ? null : Number(data.cash_in));
       setCashOut(data.cash_out == null ? 0 : Number(data.cash_out));
       setQrIn(data.qr_in == null ? null : Number(data.qr_in));
       setCardIn(data.card_in == null ? null : Number(data.card_in));
       setTransferIn(data.transfer_in == null ? null : Number(data.transfer_in));
-      setCashSyncing(false);
+      if (data.cash_in != null) setCashSyncing(false); // stop the cash spinner only once cash itself is in
     }
   }, [today]);
 
@@ -84,9 +88,18 @@ export default function CashCountPage() {
       const { data: ok } = await supabase.rpc('can_access', { p_feature: 'workshop' });
       setAllowed(ok === true);
       if (ok !== true) return;
+      // fresh start for this day — also clears yesterday's numbers if the day rolled over while the page was left open
+      setSaved(false); setStep(0);
+      setCounts({}); setCardActual(null); setQrActual(null); setTransferActual(null);
+      setCashIn(null); setCashOut(null); setQrIn(null); setCardIn(null); setTransferIn(null);
       // load any existing count for today
       const { data: existing } = await supabase.from('niagawan_cash_count').select('*').eq('day', today).maybeSingle();
-      if (existing) setCounts({ 100: existing.n100, 50: existing.n50, 20: existing.n20, 10: existing.n10, 5: existing.n5, 1: existing.n1 });
+      if (existing) {
+        setCounts({ 100: existing.n100, 50: existing.n50, 20: existing.n20, 10: existing.n10, 5: existing.n5, 1: existing.n1 });
+        setCardActual(existing.card_counted == null ? null : Number(existing.card_counted));
+        setQrActual(existing.qr_counted == null ? null : Number(existing.qr_counted));
+        setTransferActual(existing.transfer_counted == null ? null : Number(existing.transfer_counted));
+      }
       await loadHistory();
       // ask the NAS to refresh today's cash book, then poll for it
       await syncCash();
@@ -102,11 +115,12 @@ export default function CashCountPage() {
     const { error } = await supabase.rpc('save_cash_count', {
       p_day: today, p_100: counts[100] || 0, p_50: counts[50] || 0, p_20: counts[20] || 0,
       p_10: counts[10] || 0, p_5: counts[5] || 0, p_1: counts[1] || 0,
+      p_card: cardActual, p_qr: qrActual, p_transfer: transferActual,
     });
     if (error) { setErr(error.message); return; }
     setSaved(true);
     loadHistory();
-  }, [counts, today, loadHistory]);
+  }, [counts, today, loadHistory, cardActual, qrActual, transferActual]);
 
   if (authed === null || (authed && allowed === null)) return <div className="p-6 text-sm text-gray-500">Checking…</div>;
   if (!authed) return <div className="p-6 text-sm text-gray-600">Please sign in first.</div>;
@@ -114,6 +128,18 @@ export default function CashCountPage() {
 
   const net = cashIn == null ? null : cashIn - (cashOut ?? 0);
   const variance = net == null ? null : total - net;
+  const cardVar = cardActual == null || cardIn == null ? null : cardActual - cardIn;
+  const qrVar = qrActual == null || qrIn == null ? null : qrActual - qrIn;
+  const transferVar = transferActual == null || transferIn == null ? null : transferActual - transferIn;
+  const computedVars = [variance, cardVar, qrVar, transferVar].filter((v): v is number => v != null);
+  const anyMismatch = computedVars.some((v) => Math.abs(v) >= 0.01);
+  // something was counted/entered but had no Niagawan figure to compare against
+  const anyUnreconciled =
+    (total > 0 && net == null) ||
+    (cardActual != null && cardIn == null) ||
+    (qrActual != null && qrIn == null) ||
+    (transferActual != null && transferIn == null);
+  const savedEmoji = anyMismatch || anyUnreconciled ? '⚠️' : computedVars.length > 0 ? '✅' : '💾';
   const isSummary = step >= DENOMS.length;
 
   return (
@@ -143,8 +169,9 @@ export default function CashCountPage() {
 
       {saved ? (
         <div className="mt-8 text-center">
-          <div className="text-6xl">{variance === 0 ? '✅' : '⚠️'}</div>
+          <div className="text-6xl">{savedEmoji}</div>
           <h2 className="mt-3 text-xl font-bold text-gray-900">Saved</h2>
+          {anyUnreconciled && <p className="mt-1 text-xs text-amber-600">Some figures had no Niagawan total to compare yet.</p>}
           <div className="mt-4 space-y-1 rounded-xl border border-gray-200 bg-white p-4 text-left text-sm">
             <Row label="Counted cash" value={rm(total)} bold />
             <Row label="Niagawan cash (in − out)" value={net == null ? '—' : rm(net)} />
@@ -152,6 +179,13 @@ export default function CashCountPage() {
             <div className="mt-1 border-t border-gray-100 pt-2">
               <VarianceRow variance={variance} />
             </div>
+            {(cardActual != null || qrActual != null || transferActual != null) && (
+              <div className="mt-2 space-y-1 border-t border-gray-100 pt-2">
+                {cardActual != null && <SavedMethodRow label="Card" actual={cardActual} niagawan={cardIn} variance={cardVar} />}
+                {qrActual != null && <SavedMethodRow label="QR" actual={qrActual} niagawan={qrIn} variance={qrVar} />}
+                {transferActual != null && <SavedMethodRow label="Transfer" actual={transferActual} niagawan={transferIn} variance={transferVar} />}
+              </div>
+            )}
           </div>
           <button onClick={() => { setSaved(false); setStep(0); }} className="mt-6 w-full rounded-xl bg-gray-100 px-6 py-3 text-base font-semibold text-gray-700">Recount</button>
         </div>
@@ -165,7 +199,7 @@ export default function CashCountPage() {
             <div className="mt-5 flex items-center justify-center gap-4">
               <button onClick={() => setCount(DENOMS[step], (counts[DENOMS[step]] || 0) - 1)} className="h-14 w-14 rounded-xl border border-gray-300 text-2xl font-bold text-gray-700">−</button>
               <input type="number" inputMode="numeric" value={counts[DENOMS[step]] ?? 0}
-                onChange={(e) => setCount(DENOMS[step], parseInt(e.target.value || '0', 10))}
+                onChange={(e) => { const n = parseInt(e.target.value || '0', 10); setCount(DENOMS[step], Number.isFinite(n) ? n : 0); }}
                 onFocus={(e) => e.target.select()}
                 className="w-28 rounded-xl border border-gray-300 px-2 py-3 text-center text-3xl font-bold" />
               <button onClick={() => setCount(DENOMS[step], (counts[DENOMS[step]] || 0) + 1)} className="h-14 w-14 rounded-xl border border-gray-300 text-2xl font-bold text-gray-700">+</button>
@@ -199,6 +233,16 @@ export default function CashCountPage() {
             <Row label="Niagawan cash (in − out)" value={cashSyncing && cashIn == null ? 'fetching…' : cashIn == null ? 'not available' : rm(net as number)} />
             {cashIn != null && <div className="text-right text-xs text-gray-400">in {rm(cashIn)} − out {rm(cashOut ?? 0)}</div>}
             <div className="mt-2 border-t border-gray-100 pt-2"><VarianceRow variance={variance} /></div>
+          </div>
+
+          <div className="mt-3 rounded-xl border border-gray-200 bg-white p-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">Card / QR / Transfer — enter actual</div>
+            <p className="mt-1 text-xs text-gray-400">From the card-machine settlement slip / app totals. Leave blank to skip.</p>
+            <div className="mt-2 divide-y divide-gray-100">
+              <MethodRow label="Card" hint="machine total" niagawan={cardIn} actual={cardActual} setActual={setCardActual} variance={cardVar} />
+              <MethodRow label="QR" niagawan={qrIn} actual={qrActual} setActual={setQrActual} variance={qrVar} />
+              <MethodRow label="Transfer" niagawan={transferIn} actual={transferActual} setActual={setTransferActual} variance={transferVar} />
+            </div>
           </div>
 
           {err && <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{err}</div>}
@@ -296,6 +340,42 @@ function VarianceRow({ variance }: { variance: number | null }) {
     <div className={`flex justify-between text-sm font-semibold ${short ? 'text-rose-700' : 'text-amber-700'}`}>
       <span>{short ? '⚠️ SHORT' : '⚠️ OVER'}</span>
       <span>{short ? '−' : '+'}{rm(Math.abs(variance)).replace('RM ', 'RM ')}</span>
+    </div>
+  );
+}
+
+// One non-cash method on the summary step: shows the Niagawan figure, an input for the
+// supervisor's actual (card-machine slip / app total), and the live variance.
+function MethodRow({ label, hint, niagawan, actual, setActual, variance }: {
+  label: string; hint?: string; niagawan: number | null;
+  actual: number | null; setActual: (v: number | null) => void; variance: number | null;
+}) {
+  return (
+    <div className="py-2">
+      <div className="flex items-baseline justify-between">
+        <span className="text-sm font-medium text-gray-700">{label}{hint && <span className="ml-1 text-xs font-normal text-gray-400">({hint})</span>}</span>
+        <span className="text-xs text-gray-400">Niagawan {niagawan == null ? '—' : rm(niagawan)}</span>
+      </div>
+      <div className="mt-1.5 flex items-center gap-2">
+        <input type="number" inputMode="decimal" min={0} step="0.01" placeholder="actual total"
+          value={actual ?? ''}
+          onChange={(e) => { const n = parseFloat(e.target.value); setActual(e.target.value === '' || !Number.isFinite(n) ? null : Math.max(0, n)); }}
+          onFocus={(e) => e.target.select()}
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-right text-base font-semibold" />
+        <div className="w-24 shrink-0 text-right text-sm">{varCell(variance)}</div>
+      </div>
+    </div>
+  );
+}
+
+// Compact one-line non-cash result on the saved screen.
+function SavedMethodRow({ label, actual, niagawan, variance }: {
+  label: string; actual: number; niagawan: number | null; variance: number | null;
+}) {
+  return (
+    <div className="flex items-center justify-between text-sm">
+      <span className="text-gray-600">{label} <span className="text-xs text-gray-400">({rm(actual)} vs {niagawan == null ? '—' : rm(niagawan)})</span></span>
+      <span>{varCell(variance)}</span>
     </div>
   );
 }
