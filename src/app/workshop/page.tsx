@@ -21,6 +21,7 @@ type Card = {
   done_at: string | null;
   archived_at: string | null;
   sale_inv: string | null;
+  sale_id: string | null;
 };
 
 type Memo = { id: number; text: string; created_at: string; active: boolean };
@@ -30,6 +31,7 @@ type Debt = {
   total: number | null; paid: number | null; balance: number | null; status: string | null;
   sale_date: string | null; age_days: number | null;
 };
+type Contact = { phone: string | null; cust_name: string | null };
 
 const COLS: { key: Card['status']; label: string; tint: string; head: string }[] = [
   { key: 'waiting', label: 'Waiting', tint: 'bg-gray-50', head: 'text-gray-600' },
@@ -49,10 +51,22 @@ function ago(iso: string | null) {
 
 const rm = (n: number | null) => `RM${Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+// Turn a Malaysian phone (any format) into a wa.me number: digits only, international, no leading 0/+.
+function waNumber(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  let d = raw.replace(/\D/g, '');
+  if (!d) return null;
+  if (d.startsWith('60')) { /* already international */ }
+  else if (d.startsWith('0')) d = '60' + d.slice(1);
+  else d = '60' + d;
+  return d.length >= 10 && d.length <= 15 ? d : null;
+}
+
 export default function WorkshopBoardPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [canWrite, setCanWrite] = useState<boolean | null>(null); // null = still checking; supervisors/admins only
   const [cards, setCards] = useState<Card[]>([]);
+  const [contacts, setContacts] = useState<Record<string, Contact>>({}); // sale_id -> customer phone/name, for the "car ready" WhatsApp button
   const [memos, setMemos] = useState<Memo[]>([]);
   const [debts, setDebts] = useState<Debt[]>([]);
   const [debtYear, setDebtYear] = useState(''); // '' = default to newest year present; 'all' = every year
@@ -95,6 +109,20 @@ export default function WorkshopBoardPage() {
     else { setCards((c ?? []) as Card[]); setErr(null); }
     setMemos((m ?? []) as Memo[]);
     setDebts((d ?? []) as Debt[]);
+
+    // Customer phones for the "car ready" WhatsApp button (joined to a card by Niagawan sale_id).
+    // RLS lets board writers (admins/Supervisors) read intake_requests; anyone else just gets no button.
+    const saleIds = Array.from(new Set(((c ?? []) as Card[]).map((x) => x.sale_id).filter(Boolean) as string[]));
+    if (saleIds.length) {
+      const { data: ir } = await supabase.from('intake_requests').select('sale_id, phone, cust_name').in('sale_id', saleIds);
+      const map: Record<string, Contact> = {};
+      ((ir ?? []) as { sale_id: string | null; phone: string | null; cust_name: string | null }[]).forEach((r) => {
+        if (r.sale_id) map[r.sale_id] = { phone: r.phone, cust_name: r.cust_name };
+      });
+      setContacts(map);
+    } else {
+      setContacts({});
+    }
   }, []);
 
   // Live board: refresh every 15s so every supervisor PC stays current.
@@ -305,6 +333,16 @@ export default function WorkshopBoardPage() {
                         </>
                       )}
                       {c.status === 'waiting_parts' && <button onClick={() => move(c, 'doing')} className="rounded bg-blue-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-blue-700">Resume</button>}
+                      {c.status === 'done' && (() => {
+                        const num = waNumber(c.sale_id ? contacts[c.sale_id]?.phone : null);
+                        if (!num) return null;
+                        const name = c.customer || (c.sale_id ? contacts[c.sale_id]?.cust_name : null) || 'there';
+                        const veh = [c.vehicle, c.plate].filter(Boolean).join(' ');
+                        const text = encodeURIComponent(`Hi ${name}, your ${veh} is ready for collection at ZORDAQ Auto Services. Thank you!`);
+                        return (
+                          <a href={`https://wa.me/${num}?text=${text}`} target="_blank" rel="noopener noreferrer" className="rounded bg-green-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-green-700" title="Send the customer a 'car ready' WhatsApp message">📲 WhatsApp</a>
+                        );
+                      })()}
                       {c.status === 'done' && canWrite && <button onClick={() => archive(c)} className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-50" title="Remove from the board (kept in history)">Clear</button>}
                       {c.status !== 'done' && canWrite && <button onClick={() => removeCard(c)} className="rounded border border-gray-200 px-1.5 py-0.5 text-xs text-gray-400 hover:bg-rose-50 hover:text-rose-600" title="Remove from the board — for a cancelled / mistaken check-in (kept in history)">✕</button>}
                     </span>
