@@ -62,6 +62,18 @@ function waNumber(raw: string | null | undefined): string | null {
   return d.length >= 10 && d.length <= 15 ? d : null;
 }
 
+// Pre-filled WhatsApp message for a card, matched to its board status (so we never claim
+// "ready" on a car that isn't done). Wording is intentionally simple — easy to adjust.
+function waCardText(status: Card['status'], name: string, veh: string): string {
+  const msg: Record<Card['status'], string> = {
+    waiting: `Hi ${name}, we've received your ${veh} at ZORDAQ Auto Services. We'll keep you updated.`,
+    doing: `Hi ${name}, your ${veh} is being worked on at ZORDAQ Auto Services. We'll let you know once it's ready.`,
+    waiting_parts: `Hi ${name}, your ${veh} is waiting for parts at ZORDAQ Auto Services. We'll update you soon.`,
+    done: `Hi ${name}, your ${veh} is ready for collection at ZORDAQ Auto Services. Thank you!`,
+  };
+  return msg[status];
+}
+
 export default function WorkshopBoardPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [canWrite, setCanWrite] = useState<boolean | null>(null); // null = still checking; supervisors/admins only
@@ -333,14 +345,14 @@ export default function WorkshopBoardPage() {
                         </>
                       )}
                       {c.status === 'waiting_parts' && <button onClick={() => move(c, 'doing')} className="rounded bg-blue-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-blue-700">Resume</button>}
-                      {c.status === 'done' && (() => {
+                      {(() => {
                         const num = waNumber(c.sale_id ? contacts[c.sale_id]?.phone : null);
                         if (!num) return null;
                         const name = c.customer || (c.sale_id ? contacts[c.sale_id]?.cust_name : null) || 'there';
                         const veh = [c.vehicle, c.plate].filter(Boolean).join(' ');
-                        const text = encodeURIComponent(`Hi ${name}, your ${veh} is ready for collection at ZORDAQ Auto Services. Thank you!`);
+                        const text = encodeURIComponent(waCardText(c.status, name, veh));
                         return (
-                          <a href={`https://wa.me/${num}?text=${text}`} target="_blank" rel="noopener noreferrer" className="rounded bg-green-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-green-700" title="Send the customer a 'car ready' WhatsApp message">📲 WhatsApp</a>
+                          <a href={`https://wa.me/${num}?text=${text}`} target="_blank" rel="noopener noreferrer" className="rounded bg-green-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-green-700" title="Message the customer on WhatsApp">📲 WhatsApp</a>
                         );
                       })()}
                       {c.status === 'done' && canWrite && <button onClick={() => archive(c)} className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-50" title="Remove from the board (kept in history)">Clear</button>}
