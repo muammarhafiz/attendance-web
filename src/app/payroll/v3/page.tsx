@@ -56,6 +56,7 @@ export default function PayrollV3Page() {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<string>('');
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [divisor, setDivisor] = useState<string>('26'); // unpaid-leave daily-rate divisor (26 or 25)
 
   useEffect(() => {
     (async () => {
@@ -84,6 +85,13 @@ export default function PayrollV3Page() {
 
   useEffect(() => { if (isAdmin) refresh(); }, [isAdmin, refresh]);
 
+  // Unpaid-leave daily-rate divisor — a global payroll setting (default 26 = EA-1955 ordinary rate of pay).
+  useEffect(() => {
+    if (!isAdmin) return;
+    supabase.schema('pay_v2').from('payroll_settings').select('value').eq('key', 'unpaid_divisor').maybeSingle()
+      .then(({ data }) => { const v = (data as { value?: string } | null)?.value; if (v) setDivisor(String(v)); });
+  }, [isAdmin]);
+
   const run = async (label: string, fn: () => Promise<{ error: { message: string } | null }>) => {
     setBusy(label); setMsg(null);
     const { error } = await fn();
@@ -95,6 +103,16 @@ export default function PayrollV3Page() {
   const generate = () => run('Generate', () => payRpc('build_period', { p_year: year, p_month: month }));
   const lock = () => run('Lock', () => payRpc('lock_period', { p_year: year, p_month: month }));
   const unlock = () => run('Unlock', () => payRpc('unlock_period', { p_year: year, p_month: month }));
+
+  // Switch the unpaid-leave daily-rate divisor (26 = EA-1955 standard, or 25). Re-Generate to apply.
+  const setUnpaidDivisor = async (v: '26' | '25') => {
+    if (v === divisor) return;
+    setDivisor(v);
+    const { error } = await supabase.schema('pay_v2').from('payroll_settings')
+      .update({ value: v, updated_at: new Date().toISOString() }).eq('key', 'unpaid_divisor');
+    if (error) { setDivisor(divisor); setMsg({ kind: 'err', text: `Couldn't save: ${error.message}` }); }
+    else setMsg({ kind: 'ok', text: `Unpaid-leave daily rate set to monthly ÷ ${v}. Re-Generate the month to apply it.` });
+  };
 
   const finalize = async () => {
     setBusy('Finalize'); setMsg(null);
@@ -292,6 +310,16 @@ export default function PayrollV3Page() {
           <b>Generate</b> pulls each person&apos;s base salary, this month&apos;s unpaid leave (from attendance absences), recurring items &amp; statutory deductions.
           Edit anyone via <b>Details</b>, then <b>Finalize</b> to produce payslip PDFs (and lock the month). Past payslips live under <b>Payroll Records</b>.
         </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3">
+          <span className="text-xs font-medium text-gray-700">Unpaid-leave daily rate</span>
+          {(['26', '25'] as const).map((d) => (
+            <button key={d} onClick={() => setUnpaidDivisor(d)} disabled={!!busy}
+              className={`rounded-md border px-2.5 py-1 text-xs font-semibold transition disabled:opacity-50 ${divisor === d ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
+              ÷{d}
+            </button>
+          ))}
+          <span className="text-[11px] text-gray-400">monthly salary ÷ {divisor} per day{divisor === '26' ? ' · EA-1955 standard' : ''} · re-Generate to apply</span>
+        </div>
         {msg && <div className={`mt-2 rounded-md border p-2 text-sm ${msg.kind === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>{msg.text}</div>}
       </div>
 
