@@ -1,6 +1,6 @@
 // src/app/workshop/page.tsx — the workshop job board.
 // Every signed-in staff PC shows this: cars in the shop as cards moving through
-// Waiting -> In progress -> Waiting parts -> Done, plus memos for everyone.
+// Pending Job -> Done, plus memos for everyone.
 // Supervisors/admins create cards + memos; anyone can move a card's status.
 'use client';
 
@@ -33,10 +33,8 @@ type Debt = {
 };
 type Contact = { phone: string | null; cust_name: string | null };
 
-const COLS: { key: Card['status']; label: string; tint: string; head: string }[] = [
-  { key: 'waiting', label: 'Waiting', tint: 'bg-gray-50', head: 'text-gray-600' },
-  { key: 'doing', label: 'In progress', tint: 'bg-blue-50/60', head: 'text-blue-700' },
-  { key: 'waiting_parts', label: 'Waiting parts', tint: 'bg-amber-50/70', head: 'text-amber-700' },
+const COLS: { key: 'pending' | 'done'; label: string; tint: string; head: string }[] = [
+  { key: 'pending', label: 'Pending Job', tint: 'bg-gray-50', head: 'text-gray-600' },
   { key: 'done', label: 'Done', tint: 'bg-emerald-50/60', head: 'text-emerald-700' },
 ];
 
@@ -213,24 +211,25 @@ export default function WorkshopBoardPage() {
   }, [load]);
 
   const byCol = useMemo(() => {
-    const map: Record<string, Card[]> = { waiting: [], doing: [], waiting_parts: [], done: [] };
+    const map: Record<'pending' | 'done', Card[]> = { pending: [], done: [] };
     const todayStr = new Date().toDateString();
     const debtInvs = new Set(debts.map((d) => d.sale_inv_no).filter(Boolean) as string[]);
     const debtToks = debts.map((d) => (d.ptoken || '').toUpperCase()).filter(Boolean);
     const norm = (s: string | null) => (s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     for (const c of cards) {
-      // Done shows only TODAY's completed cars (older ones stay in the data but don't clutter the board).
       if (c.status === 'done') {
+        // Done shows only TODAY's completed cars (older ones stay in the data but don't clutter the board).
         const when = c.done_at ?? c.created_at;
         if (when && new Date(when).toDateString() !== todayStr) continue;
-      }
-      // An aged unpaid/partial bill (>7 days) belongs in the Debts section, not Waiting.
-      if (c.status === 'waiting') {
+        map.done.push(c);
+      } else {
+        // Everything not done is a Pending Job. An aged unpaid/partial bill (>7 days) belongs in
+        // the Debts section instead, so it doesn't clutter the board.
         const np = norm(c.plate), nv = norm(c.vehicle);
         const isDebt = (c.sale_inv != null && debtInvs.has(c.sale_inv)) || debtToks.some((t) => (np && np.includes(t)) || (nv && nv.includes(t)));
         if (isDebt) continue;
+        map.pending.push(c);
       }
-      (map[c.status] ?? map.waiting).push(c);
     }
     return map;
   }, [cards, debts]);
@@ -252,7 +251,7 @@ export default function WorkshopBoardPage() {
     <div className="mx-auto max-w-7xl px-4 py-5">
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold text-gray-900">Workshop</h1>
-        <span className="text-sm text-gray-400">{byCol.waiting.length + byCol.doing.length + byCol.waiting_parts.length} car(s) in the shop</span>
+        <span className="text-sm text-gray-400">{byCol.pending.length} car(s) in the shop</span>
         <span className="ml-auto flex gap-2">
           <button onClick={refreshAll} className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">🔄 Refresh</button>
           <a href="/add-part" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-700 hover:bg-amber-100">🔩 Part arrived</a>
@@ -314,7 +313,7 @@ export default function WorkshopBoardPage() {
       {err && <div className="mb-3 rounded-md border border-rose-200 bg-rose-50 p-2 text-sm text-rose-700">{err}</div>}
 
       {/* The board */}
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         {COLS.map((col) => (
           <div key={col.key} className={`rounded-lg border border-gray-200 ${col.tint} p-2`}>
             <div className={`mb-2 flex items-center justify-between px-1 text-sm font-semibold ${col.head}`}>
@@ -328,7 +327,7 @@ export default function WorkshopBoardPage() {
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="font-mono text-sm font-bold text-gray-900">{c.plate}</span>
                     <span className="text-[11px] text-gray-400" title={`created ${new Date(c.created_at).toLocaleString('en-MY')}`}>
-                      {c.status === 'done' ? `done ${ago(c.done_at)}` : c.status === 'waiting' ? `waiting ${ago(c.created_at)}` : ago(c.started_at ?? c.created_at)}
+                      {c.status === 'done' ? `done ${ago(c.done_at)}` : ago(c.created_at)}
                     </span>
                   </div>
                   {c.vehicle && <div className="text-xs text-gray-600">{c.vehicle}</div>}
@@ -337,20 +336,13 @@ export default function WorkshopBoardPage() {
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                     {c.mechanic && <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">{c.mechanic}</span>}
                     <span className="ml-auto flex gap-1">
-                      {c.status === 'waiting' && <button onClick={() => move(c, 'doing')} className="rounded bg-blue-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-blue-700">Start</button>}
-                      {c.status === 'doing' && (
-                        <>
-                          <button onClick={() => move(c, 'waiting_parts')} className="rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-100">Waiting parts</button>
-                          <button onClick={() => move(c, 'done')} className="rounded bg-emerald-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-emerald-700">Done</button>
-                        </>
-                      )}
-                      {c.status === 'waiting_parts' && <button onClick={() => move(c, 'doing')} className="rounded bg-blue-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-blue-700">Resume</button>}
+                      {c.status !== 'done' && <button onClick={() => move(c, 'done')} className="rounded bg-emerald-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-emerald-700">Done</button>}
                       {(() => {
                         const num = waNumber(c.sale_id ? contacts[c.sale_id]?.phone : null);
                         if (!num) return null;
                         const name = c.customer || (c.sale_id ? contacts[c.sale_id]?.cust_name : null) || 'there';
                         const veh = [c.vehicle, c.plate].filter(Boolean).join(' ');
-                        const text = encodeURIComponent(waCardText(c.status, name, veh));
+                        const text = encodeURIComponent(waCardText(c.status === 'done' ? 'done' : 'waiting', name, veh));
                         return (
                           <a href={`https://wa.me/${num}?text=${text}`} target="_blank" rel="noopener noreferrer" className="rounded bg-green-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-green-700" title="Message the customer on WhatsApp">📲 WhatsApp</a>
                         );
@@ -398,7 +390,7 @@ export default function WorkshopBoardPage() {
       )}
 
       <p className="mt-3 text-xs text-gray-400">
-        Supervisors add job cards and memos. Anyone can move a card: Start → Done (or Waiting parts when stuck). The board refreshes itself every 15 seconds on every PC.
+        Supervisors add job cards and memos. Anyone can mark a car Done when it&apos;s ready. The board refreshes itself every 15 seconds on every PC.
       </p>
     </div>
   );
