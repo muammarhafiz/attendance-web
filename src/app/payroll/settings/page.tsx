@@ -25,6 +25,10 @@ type ItemType = {
   enabled: boolean;
   sort_order: number;
   archived_at: string | null;
+  law_epf?: string | null;
+  law_socso?: string | null;
+  law_eis?: string | null;
+  law_note?: string | null;
 };
 
 const CATEGORIES: { key: string; label: string }[] = [
@@ -65,6 +69,29 @@ function StatDots({ it }: { it: ItemType }) {
   );
 }
 const Tick = ({ on }: { on: boolean }) => <span className={on ? 'text-emerald-600' : 'text-gray-300'}>{on ? '✓' : '—'}</span>;
+
+function LawBadge({ label, val }: { label: string; val?: string | null }) {
+  if (!val) return null;
+  const bg = val === 'YES' ? '#16a34a' : val === 'DEPENDS' ? '#d97706' : '#e2e8f0';
+  const fg = val === 'NO' ? '#64748b' : '#fff';
+  return <span className="inline-block rounded px-1 text-[9px] font-bold leading-4" style={{ background: bg, color: fg }} title={`${label} ${val}`}>{label}</span>;
+}
+// "By law": the standard EPF/SOCSO/EIS treatment (KWSP/PERKESO). ⚠ = law says subject but the flag is off.
+function LawCell({ it }: { it: ItemType }) {
+  if (it.kind !== 'EARN' || (!it.law_epf && !it.law_socso && !it.law_eis)) return <span className="text-gray-300">—</span>;
+  const gap =
+    (it.law_epf === 'YES' && !it.stat_epf) ||
+    (it.law_socso === 'YES' && !it.stat_socso) ||
+    (it.law_eis === 'YES' && !it.stat_eis);
+  return (
+    <span className="inline-flex items-center gap-1" title={it.law_note || ''}>
+      <LawBadge label="EPF" val={it.law_epf} />
+      <LawBadge label="SOC" val={it.law_socso} />
+      <LawBadge label="EIS" val={it.law_eis} />
+      {gap && <span title="Law says subject, but currently not charged" className="text-amber-600">⚠</span>}
+    </span>
+  );
+}
 
 export default function PayrollSettingsPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -173,14 +200,15 @@ export default function PayrollSettingsPage() {
           return (
             <section key={c.key} className="mb-6 overflow-x-auto rounded-lg border border-gray-200">
               <div className="border-b bg-gray-50 px-3 py-2 text-xs font-bold uppercase tracking-wide text-gray-600">{c.label}</div>
-              <table className="w-full min-w-[860px] border-collapse text-sm">
+              <table className="w-full min-w-[980px] border-collapse text-sm">
                 <thead className="bg-white text-left text-xs uppercase tracking-wide text-gray-400">
                   <tr>
                     <th className="px-3 py-2 font-medium">Name</th>
                     <th className="px-3 py-2 text-center font-medium">Per unit</th>
                     <th className="px-3 py-2 text-center font-medium">Gross</th>
                     <th className="px-3 py-2 text-center font-medium">Net</th>
-                    <th className="px-3 py-2 text-center font-medium">Statutory</th>
+                    <th className="px-3 py-2 text-center font-medium">Statutory (set)</th>
+                    <th className="px-3 py-2 text-center font-medium">By law</th>
                     <th className="px-3 py-2 text-right font-medium">PCB exempt.</th>
                     <th className="px-3 py-2 font-medium">EA field</th>
                     <th className="px-3 py-2 text-center font-medium">Enabled</th>
@@ -200,6 +228,7 @@ export default function PayrollSettingsPage() {
                       <td className="px-3 py-2 text-center"><Tick on={it.in_gross} /></td>
                       <td className="px-3 py-2 text-center"><Tick on={it.in_net} /></td>
                       <td className="px-3 py-2 text-center"><StatDots it={it} /></td>
+                      <td className="px-3 py-2 text-center"><LawCell it={it} /></td>
                       <td className="px-3 py-2 text-right tabular-nums text-gray-600">{Number(it.pcb_exemption_limit) ? Number(it.pcb_exemption_limit).toLocaleString('en-MY') : '—'}</td>
                       <td className="px-3 py-2 text-gray-600">{it.ea_field}</td>
                       <td className="px-3 py-2 text-center">
@@ -222,9 +251,11 @@ export default function PayrollSettingsPage() {
       )}
 
       <p className="mt-2 text-xs text-gray-400">
-        Statutory dots: <span className="font-semibold text-amber-600">EPF</span> · <span className="font-semibold text-rose-600">SOCSO</span> ·
+        <b>Statutory (set)</b> = your dots: <span className="font-semibold text-amber-600">EPF</span> · <span className="font-semibold text-rose-600">SOCSO</span> ·
         {' '}<span className="font-semibold text-sky-600">EIS</span> · <span className="font-semibold text-emerald-600">HRDF</span>.
-        PCB-exemption &amp; EA-field are stored for the future PCB / EA-form features and don&apos;t affect pay yet.
+        <br /><b>By law</b> = the standard KWSP/PERKESO treatment (<span className="font-semibold text-green-700">YES</span> / <span className="font-semibold text-amber-600">DEPENDS</span> / <span className="font-semibold text-slate-400">NO</span>);
+        {' '}<span className="text-amber-600">⚠</span> means the law treats it as subject but it&apos;s currently switched off. Final classification depends on how a payment is structured — confirm with your accountant.
+        <br />PCB-exemption &amp; EA-field are stored for the future PCB / EA-form features and don&apos;t affect pay yet.
       </p>
 
       {/* Add / Edit modal */}
