@@ -29,6 +29,7 @@ type ItemType = {
   law_socso?: string | null;
   law_eis?: string | null;
   law_note?: string | null;
+  law_deduct?: string | null; // EA 1955 s.24 status for deduction items: ALLOWED | CONDITIONS | NOT_ALLOWED
 };
 
 const CATEGORIES: { key: string; label: string }[] = [
@@ -76,8 +77,19 @@ function LawBadge({ label, val }: { label: string; val?: string | null }) {
   const fg = val === 'NO' ? '#64748b' : '#fff';
   return <span className="inline-block rounded px-1 text-[9px] font-bold leading-4" style={{ background: bg, color: fg }} title={`${label} ${val}`}>{label}</span>;
 }
-// "By law": the standard EPF/SOCSO/EIS treatment (KWSP/PERKESO). ⚠ = law says subject but the flag is off.
+// EA 1955 s.24 status badge for deduction items.
+const DEDUCT_LAW: Record<string, { bg: string; label: string }> = {
+  ALLOWED: { bg: '#16a34a', label: 'EA §24 ✓' },
+  CONDITIONS: { bg: '#d97706', label: 'EA §24 ⚠' },
+  NOT_ALLOWED: { bg: '#dc2626', label: 'EA §24 ✕' },
+};
+// "By law": earnings → EPF/SOCSO/EIS treatment (KWSP/PERKESO); deductions → EA 1955 s.24 status.
 function LawCell({ it }: { it: ItemType }) {
+  if (it.kind === 'DEDUCT') {
+    const d = it.law_deduct ? DEDUCT_LAW[it.law_deduct] : null;
+    if (!d) return <span className="text-gray-300">—</span>;
+    return <span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-bold text-white" style={{ background: d.bg }} title={it.law_note || ''}>{d.label}</span>;
+  }
   if (it.kind !== 'EARN' || (!it.law_epf && !it.law_socso && !it.law_eis)) return <span className="text-gray-300">—</span>;
   const gap =
     (it.law_epf === 'YES' && !it.stat_epf) ||
@@ -255,6 +267,7 @@ export default function PayrollSettingsPage() {
         {' '}<span className="font-semibold text-sky-600">EIS</span> · <span className="font-semibold text-emerald-600">HRDF</span>.
         <br /><b>By law</b> = the standard KWSP/PERKESO treatment (<span className="font-semibold text-green-700">YES</span> / <span className="font-semibold text-amber-600">DEPENDS</span> / <span className="font-semibold text-slate-400">NO</span>);
         {' '}<span className="text-amber-600">⚠</span> means the law treats it as subject but it&apos;s currently switched off. Final classification depends on how a payment is structured — confirm with your accountant.
+        <br />For <b>deductions</b>, By law shows the <b>Employment Act 1955 §24</b> status: <span className="font-semibold text-green-700">✓ allowed</span> / <span className="font-semibold text-amber-600">⚠ conditions</span> / <span className="font-semibold text-red-600">✕ not a lawful deduction</span> (hover for the rule).
         <br />PCB-exemption &amp; EA-field are stored for the future PCB / EA-form features and don&apos;t affect pay yet.
       </p>
 
