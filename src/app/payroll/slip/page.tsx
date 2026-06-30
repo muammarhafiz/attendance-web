@@ -104,6 +104,41 @@ function SlipRow({ label, amount, bold, small }: { label: string; amount: string
   );
 }
 
+/* Earnings/Deductions table (clean, "finished" look) */
+const NAVY = '#1e3a8a';
+function MoneyTable({ children }: { children: React.ReactNode }) {
+  const th: React.CSSProperties = { textAlign: 'left', fontSize: 8.5, textTransform: 'uppercase', letterSpacing: 0.5, color: '#94a3b8', borderBottom: `1.5px solid ${NAVY}`, padding: '0 7px 5px', fontWeight: 700 };
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+      <thead>
+        <tr>
+          <th style={th}>Description</th>
+          <th style={{ ...th, textAlign: 'right' }}>Amount (RM)</th>
+        </tr>
+      </thead>
+      <tbody>{children}</tbody>
+    </table>
+  );
+}
+function TRow({ label, amount }: { label: string; amount: string }) {
+  const td: React.CSSProperties = { padding: '5px 7px', borderBottom: '1px solid #eef1f5', color: '#0f172a' };
+  return (
+    <tr>
+      <td style={td}>{label}</td>
+      <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{amount}</td>
+    </tr>
+  );
+}
+function TSub({ label, amount }: { label: string; amount: string }) {
+  const td: React.CSSProperties = { padding: '6px 7px 0', borderTop: '1.5px solid #cbd5e1', color: NAVY, fontWeight: 800 };
+  return (
+    <tr>
+      <td style={td}>{label}</td>
+      <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{amount}</td>
+    </tr>
+  );
+}
+
 function isPlumbingCode(code?: string | null) {
   const c = (code || '').toUpperCase();
   return c === 'UNPAID_ADJ' || c === 'UNPAID_EXTRA' || c === 'UNPAID';
@@ -425,10 +460,12 @@ export default function PayslipPage() {
   margin: 0;
 }
 .h2{
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 10.5px;
+  font-weight: 800;
   margin: 0 0 6px 0;
-  color:#374151;
+  color:#1e3a8a;
+  text-transform: uppercase;
+  letter-spacing: .7px;
 }
 
 .hr{
@@ -559,17 +596,19 @@ export default function PayslipPage() {
         <div id="a5-inner">
           {/* scaled content */}
           <div id="payslip-content" className="card">
-            {/* Letterhead */}
-            <div style={{ background: '#1e3a8a', borderRadius: 8, padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            {/* Letterhead — matches the website header: emblem + "Zordaq Auto Services" */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, paddingBottom: 11, borderBottom: '2px solid #1e3a8a' }}>
+              <div style={{ display: 'flex', gap: 11, alignItems: 'center' }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/zordaq-auto.png" alt="ZORDAQ Auto Services" style={{ height: 40, width: 'auto', background: '#fff', borderRadius: 6, padding: 3 }} />
+                <img src="/zordaq-auto-slim.png" alt="ZORDAQ Auto Services" style={{ height: 46, width: 'auto' }} />
                 <div>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>Zordaq Auto Services</div>
-                  <div style={{ fontSize: 11, color: '#c7d2fe' }}>Co. Reg. KT0429873-U</div>
+                  <div style={{ fontSize: 18, color: '#0f172a', lineHeight: 1.05 }}>
+                    <span style={{ fontWeight: 600 }}>Zordaq</span> <span style={{ fontWeight: 800 }}>Auto Services</span>
+                  </div>
+                  <div style={{ fontSize: 10, color: '#64748b', marginTop: 4 }}>Co. Reg. KT0429673-U</div>
                 </div>
               </div>
-              <div style={{ textAlign: 'right', fontSize: 10, color: '#c7d2fe', lineHeight: 1.5 }}>
+              <div style={{ textAlign: 'right', fontSize: 9.5, color: '#475569', lineHeight: 1.6 }}>
                 No. 1, Jalan Industri Putra 1, Presint 14<br />62050 Putrajaya, Malaysia<br />017-933 3995 · zordaqputrajaya@gmail.com
               </div>
             </div>
@@ -596,26 +635,26 @@ export default function PayslipPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
               <div>
                 <div className="h2">Earnings</div>
-                <div style={{ fontSize: 11.5 }}>
-                  <SlipRow label="Basic salary" amount={cur(base)} />
+                <MoneyTable>
+                  <TRow label="Basic salary" amount={cur(base)} />
                   {manualEarn.map((it) => (
-                    <SlipRow key={it.id} label={it.label || it.code || '—'} amount={cur(it.amount)} />
+                    <TRow key={it.id} label={it.label || it.code || '—'} amount={cur(it.amount)} />
                   ))}
-                  <SlipRow label="Gross earnings" amount={cur(displayTotalEarn)} bold />
-                </div>
+                  <TSub label="Gross earnings" amount={cur(displayTotalEarn)} />
+                </MoneyTable>
               </div>
               <div>
                 <div className="h2">Deductions</div>
-                <div style={{ fontSize: 11.5 }}>
-                  {unpaidFinal > 0 && <SlipRow label="Unpaid leave" amount={cur(unpaidFinal)} />}
+                <MoneyTable>
+                  {unpaidFinal > 0 && <TRow label="Unpaid leave" amount={cur(unpaidFinal)} />}
                   {manualDeduct.map((it) => (
-                    <SlipRow key={it.id} label={it.label || it.code || '—'} amount={cur(it.amount)} />
+                    <TRow key={it.id} label={it.label || it.code || '—'} amount={cur(it.amount)} />
                   ))}
-                  <SlipRow label="EPF (Employee)" amount={cur(epfEmp)} />
-                  <SlipRow label="SOCSO (Employee)" amount={cur(socsoEmp)} />
-                  <SlipRow label="EIS (Employee)" amount={cur(eisEmp)} />
-                  <SlipRow label="Total deductions" amount={cur(displayTotalDeduct)} bold />
-                </div>
+                  <TRow label="EPF (Employee)" amount={cur(epfEmp)} />
+                  <TRow label="SOCSO + Lindung 24 Jam" amount={cur(socsoEmp)} />
+                  <TRow label="EIS (Employee)" amount={cur(eisEmp)} />
+                  <TSub label="Total deductions" amount={cur(displayTotalDeduct)} />
+                </MoneyTable>
               </div>
             </div>
 
