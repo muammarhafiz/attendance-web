@@ -20,6 +20,7 @@ type Row = {
   eis_er: string | number;
   manual_deduct: string | number;
   net_pay: string | number;
+  earn_breakdown?: { code?: string | null; label?: string | null; amount?: number | string }[] | null;
 };
 
 type PayslipFile = { name: string; url: string };
@@ -33,6 +34,12 @@ const rm = (x: number) =>
   `RM ${x.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const pad2 = (m: number) => String(m).padStart(2, '0');
+
+// Commission portion of a row, read from the view's earn_breakdown jsonb (exact COMM lines).
+const commissionOf = (r: { earn_breakdown?: { code?: string | null; amount?: number | string }[] | null }) =>
+  Array.isArray(r.earn_breakdown)
+    ? r.earn_breakdown.filter((e) => (e.code || '').toUpperCase() === 'COMM').reduce((a, e) => a + n(e.amount), 0)
+    : 0;
 
 function addMonths(d: Date, delta: number) {
   const nd = new Date(d);
@@ -229,9 +236,10 @@ export default function PayrollRecordsPage() {
 
   /* -------------------------------- Totals ------------------------------ */
   const totals = useMemo(() => {
-    const sum = (k: keyof Row) => rows.reduce((a, r) => a + n(r[k]), 0);
+    const sum = (k: Exclude<keyof Row, 'earn_breakdown'>) => rows.reduce((a, r) => a + n(r[k]), 0);
     const gross = sum('total_earn');
     const baseWage = sum('base_wage');
+    const commission = rows.reduce((a, r) => a + commissionOf(r), 0);
     const epfEmp = sum('epf_emp');
     const socsoEmp = sum('socso_emp');
     const eisEmp = sum('eis_emp');
@@ -241,7 +249,7 @@ export default function PayrollRecordsPage() {
     const manual = sum('manual_deduct');
     const net = sum('net_pay');
     const employerCost = gross + epfEr + socsoEr + eisEr;
-    return { gross, baseWage, epfEmp, socsoEmp, eisEmp, epfEr, socsoEr, eisEr, manual, net, employerCost };
+    return { gross, baseWage, commission, epfEmp, socsoEmp, eisEmp, epfEr, socsoEr, eisEr, manual, net, employerCost };
   }, [rows]);
 
   /* ------------------------------- Rendering ---------------------------- */
@@ -420,12 +428,13 @@ export default function PayrollRecordsPage() {
           <div className="text-sm text-gray-500">No data for this period.</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1100px] border-collapse text-sm">
+            <table className="w-full min-w-[1200px] border-collapse text-sm">
               <thead>
                 <tr>
                   <th className="border-b bg-white px-3 py-2 text-left">Employee</th>
                   <th className="border-b bg-white px-3 py-2 text-right">Gross (All EARN)</th>
                   <th className="border-b bg-white px-3 py-2 text-right">Base (Statutory)</th>
+                  <th className="border-b bg-white px-3 py-2 text-right">Commission</th>
                   <th className="border-b bg-rose-50 px-3 py-2 text-center font-semibold text-rose-700" colSpan={4}>
                     Employee Deductions
                   </th>
@@ -439,6 +448,7 @@ export default function PayrollRecordsPage() {
                   <th className="border-b px-3 py-2">Employee</th>
                   <th className="border-b px-3 py-2 text-right">Gross</th>
                   <th className="border-b px-3 py-2 text-right">Base</th>
+                  <th className="border-b px-3 py-2 text-right">Commission</th>
                   <th className="border-b bg-rose-50 px-3 py-2 text-right">EPF (Emp)</th>
                   <th className="border-b bg-rose-50 px-3 py-2 text-right">SOCSO (Emp)</th>
                   <th className="border-b bg-rose-50 px-3 py-2 text-right">EIS (Emp)</th>
@@ -454,6 +464,7 @@ export default function PayrollRecordsPage() {
                 {rows.map((r) => {
                   const gross = n(r.total_earn);
                   const base = n(r.base_wage);
+                  const commission = commissionOf(r);
                   const epfEmp = n(r.epf_emp);
                   const socsoEmp = n(r.socso_emp);
                   const eisEmp = n(r.eis_emp);
@@ -469,6 +480,7 @@ export default function PayrollRecordsPage() {
                       <td className="border-b px-3 py-2">{r.staff_name ?? r.staff_email}</td>
                       <td className="border-b px-3 py-2 text-right">{rm(gross)}</td>
                       <td className="border-b px-3 py-2 text-right">{rm(base)}</td>
+                      <td className="border-b px-3 py-2 text-right">{commission ? rm(commission) : '—'}</td>
                       <td className="border-b bg-rose-50 px-3 py-2 text-right">{rm(epfEmp)}</td>
                       <td className="border-b bg-rose-50 px-3 py-2 text-right">{rm(socsoEmp)}</td>
                       <td className="border-b bg-rose-50 px-3 py-2 text-right">{rm(eisEmp)}</td>
@@ -487,6 +499,7 @@ export default function PayrollRecordsPage() {
                   <td className="border-t px-3 py-2 text-right">Totals:</td>
                   <td className="border-t px-3 py-2 text-right">{rm(totals.gross)}</td>
                   <td className="border-t px-3 py-2 text-right">{rm(totals.baseWage)}</td>
+                  <td className="border-t px-3 py-2 text-right">{rm(totals.commission)}</td>
                   <td className="border-t bg-rose-50 px-3 py-2 text-right">{rm(totals.epfEmp)}</td>
                   <td className="border-t bg-rose-50 px-3 py-2 text-right">{rm(totals.socsoEmp)}</td>
                   <td className="border-t bg-rose-50 px-3 py-2 text-right">{rm(totals.eisEmp)}</td>
