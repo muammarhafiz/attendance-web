@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createClientServer } from '@/lib/supabaseServer';
 // @ts-ignore  // types provided by src/types/pdfkit-standalone.d.ts
 import PDFDocument from 'pdfkit/js/pdfkit.standalone.js';
+import { ZORDAQ_LOGO_DATA_URI } from '@/lib/payslipLogo';
 
 export const runtime = 'nodejs';
 
@@ -78,9 +79,9 @@ async function fetchStaff() {
 }
 
 // keep typing minimal to avoid external type deps
-function makePdfBuffer(build: (doc: any) => void): Promise<Buffer> {
+function makePdfBuffer(build: (doc: any) => void, opts: any = { margin: 36 }): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: 36 });
+    const doc = new PDFDocument(opts);
     const chunks: Buffer[] = [];
     doc.on('data', (c: Buffer) => chunks.push(c));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -148,7 +149,7 @@ function money(x: string | number | null | undefined): string {
 }
 
 const STAT_LABELS: Record<string, string> = {
-  STAT_EMP_EPF: 'EPF (Employee)', STAT_EMP_SOCSO: 'SOCSO (Employee)', STAT_EMP_EIS: 'EIS (Employee)',
+  STAT_EMP_EPF: 'EPF (Employee)', STAT_EMP_SOCSO: 'SOCSO + Lindung 24 Jam', STAT_EMP_EIS: 'EIS (Employee)',
   STAT_ER_EPF: 'EPF (Employer)', STAT_ER_SOCSO: 'SOCSO (Employer)', STAT_ER_EIS: 'EIS (Employer)',
   BASE: 'Basic salary', UNPAID: 'Unpaid leave',
 };
@@ -215,14 +216,19 @@ function payslipPdf(year: number, month: number, staff: any, summaryRow: Row, li
       doc.moveDown(0.3);
     };
 
-    // ---- Navy letterhead band ----
+    // ---- Letterhead — matches the website header: emblem + "Zordaq Auto Services" ----
     const top = doc.y;
-    const headerH = 50;
-    doc.save(); doc.rect(left, top, fullW, headerH).fill(navy); doc.restore();
-    doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(15).text('Zordaq Auto Services', left + 12, top + 10, { width: fullW * 0.55, lineBreak: false });
-    doc.fillColor('#c7d2fe').font('Helvetica').fontSize(8).text('Co. Reg. KT0429873-U', left + 12, top + 30, { lineBreak: false });
-    doc.fillColor('#c7d2fe').font('Helvetica').fontSize(8).text('No. 1, Jalan Industri Putra 1, Presint 14\n62050 Putrajaya, Malaysia\n017-933 3995 · zordaqputrajaya@gmail.com', left, top + 8, { width: fullW - 12, align: 'right' });
-    doc.y = top + headerH + 14;
+    const logoH = 34;
+    const logoW = logoH * (134 / 220); // preserve slim-emblem aspect ratio
+    try { doc.image(ZORDAQ_LOGO_DATA_URI, left, top, { height: logoH }); } catch { /* logo optional */ }
+    const tx = left + logoW + 9;
+    doc.fillColor('#0f172a').font('Helvetica').fontSize(14).text('Zordaq ', tx, top + 3, { continued: true });
+    doc.font('Helvetica-Bold').text('Auto Services');
+    doc.fillColor('#64748b').font('Helvetica').fontSize(8).text('Co. Reg. KT0429673-U', tx, top + 20);
+    doc.fillColor('#475569').font('Helvetica').fontSize(8).text('No. 1, Jalan Industri Putra 1, Presint 14\n62050 Putrajaya, Malaysia\n017-933 3995 · zordaqputrajaya@gmail.com', left, top + 1, { width: fullW, align: 'right' });
+    const ruleY = top + logoH + 6;
+    doc.moveTo(left, ruleY).lineTo(rightEdge, ruleY).lineWidth(1.4).strokeColor(navy).stroke();
+    doc.y = ruleY + 12;
     doc.fillColor('#000000');
 
     // ---- Title + confidential ----
@@ -289,7 +295,7 @@ function payslipPdf(year: number, month: number, staff: any, summaryRow: Row, li
     doc.font('Helvetica').fontSize(8).fillColor('#999999')
       .text(`Issued on ${paymentDate} · Computer-generated payslip; no signature required.`, left, doc.y, { width: fullW });
     doc.fillColor('#000000');
-  });
+  }, { size: 'A5', margin: 28 });
 }
 
 async function uploadToStorage(path: string, bytes: Buffer, contentType = 'application/pdf') {
