@@ -63,6 +63,7 @@ export default function PayrollV3Page() {
   const [busy, setBusy] = useState<string>('');
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [divisor, setDivisor] = useState<string>('26'); // unpaid-leave daily-rate divisor (26 or 25)
+  const [itemTypes, setItemTypes] = useState<{ code: string; name: string; kind: 'EARN' | 'DEDUCT' }[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -96,6 +97,14 @@ export default function PayrollV3Page() {
     if (!isAdmin) return;
     supabase.schema('pay_v2').from('payroll_settings').select('value').eq('key', 'unpaid_divisor').maybeSingle()
       .then(({ data }) => { const v = (data as { value?: string } | null)?.value; if (v) setDivisor(String(v)); });
+  }, [isAdmin]);
+
+  // Add-item dropdown options come from the Payroll Items catalog (Settings tab), not a hard-coded list.
+  useEffect(() => {
+    if (!isAdmin) return;
+    supabase.schema('pay_v2').from('payroll_item_types')
+      .select('code,name,kind').is('archived_at', null).eq('enabled', true).eq('is_system', false).order('sort_order')
+      .then(({ data }) => { if (Array.isArray(data) && data.length) setItemTypes(data as { code: string; name: string; kind: 'EARN' | 'DEDUCT' }[]); });
   }, [isAdmin]);
 
   const run = async (label: string, fn: () => Promise<{ error: { message: string } | null }>) => {
@@ -196,7 +205,19 @@ export default function PayrollV3Page() {
   const [mMsg, setMMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const isOpen = period?.status === 'OPEN';
 
-  useEffect(() => { setAddCode(addType === 'DEDUCT' ? 'ADVANCE' : 'COMM'); setCustomCode(''); }, [addType]);
+  const earnOptions = useMemo(() => {
+    const cat = itemTypes.filter((t) => t.kind === 'EARN').map((t) => ({ code: t.code, label: t.name }));
+    return cat.length ? [...cat, { code: 'CUSTOM', label: 'Custom…' }] : EARN_CODES;
+  }, [itemTypes]);
+  const deductOptions = useMemo(() => {
+    const cat = itemTypes.filter((t) => t.kind === 'DEDUCT').map((t) => ({ code: t.code, label: t.name }));
+    return cat.length ? [...cat, { code: 'CUSTOM', label: 'Custom…' }] : DEDUCT_CODES;
+  }, [itemTypes]);
+
+  useEffect(() => {
+    const o = addType === 'DEDUCT' ? deductOptions : earnOptions;
+    setAddCode(o[0]?.code ?? 'CUSTOM'); setCustomCode('');
+  }, [addType, earnOptions, deductOptions]);
 
   const loadItems = useCallback(async (email: string) => {
     const { data } = await supabase.rpc('list_manual_items', { p_year: year, p_month: month, p_email: email });
@@ -214,7 +235,7 @@ export default function PayrollV3Page() {
     const code = addCode === 'CUSTOM' ? customCode.trim().toUpperCase() : addCode;
     if (!code) { setMMsg({ kind: 'err', text: 'Please choose a code.' }); return; }
     setMWorking(true); setMMsg(null);
-    const def = (addType === 'DEDUCT' ? DEDUCT_CODES : EARN_CODES).find((c) => c.code === code)?.label || code;
+    const def = (addType === 'DEDUCT' ? deductOptions : earnOptions).find((c) => c.code === code)?.label || code;
     const { error } = await payRpc('add_pay_item', {
       p_year: year, p_month: month, p_email: sel.staff_email, p_kind: addType, p_code: code, p_label: addLabel || def, p_amount: amt,
     });
@@ -464,7 +485,7 @@ export default function PayrollV3Page() {
                     <option value="EARN">Earning</option><option value="DEDUCT">Deduction</option>
                   </select>
                   <select value={addCode} onChange={(e) => setAddCode(e.target.value)} className="rounded-md border px-2 py-1.5 text-sm">
-                    {(addType === 'DEDUCT' ? DEDUCT_CODES : EARN_CODES).map((o) => <option key={o.code} value={o.code}>{o.label}</option>)}
+                    {(addType === 'DEDUCT' ? deductOptions : earnOptions).map((o) => <option key={o.code} value={o.code}>{o.label}</option>)}
                   </select>
                   {addCode === 'CUSTOM' && <input value={customCode} onChange={(e) => setCustomCode(e.target.value.replace(/[^A-Za-z0-9_]/g, ''))} placeholder="CODE" className="w-24 rounded-md border px-2 py-1.5 text-sm" />}
                   <input value={addLabel} onChange={(e) => setAddLabel(e.target.value)} placeholder="Label" className="flex-1 rounded-md border px-2 py-1.5 text-sm" />
