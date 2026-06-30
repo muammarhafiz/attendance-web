@@ -12,6 +12,7 @@ type Summary = {
   unpaid_auto: number | string; epf_emp: number | string; socso_emp: number | string; eis_emp: number | string;
   epf_er: number | string; socso_er: number | string; eis_er: number | string;
   total_deduct: number | string; net_pay: number | string;
+  earn_breakdown?: { code?: string | null; label?: string | null; amount?: number | string }[] | null;
 };
 type Item = { id: string; kind: string; code: string | null; label: string | null; amount: number | string };
 
@@ -31,6 +32,11 @@ const n = (x: number | string | null | undefined) => {
 };
 const rm = (x: number | string) => `RM ${n(x).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const isPlumbing = (code?: string | null) => ['UNPAID_ADJ', 'UNPAID_EXTRA'].includes((code || '').toUpperCase());
+// Commission portion of a row, read from the view's earn_breakdown jsonb (exact COMM lines, not Gross − Base).
+const commissionOf = (r: { earn_breakdown?: { code?: string | null; amount?: number | string }[] | null }) =>
+  Array.isArray(r.earn_breakdown)
+    ? r.earn_breakdown.filter((e) => (e.code || '').toUpperCase() === 'COMM').reduce((a, e) => a + n(e.amount), 0)
+    : 0;
 
 // try pay_v2 schema first, then public
 async function payRpc(fn: string, args: Record<string, unknown>) {
@@ -167,11 +173,11 @@ export default function PayrollV3Page() {
   const nextMonth = () => { const d = new Date(year, month, 1); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); };
 
   const totals = useMemo(() => {
-    const s = (k: keyof Summary) => rows.reduce((a, r) => a + n(r[k]), 0);
+    const s = (k: Exclude<keyof Summary, 'earn_breakdown'>) => rows.reduce((a, r) => a + n(r[k]), 0);
     const net = s('net_pay');
     const erStat = s('epf_er') + s('socso_er') + s('eis_er');
     return {
-      base: s('base_wage'), gross: s('total_earn'), net,
+      base: s('base_wage'), gross: s('total_earn'), commission: rows.reduce((a, r) => a + commissionOf(r), 0), net,
       epf: { er: s('epf_er'), emp: s('epf_emp') }, socso: { er: s('socso_er'), emp: s('socso_emp') }, eis: { er: s('eis_er'), emp: s('eis_emp') },
       erStat, cost: net + erStat,
     };
@@ -325,11 +331,12 @@ export default function PayrollV3Page() {
 
       {/* Summary table */}
       <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="w-full min-w-[820px] border-collapse text-sm">
+        <table className="w-full min-w-[900px] border-collapse text-sm">
           <thead className="bg-gray-50 text-left">
             <tr>
               <th className="px-3 py-2 font-medium text-gray-600">Staff</th>
               <th className="px-3 py-2 text-right font-medium text-gray-600">Base</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-600">Commission</th>
               <th className="px-3 py-2 text-right font-medium text-gray-600">Gross</th>
               <th className="px-3 py-2 text-right font-medium text-gray-600">Unpaid</th>
               <th className="px-3 py-2 text-right font-medium text-gray-600">Deductions</th>
@@ -340,13 +347,14 @@ export default function PayrollV3Page() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} className="px-3 py-6 text-center text-gray-500">Loading…</td></tr>
+              <tr><td colSpan={9} className="px-3 py-6 text-center text-gray-500">Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={8} className="px-3 py-6 text-center text-gray-500">Nothing yet — tap &quot;Generate payroll from attendance&quot;.</td></tr>
+              <tr><td colSpan={9} className="px-3 py-6 text-center text-gray-500">Nothing yet — tap &quot;Generate payroll from attendance&quot;.</td></tr>
             ) : rows.map((r) => (
               <tr key={r.staff_email} className="border-t border-gray-100">
                 <td className="px-3 py-2"><div className="font-medium text-gray-900">{r.staff_name ?? r.staff_email}</div><div className="text-xs text-gray-400">{r.staff_email}</div></td>
                 <td className="px-3 py-2 text-right tabular-nums">{rm(r.base_wage)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{commissionOf(r) ? rm(commissionOf(r)) : '—'}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{rm(r.total_earn)}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-rose-600">{n(r.unpaid_auto) ? rm(r.unpaid_auto) : '—'}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{rm(r.total_deduct)}</td>
@@ -361,6 +369,7 @@ export default function PayrollV3Page() {
               <tr className="border-t border-gray-200 bg-gray-50 font-semibold">
                 <td className="px-3 py-2 text-right">Totals</td>
                 <td className="px-3 py-2 text-right tabular-nums">{rm(totals.base)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{rm(totals.commission)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{rm(totals.gross)}</td>
                 <td colSpan={2}></td>
                 <td className="px-3 py-2 text-right tabular-nums">{rm(totals.net)}</td>
