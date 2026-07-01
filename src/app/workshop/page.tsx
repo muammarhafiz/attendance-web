@@ -156,6 +156,10 @@ export default function WorkshopBoardPage() {
     // close-on-paid trigger, so paid cars would otherwise stay in Pending. Sweep
     // them to Done now, then again after the sync lands fresh payment status.
     await supabase.rpc('close_paid_job_cards');
+    // Also self-heal orphans: a Pending card >2 days old whose invoice has vanished
+    // from BOTH the sales table and the all-years Debts snapshot was cancelled or
+    // paid-and-aged-out — no longer an active job — so archive it off the board.
+    await supabase.rpc('close_stale_orphan_cards');
     await load();
     setSyncMsg('Syncing with Niagawan… paid cars move to Done and new check-ins appear within a few seconds.');
     const heal = async () => { await supabase.rpc('close_paid_job_cards'); await load(); };
