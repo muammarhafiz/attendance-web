@@ -22,6 +22,7 @@ type Card = {
   archived_at: string | null;
   sale_inv: string | null;
   sale_id: string | null;
+  customer_phone: string | null; // manual override for the WhatsApp button (preferred over check-in/invoice)
 };
 
 type Memo = { id: number; text: string; created_at: string; active: boolean };
@@ -124,9 +125,11 @@ export default function WorkshopBoardPage() {
     // RLS lets board writers (admins/Supervisors) read intake_requests; anyone else just gets no button.
     const saleIds = Array.from(new Set(((c ?? []) as Card[]).map((x) => x.sale_id).filter(Boolean) as string[]));
     if (saleIds.length) {
-      const { data: ir } = await supabase.from('intake_requests').select('sale_id, phone, cust_name').in('sale_id', saleIds);
+      // Best phone per sale: check-in phone first, then the Niagawan invoice phone (via a
+      // SECURITY DEFINER RPC so the board can use the invoice number without a check-in).
+      const { data: ph } = await supabase.rpc('board_card_phones', { p_sale_ids: saleIds });
       const map: Record<string, Contact> = {};
-      ((ir ?? []) as { sale_id: string | null; phone: string | null; cust_name: string | null }[]).forEach((r) => {
+      ((ph ?? []) as { sale_id: string | null; phone: string | null; cust_name: string | null }[]).forEach((r) => {
         if (r.sale_id) map[r.sale_id] = { phone: r.phone, cust_name: r.cust_name };
       });
       setContacts(map);
@@ -177,6 +180,17 @@ export default function WorkshopBoardPage() {
     if (!window.confirm(`Remove ${card.plate} from the board?`)) return;
     await archive(card);
   }, [archive]);
+
+  // Attach a customer WhatsApp number to a card — for manual cards or cars with no phone on
+  // file. Stored on the card and preferred over the check-in / invoice phone.
+  const setCardPhone = useCallback(async (card: Card) => {
+    const p = window.prompt(`Customer WhatsApp number for ${card.plate} (e.g. 0123456789):`, card.customer_phone || '');
+    if (p == null) return;
+    const clean = p.replace(/[^\d+]/g, '');
+    const { error } = await supabase.from('job_cards').update({ customer_phone: clean || null }).eq('id', card.id);
+    if (error) setErr(error.message);
+    await load();
+  }, [load]);
 
   const createCard = useCallback(async () => {
     if (!plate.trim()) { setErr('Plate number is required.'); return; }
@@ -338,14 +352,21 @@ export default function WorkshopBoardPage() {
                     <span className="ml-auto flex gap-1">
                       {c.status !== 'done' && <button onClick={() => move(c, 'done')} className="rounded bg-emerald-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-emerald-700">Done</button>}
                       {(() => {
-                        const num = waNumber(c.sale_id ? contacts[c.sale_id]?.phone : null);
-                        if (!num) return null;
-                        const name = c.customer || (c.sale_id ? contacts[c.sale_id]?.cust_name : null) || 'there';
-                        const veh = [c.vehicle, c.plate].filter(Boolean).join(' ');
-                        const text = encodeURIComponent(waCardText(c.status === 'done' ? 'done' : 'waiting', name, veh));
-                        return (
-                          <a href={`https://wa.me/${num}?text=${text}`} target="_blank" rel="noopener noreferrer" className="rounded bg-green-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-green-700" title="Message the customer on WhatsApp">📲 WhatsApp</a>
-                        );
+                        // Phone priority: manual override on the card -> check-in / invoice phone.
+                        const phone = c.customer_phone || (c.sale_id ? contacts[c.sale_id]?.phone : null);
+                        const num = waNumber(phone);
+                        if (num) {
+                          const name = c.customer || (c.sale_id ? contacts[c.sale_id]?.cust_name : null) || 'there';
+                          const veh = [c.vehicle, c.plate].filter(Boolean).join(' ');
+                          const text = encodeURIComponent(waCardText(c.status === 'done' ? 'done' : 'waiting', name, veh));
+                          return (
+                            <a href={`https://wa.me/${num}?text=${text}`} target="_blank" rel="noopener noreferrer" className="rounded bg-green-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-green-700" title="Message the customer on WhatsApp">📲 WhatsApp</a>
+                          );
+                        }
+                        // No phone anywhere — let a supervisor add one so the WhatsApp button appears.
+                        return canWrite ? (
+                          <button onClick={() => setCardPhone(c)} className="rounded border border-green-300 bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700 hover:bg-green-100" title="Add the customer's WhatsApp number">➕ phone</button>
+                        ) : null;
                       })()}
                       {c.status === 'done' && canWrite && <button onClick={() => archive(c)} className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-50" title="Remove from the board (kept in history)">Clear</button>}
                       {c.status !== 'done' && canWrite && <button onClick={() => removeCard(c)} className="rounded border border-gray-200 px-1.5 py-0.5 text-xs text-gray-400 hover:bg-rose-50 hover:text-rose-600" title="Remove from the board — for a cancelled / mistaken check-in (kept in history)">✕</button>}
