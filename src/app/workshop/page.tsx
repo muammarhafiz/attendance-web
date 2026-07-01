@@ -188,8 +188,8 @@ export default function WorkshopBoardPage() {
 
   // Attach a customer WhatsApp number to a card — for manual cards or cars with no phone on
   // file. Stored on the card and preferred over the check-in / invoice phone.
-  const setCardPhone = useCallback(async (card: Card) => {
-    const p = window.prompt(`Customer WhatsApp number for ${card.plate} (e.g. 0123456789):`, card.customer_phone || '');
+  const setCardPhone = useCallback(async (card: Card, prefill?: string | null) => {
+    const p = window.prompt(`Customer WhatsApp number for ${card.plate} (e.g. 0123456789):`, prefill ?? card.customer_phone ?? '');
     if (p == null) return;
     const clean = p.replace(/[^\d+]/g, '');
     const { error } = await supabase.from('job_cards').update({ customer_phone: clean || null }).eq('id', card.id);
@@ -381,7 +381,10 @@ export default function WorkshopBoardPage() {
                           const veh = [c.vehicle, c.plate].filter(Boolean).join(' ');
                           const text = encodeURIComponent(waCardText(c.status === 'done' ? 'done' : 'waiting', name, veh));
                           return (
-                            <a href={`https://wa.me/${num}?text=${text}`} target="_blank" rel="noopener noreferrer" className="rounded bg-green-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-green-700" title="Message the customer on WhatsApp">📲 WhatsApp</a>
+                            <>
+                              <a href={`https://wa.me/${num}?text=${text}`} target="_blank" rel="noopener noreferrer" className="rounded bg-green-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-green-700" title="Message the customer on WhatsApp">📲 WhatsApp</a>
+                              {canWrite && <button onClick={() => setCardPhone(c, phone)} className="rounded border border-gray-200 px-1.5 py-0.5 text-xs text-gray-400 hover:bg-gray-50" title="Edit this customer's number (also updates Niagawan)">✏️</button>}
+                            </>
                           );
                         }
                         // No phone anywhere — let a supervisor add one so the WhatsApp button appears.
