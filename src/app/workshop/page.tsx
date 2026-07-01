@@ -193,7 +193,23 @@ export default function WorkshopBoardPage() {
     if (p == null) return;
     const clean = p.replace(/[^\d+]/g, '');
     const { error } = await supabase.from('job_cards').update({ customer_phone: clean || null }).eq('id', card.id);
-    if (error) setErr(error.message);
+    if (error) { setErr(error.message); return; }
+    // Also push the number into the customer's Niagawan record — but only when we can
+    // resolve this card to a SINGLE Niagawan customer (exact check-in link, else a unique
+    // plate match). The NAS scraper does the actual write; here we just queue it.
+    if (clean) {
+      try {
+        const { data: cust } = await supabase.rpc('board_card_customer', { p_sale_id: card.sale_id ?? '', p_plate: card.plate });
+        const cid = (cust as { customer_id: string }[] | null)?.[0]?.customer_id;
+        if (cid) {
+          await supabase.rpc('queue_update_phone', { p_customer_id: cid, p_phone: clean });
+          setSyncMsg('Number saved — also updating it in Niagawan (a few seconds).');
+        } else {
+          setSyncMsg('Number saved on the board. (This car isn’t linked to a Niagawan customer, so it stays here only.)');
+        }
+        setTimeout(() => setSyncMsg(null), 8000);
+      } catch { /* Niagawan sync is best-effort; the local number is already saved */ }
+    }
     await load();
   }, [load]);
 
