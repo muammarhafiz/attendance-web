@@ -152,10 +152,15 @@ export default function WorkshopBoardPage() {
   const refreshAll = useCallback(async () => {
     setSyncMsg('Refreshing…');
     await supabase.rpc('request_workshop_sync'); // board-writers trigger a Niagawan sync; others just reload
+    // Self-heal: the payment sync bulk-writes invoices in a way that skips the
+    // close-on-paid trigger, so paid cars would otherwise stay in Pending. Sweep
+    // them to Done now, then again after the sync lands fresh payment status.
+    await supabase.rpc('close_paid_job_cards');
     await load();
     setSyncMsg('Syncing with Niagawan… paid cars move to Done and new check-ins appear within a few seconds.');
-    setTimeout(() => { load(); }, 10000);
-    setTimeout(() => { load(); setSyncMsg(null); }, 25000);
+    const heal = async () => { await supabase.rpc('close_paid_job_cards'); await load(); };
+    setTimeout(heal, 10000);
+    setTimeout(() => { void heal(); setSyncMsg(null); }, 25000);
   }, [load]);
 
   const move = useCallback(async (card: Card, to: Card['status']) => {
