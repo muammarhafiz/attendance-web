@@ -52,6 +52,7 @@ function buildPrompt(categoryNames: string[], invoiceText: string): string {
     '"description" = a clean human description of the item WITHOUT the codes: item type + vehicle model + year, e.g. "CONDENSER W/DRIER JAZZ FREED CRZ 09". ' +
     '"unit_price" = the GROSS unit price as printed, BEFORE any discount. "discount" = the per-line discount as a PERCENT number (e.g. 15 if the line shows a "15%" discount column); use 0 when there is no discount. "amount" = the NET line total after discount, i.e. qty * unit_price * (1 - discount/100). ' +
     'Include every line item. ref_no is the supplier invoice number. ' +
+    'invoice_date = the invoice date as YYYY-MM-DD. IMPORTANT: dates on these Malaysian invoices are DAY/MONTH/YEAR (DD/MM/YYYY): "01/07/2026" means 1 July 2026 (day=01, month=07), NOT 7 January; "07/01/2026" means 7 January 2026. ALWAYS read the FIRST number as the day and the SECOND as the month, even when both are 12 or lower. ' +
     'do_no is the Delivery Order number for the whole invoice if one is shown (labelled D/O, D.O., DO, or D/O No.), e.g. "DO2026/03/0784" or "D2605525"; use null if there is no single header-level D/O number. ' +
     'If a field is missing use null (use 0 for discount).' +
     catLine +
