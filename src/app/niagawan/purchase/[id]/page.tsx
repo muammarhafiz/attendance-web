@@ -543,12 +543,14 @@ export default function ReviewInvoicePage() {
         );
       })()}
 
-      {/* Items */}
-      <div className="mb-2 flex items-center justify-between">
+      {/* Items — the line-items table has many columns; break it out of the narrow
+          max-w-6xl section column to use the fuller viewport width so it doesn't need
+          horizontal scrolling. Capped at 84rem; centered; heading matches the width. */}
+      <div style={{ width: 'min(84rem, calc(100vw - 2rem))' }} className="relative left-1/2 mb-2 flex -translate-x-1/2 items-center justify-between">
         <h2 className="text-sm font-semibold text-gray-700">Line items ({items.length}){resolving && <span className="ml-2 font-normal text-amber-600">· looking up Niagawan categories…</span>}</h2>
         {!locked && <button onClick={addRow} className="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50">+ Add row</button>}
       </div>
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
+      <div style={{ width: 'min(84rem, calc(100vw - 2rem))' }} className="relative left-1/2 -translate-x-1/2 overflow-x-auto rounded-lg border border-gray-200">
         <table className="w-full border-collapse text-sm">
           <thead className="bg-gray-50 text-left">
             <tr>
