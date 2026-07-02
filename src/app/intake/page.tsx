@@ -63,14 +63,26 @@ export default function IntakePage() {
     plateTimer.current = setTimeout(() => checkPlate(v), 300);
   }, [checkPlate]);
 
-  const save = useCallback(async () => {
+  const save = useCallback(async (force = false) => {
     if (!plate.trim()) { setErrMsg('Please enter the plate number.'); return; }
     setErrMsg(null);
     setPhase('saving');
     const { data: id, error } = await supabase.rpc('queue_intake', {
-      p_plate: plate, p_model: model, p_phone: phone, p_name: '', p_note: note,
+      p_plate: plate, p_model: model, p_phone: phone, p_name: '', p_note: note, p_force: force,
     });
-    if (error || !id) { setPhase('error'); setErrMsg(error?.message ?? 'failed'); return; }
+    if (error || !id) {
+      const msg = error?.message ?? 'failed';
+      // Same staff already checked this car in today — confirm before a 2nd invoice.
+      if (msg.includes('DUPLICATE_CHECKIN')) {
+        const [inv, at] = (msg.split('DUPLICATE_CHECKIN|')[1] ?? '').split('|');
+        setPhase('form');
+        if (window.confirm(`⚠️ You already checked in ${plate} today (invoice ${inv || 'in progress'}${at ? `, at ${at}` : ''}).\n\nCheck in again and create a SECOND invoice?`)) {
+          return save(true);
+        }
+        return;
+      }
+      setPhase('error'); setErrMsg(msg); return;
+    }
     const startedAt = Date.now();
     pollRef.current = setInterval(async () => {
       const { data: row } = await supabase.from('intake_requests').select('status,inv_no,note').eq('id', id).single();
@@ -164,7 +176,7 @@ export default function IntakePage() {
 
         {errMsg && <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{errMsg}</div>}
 
-        <button onClick={save} disabled={phase === 'saving'}
+        <button onClick={() => save()} disabled={phase === 'saving'}
           className="w-full rounded-xl bg-blue-600 px-6 py-4 text-xl font-bold text-white hover:bg-blue-700 disabled:opacity-60">
           {phase === 'saving' ? 'Registering…' : 'SAVE'}
         </button>
