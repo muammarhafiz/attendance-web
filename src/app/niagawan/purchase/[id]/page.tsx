@@ -221,6 +221,34 @@ export default function ReviewInvoicePage() {
   const computedTotal = useMemo(() => round2(items.reduce((s, it) => s + lineAmount(it.qty, it.unit_price, it.discount), 0)), [items]);
   const totalMismatch = head?.total != null && Math.abs(round2(head.total) - computedTotal) > 0.01;
 
+  // Lines whose AI-returned code was NOT found in the PDF's own text (likely a misread). Editing the
+  // code — or clicking "✓ checked" — sets code_verified back to null and clears the block.
+  const codeUnverifiedLines = useMemo(() => items.filter((it) => it.code_verified === false).map((it) => it.line_no), [items]);
+  // Non-empty lines that would create a NEW product but carry no code to create it by (and aren't linked).
+  const codelessLines = useMemo(
+    () => (candsLoaded ? items
+      .filter((it) => it.item_code.trim() || it.codes.length || it.description.trim())
+      .filter((it) => resolutionFor(it).kind !== 'link' && !it.item_code.trim() && it.codes.length === 0)
+      .map((it) => it.line_no) : []),
+    [items, resolutionFor, candsLoaded]);
+  // Everything that must be ironed out before Approve. Approve stays blocked while this is non-empty.
+  // Objective, always-fixable errors only — the possible-duplicate and stale-catalog notices stay
+  // advisory (legitimately overridable, and both are backstopped by the NAS create step).
+  const approveBlockers = useMemo(() => {
+    const b: string[] = [];
+    const nonEmpty = items.filter((it) => it.item_code.trim() || it.codes.length || it.description.trim());
+    if (nonEmpty.length === 0) { b.push('Add at least one line item.'); return b; }
+    if (!head?.supplier_name?.trim()) b.push('Enter the supplier name (needed to match the Niagawan creditor).');
+    if (!head?.ref_no?.trim()) b.push('Enter the supplier invoice ref# (the duplicate guard needs it).');
+    if (!head?.invoice_date) b.push('Set the invoice date.');
+    if (head?.total == null) b.push('Enter the invoice total (from the PDF) so the line items can be reconciled.');
+    else if (totalMismatch) b.push(`Line-items total ${rm(computedTotal)} doesn't match the PDF total ${rm(head.total)} — fix the quantity, price, or a missing/extra line until they match (or correct the total field if the PDF itself differs).`);
+    if (candsLoaded && unresolvedLines.length) b.push(`Line${unresolvedLines.length === 1 ? '' : 's'} ${unresolvedLines.join(', ')}: the code matches several products — pick the right one (or “create new”).`);
+    if (codelessLines.length) b.push(`Line${codelessLines.length === 1 ? '' : 's'} ${codelessLines.join(', ')}: add a code or link an existing product.`);
+    if (codeUnverifiedLines.length) b.push(`Line${codeUnverifiedLines.length === 1 ? '' : 's'} ${codeUnverifiedLines.join(', ')}: the code isn’t in the PDF text (possible AI misread) — check it against the PDF, then click “✓ checked” on the line (or fix the code).`);
+    return b;
+  }, [items, head?.supplier_name, head?.ref_no, head?.invoice_date, head?.total, totalMismatch, computedTotal, candsLoaded, unresolvedLines, codelessLines, codeUnverifiedLines]);
+
   const setItem = (idx: number, patch: Partial<Item>) => {
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   };
@@ -263,13 +291,10 @@ export default function ReviewInvoicePage() {
       const cleaned = items
         .map((it, i) => ({ ...it, line_no: i + 1, amount: lineAmount(it.qty, it.unit_price, it.discount) }))
         .filter((it) => it.item_code.trim() || it.codes.length || it.description.trim());
-      if (approve) {
-        if (cleaned.length === 0) throw new Error('Add at least one line item before approving.');
-        // A line is fine if it's LINKED to an existing product (booked by sku, no code needed)
-        // OR it has a code (needed to create a new product). Only code-less create-new lines block.
-        if (cleaned.some((it) => resolutionFor(it).kind !== 'link' && !it.item_code.trim() && it.codes.length === 0))
-          throw new Error('Each line needs a code or a linked product. Add a code, or use “🔎 choose existing item” to link the line.');
-        if (cleaned.some((it) => resolutionFor(it).kind === 'unresolved')) throw new Error('Some lines match several products — choose the right one (or “create new”) before approving.');
+      if (approve && approveBlockers.length > 0) {
+        // Defense-in-depth: the Approve button is disabled while any blocker exists, but never let a
+        // known error reach Niagawan even if a click races the state. Fix them, then approve.
+        throw new Error(approveBlockers.length === 1 ? approveBlockers[0] : `Fix ${approveBlockers.length} issues before approving — ${approveBlockers.join(' • ')}`);
       }
       const { error: hErr } = await supabase.from('pinv').update({
         supplier_name: head.supplier_name?.trim() || null,
@@ -319,7 +344,7 @@ export default function ReviewInvoicePage() {
     } finally {
       setBusy(false);
     }
-  }, [id, head, items, load, router, resolutionFor]);
+  }, [id, head, items, load, router, resolutionFor, approveBlockers]);
 
   const runCheck = useCallback(async () => {
     if (!id) return;
@@ -516,7 +541,7 @@ export default function ReviewInvoicePage() {
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
           <span className="text-gray-500">Line items total: <b className="tabular-nums text-gray-800">{rm(computedTotal)}</b></span>
           {totalMismatch
-            ? <span className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-700">⚠ differs from PDF total {rm(head.total ?? 0)}</span>
+            ? <span className="rounded bg-rose-100 px-1.5 py-0.5 font-medium text-rose-700">⚠ differs from PDF total {rm(head.total ?? 0)} — fix before approving</span>
             : <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-medium text-emerald-700">✓ matches PDF total</span>}
         </div>
       </div>
@@ -589,6 +614,7 @@ export default function ReviewInvoicePage() {
                     {it.code_verified === false && (
                       <div className="mt-0.5 max-w-[12rem] text-[10px] font-medium leading-tight text-rose-600" title="This code was NOT found in the invoice's text — the AI may have misread it. Check it against the PDF.">
                         ⚠ not found in PDF text — check it
+                        {!locked && <button type="button" onClick={() => setItem(idx, { code_verified: null })} title="I've checked this code against the PDF — it's correct" className="ml-1 rounded border border-rose-300 px-1 text-rose-700 underline hover:bg-rose-100">✓ checked</button>}
                       </div>
                     )}
                     {it.codes.length > 1 && (
@@ -724,17 +750,27 @@ export default function ReviewInvoicePage() {
       {msg && <div className={`mt-3 rounded-md border p-2 text-sm ${msg.kind === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>{msg.text}</div>}
 
       {!locked && (
-        <div className="mt-4 flex items-center gap-2">
-          <button onClick={() => save(false)} disabled={busy} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
-            {busy ? 'Saving…' : 'Save changes'}
-          </button>
-          <button onClick={() => save(true)} disabled={busy || !candsLoaded || unresolvedLines.length > 0}
-            title={unresolvedLines.length > 0 ? `Resolve line${unresolvedLines.length === 1 ? '' : 's'} ${unresolvedLines.join(', ')} first` : undefined}
-            className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
-            {busy ? 'Working…' : 'Approve → create in Niagawan'}
-          </button>
-          {unresolvedLines.length > 0 && <span className="text-xs text-rose-600">Pick a product for line{unresolvedLines.length === 1 ? '' : 's'} {unresolvedLines.join(', ')} to approve.</span>}
-        </div>
+        <>
+          {approveBlockers.length > 0 && (
+            <div className="mt-4 rounded-md border-2 border-rose-400 bg-rose-50 p-3 text-sm text-rose-800">
+              <div className="mb-1 font-semibold">⚠ Fix {approveBlockers.length === 1 ? 'this' : `these ${approveBlockers.length}`} before approving:</div>
+              <ul className="ml-4 list-disc space-y-0.5">
+                {approveBlockers.map((b, i) => <li key={i}>{b}</li>)}
+              </ul>
+            </div>
+          )}
+          <div className="mt-4 flex items-center gap-2">
+            <button onClick={() => save(false)} disabled={busy} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+              {busy ? 'Saving…' : 'Save changes'}
+            </button>
+            <button onClick={() => save(true)} disabled={busy || !candsLoaded || approveBlockers.length > 0}
+              title={!candsLoaded ? 'Checking product matches…' : approveBlockers.length > 0 ? 'Resolve the issues listed above first' : undefined}
+              className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
+              {busy ? 'Working…' : 'Approve → create in Niagawan'}
+            </button>
+            {!candsLoaded && <span className="text-xs text-gray-400">checking product matches…</span>}
+          </div>
+        </>
       )}
     </div>
   );
