@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabaseClient';
 
 const DENOMS = [100, 50, 20, 10, 5, 1] as const;
 const rm = (n: number) => `RM ${n.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const rmc = (n: number) => Math.round(Number(n) || 0).toLocaleString('en-MY'); // compact (no RM, no sen) for the narrow recent-counts table
 const klToday = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
 
 type HistRow = { day: string; counted: number; cashIn: number | null; cashOut: number; by: string };
@@ -32,6 +33,7 @@ export default function CashCountPage() {
   const [onHand, setOnHand] = useState<number | null>(null);
   const [lastCollectedOn, setLastCollectedOn] = useState<string | null>(null);
   const [collecting, setCollecting] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const today = klToday();
@@ -98,6 +100,8 @@ export default function CashCountPage() {
       const { data: ok } = await supabase.rpc('can_access', { p_feature: 'workshop' });
       setAllowed(ok === true);
       if (ok !== true) return;
+      const { data: adm } = await supabase.rpc('is_admin');
+      setIsAdmin(adm === true);
       // fresh start for this day — also clears yesterday's numbers if the day rolled over while the page was left open
       setSaved(false); setStep(0);
       setCounts({}); setCardActual(null); setQrActual(null); setTransferActual(null);
@@ -277,33 +281,35 @@ export default function CashCountPage() {
         </div>
       )}
 
-      {history.length > 0 && <RecentCounts rows={history} today={today} onHand={onHand} lastCollectedOn={lastCollectedOn} onCollect={markCollected} collecting={collecting} />}
+      {history.length > 0 && <RecentCounts rows={history} today={today} onHand={onHand} lastCollectedOn={lastCollectedOn} onCollect={markCollected} collecting={collecting} isAdmin={isAdmin} />}
     </div>
   );
 }
 
-function RecentCounts({ rows, today, onHand, lastCollectedOn, onCollect, collecting }: {
+function RecentCounts({ rows, today, onHand, lastCollectedOn, onCollect, collecting, isAdmin }: {
   rows: HistRow[]; today: string; onHand: number | null; lastCollectedOn: string | null;
-  onCollect: () => void; collecting: boolean;
+  onCollect: () => void; collecting: boolean; isAdmin: boolean;
 }) {
   return (
     <div className="mt-8">
-      {/* Cash to bank = counted cash accumulated in the safe since the last deposit */}
+      {/* Cash to bank = counted cash accumulated in the safe since the last reset */}
       <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Cash to bank</div>
       <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-        <div className="flex items-baseline justify-between">
-          <span className="text-sm font-semibold text-gray-700">In the safe, not yet banked</span>
-          <span className="text-2xl font-extrabold text-gray-900">{onHand == null ? '…' : rm(onHand)}</span>
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="text-sm font-semibold text-gray-700">cash in safe</span>
+          <span className="whitespace-nowrap text-2xl font-extrabold text-gray-900">{onHand == null ? '…' : rm(onHand)}</span>
         </div>
         <p className="mt-1 text-xs text-gray-500">
           {lastCollectedOn
-            ? <>Accumulating since you last took cash to the bank on <b className="text-gray-700">{new Date(lastCollectedOn).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</b>.</>
-            : <>All counted cash not yet marked as banked. Tap the button below after your next deposit to start the total from there.</>}
+            ? <>start count {new Date(lastCollectedOn).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</>
+            : <>all counted cash — not reset yet</>}
         </p>
-        <button onClick={onCollect} disabled={collecting || !onHand}
-          className="mt-3 w-full rounded-lg border border-emerald-300 bg-white px-3 py-2.5 text-sm font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
-          {collecting ? 'Saving…' : 'RESET CASH COUNT'}
-        </button>
+        {isAdmin && (
+          <button onClick={onCollect} disabled={collecting || !onHand}
+            className="mt-3 w-full rounded-lg border border-emerald-300 bg-white px-3 py-2.5 text-sm font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
+            {collecting ? 'Saving…' : 'RESET CASH COUNT'}
+          </button>
+        )}
       </div>
       <div className="mb-2 flex items-baseline justify-between">
         <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">Recent counts</span>
@@ -314,10 +320,10 @@ function RecentCounts({ rows, today, onHand, lastCollectedOn, onCollect, collect
           <table className="w-full text-sm">
             <thead className="sticky top-0 z-10 bg-gray-50 text-xs text-gray-500">
               <tr>
-                <th className="px-3 py-2 text-left font-medium">Date</th>
-                <th className="px-3 py-2 text-right font-medium">Counted</th>
-                <th className="px-3 py-2 text-right font-medium">Niagawan</th>
-                <th className="px-3 py-2 text-right font-medium">+/−</th>
+                <th className="px-2 py-2 text-left font-medium">Date</th>
+                <th className="px-2 py-2 text-right font-medium">Counted</th>
+                <th className="px-2 py-2 text-right font-medium">Niagawan</th>
+                <th className="px-2 py-2 text-right font-medium">+/−</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -327,14 +333,14 @@ function RecentCounts({ rows, today, onHand, lastCollectedOn, onCollect, collect
                 const banked = lastCollectedOn != null && r.day <= lastCollectedOn;
                 return (
                   <tr key={r.day} className={banked ? 'opacity-45' : undefined}>
-                    <td className="whitespace-nowrap px-3 py-2 text-left text-gray-700">
+                    <td className="whitespace-nowrap px-2 py-2 text-left text-gray-700">
                       {new Date(r.day).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}
                       {r.day === today && <span className="ml-1 text-[10px] font-semibold text-emerald-600">today</span>}
                       {banked && <span className="ml-1 text-[10px] font-semibold text-gray-400">banked</span>}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right font-semibold text-gray-900">{rm(r.counted)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right text-gray-500">{net == null ? '—' : rm(net)}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right">{varCell(v)}</td>
+                    <td className="whitespace-nowrap px-2 py-2 text-right font-semibold text-gray-900">{rmc(r.counted)}</td>
+                    <td className="whitespace-nowrap px-2 py-2 text-right text-gray-500">{net == null ? '—' : rmc(net)}</td>
+                    <td className="whitespace-nowrap px-2 py-2 text-right">{varCell(v)}</td>
                   </tr>
                 );
               })}
@@ -351,7 +357,7 @@ function varCell(v: number | null) {
   if (v == null) return <span className="text-gray-300">—</span>;
   if (Math.abs(v) < 0.01) return <span className="font-semibold text-emerald-600">✅</span>;
   const short = v < 0;
-  return <span className={`font-semibold ${short ? 'text-rose-600' : 'text-amber-600'}`}>{short ? '−' : '+'}{rm(Math.abs(v))}</span>;
+  return <span className={`font-semibold ${short ? 'text-rose-600' : 'text-amber-600'}`}>{short ? '−' : '+'}{rmc(Math.abs(v))}</span>;
 }
 
 function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
