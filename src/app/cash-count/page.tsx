@@ -34,6 +34,7 @@ export default function CashCountPage() {
   const [lastCollectedOn, setLastCollectedOn] = useState<string | null>(null);
   const [collecting, setCollecting] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [tab, setTab] = useState<'cashbook' | 'petty'>('cashbook');
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const today = klToday();
@@ -173,7 +174,15 @@ export default function CashCountPage() {
     <div className="mx-auto max-w-md px-5 py-6">
       <a href="/workshop" className="text-sm text-gray-400 hover:text-gray-600">← Back</a>
       <h1 className="mt-2 text-2xl font-bold text-gray-900">💵 Cash Book</h1>
-      <p className="mt-1 text-sm text-gray-500">{new Date(today).toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+
+      {/* Cash Book | Petty Cash tabs */}
+      <div className="mt-3 flex gap-1 rounded-lg bg-gray-100 p-1 text-sm font-semibold">
+        <button onClick={() => setTab('cashbook')} className={`flex-1 rounded-md px-3 py-1.5 ${tab === 'cashbook' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>Cash Book</button>
+        <button onClick={() => setTab('petty')} className={`flex-1 rounded-md px-3 py-1.5 ${tab === 'petty' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>Petty Cash</button>
+      </div>
+
+      {tab === 'cashbook' && (<>
+      <p className="mt-3 text-sm text-gray-500">{new Date(today).toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
 
       {!saved && !isSummary && (
         <div className="mt-4 rounded-xl border border-gray-200 bg-white px-4 py-3">
@@ -282,6 +291,9 @@ export default function CashCountPage() {
       )}
 
       {history.length > 0 && <RecentCounts rows={history} today={today} onHand={onHand} lastCollectedOn={lastCollectedOn} onCollect={markCollected} collecting={collecting} isAdmin={isAdmin} />}
+      </>)}
+
+      {tab === 'petty' && <PettyCash isAdmin={isAdmin} />}
     </div>
   );
 }
@@ -358,6 +370,143 @@ function varCell(v: number | null) {
   if (Math.abs(v) < 0.01) return <span className="font-semibold text-emerald-600">✅</span>;
   const short = v < 0;
   return <span className={`font-semibold ${short ? 'text-rose-600' : 'text-amber-600'}`}>{short ? '−' : '+'}{rmc(Math.abs(v))}</span>;
+}
+
+// ---------- Petty Cash tab (imprest float; supervisors log purchases, admin tops up) ----------
+type PettyTxn = { id: number; txn_date: string; kind: string; amount: number; description: string | null; receipt_path: string | null; created_by: string | null };
+
+function PettyCash({ isAdmin }: { isAdmin: boolean }) {
+  const [sum, setSum] = useState<{ float: number; inTin: number; toTop: number } | null>(null);
+  const [txns, setTxns] = useState<PettyTxn[]>([]);
+  const [mode, setMode] = useState<'none' | 'purchase' | 'topup' | 'float'>('none');
+  const [amt, setAmt] = useState('');
+  const [desc, setDesc] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const [{ data: s }, { data: t }] = await Promise.all([
+      supabase.rpc('petty_cash_summary'),
+      supabase.from('petty_cash_txn').select('id,txn_date,kind,amount,description,receipt_path,created_by').order('id', { ascending: false }).limit(100),
+    ]);
+    const row = (Array.isArray(s) ? s[0] : s) as { float_amount: number; in_tin: number; to_top_up: number } | undefined;
+    if (row) setSum({ float: Number(row.float_amount), inTin: Number(row.in_tin), toTop: Number(row.to_top_up) });
+    setTxns(((t ?? []) as Array<Record<string, unknown>>).map((r) => ({
+      id: Number(r.id), txn_date: String(r.txn_date), kind: String(r.kind), amount: Number(r.amount),
+      description: (r.description as string) ?? null, receipt_path: (r.receipt_path as string) ?? null, created_by: (r.created_by as string) ?? null,
+    })));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const reset = () => { setMode('none'); setAmt(''); setDesc(''); setFile(null); setErr(null); };
+
+  const submit = useCallback(async () => {
+    const a = parseFloat(amt);
+    if (!Number.isFinite(a) || (mode !== 'float' && a <= 0) || (mode === 'float' && a < 0)) { setErr('Enter a valid amount.'); return; }
+    setBusy(true); setErr(null);
+    try {
+      if (mode === 'purchase') {
+        let path: string | null = null;
+        if (file) {
+          const p = `${Date.now()}_${file.name.replace(/[^\w.\-]+/g, '_')}`;
+          const up = await supabase.storage.from('petty-cash').upload(p, file, { upsert: false });
+          if (up.error) throw up.error;
+          path = p;
+        }
+        const { error } = await supabase.rpc('petty_cash_add_purchase', { p_amount: a, p_description: desc || null, p_receipt_path: path });
+        if (error) throw error;
+      } else if (mode === 'topup') {
+        const { error } = await supabase.rpc('petty_cash_add_topup', { p_amount: a, p_note: desc || null });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.rpc('petty_cash_set_float', { p_amount: a });
+        if (error) throw error;
+      }
+      reset();
+      await load();
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
+  }, [amt, desc, file, mode, load]);
+
+  const viewReceipt = async (path: string) => {
+    const { data } = await supabase.storage.from('petty-cash').createSignedUrl(path, 300);
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank', 'noopener');
+  };
+
+  return (
+    <div className="mt-4">
+      <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="text-sm font-semibold text-gray-700">cash in tin</span>
+          <span className="whitespace-nowrap text-2xl font-extrabold text-gray-900">{sum ? rm(sum.inTin) : '…'}</span>
+        </div>
+        <div className="mt-1 flex items-baseline justify-between gap-2 text-sm">
+          <span className="text-gray-600">to top up {sum && <span className="text-gray-400">(float {rm(sum.float)})</span>}</span>
+          <span className={`whitespace-nowrap font-bold ${sum && sum.toTop > 0.005 ? 'text-amber-700' : 'text-emerald-700'}`}>{sum ? rm(sum.toTop) : '…'}</span>
+        </div>
+        {isAdmin && <button onClick={() => { reset(); setMode('float'); setAmt(sum ? String(sum.float) : ''); }} className="mt-2 text-xs text-blue-500 underline">set float</button>}
+      </div>
+
+      <div className="mt-3 flex gap-2">
+        <button onClick={() => { reset(); setMode('purchase'); }} className="flex-1 rounded-xl bg-blue-600 px-3 py-2.5 text-sm font-bold text-white hover:bg-blue-700">＋ Add purchase</button>
+        {isAdmin && <button onClick={() => { reset(); setMode('topup'); }} className="flex-1 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2.5 text-sm font-bold text-emerald-700 hover:bg-emerald-100">＋ Top up</button>}
+      </div>
+
+      {mode !== 'none' && (
+        <div className="mt-3 rounded-xl border border-gray-200 bg-white p-4">
+          <div className="text-sm font-semibold text-gray-800">{mode === 'purchase' ? 'New purchase' : mode === 'topup' ? 'Top up the tin' : 'Set float amount'}</div>
+          <label className="mt-2 block text-xs font-medium text-gray-500">Amount (RM)
+            <input type="number" inputMode="decimal" step="0.01" min="0" value={amt} onChange={(e) => setAmt(e.target.value)} autoFocus onFocus={(e) => e.target.select()}
+              className="mt-0.5 block w-full rounded-lg border border-gray-300 px-3 py-2 text-lg font-semibold" />
+          </label>
+          {mode !== 'float' && (
+            <label className="mt-2 block text-xs font-medium text-gray-500">{mode === 'purchase' ? 'What for' : 'Note (optional)'}
+              <input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={mode === 'purchase' ? 'e.g. brake cleaner' : 'optional'}
+                className="mt-0.5 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+            </label>
+          )}
+          {mode === 'purchase' && (
+            <label className="mt-2 block text-xs font-medium text-gray-500">Receipt photo <span className="font-normal text-gray-400">(optional)</span>
+              <input type="file" accept="image/*" capture="environment" onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                className="mt-1 block w-full text-sm text-gray-600 file:mr-2 file:rounded-md file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-sm file:font-medium" />
+              {file && <span className="mt-0.5 block text-[11px] text-gray-400">📷 {file.name}</span>}
+            </label>
+          )}
+          {err && <div className="mt-2 rounded-lg bg-rose-50 px-2 py-1.5 text-xs text-rose-700">{err}</div>}
+          <div className="mt-3 flex gap-2">
+            <button onClick={reset} disabled={busy} className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-600">Cancel</button>
+            <button onClick={submit} disabled={busy} className="flex-[2] rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50">{busy ? 'Saving…' : 'Save'}</button>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-5">
+        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">History</div>
+        {txns.length === 0 ? (
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-center text-sm text-gray-400">No purchases or top-ups yet.</div>
+        ) : (
+          <div className="divide-y divide-gray-100 overflow-hidden rounded-xl border border-gray-200 bg-white">
+            {txns.map((x) => (
+              <div key={x.id} className="flex items-center justify-between gap-2 px-3 py-2.5">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold ${x.kind === 'topup' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{x.kind === 'topup' ? 'top up' : 'buy'}</span>
+                    <span className="truncate text-sm text-gray-800">{x.description || (x.kind === 'topup' ? 'top up' : '—')}</span>
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-gray-400">
+                    <span>{new Date(x.txn_date).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}</span>
+                    {x.created_by && <span>· {x.created_by.split('@')[0]}</span>}
+                    {x.receipt_path && <button onClick={() => viewReceipt(x.receipt_path as string)} className="text-blue-500 underline">· 📷 receipt</button>}
+                  </div>
+                </div>
+                <span className={`whitespace-nowrap text-sm font-bold ${x.kind === 'topup' ? 'text-emerald-700' : 'text-gray-900'}`}>{x.kind === 'topup' ? '+' : '−'}{rm(x.amount)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
