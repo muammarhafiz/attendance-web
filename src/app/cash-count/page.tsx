@@ -302,7 +302,7 @@ function RecentCounts({ rows, today, onHand, lastCollectedOn, onCollect, collect
         </p>
         <button onClick={onCollect} disabled={collecting || !onHand}
           className="mt-3 w-full rounded-lg border border-emerald-300 bg-white px-3 py-2.5 text-sm font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
-          {collecting ? 'Saving…' : '🏦 Taken to bank — reset total'}
+          {collecting ? 'Saving…' : 'RESET CASH COUNT'}
         </button>
       </div>
       <div className="mb-2 flex items-baseline justify-between">
