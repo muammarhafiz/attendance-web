@@ -29,6 +29,9 @@ export default function CashCountPage() {
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [history, setHistory] = useState<HistRow[]>([]);
+  const [onHand, setOnHand] = useState<number | null>(null);
+  const [lastCollectedOn, setLastCollectedOn] = useState<string | null>(null);
+  const [collecting, setCollecting] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const today = klToday();
@@ -70,6 +73,13 @@ export default function CashCountPage() {
     }));
   }, []);
 
+  // cash accumulated in the safe not yet banked = sum of daily counts since the last "taken to bank"
+  const loadStatus = useCallback(async () => {
+    const { data } = await supabase.rpc('cash_on_hand');
+    const row = Array.isArray(data) ? data[0] : data;
+    if (row) { setOnHand(row.on_hand == null ? 0 : Number(row.on_hand)); setLastCollectedOn(row.last_collected_on ?? null); }
+  }, []);
+
   // (re)trigger a fresh Niagawan cash-book scrape, then poll for the result
   const syncCash = useCallback(async () => {
     setCashSyncing(true);
@@ -101,11 +111,12 @@ export default function CashCountPage() {
         setTransferActual(existing.transfer_counted == null ? null : Number(existing.transfer_counted));
       }
       await loadHistory();
+      await loadStatus();
       // ask the NAS to refresh today's cash book, then poll for it
       await syncCash();
     })();
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [today, loadHistory, syncCash]);
+  }, [today, loadHistory, loadStatus, syncCash]);
 
   const setCount = (denom: number, v: number) => setCounts((c) => ({ ...c, [denom]: Math.max(0, v) }));
   const total = DENOMS.reduce((s, d) => s + (counts[d] || 0) * d, 0);
@@ -120,7 +131,19 @@ export default function CashCountPage() {
     if (error) { setErr(error.message); return; }
     setSaved(true);
     loadHistory();
-  }, [counts, today, loadHistory, cardActual, qrActual, transferActual]);
+    loadStatus();
+  }, [counts, today, loadHistory, loadStatus, cardActual, qrActual, transferActual]);
+
+  // Record "cash taken to the bank" — resets the cash-to-bank running total from today onward.
+  const markCollected = useCallback(async () => {
+    if (!window.confirm(`Reset the cash-to-bank total? This marks all cash counted so far${onHand ? ` (${rm(onHand)})` : ''} as taken to the bank.`)) return;
+    setCollecting(true);
+    const { error } = await supabase.rpc('mark_cash_collected');
+    setCollecting(false);
+    if (error) { setErr(error.message); return; }
+    await loadStatus();
+    await loadHistory();
+  }, [onHand, loadStatus, loadHistory]);
 
   if (authed === null || (authed && allowed === null)) return <div className="p-6 text-sm text-gray-500">Checking…</div>;
   if (!authed) return <div className="p-6 text-sm text-gray-600">Please sign in first.</div>;
@@ -254,29 +277,37 @@ export default function CashCountPage() {
         </div>
       )}
 
-      {history.length > 0 && <RecentCounts rows={history} today={today} />}
+      {history.length > 0 && <RecentCounts rows={history} today={today} onHand={onHand} lastCollectedOn={lastCollectedOn} onCollect={markCollected} collecting={collecting} />}
     </div>
   );
 }
 
-function RecentCounts({ rows, today }: { rows: HistRow[]; today: string }) {
-  const totalCounted = rows.reduce((s, r) => s + r.counted, 0);
-  const withNet = rows.filter((r) => r.cashIn != null);
-  const totalNet = withNet.reduce((s, r) => s + ((r.cashIn as number) - r.cashOut), 0);
-  const totalVar = withNet.reduce((s, r) => s + (r.counted - ((r.cashIn as number) - r.cashOut)), 0);
+function RecentCounts({ rows, today, onHand, lastCollectedOn, onCollect, collecting }: {
+  rows: HistRow[]; today: string; onHand: number | null; lastCollectedOn: string | null;
+  onCollect: () => void; collecting: boolean;
+}) {
   return (
     <div className="mt-8">
+      {/* Cash to bank = counted cash accumulated in the safe since the last deposit */}
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Cash to bank</div>
+      <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+        <div className="flex items-baseline justify-between">
+          <span className="text-sm font-semibold text-gray-700">In the safe, not yet banked</span>
+          <span className="text-2xl font-extrabold text-gray-900">{onHand == null ? '…' : rm(onHand)}</span>
+        </div>
+        <p className="mt-1 text-xs text-gray-500">
+          {lastCollectedOn
+            ? <>Accumulating since you last took cash to the bank on <b className="text-gray-700">{new Date(lastCollectedOn).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</b>.</>
+            : <>All counted cash not yet marked as banked. Tap the button below after your next deposit to start the total from there.</>}
+        </p>
+        <button onClick={onCollect} disabled={collecting || !onHand}
+          className="mt-3 w-full rounded-lg border border-emerald-300 bg-white px-3 py-2.5 text-sm font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
+          {collecting ? 'Saving…' : '🏦 Taken to bank — reset total'}
+        </button>
+      </div>
       <div className="mb-2 flex items-baseline justify-between">
         <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">Recent counts</span>
         <span className="text-xs text-gray-400">{rows.length} day{rows.length === 1 ? '' : 's'}</span>
-      </div>
-      <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-        <div className="flex items-baseline justify-between">
-          <span className="text-sm font-semibold text-gray-700">Total counted so far</span>
-          <span className="text-lg font-extrabold text-gray-900">{rm(totalCounted)}</span>
-        </div>
-        <div className="mt-1 flex justify-between text-xs text-gray-500"><span>Niagawan net (in − out)</span><span>{withNet.length ? rm(totalNet) : '—'}</span></div>
-        <div className="mt-0.5 flex justify-between text-xs"><span className="text-gray-500">Variance</span><span>{withNet.length ? histVariance(totalVar) : <span className="text-gray-400">—</span>}</span></div>
       </div>
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
         <div className="max-h-72 overflow-auto">
@@ -293,11 +324,13 @@ function RecentCounts({ rows, today }: { rows: HistRow[]; today: string }) {
               {rows.map((r) => {
                 const net = r.cashIn == null ? null : r.cashIn - r.cashOut;
                 const v = net == null ? null : r.counted - net;
+                const banked = lastCollectedOn != null && r.day <= lastCollectedOn;
                 return (
-                  <tr key={r.day}>
+                  <tr key={r.day} className={banked ? 'opacity-45' : undefined}>
                     <td className="whitespace-nowrap px-3 py-2 text-left text-gray-700">
                       {new Date(r.day).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}
                       {r.day === today && <span className="ml-1 text-[10px] font-semibold text-emerald-600">today</span>}
+                      {banked && <span className="ml-1 text-[10px] font-semibold text-gray-400">banked</span>}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-right font-semibold text-gray-900">{rm(r.counted)}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-right text-gray-500">{net == null ? '—' : rm(net)}</td>
@@ -311,13 +344,6 @@ function RecentCounts({ rows, today }: { rows: HistRow[]; today: string }) {
       </div>
     </div>
   );
-}
-
-function histVariance(v: number | null) {
-  if (v == null) return <span className="text-gray-400">no Niagawan figure</span>;
-  if (Math.abs(v) < 0.01) return <span className="font-semibold text-emerald-600">✅ match</span>;
-  const short = v < 0;
-  return <span className={`font-semibold ${short ? 'text-rose-600' : 'text-amber-600'}`}>{short ? '⚠️ short −' : '⚠️ over +'}{rm(Math.abs(v))}</span>;
 }
 
 // compact variance for the table rows
