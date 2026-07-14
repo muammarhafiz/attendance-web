@@ -47,6 +47,7 @@ type Perf = { year: number; month: number; late_days: number; late_minutes: numb
 type DayRow = { day: string; status: string; check_in_kl: string | null; check_out_kl: string | null; late_min: number | null; half: string | null };
 type Payslip = { year: number; month: number; net_pay: number; locked_at: string | null };
 type SalesInfo = { year: number; month: number; total: number; invoices: number };
+type BoardRow = { staff_name: string; total: number; invoices: number; is_me: boolean };
 
 function haversineM(aLat: number, aLon: number, bLat: number, bLon: number): number {
   const R = 6371000;
@@ -105,6 +106,7 @@ export default function CheckinV2() {
   const [sales, setSales] = useState<SalesInfo | null>(null);
   const [payslips, setPayslips] = useState<Payslip[]>([]);
   const [slipBusy, setSlipBusy] = useState<string | null>(null);
+  const [board, setBoard] = useState<BoardRow[]>([]); // team sales leaderboard (everyone can see)
 
   useEffect(() => {
     setNow(new Date());
@@ -188,6 +190,19 @@ export default function CheckinV2() {
     setSales(row ? { year: Number(row.year), month: Number(row.month), total: Number(row.total), invoices: Number(row.invoices) } : { year: y, month: m, total: 0, invoices: 0 });
   }, [email, perfYM]);
   useEffect(() => { if (email) loadSales(); }, [email, loadSales]);
+
+  // Team sales leaderboard — visible to all staff (sales are not private); same month as My sales.
+  const loadBoard = useCallback(async () => {
+    if (!email) return;
+    const { y, m } = perfYM();
+    const { data } = await supabase.rpc('staff_sales_board', { p_year: y, p_month: m });
+    const rows = ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+      staff_name: String(r.staff_name), total: Number(r.total), invoices: Number(r.invoices), is_me: Boolean(r.is_me),
+    }));
+    rows.sort((a, b) => b.total - a.total);
+    setBoard(rows);
+  }, [email, perfYM]);
+  useEffect(() => { if (email) loadBoard(); }, [email, loadBoard]);
 
   // My day-by-day attendance for the same month — self-scoped; only fetched when expanded.
   const loadDaily = useCallback(async () => {
@@ -444,6 +459,31 @@ export default function CheckinV2() {
             <div className="text-xl font-extrabold text-slate-900">{rm(sales.total)}</div>
           </div>
           <div className="mt-0.5 text-xs text-slate-400">{sales.invoices} invoice{sales.invoices === 1 ? '' : 's'} · use ‹ › above to change month</div>
+        </div>
+      )}
+
+      {/* Team sales leaderboard — everyone can see (sales are not private) */}
+      {board.length > 0 && (
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-2 text-sm font-medium text-slate-700">🏆 Sales leaderboard {sales && <span className="text-xs font-normal text-slate-400">· {new Date(sales.year, sales.month - 1, 1).toLocaleDateString('en-MY', { month: 'short', year: 'numeric' })}</span>}</div>
+          <div className="divide-y divide-slate-100">
+            {board.map((r, i) => {
+              const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : null;
+              return (
+                <div key={`${r.staff_name}-${i}`} className={`flex items-center justify-between gap-2 py-1.5 ${r.is_me ? 'rounded-lg bg-brand-50 px-2' : ''}`}>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="w-5 shrink-0 text-center text-xs tabular-nums text-slate-400">{medal ?? i + 1}</span>
+                    <span className={`truncate text-sm ${r.is_me ? 'font-semibold text-brand-800' : 'text-slate-700'}`}>{r.staff_name}{r.is_me ? ' · you' : ''}</span>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <div className={`text-sm tabular-nums ${r.is_me ? 'font-semibold text-brand-800' : 'text-slate-800'}`}>{rm(r.total)}</div>
+                    <div className="text-[10px] text-slate-400">{r.invoices} inv</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-2 text-xs text-slate-400">Everyone&rsquo;s sales this month · use ‹ › above to change month</div>
         </div>
       )}
 
