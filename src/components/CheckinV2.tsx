@@ -487,26 +487,28 @@ export default function CheckinV2() {
         </div>
       )}
 
-      {/* My payslips */}
-      {payslips.length > 0 && (
-        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="text-sm font-medium text-slate-700">🧾 My payslips</div>
-          <div className="mt-2 divide-y divide-slate-100">
-            {payslips.map((p) => (
-              <div key={`${p.year}-${p.month}`} className="flex items-center justify-between gap-2 py-2">
-                <div className="text-sm">
-                  <div className="text-slate-800">{new Date(p.year, p.month - 1, 1).toLocaleDateString('en-MY', { month: 'long', year: 'numeric' })}</div>
-                  <div className="text-xs text-slate-400">Net pay {rm(p.net_pay)}</div>
-                </div>
-                <button onClick={() => downloadPayslip(p)} disabled={slipBusy === `${p.year}-${p.month}`}
-                  className="shrink-0 rounded-lg border border-brand-700 px-3 py-1.5 text-xs font-semibold text-brand-800 hover:bg-brand-50 disabled:opacity-50">
-                  {slipBusy === `${p.year}-${p.month}` ? '…' : '⬇ Download'}
-                </button>
-              </div>
-            ))}
+      {/* Last month's payslip — download only, salary amount hidden */}
+      {(() => {
+        const kl = new Date(Date.now() + 8 * 3600e3);              // KL time
+        const pm = new Date(Date.UTC(kl.getUTCFullYear(), kl.getUTCMonth() - 1, 1)); // previous month
+        const py = pm.getUTCFullYear();
+        const pmo = pm.getUTCMonth() + 1;
+        const p = payslips.find((x) => x.year === py && x.month === pmo);
+        if (!p) return null;                                        // hidden until last month is finalised
+        const key = `${p.year}-${p.month}`;
+        return (
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="text-sm font-medium text-slate-700">🧾 Last month&rsquo;s payslip</div>
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <div className="text-sm text-slate-800">{new Date(p.year, p.month - 1, 1).toLocaleDateString('en-MY', { month: 'long', year: 'numeric' })}</div>
+              <button onClick={() => downloadPayslip(p)} disabled={slipBusy === key}
+                className="shrink-0 rounded-lg border border-brand-700 px-3 py-1.5 text-xs font-semibold text-brand-800 hover:bg-brand-50 disabled:opacity-50">
+                {slipBusy === key ? '…' : '⬇ Download'}
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Request off day */}
       <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
