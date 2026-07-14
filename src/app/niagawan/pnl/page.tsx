@@ -63,7 +63,8 @@ export default function PnlPage() {
       supabase.from('grab_meals').select('meal_date,amount,item_count,drink_count').gte('meal_date', firstDay).lte('meal_date', lastDay).order('meal_date', { ascending: true }),
       supabase.rpc('all_staff_sales', { p_year: year, p_month: month }),
     ]);
-    if (d.error) setErr(d.error.message); else setErr(null);
+    const loadErr = d.error || ss.error; // surface a Staff-sales RPC failure, don't mask it as empty
+    if (loadErr) setErr(loadErr.message); else setErr(null);
     setDaily((d.data ?? []) as Daily[]);
     setSalesInv((s.data ?? []) as SaleInv[]);
     setTrades((t.data ?? []) as Trade[]);
