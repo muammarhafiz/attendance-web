@@ -44,6 +44,9 @@ const rm = (n: number | null) => `RM${Number(n || 0).toLocaleString('en-MY', { m
 type AdvReq = { id: string; amount: number; reason: string | null; status: string; review_note: string | null; credit_by: string | null; requested_at: string };
 type AdvLimit = { cap: number; eligible_today: boolean; already_requested: boolean; day: number; absent_days: number; eligible_days: number };
 type Perf = { year: number; month: number; late_days: number; late_minutes: number; offday: number; mc: number; absent: number };
+type DayRow = { day: string; status: string; check_in_kl: string | null; check_out_kl: string | null; late_min: number | null; half: string | null };
+type Payslip = { year: number; month: number; net_pay: number; locked_at: string | null };
+type SalesInfo = { year: number; month: number; total: number; invoices: number };
 
 function haversineM(aLat: number, aLon: number, bLat: number, bLon: number): number {
   const R = 6371000;
@@ -97,6 +100,11 @@ export default function CheckinV2() {
   const [myAdv, setMyAdv] = useState<AdvReq[]>([]);
   const [perf, setPerf] = useState<Perf | null>(null);
   const [perfOffset, setPerfOffset] = useState(0); // 0 = this month, 1 = last month, …
+  const [showDaily, setShowDaily] = useState(false);
+  const [daily, setDaily] = useState<DayRow[]>([]);
+  const [sales, setSales] = useState<SalesInfo | null>(null);
+  const [payslips, setPayslips] = useState<Payslip[]>([]);
+  const [slipBusy, setSlipBusy] = useState<string | null>(null);
 
   useEffect(() => {
     setNow(new Date());
@@ -163,6 +171,58 @@ export default function CheckinV2() {
   }, [email, perfOffset]);
 
   useEffect(() => { if (email) loadPerf(); }, [email, loadPerf]);
+
+  // The month shown by the "My attendance" card (0 = this month, 1 = last month, …).
+  const perfYM = useCallback(() => {
+    const kl = new Date(Date.now() + 8 * 3600e3);
+    const t = new Date(Date.UTC(kl.getUTCFullYear(), kl.getUTCMonth() - perfOffset, 1));
+    return { y: t.getUTCFullYear(), m: t.getUTCMonth() + 1 };
+  }, [perfOffset]);
+
+  // My sales for the same month — self-scoped server-side.
+  const loadSales = useCallback(async () => {
+    if (!email) return;
+    const { y, m } = perfYM();
+    const { data } = await supabase.rpc('my_sales', { p_year: y, p_month: m });
+    const row = (Array.isArray(data) ? data[0] : data) as SalesInfo | undefined;
+    setSales(row ? { year: Number(row.year), month: Number(row.month), total: Number(row.total), invoices: Number(row.invoices) } : { year: y, month: m, total: 0, invoices: 0 });
+  }, [email, perfYM]);
+  useEffect(() => { if (email) loadSales(); }, [email, loadSales]);
+
+  // My day-by-day attendance for the same month — self-scoped; only fetched when expanded.
+  const loadDaily = useCallback(async () => {
+    if (!email) return;
+    const { y, m } = perfYM();
+    const { data } = await supabase.rpc('my_attendance_month', { p_year: y, p_month: m });
+    setDaily(((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+      day: String(r.day), status: String(r.status), check_in_kl: (r.check_in_kl as string) ?? null,
+      check_out_kl: (r.check_out_kl as string) ?? null, late_min: (r.late_min as number) ?? null, half: (r.half as string) ?? null,
+    })));
+  }, [email, perfYM]);
+  useEffect(() => { if (email && showDaily) loadDaily(); }, [email, showDaily, loadDaily]);
+
+  // My finalized payslip months — self-scoped.
+  const loadPayslips = useCallback(async () => {
+    if (!email) return;
+    const { data } = await supabase.rpc('my_payslips');
+    setPayslips(((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+      year: Number(r.year), month: Number(r.month), net_pay: Number(r.net_pay), locked_at: (r.locked_at as string) ?? null,
+    })));
+  }, [email]);
+  useEffect(() => { if (email) loadPayslips(); }, [email, loadPayslips]);
+
+  const downloadPayslip = useCallback(async (p: Payslip) => {
+    const key = `${p.year}-${p.month}`;
+    setSlipBusy(key);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      const res = await fetch(`/api/payroll/my-payslip?year=${p.year}&month=${p.month}`, { headers: { Authorization: `Bearer ${token}` } });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.url) throw new Error(j?.error || 'Could not get your payslip.');
+      window.open(j.url, '_blank', 'noopener');
+    } catch (e) { alert(e instanceof Error ? e.message : String(e)); } finally { setSlipBusy(null); }
+  }, []);
 
   // Not signed in → send to the branded login page.
   useEffect(() => { if (email === null) router.replace('/login'); }, [email, router]);
@@ -360,6 +420,50 @@ export default function CheckinV2() {
             <PerfStat label="Absent" value={perf.absent === 0 ? 'None' : `${perf.absent} day${perf.absent === 1 ? '' : 's'}`} bad={perf.absent > 0} tone="rose" />
             <PerfStat label="Off days" value={String(perf.offday)} />
             <PerfStat label="MC" value={String(perf.mc)} />
+          </div>
+          <button onClick={() => setShowDaily((v) => !v)} className="mt-3 w-full rounded-lg border border-slate-200 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-50">
+            {showDaily ? 'Hide day-by-day ▴' : '📅 Show day-by-day record ▾'}
+          </button>
+          {showDaily && (
+            <div className="mt-2 overflow-hidden rounded-lg border border-slate-200">
+              <div className="max-h-72 divide-y divide-slate-100 overflow-auto">
+                {daily.length === 0 ? (
+                  <div className="p-3 text-center text-xs text-slate-400">No records for this month.</div>
+                ) : daily.map((d) => <DailyRow key={d.day} d={d} />)}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* My sales this month */}
+      {sales && (
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex items-baseline justify-between gap-2">
+            <div className="text-sm font-medium text-slate-700">💰 My sales <span className="text-xs font-normal text-slate-400">· {new Date(sales.year, sales.month - 1, 1).toLocaleDateString('en-MY', { month: 'short', year: 'numeric' })}</span></div>
+            <div className="text-xl font-extrabold text-slate-900">{rm(sales.total)}</div>
+          </div>
+          <div className="mt-0.5 text-xs text-slate-400">{sales.invoices} invoice{sales.invoices === 1 ? '' : 's'} · use ‹ › above to change month</div>
+        </div>
+      )}
+
+      {/* My payslips */}
+      {payslips.length > 0 && (
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="text-sm font-medium text-slate-700">🧾 My payslips</div>
+          <div className="mt-2 divide-y divide-slate-100">
+            {payslips.map((p) => (
+              <div key={`${p.year}-${p.month}`} className="flex items-center justify-between gap-2 py-2">
+                <div className="text-sm">
+                  <div className="text-slate-800">{new Date(p.year, p.month - 1, 1).toLocaleDateString('en-MY', { month: 'long', year: 'numeric' })}</div>
+                  <div className="text-xs text-slate-400">Net pay {rm(p.net_pay)}</div>
+                </div>
+                <button onClick={() => downloadPayslip(p)} disabled={slipBusy === `${p.year}-${p.month}`}
+                  className="shrink-0 rounded-lg border border-brand-700 px-3 py-1.5 text-xs font-semibold text-brand-800 hover:bg-brand-50 disabled:opacity-50">
+                  {slipBusy === `${p.year}-${p.month}` ? '…' : '⬇ Download'}
+                </button>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -572,6 +676,34 @@ export default function CheckinV2() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function DailyRow({ d }: { d: DayRow }) {
+  const label =
+    d.status === 'PRESENT' ? (d.check_in_kl ? `${fmtTime(d.check_in_kl)}${d.check_out_kl ? ' – ' + fmtTime(d.check_out_kl) : ''}` : 'Present')
+    : d.status === 'HOME' ? 'Home (WFH)'
+    : d.status === 'ABSENT' ? 'Absent'
+    : d.status === 'OFFDAY' ? 'Off day'
+    : d.status === 'MC' ? 'MC'
+    : d.status === 'PH' ? 'Public holiday'
+    : d.status === 'OFF' ? 'Rest day'
+    : d.status;
+  const tone =
+    d.status === 'ABSENT' ? 'text-rose-600'
+    : d.status === 'PRESENT' ? 'text-slate-700'
+    : d.status === 'HOME' ? 'text-emerald-600'
+    : 'text-slate-500';
+  const dd = new Date(d.day);
+  return (
+    <div className="flex items-center justify-between gap-2 px-3 py-1.5">
+      <span className="text-xs text-slate-500">{dd.toLocaleDateString('en-MY', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+      <span className={`text-right text-xs ${tone}`}>
+        {label}
+        {d.half && <span className="ml-1 rounded bg-sky-50 px-1 text-[10px] text-sky-700">½{d.half}</span>}
+        {(d.late_min ?? 0) > 0 && <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-800">{d.late_min}m late</span>}
+      </span>
     </div>
   );
 }
