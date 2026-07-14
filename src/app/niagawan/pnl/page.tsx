@@ -13,6 +13,7 @@ type Trade = { id: number; match: string; note: string | null };
 type Bill = { id: number; month: string; label: string; amount: number | string };
 type Pay = { staff_name: string; total_earn: number | string; epf_er: number | string | null; socso_er: number | string | null; eis_er: number | string | null };
 type Meal = { meal_date: string; amount: number | string; item_count: number | null; drink_count: number | null };
+type StaffSales = { staff_email: string | null; staff_name: string; niagawan_names: string | null; total: number | string; invoices: number };
 
 const n = (x: unknown) => { const v = Number(x); return Number.isFinite(v) ? v : 0; };
 const rm = (x: number) => `RM ${x.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -31,11 +32,12 @@ export default function PnlPage() {
   const [pay, setPay] = useState<Pay[]>([]);
   const [staffMeals, setStaffMeals] = useState(0); // GrabFood staff lunch total (auto from email receipts)
   const [meals, setMeals] = useState<Meal[]>([]);   // individual GrabFood receipts for the month
+  const [staffSales, setStaffSales] = useState<StaffSales[]>([]); // per-staff sales (admin RPC, matches each staff's "My sales")
   const [targetNet, setTargetNet] = useState(50000);
   const [ptjPct, setPtjPct] = useState(5);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<'overview' | 'costs'>('overview');
+  const [tab, setTab] = useState<'overview' | 'costs' | 'staff'>('overview');
   const [newLabel, setNewLabel] = useState('');
   const [newAmount, setNewAmount] = useState('');
   const [newTrade, setNewTrade] = useState('');
@@ -50,7 +52,7 @@ export default function PnlPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [d, s, t, b, p, st, g, ml] = await Promise.all([
+    const [d, s, t, b, p, st, g, ml, ss] = await Promise.all([
       supabase.from('niagawan_daily').select('day,invoices,sales,cogs,profit,unpaid_count').gte('day', firstDay).lte('day', lastDay).order('day'),
       supabase.from('niagawan_sale_inv').select('inv,day,customer,amount,status,staff').gte('day', firstDay).lte('day', lastDay),
       supabase.from('trade_customers').select('*').order('match'),
@@ -59,6 +61,7 @@ export default function PnlPage() {
       supabase.from('pnl_settings').select('*'),
       supabase.rpc('grab_meals_month_total', { p_month: monthKey }),
       supabase.from('grab_meals').select('meal_date,amount,item_count,drink_count').gte('meal_date', firstDay).lte('meal_date', lastDay).order('meal_date', { ascending: true }),
+      supabase.rpc('all_staff_sales', { p_year: year, p_month: month }),
     ]);
     if (d.error) setErr(d.error.message); else setErr(null);
     setDaily((d.data ?? []) as Daily[]);
@@ -68,6 +71,7 @@ export default function PnlPage() {
     setPay((p.data ?? []) as Pay[]);
     setStaffMeals(n(g.data) || 0);
     setMeals((ml.data ?? []) as Meal[]);
+    setStaffSales((ss.data ?? []) as StaffSales[]);
     for (const row of (st.data ?? []) as Array<{ key: string; value: unknown }>) {
       if (row.key === 'target_net') setTargetNet(n(row.value) || 50000);
       if (row.key === 'putrajaya_pct') setPtjPct(n(row.value));
@@ -172,6 +176,13 @@ export default function PnlPage() {
   // Staff-meal portions split into food vs drinks (drinks classified at parse time).
   const mealDrink = meals.reduce((s, m) => s + n(m.drink_count), 0);
   const mealFood = meals.reduce((s, m) => s + (m.item_count == null ? 0 : n(m.item_count) - n(m.drink_count)), 0);
+  // Staff sales: mapped staff by total desc, "Unattributed" bucket (staff_email === null) pinned last.
+  const staffRows = [...staffSales].sort((a, b) => {
+    if ((a.staff_email === null) !== (b.staff_email === null)) return a.staff_email === null ? 1 : -1;
+    return n(b.total) - n(a.total);
+  });
+  const staffSalesTotal = staffRows.reduce((s, r) => s + n(r.total), 0);
+  const staffSalesInv = staffRows.reduce((s, r) => s + n(r.invoices), 0);
 
   return (
     <div>
@@ -189,13 +200,61 @@ export default function PnlPage() {
         <>
           {/* Tabs */}
           <div className="mb-4 flex gap-1 border-b border-gray-200">
-            {([['overview', 'Overview'], ['costs', 'Operating costs']] as const).map(([k, label]) => (
+            {([['overview', 'Overview'], ['costs', 'Operating costs'], ['staff', 'Staff sales']] as const).map(([k, label]) => (
               <button key={k} onClick={() => setTab(k)}
                 className={`-mb-px border-b-2 px-3 py-1.5 text-sm font-medium ${tab === k ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>
                 {label}
               </button>
             ))}
           </div>
+
+          {/* Staff sales — per-salesperson, matches each staff's own "My sales" */}
+          {tab === 'staff' && (
+            <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="text-sm font-semibold text-gray-700">Staff sales <span className="font-normal text-gray-400">· {MONTHS[month - 1]} {year} · matches each staff&rsquo;s own &ldquo;My sales&rdquo;</span></span>
+                <span className="text-sm font-semibold">{rm(staffSalesTotal)}</span>
+              </div>
+              {staffRows.length === 0 ? (
+                <div className="text-xs text-gray-400">No sales data for this month yet.</div>
+              ) : (
+                <div className="max-h-[28rem] overflow-y-auto rounded border border-gray-100">
+                  <table className="min-w-full text-sm">
+                    <thead className="sticky top-0 bg-gray-50 text-left text-gray-500">
+                      <tr>
+                        <th className="px-3 py-1.5 font-semibold">#</th>
+                        <th className="px-3 py-1.5 font-semibold">Staff</th>
+                        <th className="px-3 py-1.5 text-right font-semibold">Invoices</th>
+                        <th className="px-3 py-1.5 text-right font-semibold">Sales</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {staffRows.map((r, i) => (
+                        <tr key={r.staff_email ?? '__unmapped__'} className={r.staff_email === null ? 'bg-gray-50/50' : ''}>
+                          <td className="px-3 py-1.5 tabular-nums text-gray-400">{r.staff_email === null ? '·' : i + 1}</td>
+                          <td className="px-3 py-1.5">
+                            <div className={r.staff_email === null ? 'text-gray-500' : 'text-gray-800'}>{r.staff_name}</div>
+                            {r.niagawan_names && <div className="text-xs text-gray-400">{r.niagawan_names}</div>}
+                          </td>
+                          <td className="px-3 py-1.5 text-right tabular-nums text-gray-600">{n(r.invoices)}</td>
+                          <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums font-medium text-gray-800">{rm(n(r.total))}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t border-gray-200 font-semibold">
+                        <td className="px-3 py-1.5"></td>
+                        <td className="px-3 py-1.5">Total</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">{staffSalesInv}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">{rm(staffSalesTotal)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+              <div className="mt-2 text-xs text-gray-400">All invoices for the month, attributed by salesperson (Niagawan &ldquo;Delivery&rdquo; name → staff). &ldquo;Unattributed&rdquo; = invoices whose salesperson isn&rsquo;t in the mapping yet. This is total sales, not repair-only — it can differ from the Overview&rsquo;s &ldquo;Top mechanics&rdquo; (repair revenue only).</div>
+            </div>
+          )}
 
           {/* Verdict */}
           {tab === 'overview' && (<>
