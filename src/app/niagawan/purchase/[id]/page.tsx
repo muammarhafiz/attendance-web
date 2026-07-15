@@ -162,8 +162,9 @@ export default function ReviewInvoicePage() {
       const map: Record<string, NiagawanMatch[]> = {};
       ((data ?? []) as Array<{ sku: string; code: string; descp: string | null; price: number | string | null }>).forEach((p) => {
         const m: NiagawanMatch = { sku: String(p.sku), code: String(p.code), descp: String(p.descp ?? ''), price: String(p.price ?? ''), bal: '' };
-        // Index the product under EVERY token of its code, so a line code matches it via that token.
-        Array.from(new Set(String(p.code ?? '').split(/[\s,]+/).map(normCode).filter(Boolean))).forEach((k) => {
+        // Index the product under its WHOLE normalised code AND every space/comma token, so a
+        // line matches whether its code is the full string ("32X52X8R POS") or one packed token.
+        Array.from(new Set([normCode(String(p.code ?? '')), ...String(p.code ?? '').split(/[\s,]+/).map(normCode)].filter(Boolean))).forEach((k) => {
           (map[k] = map[k] || []).push(m);
         });
       });
