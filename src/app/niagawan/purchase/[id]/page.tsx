@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
-import BarcodeScanner from '@/components/BarcodeScanner';
 
 type Pinv = {
   id: string;
@@ -74,7 +73,6 @@ export default function ReviewInvoicePage() {
   // product to a line — for code-less invoices (e.g. Tat Seng) the owner picks from the list
   // instead of creating duplicates. `picked` caches the chosen products for display.
   const [pickerLine, setPickerLine] = useState<number | null>(null);
-  const [scanLine, setScanLine] = useState<number | null>(null); // line whose barcode we're scanning
   const [pq, setPq] = useState('');
   const [presults, setPresults] = useState<NiagawanMatch[]>([]);
   const [picked, setPicked] = useState<Record<string, NiagawanMatch>>({});
@@ -444,19 +442,6 @@ export default function ReviewInvoicePage() {
 
   return (
     <div>
-      {scanLine !== null && (
-        <BarcodeScanner
-          onClose={() => setScanLine(null)}
-          onDetected={(code) => {
-            const idx = scanLine;
-            setScanLine(null);
-            // "Find & confirm": feed the scanned code into the existing product picker for that
-            // line — it shows the matching catalog product to confirm & link (via pickProduct).
-            setPickerLine(idx);
-            searchProducts(code);
-          }}
-        />
-      )}
       <div className="mb-3 flex items-center justify-between">
         <button onClick={() => router.push('/niagawan/purchase')} className="text-sm text-gray-500 hover:text-gray-900">← Back to invoices</button>
         <div className="flex items-center gap-2">
@@ -615,25 +600,18 @@ export default function ReviewInvoicePage() {
                 <tr key={idx} className="border-t border-gray-100 align-top">
                   <td className="px-2 py-1.5 text-gray-400">{idx + 1}</td>
                   <td className="px-2 py-1.5">
-                    <div className="flex items-start gap-1">
-                      <input disabled={locked} value={it.item_code}
-                        onChange={(e) => {
-                          // Typing a code is an explicit override: it must ALSO become the codes
-                          // list (which is what the NAS matches/creates by). Leaving stale alt
-                          // codes there made Niagawan ignore the owner's typed code (2026-06-12).
-                          const v = e.target.value;
-                          // Editing the code invalidates the live-lookup signals tied to the OLD code:
-                          // clear in_niagawan/niagawan_matches so the stale-catalog warning can't make a
-                          // false claim about an unverified/changed code.
-                          setItem(idx, { item_code: v, codes: v.trim() ? [v.trim()] : [], code_verified: null, sku_id: null, will_create: false, in_niagawan: null, niagawan_matches: null });
-                        }}
-                        className={`w-36 rounded border px-1.5 py-1 font-mono text-xs disabled:bg-transparent ${it.code_verified === false ? 'border-rose-400 bg-rose-50' : 'border-gray-200 disabled:border-transparent'}`} />
-                      {!locked && (
-                        <button type="button" onClick={() => setScanLine(idx)} aria-label="Scan barcode"
-                          title="Scan the part's barcode to find the product"
-                          className="shrink-0 rounded border border-gray-200 px-1.5 py-1 text-xs hover:bg-gray-50">📷</button>
-                      )}
-                    </div>
+                    <input disabled={locked} value={it.item_code}
+                      onChange={(e) => {
+                        // Typing a code is an explicit override: it must ALSO become the codes
+                        // list (which is what the NAS matches/creates by). Leaving stale alt
+                        // codes there made Niagawan ignore the owner's typed code (2026-06-12).
+                        const v = e.target.value;
+                        // Editing the code invalidates the live-lookup signals tied to the OLD code:
+                        // clear in_niagawan/niagawan_matches so the stale-catalog warning can't make a
+                        // false claim about an unverified/changed code.
+                        setItem(idx, { item_code: v, codes: v.trim() ? [v.trim()] : [], code_verified: null, sku_id: null, will_create: false, in_niagawan: null, niagawan_matches: null });
+                      }}
+                      className={`w-36 rounded border px-1.5 py-1 font-mono text-xs disabled:bg-transparent ${it.code_verified === false ? 'border-rose-400 bg-rose-50' : 'border-gray-200 disabled:border-transparent'}`} />
                     {it.code_verified === false && (
                       <div className="mt-0.5 max-w-[12rem] text-[10px] font-medium leading-tight text-rose-600" title="This code was NOT found in the invoice's text — the AI may have misread it. Check it against the PDF.">
                         ⚠ not found in PDF text — check it
