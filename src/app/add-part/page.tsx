@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import BarcodeScanner from '@/components/BarcodeScanner';
 
 type OpenInv = { inv: string; sale_id: string; customer: string | null };
 type Product = { sku: string; code: string | null; descp: string | null; price: number | string | null; cost: number | string | null };
@@ -34,6 +35,7 @@ export default function AddPartPage() {
   const [qty, setQty] = useState(1);
   const [queue, setQueue] = useState<Queued[]>([]);
   const [errMsg, setErrMsg] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false); // camera barcode scanner open
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -141,6 +143,12 @@ export default function AddPartPage() {
 
   return (
     <div className="mx-auto max-w-md px-5 py-6">
+      {scanning && (
+        <BarcodeScanner
+          onClose={() => setScanning(false)}
+          onDetected={(code) => { setScanning(false); search(code); }}
+        />
+      )}
       <a href="/workshop" className="text-sm text-gray-400 hover:text-gray-600">← Back</a>
       <h1 className="mt-2 text-2xl font-bold text-gray-900">🔩 Part Arrived</h1>
 
@@ -192,6 +200,12 @@ export default function AddPartPage() {
           <>
             <input value={q} onChange={(e) => search(e.target.value)} placeholder="e.g. MRDB or BRAKE PAD" autoComplete="off"
               className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3.5 text-lg uppercase" />
+            {!chosen && (
+              <button type="button" onClick={() => setScanning(true)}
+                className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-blue-600 bg-blue-50 px-4 py-3 text-base font-semibold text-blue-700 hover:bg-blue-100">
+                📷 Scan barcode
+              </button>
+            )}
             {chosen ? (
               <div className="mt-2 rounded-xl border border-emerald-400 bg-emerald-50 px-3 py-2.5">
                 <div className="flex items-center justify-between">
