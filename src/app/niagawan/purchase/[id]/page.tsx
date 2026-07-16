@@ -155,18 +155,18 @@ export default function ReviewInvoicePage() {
     setCandsLoaded(false);
     (async () => {
       if (!allCodes.length) { if (!cancelled) { setCatMatches({}); setCandsLoaded(true); } return; }
-      // Token-aware match: pinv_candidates splits each product's code on spaces/commas and matches
-      // any normalised token — so a combined code like "M1515-10040 M1515-A0110" is found by "M1515-10040".
+      // pinv_candidates does ALL the matching server-side (exact, whole-code, per-supplier suffix,
+      // and combined/truncated codes) and returns matched_code = the line code each product matched.
+      // We index by that, so the page links to exactly what the server matched — no client re-guessing
+      // (which was losing spaced "32X52X8R POS" and suffix "70011008-GRAND" style matches).
       const { data } = await supabase.rpc('pinv_candidates', { p_codes: allCodes });
       if (cancelled) return;
       const map: Record<string, NiagawanMatch[]> = {};
-      ((data ?? []) as Array<{ sku: string; code: string; descp: string | null; price: number | string | null }>).forEach((p) => {
+      ((data ?? []) as Array<{ sku: string; code: string; descp: string | null; price: number | string | null; matched_code: string | null }>).forEach((p) => {
+        const key = String(p.matched_code ?? '');
+        if (!key) return;
         const m: NiagawanMatch = { sku: String(p.sku), code: String(p.code), descp: String(p.descp ?? ''), price: String(p.price ?? ''), bal: '' };
-        // Index the product under its WHOLE normalised code AND every space/comma token, so a
-        // line matches whether its code is the full string ("32X52X8R POS") or one packed token.
-        Array.from(new Set([normCode(String(p.code ?? '')), ...String(p.code ?? '').split(/[\s,]+/).map(normCode)].filter(Boolean))).forEach((k) => {
-          (map[k] = map[k] || []).push(m);
-        });
+        (map[key] = map[key] || []).push(m);
       });
       setCatMatches(map); setCandsLoaded(true);
     })();
