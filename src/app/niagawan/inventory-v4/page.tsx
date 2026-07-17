@@ -38,6 +38,7 @@ export default function InventoryV4Page() {
   const [avgFeed, setAvgFeed] = useState<Map<string, number>>(new Map()); // sku -> auto 3-mo avg
   const [avgAsOf, setAvgAsOf] = useState<string | null>(null);
   const [avgState, setAvgState] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const [supState, setSupState] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [busyPo, setBusyPo] = useState<number | null>(null);
   const [editingLine, setEditingLine] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -48,6 +49,7 @@ export default function InventoryV4Page() {
   const [search, setSearch] = useState('');
   const refreshPoll = useRef<ReturnType<typeof setInterval> | null>(null);
   const avgPoll = useRef<ReturnType<typeof setInterval> | null>(null);
+  const supPoll = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -131,7 +133,7 @@ export default function InventoryV4Page() {
     if (isAdmin) { loadGroups(); loadGroupItems(); loadCatalog(); loadFreshness(); loadAvgFeed(); loadSuppliers(); reloadPOs(); }
   }, [isAdmin, loadGroups, loadGroupItems, loadCatalog, loadFreshness, loadAvgFeed, loadSuppliers, reloadPOs]);
 
-  useEffect(() => () => { if (refreshPoll.current) clearInterval(refreshPoll.current); if (avgPoll.current) clearInterval(avgPoll.current); }, []);
+  useEffect(() => () => { if (refreshPoll.current) clearInterval(refreshPoll.current); if (avgPoll.current) clearInterval(avgPoll.current); if (supPoll.current) clearInterval(supPoll.current); }, []);
 
   // "Calculate average" — scans the last 3 months of sales (NAS avg3mo job) and fills Avg/mo.
   const calcAverage = useCallback(async () => {
@@ -152,6 +154,27 @@ export default function InventoryV4Page() {
       } else if (Date.now() - started > 9 * 60 * 1000) { if (avgPoll.current) clearInterval(avgPoll.current); setAvgState('idle'); }
     }, 5000);
   }, [avgState, loadAvgFeed, loadGroupItems]);
+
+  // "Refresh suppliers" — pull the current creditor list from Niagawan into the dropdown
+  // (needed after creating a brand-new supplier in Niagawan). ~1 min.
+  const refreshSuppliers = useCallback(async () => {
+    if (supState === 'running') return;
+    setSupState('running');
+    const { data, error } = await supabase.from('sync_requests').insert({ source: 'inventory-v4', which: 'suppliers' }).select('id').single();
+    if (error || !data) { setSupState('error'); window.setTimeout(() => setSupState('idle'), 5000); return; }
+    const id = data.id as number;
+    const started = Date.now();
+    if (supPoll.current) clearInterval(supPoll.current);
+    supPoll.current = setInterval(async () => {
+      const { data: r } = await supabase.from('sync_requests').select('status').eq('id', id).single();
+      if (r?.status === 'done' || r?.status === 'error') {
+        if (supPoll.current) clearInterval(supPoll.current);
+        await loadSuppliers();
+        setSupState(r.status === 'done' ? 'done' : 'error');
+        window.setTimeout(() => setSupState('idle'), 6000);
+      } else if (Date.now() - started > 3 * 60 * 1000) { if (supPoll.current) clearInterval(supPoll.current); setSupState('idle'); }
+    }, 4000);
+  }, [supState, loadSuppliers]);
 
   const itemBySku = useMemo(() => { const m = new Map<string, Item>(); for (const it of items) m.set(it.sku, it); return m; }, [items]);
 
@@ -427,6 +450,10 @@ export default function InventoryV4Page() {
           <button onClick={calcAverage} disabled={avgState === 'running'} title="Scan the last 3 months of sales and fill Avg/mo (takes a few minutes)"
             className="rounded-md border border-blue-600 bg-blue-50 px-2.5 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50">
             {avgState === 'running' ? 'Calculating…' : avgState === 'done' ? '✓ done' : avgState === 'error' ? '⚠ failed' : '📊 Calculate average'}
+          </button>
+          <button onClick={refreshSuppliers} disabled={supState === 'running'} title="Pull the latest supplier list from Niagawan (after creating a new supplier there)"
+            className="rounded-md border border-gray-300 px-2.5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+            {supState === 'running' ? 'Refreshing…' : supState === 'done' ? '✓ suppliers' : supState === 'error' ? '⚠ failed' : '🔄 Refresh suppliers'}
           </button>
         </div>
       </div>
