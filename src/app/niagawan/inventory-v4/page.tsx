@@ -13,8 +13,8 @@ import { supabase } from '@/lib/supabaseClient';
 type Group = { id: number; name: string; sort_order: number; creditor_id: string | null; supplier_name: string | null };
 type GroupItem = { id: number; group_id: number; sku: string; code: string | null; descp: string | null; carton_size: number | null; avg_monthly: number | null; keep_level: number | null };
 type Item = { sku: string; code: string | null; descp: string | null; balance: number | null };
-type PoSugg = { id: number; status: string; po_number: string | null };
-type PoLine = { suggestion_id: number; sku: string | null; code: string | null; ordered_qty: number; received_qty: number };
+type PoSugg = { id: number; source: string | null; supplier_id: string | null; supplier_name: string | null; status: string; po_number: string | null; po_id: string | null; note: string | null };
+type PoLine = { id: number; suggestion_id: number; sku: string | null; code: string | null; descp: string | null; ordered_qty: number; received_qty: number };
 
 const OPEN = new Set(['pending', 'approved', 'created']);
 // Round the order up to whole cartons (Gulf = 4 per carton). No carton set -> order exact units.
@@ -36,6 +36,8 @@ export default function InventoryV4Page() {
   const [avgFeed, setAvgFeed] = useState<Map<string, number>>(new Map()); // sku -> auto 3-mo avg
   const [avgAsOf, setAvgAsOf] = useState<string | null>(null);
   const [avgState, setAvgState] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const [busyPo, setBusyPo] = useState<number | null>(null);
+  const [editingLine, setEditingLine] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const refreshPoll = useRef<ReturnType<typeof setInterval> | null>(null);
   const avgPoll = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -92,18 +94,25 @@ export default function InventoryV4Page() {
     setAvgFeed(m); setAvgAsOf(latest);
   }, []);
 
+  const PO_COLS = 'id,source,supplier_id,supplier_name,status,po_number,po_id,note';
   // Open POs (any card) -> so we don't re-suggest what's already on the way.
   const reloadPOs = useCallback(async () => {
-    const { data: ss } = await supabase.from('po_suggestions').select('id,status,po_number')
+    const { data: ss } = await supabase.from('po_suggestions').select(PO_COLS)
       .in('source', ['inventory-v3', 'inventory-v4']).neq('status', 'rejected').order('id', { ascending: false }).limit(80);
     const suggs = (ss ?? []) as PoSugg[];
     const ids = suggs.filter((s) => OPEN.has(s.status)).map((s) => s.id);
     let lines: PoLine[] = [];
     if (ids.length) {
-      const { data: ls } = await supabase.from('inventory_po_lines').select('suggestion_id,sku,code,ordered_qty,received_qty').in('suggestion_id', ids);
+      const { data: ls } = await supabase.from('inventory_po_lines').select('id,suggestion_id,sku,code,descp,ordered_qty,received_qty').in('suggestion_id', ids);
       lines = (ls ?? []) as PoLine[];
     }
     setPoSuggs(suggs); setPoLines(lines);
+  }, []);
+  // Suggestions only (used by the in-flight poll so it never clobbers a mid-edit qty).
+  const reloadSuggsOnly = useCallback(async () => {
+    const { data } = await supabase.from('po_suggestions').select(PO_COLS)
+      .in('source', ['inventory-v3', 'inventory-v4']).neq('status', 'rejected').order('id', { ascending: false }).limit(80);
+    setPoSuggs((data ?? []) as PoSugg[]);
   }, []);
 
   useEffect(() => {
@@ -132,6 +141,130 @@ export default function InventoryV4Page() {
     }, 5000);
   }, [avgState, loadAvgFeed, loadGroupItems]);
 
+  const itemBySku = useMemo(() => { const m = new Map<string, Item>(); for (const it of items) m.set(it.sku, it); return m; }, [items]);
+
+  // Units already on an OPEN po (by code) -> subtract from the order suggestion.
+  const onOrderByCode = useMemo(() => {
+    const openIds = new Set(poSuggs.filter((s) => OPEN.has(s.status)).map((s) => s.id));
+    const m = new Map<string, number>();
+    for (const l of poLines) {
+      if (!openIds.has(l.suggestion_id)) continue;
+      const key = l.code ?? '';
+      const remaining = Math.max(0, Number(l.ordered_qty || 0) - Number(l.received_qty || 0));
+      if (key) m.set(key, (m.get(key) ?? 0) + remaining);
+    }
+    return m;
+  }, [poSuggs, poLines]);
+
+  const linesBySugg = useMemo(() => {
+    const m = new Map<number, PoLine[]>();
+    for (const l of poLines) { const arr = m.get(l.suggestion_id) ?? []; arr.push(l); m.set(l.suggestion_id, arr); }
+    return m;
+  }, [poLines]);
+
+  // While a v4 PO is being created / awaiting delivery, poll so its PO number + receipts show up.
+  const hasOpenPo = poSuggs.some((s) => s.source === 'inventory-v4' && (s.status === 'approved' || s.status === 'created'));
+  useEffect(() => {
+    if (!isAdmin || !hasOpenPo) return;
+    const t = setInterval(() => { if (editingLine != null) reloadSuggsOnly(); else reloadPOs(); }, 12000);
+    return () => clearInterval(t);
+  }, [isAdmin, hasOpenPo, editingLine, reloadSuggsOnly, reloadPOs]);
+
+  // ---------------- Purchase orders ----------------
+  // Stage a draft PO from a card's red rows (one line per code, skip what's already on order).
+  const stageCardPO = useCallback(async (g: Group) => {
+    if (!g.creditor_id) { window.alert('This card has no supplier set.'); return; }
+    const lines: { code: string; sku: string; descp: string; qty: number }[] = [];
+    const seen = new Set<string>();
+    for (const gi of groupItems.filter((x) => x.group_id === g.id)) {
+      const live = itemBySku.get(gi.sku);
+      const code = live?.code ?? gi.code ?? null;
+      if (!code || seen.has(code) || (onOrderByCode.get(code) ?? 0) > 0) continue;
+      const stock = live ? live.balance : null;
+      const avg = gi.avg_monthly ?? avgFeed.get(gi.sku) ?? null;
+      const keep = gi.keep_level ?? (avg != null ? avg * 3 : null);
+      if (keep == null || stock == null) continue;
+      const qty = orderQty(keep - stock - (onOrderByCode.get(code) ?? 0), gi.carton_size);
+      if (qty <= 0) continue;
+      seen.add(code);
+      lines.push({ code, sku: gi.sku, descp: (live?.descp ?? gi.descp) || '', qty });
+    }
+    if (!lines.length) { window.alert('Nothing to order in this card.'); return; }
+    setBusyPo(-g.id);
+    const today = new Date().toISOString().slice(0, 10);
+    const { data: sugg, error } = await supabase.from('po_suggestions').insert({
+      source: 'inventory-v4', supplier_id: g.creditor_id, supplier_name: g.supplier_name,
+      items: lines.map((l) => ({ code: l.code, desc: l.descp, qty: l.qty, sku: l.sku })),
+      status: 'pending', period_from: today, period_to: today,
+    }).select('id').single();
+    if (error || !sugg) { setBusyPo(null); window.alert('Could not stage PO: ' + (error?.message ?? '')); return; }
+    const lineRows = lines.map((l) => ({ suggestion_id: sugg.id, sku: l.sku, code: l.code, descp: l.descp, ordered_qty: l.qty, received_qty: 0 }));
+    const { error: le } = await supabase.from('inventory_po_lines').insert(lineRows);
+    if (le) { await supabase.from('po_suggestions').delete().eq('id', sugg.id); setBusyPo(null); window.alert('Could not stage lines: ' + le.message); return; }
+    setBusyPo(null);
+    await reloadPOs();
+  }, [groupItems, itemBySku, avgFeed, onOrderByCode, reloadPOs]);
+
+  const cancelPO = useCallback(async (s: PoSugg) => {
+    if (!window.confirm('Discard this draft PO? (the items go back to needing re-order)')) return;
+    await supabase.from('po_suggestions').delete().eq('id', s.id);
+    await reloadPOs();
+  }, [reloadPOs]);
+
+  const setLineQtyLocal = useCallback((id: number, qty: number) => {
+    setPoLines((prev) => prev.map((l) => (l.id === id ? { ...l, ordered_qty: qty } : l)));
+  }, []);
+  const persistLineQty = useCallback(async (id: number, qty: number) => {
+    const v = Math.max(1, Math.floor(qty || 1));
+    setPoLines((prev) => prev.map((l) => (l.id === id ? { ...l, ordered_qty: v } : l)));
+    await supabase.from('inventory_po_lines').update({ ordered_qty: v }).eq('id', id);
+  }, []);
+  const removeLine = useCallback(async (id: number) => {
+    await supabase.from('inventory_po_lines').delete().eq('id', id);
+    await reloadPOs();
+  }, [reloadPOs]);
+
+  // Approve -> the NAS pollApproved() picks it up (~20s) and creates the PO in Niagawan.
+  const approvePO = useCallback(async (s: PoSugg) => {
+    const rawLines = poLines.filter((l) => l.suggestion_id === s.id);
+    if (!rawLines.length) { window.alert('Add at least one item first.'); return; }
+    if (!window.confirm(`Approve this PO to ${s.supplier_name ?? s.supplier_id}? It will be created in Niagawan.`)) return;
+    setBusyPo(s.id);
+    const byCode = new Map<string, { code: string | null; desc: string | null; qty: number; sku: string | null }>();
+    for (const l of rawLines) {
+      const qty = Math.max(1, Math.floor(Number(l.ordered_qty) || 1));
+      const key = l.code ?? `__n_${l.id}`;
+      const ex = byCode.get(key);
+      if (ex) ex.qty += qty; else byCode.set(key, { code: l.code, desc: l.descp, qty, sku: l.sku });
+    }
+    const items = [...byCode.values()];
+    const { error } = await supabase.from('po_suggestions').update({ items, status: 'approved', updated_at: new Date().toISOString() }).eq('id', s.id);
+    setBusyPo(null);
+    if (error) { window.alert('Could not approve: ' + error.message); return; }
+    await reloadPOs();
+  }, [poLines, reloadPOs]);
+
+  const retryPO = useCallback(async (s: PoSugg) => {
+    await supabase.from('po_suggestions').update({ status: 'approved', note: null, updated_at: new Date().toISOString() }).eq('id', s.id);
+    await reloadSuggsOnly();
+  }, [reloadSuggsOnly]);
+
+  // Manual receipt fallback (a DB trigger closes the PO once every line is received).
+  const markLineReceived = useCallback(async (l: PoLine) => {
+    await supabase.from('inventory_po_lines').update({ received_qty: l.ordered_qty }).eq('id', l.id);
+    await reloadPOs();
+  }, [reloadPOs]);
+  const markPOReceived = useCallback(async (s: PoSugg) => {
+    if (!window.confirm('Mark this whole PO as received? It will drop off the tracker.')) return;
+    setBusyPo(s.id);
+    for (const l of poLines.filter((x) => x.suggestion_id === s.id)) {
+      if (Number(l.received_qty) < Number(l.ordered_qty)) await supabase.from('inventory_po_lines').update({ received_qty: l.ordered_qty }).eq('id', l.id);
+    }
+    await supabase.from('po_suggestions').update({ status: 'received', updated_at: new Date().toISOString() }).eq('id', s.id);
+    setBusyPo(null);
+    await reloadPOs();
+  }, [poLines, reloadPOs]);
+
   const updateBalances = useCallback(async () => {
     if (refreshState === 'running') return;
     setRefreshState('running');
@@ -150,21 +283,6 @@ export default function InventoryV4Page() {
       } else if (Date.now() - started > 4 * 60 * 1000) { if (refreshPoll.current) clearInterval(refreshPoll.current); setRefreshState('idle'); }
     }, 4000);
   }, [refreshState, loadCatalog, loadFreshness]);
-
-  const itemBySku = useMemo(() => { const m = new Map<string, Item>(); for (const it of items) m.set(it.sku, it); return m; }, [items]);
-
-  // Units already on an OPEN po (by code) -> subtract from the order suggestion.
-  const onOrderByCode = useMemo(() => {
-    const openIds = new Set(poSuggs.filter((s) => OPEN.has(s.status)).map((s) => s.id));
-    const m = new Map<string, number>();
-    for (const l of poLines) {
-      if (!openIds.has(l.suggestion_id)) continue;
-      const key = l.code ?? '';
-      const remaining = Math.max(0, Number(l.ordered_qty || 0) - Number(l.received_qty || 0));
-      if (key) m.set(key, (m.get(key) ?? 0) + remaining);
-    }
-    return m;
-  }, [poSuggs, poLines]);
 
   const setItemLocal = (id: number, patch: Partial<GroupItem>) =>
     setGroupItems((prev) => prev.map((x) => (x.id === id ? { ...x, ...patch } : x)));
@@ -214,7 +332,12 @@ export default function InventoryV4Page() {
           <div key={g.id} className="mb-5 rounded-lg border border-gray-200 bg-white">
             <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5">
               <div className="text-sm font-semibold text-gray-800">{g.name} <span className="font-normal text-gray-400">· {g.supplier_name ?? '—'}</span></div>
-              {need > 0 && <span className="rounded-full bg-rose-600 px-2 py-0.5 text-xs font-semibold text-white">{need} to order</span>}
+              <div className="flex items-center gap-2">
+                {need > 0 && <span className="rounded-full bg-rose-600 px-2 py-0.5 text-xs font-semibold text-white">{need} to order</span>}
+                {need > 0 && <button onClick={() => stageCardPO(g)} disabled={busyPo === -g.id}
+                  className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
+                  {busyPo === -g.id ? 'Staging…' : 'Generate PO →'}</button>}
+              </div>
             </div>
             <div className="overflow-auto">
               <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -277,8 +400,125 @@ export default function InventoryV4Page() {
         );
       })}
 
+      {/* READY FOR PO — staged drafts awaiting approval */}
+      {poSuggs.some((s) => s.source === 'inventory-v4' && s.status === 'pending') && (
+        <div className="mb-5 rounded-lg border border-gray-200 bg-white p-4">
+          <h2 className="mb-3 text-sm font-semibold text-gray-800">Ready for PO <span className="font-normal text-gray-400">· review the quantities, then approve</span></h2>
+          <div className="space-y-3">
+            {poSuggs.filter((s) => s.source === 'inventory-v4' && s.status === 'pending').map((s) => {
+              const lines = linesBySugg.get(s.id) ?? [];
+              const totalUnits = lines.reduce((n, l) => n + Number(l.ordered_qty || 0), 0);
+              return (
+                <div key={s.id} className="rounded-md border border-gray-200 p-3">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-sm font-medium text-gray-800">{s.supplier_name ?? s.supplier_id}
+                      <span className="ml-1 text-xs font-normal text-gray-400">· {lines.length} item{lines.length === 1 ? '' : 's'} · {totalUnits} unit{totalUnits === 1 ? '' : 's'}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => cancelPO(s)} className="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-50">Discard</button>
+                      <button onClick={() => approvePO(s)} disabled={busyPo === s.id || lines.length === 0}
+                        className="rounded-md bg-emerald-600 px-3 py-0.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
+                        {busyPo === s.id ? 'Approving…' : 'Approve → create PO'}</button>
+                    </div>
+                  </div>
+                  <div className="overflow-auto rounded border border-gray-100">
+                    <table className="min-w-full divide-y divide-gray-200 text-sm">
+                      <thead className="bg-gray-50 text-left text-gray-600"><tr>
+                        <th className="px-3 py-2 font-semibold">Item Code</th><th className="px-3 py-2 font-semibold">Item Name</th>
+                        <th className="px-3 py-2 text-center font-semibold">Order qty</th><th className="px-3 py-2"></th>
+                      </tr></thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {lines.map((l) => (
+                          <tr key={l.id} className="group">
+                            <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-gray-900">{l.code || '—'}</td>
+                            <td className="px-3 py-1.5 text-gray-700">{l.descp || '—'}</td>
+                            <td className="px-3 py-1.5 text-center">
+                              <input type="number" min={1} inputMode="numeric" value={l.ordered_qty}
+                                onFocus={() => setEditingLine(l.id)}
+                                onChange={(e) => setLineQtyLocal(l.id, Math.floor(Number(e.target.value)))}
+                                onBlur={(e) => { setEditingLine(null); persistLineQty(l.id, Math.max(1, Math.floor(Number(e.target.value) || 1))); }}
+                                className="w-20 rounded border border-gray-200 px-1.5 py-0.5 text-center text-xs" />
+                            </td>
+                            <td className="px-3 py-1.5 text-right">
+                              <button onClick={() => removeLine(l.id)} title="Remove this line" className="rounded px-1 text-xs text-rose-400 opacity-40 transition hover:bg-rose-50 hover:text-rose-600 group-hover:opacity-100">✕</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* PO TRACKER — submitted POs being created / awaiting delivery */}
+      {poSuggs.some((s) => s.source === 'inventory-v4' && ['approved', 'created', 'error'].includes(s.status)) && (
+        <div className="mb-5 rounded-lg border border-gray-200 bg-white p-4">
+          <h2 className="mb-3 text-sm font-semibold text-gray-800">PO tracker <span className="font-normal text-gray-400">· creating / awaiting delivery</span></h2>
+          <div className="space-y-3">
+            {poSuggs.filter((s) => s.source === 'inventory-v4' && ['approved', 'created', 'error'].includes(s.status)).map((s) => {
+              const lines = linesBySugg.get(s.id) ?? [];
+              const doneCount = lines.filter((l) => Number(l.received_qty) >= Number(l.ordered_qty)).length;
+              return (
+                <div key={s.id} className="rounded-md border border-gray-200 p-3">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-gray-800">
+                      {s.status === 'created' && s.po_number ? (
+                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">{s.po_number}</span>
+                      ) : s.status === 'approved' ? (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">creating in Niagawan…</span>
+                      ) : (
+                        <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">failed</span>
+                      )}
+                      <span>{s.supplier_name ?? s.supplier_id}</span>
+                      <span className="text-xs font-normal text-gray-400">· {doneCount}/{lines.length} received</span>
+                    </div>
+                    {s.status === 'error' ? (
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => retryPO(s)} className="rounded-md bg-amber-600 px-2.5 py-0.5 text-xs font-medium text-white hover:bg-amber-700">Retry</button>
+                        <button onClick={() => cancelPO(s)} className="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-50">Discard</button>
+                      </div>
+                    ) : s.status === 'created' ? (
+                      <button onClick={() => markPOReceived(s)} disabled={busyPo === s.id} className="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50" title="If the invoice was keyed straight into Niagawan, mark it received here">Mark all received</button>
+                    ) : null}
+                  </div>
+                  {s.status === 'error' && s.note && <div className="mb-2 text-xs text-rose-600">{s.note}</div>}
+                  <div className="overflow-auto rounded border border-gray-100">
+                    <table className="min-w-full divide-y divide-gray-200 text-sm">
+                      <thead className="bg-gray-50 text-left text-gray-600"><tr>
+                        <th className="px-3 py-2 font-semibold">Item Code</th><th className="px-3 py-2 font-semibold">Item Name</th>
+                        <th className="px-3 py-2 text-center font-semibold">Received</th><th className="px-3 py-2"></th>
+                      </tr></thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {lines.map((l) => {
+                          const done = Number(l.received_qty) >= Number(l.ordered_qty);
+                          return (
+                            <tr key={l.id} className={done ? 'text-gray-400' : ''}>
+                              <td className={`whitespace-nowrap px-3 py-1.5 font-mono text-xs ${done ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{l.code || '—'}</td>
+                              <td className={`px-3 py-1.5 ${done ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{l.descp || '—'}</td>
+                              <td className="px-3 py-1.5 text-center tabular-nums"><span className={done ? 'text-emerald-600' : 'text-gray-700'}>{Number(l.received_qty)}/{Number(l.ordered_qty)}</span></td>
+                              <td className="px-3 py-1.5 text-right">
+                                {s.status === 'created' && !done && <button onClick={() => markLineReceived(l)} title="Mark this line received" className="rounded px-1.5 py-0.5 text-xs text-emerald-600 hover:bg-emerald-50">✓ receive</button>}
+                                {done && <span className="text-xs text-emerald-600">✓</span>}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <p className="mt-2 text-xs text-gray-400">
-        Avg/mo auto-fills from 📊 Calculate average (scans the last 3 months of sales){avgAsOf ? ` · updated ${new Date(avgAsOf).toLocaleDateString('en-MY', { day: '2-digit', month: 'short' })}` : ''}; type over any oil to override, Keep-level defaults to avg×3. Next: a “Generate PO” action.
+        Avg/mo auto-fills from 📊 Calculate average (scans the last 3 months of sales){avgAsOf ? ` · updated ${new Date(avgAsOf).toLocaleDateString('en-MY', { day: '2-digit', month: 'short' })}` : ''}; type over any oil to override, Keep-level defaults to avg×3. “Generate PO →” on a card stages a draft; approve it and the NAS creates the PO in Niagawan.
       </p>
     </div>
   );
