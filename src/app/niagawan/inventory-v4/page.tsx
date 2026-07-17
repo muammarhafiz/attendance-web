@@ -205,8 +205,10 @@ export default function InventoryV4Page() {
     await reloadPOs();
   }, [groupItems, itemBySku, avgFeed, onOrderByCode, reloadPOs]);
 
+  // Remove a PO entirely (a mistake, a test, or one deleted in Niagawan). Doesn't touch Niagawan.
   const cancelPO = useCallback(async (s: PoSugg) => {
-    if (!window.confirm('Discard this draft PO? (the items go back to needing re-order)')) return;
+    if (!window.confirm('Remove this PO? The items go back to needing re-order. (This does not touch Niagawan.)')) return;
+    await supabase.from('inventory_po_lines').delete().eq('suggestion_id', s.id);
     await supabase.from('po_suggestions').delete().eq('id', s.id);
     await reloadPOs();
   }, [reloadPOs]);
@@ -249,7 +251,27 @@ export default function InventoryV4Page() {
     await reloadSuggsOnly();
   }, [reloadSuggsOnly]);
 
-  // Manual receipt fallback (a DB trigger closes the PO once every line is received).
+  // Partial receipt: type the actual quantity received on a line (clamped 0..ordered).
+  const setLineReceivedLocal = useCallback((id: number, qty: number) => {
+    setPoLines((prev) => prev.map((l) => (l.id === id ? { ...l, received_qty: qty } : l)));
+  }, []);
+  const persistLineReceived = useCallback(async (id: number, qty: number, ordered: number) => {
+    const v = Math.max(0, Math.min(Math.floor(qty || 0), Math.floor(ordered || 0)));
+    setPoLines((prev) => prev.map((l) => (l.id === id ? { ...l, received_qty: v } : l)));
+    await supabase.from('inventory_po_lines').update({ received_qty: v }).eq('id', id);
+  }, []);
+
+  // Close a PO with whatever was received (a short delivery that won't be completed) — the
+  // shortfall becomes re-orderable next cycle since stock stays below keep-level.
+  const closePO = useCallback(async (s: PoSugg) => {
+    if (!window.confirm('Close this PO with the received amounts as entered? Any shortfall goes back to needing re-order.')) return;
+    setBusyPo(s.id);
+    await supabase.from('po_suggestions').update({ status: 'received', updated_at: new Date().toISOString() }).eq('id', s.id);
+    setBusyPo(null);
+    await reloadPOs();
+  }, [reloadPOs]);
+
+  // Manual full receipt (a DB trigger closes the PO once every line is received).
   const markLineReceived = useCallback(async (l: PoLine) => {
     await supabase.from('inventory_po_lines').update({ received_qty: l.ordered_qty }).eq('id', l.id);
     await reloadPOs();
@@ -482,7 +504,11 @@ export default function InventoryV4Page() {
                         <button onClick={() => cancelPO(s)} className="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-50">Discard</button>
                       </div>
                     ) : s.status === 'created' ? (
-                      <button onClick={() => markPOReceived(s)} disabled={busyPo === s.id} className="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50" title="If the invoice was keyed straight into Niagawan, mark it received here">Mark all received</button>
+                      <div className="flex items-center gap-1.5">
+                        <button onClick={() => markPOReceived(s)} disabled={busyPo === s.id} className="rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50" title="Everything arrived — mark every line fully received and close">✓ All arrived</button>
+                        <button onClick={() => closePO(s)} disabled={busyPo === s.id} className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50" title="Short delivery that won't be completed — close with the amounts received; the shortfall becomes re-orderable">Close (short)</button>
+                        <button onClick={() => cancelPO(s)} className="rounded border border-gray-200 px-2 py-0.5 text-xs text-rose-500 hover:bg-rose-50" title="Remove this PO (a mistake, a test, or one deleted in Niagawan). Does not touch Niagawan.">✕ Discard</button>
+                      </div>
                     ) : null}
                   </div>
                   {s.status === 'error' && s.note && <div className="mb-2 text-xs text-rose-600">{s.note}</div>}
@@ -499,9 +525,23 @@ export default function InventoryV4Page() {
                             <tr key={l.id} className={done ? 'text-gray-400' : ''}>
                               <td className={`whitespace-nowrap px-3 py-1.5 font-mono text-xs ${done ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{l.code || '—'}</td>
                               <td className={`px-3 py-1.5 ${done ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{l.descp || '—'}</td>
-                              <td className="px-3 py-1.5 text-center tabular-nums"><span className={done ? 'text-emerald-600' : 'text-gray-700'}>{Number(l.received_qty)}/{Number(l.ordered_qty)}</span></td>
+                              <td className="px-3 py-1.5 text-center tabular-nums">
+                                {s.status === 'created' ? (
+                                  <span className="inline-flex items-center gap-1">
+                                    <input type="number" min={0} max={Number(l.ordered_qty)} inputMode="numeric"
+                                      value={Number(l.received_qty)}
+                                      onFocus={() => setEditingLine(l.id)}
+                                      onChange={(e) => setLineReceivedLocal(l.id, Math.floor(Number(e.target.value)))}
+                                      onBlur={(e) => { setEditingLine(null); persistLineReceived(l.id, Number(e.target.value), Number(l.ordered_qty)); }}
+                                      className="w-14 rounded border border-gray-200 px-1 py-0.5 text-center text-xs" />
+                                    <span className="text-xs text-gray-400">/ {Number(l.ordered_qty)}</span>
+                                  </span>
+                                ) : (
+                                  <span className={done ? 'text-emerald-600' : 'text-gray-700'}>{Number(l.received_qty)}/{Number(l.ordered_qty)}</span>
+                                )}
+                              </td>
                               <td className="px-3 py-1.5 text-right">
-                                {s.status === 'created' && !done && <button onClick={() => markLineReceived(l)} title="Mark this line received" className="rounded px-1.5 py-0.5 text-xs text-emerald-600 hover:bg-emerald-50">✓ receive</button>}
+                                {s.status === 'created' && !done && <button onClick={() => markLineReceived(l)} title="This line fully received" className="rounded px-1.5 py-0.5 text-xs text-emerald-600 hover:bg-emerald-50">✓ full</button>}
                                 {done && <span className="text-xs text-emerald-600">✓</span>}
                               </td>
                             </tr>
