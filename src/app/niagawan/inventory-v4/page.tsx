@@ -178,6 +178,14 @@ export default function InventoryV4Page() {
 
   const itemBySku = useMemo(() => { const m = new Map<string, Item>(); for (const it of items) m.set(it.sku, it); return m; }, [items]);
 
+  // sku -> the card it's already in (so the catalog list shows what's already assigned).
+  const skuCard = useMemo(() => {
+    const gName = new Map<number, string>(groups.map((g) => [g.id, g.name]));
+    const m = new Map<string, string>();
+    for (const gi of groupItems) { const n = gName.get(gi.group_id); if (n && !m.has(gi.sku)) m.set(gi.sku, n); }
+    return m;
+  }, [groupItems, groups]);
+
   // Units already on an OPEN po (by code) -> subtract from the order suggestion.
   const onOrderByCode = useMemo(() => {
     const openIds = new Set(poSuggs.filter((s) => OPEN.has(s.status)).map((s) => s.id));
@@ -759,25 +767,30 @@ export default function InventoryV4Page() {
                     <th className="px-3 py-2 font-semibold">Item Code</th>
                     <th className="px-3 py-2 font-semibold">Item Description</th>
                     <th className="px-3 py-2 text-right font-semibold">Balance</th>
+                    <th className="px-3 py-2 font-semibold">In card</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {shown.map((it, i) => {
                     const sel = selected.has(it.sku);
+                    const inCard = skuCard.get(it.sku);
                     return (
-                      <tr key={it.sku} className={sel ? 'bg-blue-50' : ''}>
+                      <tr key={it.sku} className={sel ? 'bg-blue-50' : inCard ? 'bg-gray-50' : ''}>
                         <td className="px-3 py-1.5">
                           <input type="checkbox" checked={sel} onChange={() => toggleSelect(it.sku)} className="cursor-pointer" />
                         </td>
                         <td className="px-3 py-1.5 text-gray-400">{i + 1}</td>
                         <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-gray-900">{it.code || '—'}</td>
-                        <td className="px-3 py-1.5 text-gray-700">{it.descp || '—'}</td>
+                        <td className={`px-3 py-1.5 ${inCard ? 'text-gray-400' : 'text-gray-700'}`}>{it.descp || '—'}</td>
                         <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-gray-700">{it.balance == null ? '—' : it.balance}</td>
+                        <td className="whitespace-nowrap px-3 py-1.5">
+                          {inCard && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">in {inCard}</span>}
+                        </td>
                       </tr>
                     );
                   })}
                   {shown.length === 0 && (
-                    <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400">No items match “{search}”.</td></tr>
+                    <tr><td colSpan={6} className="px-3 py-4 text-center text-gray-400">No items match “{search}”.</td></tr>
                   )}
                 </tbody>
               </table>
