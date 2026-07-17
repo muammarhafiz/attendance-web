@@ -33,8 +33,12 @@ export default function InventoryV4Page() {
   const [poLines, setPoLines] = useState<PoLine[]>([]);
   const [refreshState, setRefreshState] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [balanceAsOf, setBalanceAsOf] = useState<string | null>(null);
+  const [avgFeed, setAvgFeed] = useState<Map<string, number>>(new Map()); // sku -> auto 3-mo avg
+  const [avgAsOf, setAvgAsOf] = useState<string | null>(null);
+  const [avgState, setAvgState] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [loading, setLoading] = useState(true);
   const refreshPoll = useRef<ReturnType<typeof setInterval> | null>(null);
+  const avgPoll = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -76,6 +80,18 @@ export default function InventoryV4Page() {
     setBalanceAsOf((data && data[0]?.updated_at) ? String(data[0].updated_at) : null);
   }, []);
 
+  // Auto 3-month average feed (filled by the "Calculate average" button -> avg3mo job).
+  const loadAvgFeed = useCallback(async () => {
+    const { data } = await supabase.from('niagawan_group_avg').select('sku,avg_monthly,updated_at');
+    const m = new Map<string, number>();
+    let latest: string | null = null;
+    for (const r of (data ?? []) as { sku: string; avg_monthly: number | null; updated_at: string | null }[]) {
+      if (r.sku && r.avg_monthly != null) m.set(r.sku, Number(r.avg_monthly));
+      if (r.updated_at && (!latest || r.updated_at > latest)) latest = r.updated_at;
+    }
+    setAvgFeed(m); setAvgAsOf(latest);
+  }, []);
+
   // Open POs (any card) -> so we don't re-suggest what's already on the way.
   const reloadPOs = useCallback(async () => {
     const { data: ss } = await supabase.from('po_suggestions').select('id,status,po_number')
@@ -91,10 +107,30 @@ export default function InventoryV4Page() {
   }, []);
 
   useEffect(() => {
-    if (isAdmin) { loadGroups(); loadGroupItems(); loadCatalog(); loadFreshness(); reloadPOs(); }
-  }, [isAdmin, loadGroups, loadGroupItems, loadCatalog, loadFreshness, reloadPOs]);
+    if (isAdmin) { loadGroups(); loadGroupItems(); loadCatalog(); loadFreshness(); loadAvgFeed(); reloadPOs(); }
+  }, [isAdmin, loadGroups, loadGroupItems, loadCatalog, loadFreshness, loadAvgFeed, reloadPOs]);
 
-  useEffect(() => () => { if (refreshPoll.current) clearInterval(refreshPoll.current); }, []);
+  useEffect(() => () => { if (refreshPoll.current) clearInterval(refreshPoll.current); if (avgPoll.current) clearInterval(avgPoll.current); }, []);
+
+  // "Calculate average" — scans the last 3 months of sales (NAS avg3mo job) and fills Avg/mo.
+  const calcAverage = useCallback(async () => {
+    if (avgState === 'running') return;
+    setAvgState('running');
+    const { data, error } = await supabase.from('sync_requests').insert({ source: 'inventory-v4', which: 'avg3mo' }).select('id').single();
+    if (error || !data) { setAvgState('error'); window.setTimeout(() => setAvgState('idle'), 5000); return; }
+    const id = data.id as number;
+    const started = Date.now();
+    if (avgPoll.current) clearInterval(avgPoll.current);
+    avgPoll.current = setInterval(async () => {
+      const { data: r } = await supabase.from('sync_requests').select('status').eq('id', id).single();
+      if (r?.status === 'done' || r?.status === 'error') {
+        if (avgPoll.current) clearInterval(avgPoll.current);
+        await loadAvgFeed(); await loadGroupItems();
+        setAvgState(r.status === 'done' ? 'done' : 'error');
+        window.setTimeout(() => setAvgState('idle'), 6000);
+      } else if (Date.now() - started > 9 * 60 * 1000) { if (avgPoll.current) clearInterval(avgPoll.current); setAvgState('idle'); }
+    }, 5000);
+  }, [avgState, loadAvgFeed, loadGroupItems]);
 
   const updateBalances = useCallback(async () => {
     if (refreshState === 'running') return;
@@ -153,6 +189,10 @@ export default function InventoryV4Page() {
             className="rounded-md border border-gray-300 px-2.5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
             {refreshState === 'running' ? 'Updating balances…' : refreshState === 'done' ? '✓ updated' : refreshState === 'error' ? '⚠ failed' : '↻ Update balances'}
           </button>
+          <button onClick={calcAverage} disabled={avgState === 'running'} title="Scan the last 3 months of sales and fill Avg/mo (takes a few minutes)"
+            className="rounded-md border border-blue-600 bg-blue-50 px-2.5 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50">
+            {avgState === 'running' ? 'Calculating…' : avgState === 'done' ? '✓ done' : avgState === 'error' ? '⚠ failed' : '📊 Calculate average'}
+          </button>
         </div>
       </div>
 
@@ -163,7 +203,7 @@ export default function InventoryV4Page() {
         const need = rows.filter((gi) => {
           const live = itemBySku.get(gi.sku);
           const stock = live ? live.balance : null;
-          const avg = gi.avg_monthly;
+          const avg = gi.avg_monthly ?? avgFeed.get(gi.sku) ?? null;
           const keep = gi.keep_level ?? (avg != null ? avg * 3 : null);
           const code = live?.code ?? gi.code ?? '';
           const onOrder = code ? onOrderByCode.get(code) ?? 0 : 0;
@@ -196,8 +236,10 @@ export default function InventoryV4Page() {
                     const code = live?.code ?? gi.code ?? '—';
                     const name = live?.descp ?? gi.descp ?? '—';
                     const stock = live ? live.balance : null;
-                    const avg = gi.avg_monthly;
-                    const keep = gi.keep_level ?? (avg != null ? avg * 3 : null);
+                    const feedAvg = avgFeed.get(gi.sku) ?? null;
+                    const avg = gi.avg_monthly ?? feedAvg;                          // typed override wins over the feed
+                    const keepDefault = avg != null ? Math.round(avg * 3) : null;    // avg × 3
+                    const keep = gi.keep_level ?? keepDefault;
                     const onOrder = code !== '—' ? onOrderByCode.get(code) ?? 0 : 0;
                     const order = keep != null && stock != null ? orderQty(keep - stock - onOrder, gi.carton_size) : null;
                     return (
@@ -210,14 +252,14 @@ export default function InventoryV4Page() {
                             value={gi.avg_monthly == null ? '' : gi.avg_monthly}
                             onChange={(e) => setItemLocal(gi.id, { avg_monthly: e.target.value === '' ? null : Number(e.target.value) })}
                             onBlur={(e) => { const v = e.target.value === '' ? null : Math.max(0, Number(e.target.value) || 0); setItemLocal(gi.id, { avg_monthly: v }); persist(gi.id, 'avg_monthly', v); }}
-                            placeholder="—" className="w-16 rounded border border-gray-200 px-1.5 py-0.5 text-center text-xs" />
+                            placeholder={feedAvg != null ? String(feedAvg) : '—'} className="w-16 rounded border border-gray-200 px-1.5 py-0.5 text-center text-xs" />
                         </td>
                         <td className="px-3 py-1.5 text-center">
                           <input type="number" min={0} step="1" inputMode="numeric"
-                            value={keep == null ? '' : keep}
+                            value={gi.keep_level == null ? '' : gi.keep_level}
                             onChange={(e) => setItemLocal(gi.id, { keep_level: e.target.value === '' ? null : Number(e.target.value) })}
                             onBlur={(e) => { const v = e.target.value === '' ? null : Math.max(0, Math.floor(Number(e.target.value) || 0)); setItemLocal(gi.id, { keep_level: v }); persist(gi.id, 'keep_level', v); }}
-                            placeholder="—" className="w-16 rounded border border-gray-200 px-1.5 py-0.5 text-center text-xs" />
+                            placeholder={keepDefault != null ? String(keepDefault) : '—'} className="w-16 rounded border border-gray-200 px-1.5 py-0.5 text-center text-xs" />
                         </td>
                         <td className="whitespace-nowrap px-3 py-1.5 text-right">
                           {order == null ? <span className="text-xs text-gray-400">set avg</span>
@@ -235,7 +277,9 @@ export default function InventoryV4Page() {
         );
       })}
 
-      <p className="mt-2 text-xs text-gray-400">Next: a 📊 “Calculate average” button (scans the last 3 months and fills Avg/mo automatically), and a “Generate PO” action.</p>
+      <p className="mt-2 text-xs text-gray-400">
+        Avg/mo auto-fills from 📊 Calculate average (scans the last 3 months of sales){avgAsOf ? ` · updated ${new Date(avgAsOf).toLocaleDateString('en-MY', { day: '2-digit', month: 'short' })}` : ''}; type over any oil to override, Keep-level defaults to avg×3. Next: a “Generate PO” action.
+      </p>
     </div>
   );
 }
