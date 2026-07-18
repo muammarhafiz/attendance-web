@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { useVisibleInterval } from '@/lib/useVisibleInterval';
 
 type Row = {
   display_name: string | null;
@@ -72,13 +73,8 @@ export default function AttendanceTodayPage() {
     setLoading(false);
   }, []);
 
-  useEffect(() => {
-    if (isAdmin) {
-      load();
-      const id = setInterval(load, 30000);
-      return () => clearInterval(id);
-    }
-  }, [isAdmin, load]);
+  useEffect(() => { if (isAdmin) load(); }, [isAdmin, load]);
+  useVisibleInterval(load, 30000, isAdmin);
 
   // per-staff start times (for the per-person "Absent" cutoff = start + 1h)
   useEffect(() => {

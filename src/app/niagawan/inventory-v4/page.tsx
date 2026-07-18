@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { useVisibleInterval } from '@/lib/useVisibleInterval';
 
 type Group = { id: number; name: string; sort_order: number; creditor_id: string | null; supplier_name: string | null };
 type GroupItem = { id: number; group_id: number; sku: string; code: string | null; descp: string | null; carton_size: number | null; avg_monthly: number | null; keep_level: number | null };
@@ -207,11 +208,7 @@ export default function InventoryV4Page() {
 
   // While a v4 PO is being created / awaiting delivery, poll so its PO number + receipts show up.
   const hasOpenPo = poSuggs.some((s) => s.source === 'inventory-v4' && (s.status === 'approved' || s.status === 'created'));
-  useEffect(() => {
-    if (!isAdmin || !hasOpenPo) return;
-    const t = setInterval(() => { if (editingLine != null) reloadSuggsOnly(); else reloadPOs(); }, 12000);
-    return () => clearInterval(t);
-  }, [isAdmin, hasOpenPo, editingLine, reloadSuggsOnly, reloadPOs]);
+  useVisibleInterval(() => { if (editingLine != null) reloadSuggsOnly(); else reloadPOs(); }, 12000, isAdmin && hasOpenPo);
 
   // ---------------- Purchase orders ----------------
   // Stage a draft PO from a card's red rows (one line per code, skip what's already on order).

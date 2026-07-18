@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { useVisibleInterval } from '@/lib/useVisibleInterval';
 
 type Watch = { code: string; description: string | null; min_balance: number; category: string | null; auto_po: boolean; supplier_id: string | null; supplier_name: string | null; remarks: string | null };
 type Bal = { code: string; balance: number | null; suppliers: number | null; checked_at: string | null; updated_at: string | null };
@@ -132,7 +133,7 @@ export default function NiagawanInventoryPage() {
   const dismissSugg = useCallback(async (id: number) => { await supabase.from('po_suggestions').delete().eq('id', id); await loadSuggs(); }, [loadSuggs]);
 
   useEffect(() => { if (!isAdmin) return; loadAll(); loadNewItems(); }, [isAdmin, loadAll, loadNewItems]);
-  useEffect(() => { if (!isAdmin) return; const t = setInterval(loadSuggs, 12000); return () => clearInterval(t); }, [isAdmin, loadSuggs]);
+  useVisibleInterval(loadSuggs, 12000, isAdmin);
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); if (poPollRef.current) clearInterval(poPollRef.current); }, []);
 
   const balByCode = useMemo(() => { const m = new Map<string, Bal>(); for (const b of bals) m.set(b.code, b); return m; }, [bals]);

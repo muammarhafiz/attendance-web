@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { useVisibleInterval } from '@/lib/useVisibleInterval';
 import BarcodeScanner from '@/components/BarcodeScanner';
 
 type OpenInv = { inv: string; sale_id: string; customer: string | null };
@@ -55,11 +56,9 @@ export default function AddPartPage() {
   }, []);
 
   useEffect(() => {
-    if (!authed || allowed !== true) return;
-    loadCars();
-    const t = setInterval(loadCars, 30000);
-    return () => clearInterval(t);
+    if (authed && allowed === true) loadCars();
   }, [authed, allowed, loadCars]);
+  useVisibleInterval(loadCars, 30000, authed && allowed === true);
 
   // Instant product search against the synced catalog (no Niagawan round-trip).
   const search = useCallback((text: string) => {
