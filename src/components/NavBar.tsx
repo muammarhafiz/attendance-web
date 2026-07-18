@@ -10,8 +10,8 @@ import { supabase } from '@/lib/supabaseClient';
 
 type NavItem = { href: string; label: string; match?: string; badge?: number };
 type NotifItem = { type: string; id: string; who: string; detail: string; when: string; href: string };
-const NOTIF_ICON: Record<string, string> = { offday: '🌴', halfday: '🕧', advance: '💵', mc: '📄' };
-const NOTIF_LABEL: Record<string, string> = { offday: 'off-day request', halfday: 'half-day request', advance: 'advance request', mc: 'MC' };
+const NOTIF_ICON: Record<string, string> = { offday: '🌴', halfday: '🕧', advance: '💵', mc: '📄', po: '📦' };
+const NOTIF_LABEL: Record<string, string> = { offday: 'off-day request', halfday: 'half-day request', advance: 'advance request', mc: 'MC', po: 'purchase order' };
 function relTime(iso: string): string {
   const m = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
   if (m < 1) return 'just now';
@@ -64,16 +64,23 @@ export default function NavBar() {
     if (!isAdmin) { setCounts({ mc: 0, offday: 0, halfday: 0, advance: 0, po: 0 }); setItems([]); return; }
     let active = true;
     const load = async () => {
-      const { data } = await supabase.rpc('notification_counts');
-      const d = (data ?? {}) as { mc?: number; offday?: number; halfday?: number; advance?: number; po?: number };
-      if (active) setCounts({ mc: d.mc ?? 0, offday: d.offday ?? 0, halfday: d.halfday ?? 0, advance: d.advance ?? 0, po: d.po ?? 0 });
-      const { data: it } = await supabase.rpc('notification_items');
-      if (active) setItems((Array.isArray(it) ? it : []) as NotifItem[]);
+      // Don't poll a hidden/backgrounded tab — a left-open admin tab would otherwise hit the DB
+      // every 60s forever. We refresh the moment the tab is focused again (listeners below).
+      if (typeof document !== 'undefined' && document.hidden) return;
+      const { data } = await supabase.rpc('notification_feed'); // one round-trip: counts + items (incl. PO)
+      if (!active) return;
+      const d = (data ?? {}) as { counts?: { mc?: number; offday?: number; halfday?: number; advance?: number; po?: number }; items?: NotifItem[] };
+      const c = d.counts ?? {};
+      setCounts({ mc: c.mc ?? 0, offday: c.offday ?? 0, halfday: c.halfday ?? 0, advance: c.advance ?? 0, po: c.po ?? 0 });
+      setItems(Array.isArray(d.items) ? (d.items as NotifItem[]) : []);
     };
     load();
     const id = setInterval(load, 60000);
-    return () => { active = false; clearInterval(id); };
-  }, [isAdmin, pathname]);
+    const onVisible = () => { if (typeof document === 'undefined' || !document.hidden) load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => { active = false; clearInterval(id); document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('focus', onVisible); };
+  }, [isAdmin]);
 
   // Close the mobile drawer / notifications whenever the route changes.
   useEffect(() => { setOpen(false); setBellOpen(false); }, [pathname]);
