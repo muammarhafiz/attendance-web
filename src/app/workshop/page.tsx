@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { useVisibleInterval } from '@/lib/useVisibleInterval';
 
 type Card = {
   id: string;
@@ -140,11 +141,11 @@ export default function WorkshopBoardPage() {
 
   // Live board: refresh every 15s so every supervisor PC stays current.
   useEffect(() => {
-    if (!authed || canWrite !== true) return;
-    load();
-    const t = setInterval(load, 15000);
-    return () => clearInterval(t);
+    if (authed && canWrite === true) load();
   }, [authed, canWrite, load]);
+  // Live board refresh — paused while the tab is hidden (see hook), so a backgrounded
+  // supervisor PC stops re-fetching the whole board every 15s. Refreshes on refocus.
+  useVisibleInterval(load, 15000, authed && canWrite === true);
 
   // One refresh for the whole workshop system: pull latest payment status from Niagawan
   // (so paid cars move to Done, new check-ins appear) AND reload the board now. The same

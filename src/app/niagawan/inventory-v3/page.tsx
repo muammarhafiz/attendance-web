@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { useVisibleInterval } from '@/lib/useVisibleInterval';
 
 type Item = { sku: string; code: string | null; descp: string | null; balance: number | null };
 type Group = { id: number; name: string; sort_order: number; creditor_id: string | null; supplier_name: string | null };
@@ -194,11 +195,7 @@ export default function InventoryV3Page() {
   // and auto cross-off receipts show up. Skip the lines refresh while a qty input is focused
   // so a poll can't clobber an in-progress edit.
   const hasOpenPo = poSuggs.some((s) => s.status === 'approved' || s.status === 'created');
-  useEffect(() => {
-    if (!isAdmin || !hasOpenPo) return;
-    const t = setInterval(() => { if (editingLine != null) reloadSuggsOnly(); else reloadPOs(); }, 12000);
-    return () => clearInterval(t);
-  }, [isAdmin, hasOpenPo, editingLine, reloadSuggsOnly, reloadPOs]);
+  useVisibleInterval(() => { if (editingLine != null) reloadSuggsOnly(); else reloadPOs(); }, 12000, isAdmin && hasOpenPo);
 
   // Live lookup: sku -> catalog row (for fresh description / balance in the group cards).
   const itemBySku = useMemo(() => {
