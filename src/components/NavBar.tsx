@@ -118,6 +118,7 @@ export default function NavBar() {
     { href: '/employees', label: 'Employees' },
     // Records is a sub-tab inside the Payroll page now (PayrollTabs), not a navbar item.
     { href: '/payroll/v3', match: '/payroll', label: 'Payroll' },
+    { href: '/settings', label: 'Settings' },
   ];
 
   const Badge = ({ n }: { n?: number }) =>
