@@ -9,7 +9,6 @@ import { usePathname } from 'next/navigation';
 const TABS = [
   { href: '/payroll/v3', label: 'Payroll' },
   { href: '/payroll/records', label: 'Records' },
-  { href: '/payroll/settings', label: 'Settings' },
 ];
 
 export default function PayrollTabs() {

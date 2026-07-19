@@ -1,10 +1,7 @@
 // src/app/attendance/settings/page.tsx
-'use client';
+import { redirect } from 'next/navigation';
 
-import AttendanceSettings from '@/components/settings/AttendanceSettings';
-
-// Kept for the existing Attendance settings route; the same panel also lives under the
-// top-level Settings page (/settings). Both render the shared AttendanceSettings component.
-export default function AttendanceSettingsPage() {
-  return <AttendanceSettings />;
+// Settings now live on the single top-level Settings page (/settings). This old URL forwards there.
+export default function AttendanceSettingsRedirect() {
+  redirect('/settings?tab=attendance');
 }

@@ -1,16 +1,7 @@
 // src/app/payroll/settings/page.tsx
-'use client';
+import { redirect } from 'next/navigation';
 
-import PayrollTabs from '@/components/PayrollTabs';
-import PayrollItemsSettings from '@/components/settings/PayrollItemsSettings';
-
-// Kept for the existing Payroll > Settings tab; the same panel also lives under the
-// top-level Settings page (/settings). Both render the shared PayrollItemsSettings component.
-export default function PayrollSettingsPage() {
-  return (
-    <div className="mx-auto max-w-6xl px-4 py-6">
-      <PayrollTabs />
-      <PayrollItemsSettings />
-    </div>
-  );
+// Settings now live on the single top-level Settings page (/settings). This old URL forwards there.
+export default function PayrollSettingsRedirect() {
+  redirect('/settings?tab=payroll');
 }

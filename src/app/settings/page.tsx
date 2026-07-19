@@ -1,7 +1,7 @@
 // src/app/settings/page.tsx
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import AutomationSettings from '@/components/settings/AutomationSettings';
 import PayrollItemsSettings from '@/components/settings/PayrollItemsSettings';
 import AttendanceSettings from '@/components/settings/AttendanceSettings';
@@ -17,6 +17,11 @@ const TABS: { key: TabKey; label: string }[] = [
 // Each panel is the same shared component used by its section's own settings page.
 export default function SettingsPage() {
   const [tab, setTab] = useState<TabKey>('automation');
+  // Open the tab named in ?tab= — used by the old /niagawan|payroll|attendance/settings redirects.
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('tab');
+    if (t === 'automation' || t === 'payroll' || t === 'attendance') setTab(t);
+  }, []);
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
       <h1 className="text-2xl font-semibold text-gray-900">Settings</h1>
