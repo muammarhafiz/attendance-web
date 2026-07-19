@@ -14,7 +14,6 @@ const TABS = [
   { href: '/attendance/halfday-req', label: 'Half-day req' },
   { href: '/attendance/advance', label: 'Advance' },
   { href: '/attendance/mc', label: 'MC' },
-  { href: '/attendance/settings', label: 'Settings' },
 ];
 
 export default function AttendanceLayout({ children }: { children: React.ReactNode }) {

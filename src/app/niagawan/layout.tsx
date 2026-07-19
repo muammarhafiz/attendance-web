@@ -15,7 +15,6 @@ const TABS = [
   { href: '/niagawan/purchase', label: 'Purchase Invoice' },
   { href: '/niagawan/kiv', label: 'KIV Invoices' },
   { href: '/niagawan/pnl', label: 'P&L' },
-  { href: '/niagawan/settings', label: 'Settings' },
 ];
 
 export default function NiagawanLayout({ children }: { children: React.ReactNode }) {
