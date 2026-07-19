@@ -1,0 +1,46 @@
+// src/app/settings/page.tsx
+'use client';
+
+import { useState } from 'react';
+import AutomationSettings from '@/components/settings/AutomationSettings';
+import PayrollItemsSettings from '@/components/settings/PayrollItemsSettings';
+import AttendanceSettings from '@/components/settings/AttendanceSettings';
+
+type TabKey = 'automation' | 'payroll' | 'attendance';
+const TABS: { key: TabKey; label: string }[] = [
+  { key: 'automation', label: 'Automation' },
+  { key: 'payroll', label: 'Payroll items' },
+  { key: 'attendance', label: 'Attendance' },
+];
+
+// One place for every admin setting, with a sub nav bar switching between the panels.
+// Each panel is the same shared component used by its section's own settings page.
+export default function SettingsPage() {
+  const [tab, setTab] = useState<TabKey>('automation');
+  return (
+    <div className="mx-auto max-w-6xl px-4 py-6">
+      <h1 className="text-2xl font-semibold text-gray-900">Settings</h1>
+      <p className="mt-1 mb-4 text-sm text-gray-500">Admin controls for how the system runs — automation, payroll &amp; attendance.</p>
+
+      <div className="mb-6 flex flex-wrap gap-1 border-b border-gray-200">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`-mb-px rounded-t-md px-3 py-2 text-sm font-medium transition ${
+              tab === t.key
+                ? 'border-b-2 border-gray-900 text-gray-900'
+                : 'text-gray-500 hover:text-gray-900'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'automation' && <AutomationSettings />}
+      {tab === 'payroll' && <PayrollItemsSettings />}
+      {tab === 'attendance' && <AttendanceSettings />}
+    </div>
+  );
+}
