@@ -62,16 +62,13 @@ function waNumber(raw: string | null | undefined): string | null {
   return d.length >= 10 && d.length <= 15 ? d : null;
 }
 
-// Pre-filled WhatsApp message for a card, matched to its board status (so we never claim
-// "ready" on a car that isn't done). Wording is intentionally simple — easy to adjust.
-function waCardText(status: Card['status'], name: string, veh: string): string {
-  const msg: Record<Card['status'], string> = {
-    waiting: `Hi ${name}, we've received your ${veh} at ZORDAQ Auto Services. We'll keep you updated.`,
-    doing: `Hi ${name}, your ${veh} is being worked on at ZORDAQ Auto Services. We'll let you know once it's ready.`,
-    waiting_parts: `Hi ${name}, your ${veh} is waiting for parts at ZORDAQ Auto Services. We'll update you soon.`,
-    done: `Hi ${name}, your ${veh} is ready for collection at ZORDAQ Auto Services. Thank you!`,
-  };
-  return msg[status];
+// Customer WhatsApp wording — editable in Settings > Workshop. Only two are ever sent: the
+// "received / keep you updated" one for a car still on the board, and the "ready" one once it's
+// marked Done. Placeholders {name} (customer) and {car} (vehicle) are filled in below.
+const WA_RECEIVED_DEFAULT = "Hi {name}, we've received your {car} at ZORDAQ Auto Services. We'll keep you updated.";
+const WA_READY_DEFAULT = "Hi {name}, your {car} is ready for collection at ZORDAQ Auto Services. Thank you!";
+function fillWa(tpl: string, name: string, car: string): string {
+  return tpl.replace(/\{name\}/g, name).replace(/\{car\}/g, car);
 }
 
 export default function WorkshopBoardPage() {
@@ -85,6 +82,7 @@ export default function WorkshopBoardPage() {
   const [staffNames, setStaffNames] = useState<StaffName[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [wa, setWa] = useState<{ received: string; ready: string }>({ received: WA_RECEIVED_DEFAULT, ready: WA_READY_DEFAULT });
 
   // new-card form
   const [showForm, setShowForm] = useState(false);
@@ -108,6 +106,14 @@ export default function WorkshopBoardPage() {
           setStaffNames((names ?? []) as StaffName[]);
         }
       } else setCanWrite(false);
+    })();
+  }, []);
+
+  // Load the editable WhatsApp wording once (Settings > Workshop); falls back to the defaults.
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from('workshop_settings').select('wa_received,wa_ready').eq('id', 1).single();
+      if (data) setWa({ received: data.wa_received || WA_RECEIVED_DEFAULT, ready: data.wa_ready || WA_READY_DEFAULT });
     })();
   }, []);
 
@@ -384,7 +390,7 @@ export default function WorkshopBoardPage() {
                         if (num) {
                           const name = c.customer || (c.sale_id ? contacts[c.sale_id]?.cust_name : null) || 'there';
                           const veh = [c.vehicle, c.plate].filter(Boolean).join(' ');
-                          const text = encodeURIComponent(waCardText(c.status === 'done' ? 'done' : 'waiting', name, veh));
+                          const text = encodeURIComponent(fillWa(c.status === 'done' ? wa.ready : wa.received, name, veh));
                           return (
                             <>
                               <a href={`https://wa.me/${num}?text=${text}`} target="_blank" rel="noopener noreferrer" className="rounded bg-green-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-green-700" title="Message the customer on WhatsApp">📲 WhatsApp</a>

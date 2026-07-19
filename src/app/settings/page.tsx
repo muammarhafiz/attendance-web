@@ -5,13 +5,15 @@ import { useEffect, useState } from 'react';
 import AutomationSettings from '@/components/settings/AutomationSettings';
 import PayrollItemsSettings from '@/components/settings/PayrollItemsSettings';
 import AttendanceSettings from '@/components/settings/AttendanceSettings';
+import WorkshopSettings from '@/components/settings/WorkshopSettings';
 import EmailSettings from '@/components/settings/EmailSettings';
 
-type TabKey = 'automation' | 'payroll' | 'attendance' | 'email';
+type TabKey = 'automation' | 'payroll' | 'attendance' | 'workshop' | 'email';
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'automation', label: 'Automation' },
   { key: 'payroll', label: 'Payroll items' },
   { key: 'attendance', label: 'Attendance' },
+  { key: 'workshop', label: 'Workshop' },
   { key: 'email', label: 'Email' },
 ];
 
@@ -22,7 +24,7 @@ export default function SettingsPage() {
   // Open the tab named in ?tab= — used by the old /niagawan|payroll|attendance/settings redirects.
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get('tab');
-    if (t === 'automation' || t === 'payroll' || t === 'attendance' || t === 'email') setTab(t);
+    if (t === 'automation' || t === 'payroll' || t === 'attendance' || t === 'workshop' || t === 'email') setTab(t);
   }, []);
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
@@ -48,6 +50,7 @@ export default function SettingsPage() {
       {tab === 'automation' && <AutomationSettings />}
       {tab === 'payroll' && <PayrollItemsSettings />}
       {tab === 'attendance' && <AttendanceSettings />}
+      {tab === 'workshop' && <WorkshopSettings />}
       {tab === 'email' && <EmailSettings />}
     </div>
   );
