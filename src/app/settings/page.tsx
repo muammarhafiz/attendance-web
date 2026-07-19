@@ -5,12 +5,14 @@ import { useEffect, useState } from 'react';
 import AutomationSettings from '@/components/settings/AutomationSettings';
 import PayrollItemsSettings from '@/components/settings/PayrollItemsSettings';
 import AttendanceSettings from '@/components/settings/AttendanceSettings';
+import EmailSettings from '@/components/settings/EmailSettings';
 
-type TabKey = 'automation' | 'payroll' | 'attendance';
+type TabKey = 'automation' | 'payroll' | 'attendance' | 'email';
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'automation', label: 'Automation' },
   { key: 'payroll', label: 'Payroll items' },
   { key: 'attendance', label: 'Attendance' },
+  { key: 'email', label: 'Email' },
 ];
 
 // One place for every admin setting, with a sub nav bar switching between the panels.
@@ -20,7 +22,7 @@ export default function SettingsPage() {
   // Open the tab named in ?tab= — used by the old /niagawan|payroll|attendance/settings redirects.
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get('tab');
-    if (t === 'automation' || t === 'payroll' || t === 'attendance') setTab(t);
+    if (t === 'automation' || t === 'payroll' || t === 'attendance' || t === 'email') setTab(t);
   }, []);
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
@@ -46,6 +48,7 @@ export default function SettingsPage() {
       {tab === 'automation' && <AutomationSettings />}
       {tab === 'payroll' && <PayrollItemsSettings />}
       {tab === 'attendance' && <AttendanceSettings />}
+      {tab === 'email' && <EmailSettings />}
     </div>
   );
 }
