@@ -49,6 +49,14 @@ function ago(iso: string | null) {
   return `${Math.floor(h / 24)}d ${h % 24}h`;
 }
 
+// Colour the "time in the shop" label so a long-waiting car stands out (they sit at the top of Pending).
+function ageColor(iso: string): string {
+  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (mins >= 8 * 60) return 'text-red-600';   // 8h+ / overnight — urgent
+  if (mins >= 4 * 60) return 'text-amber-600';  // 4–8h — getting long
+  return 'text-gray-700';                        // fresh
+}
+
 const rm = (n: number | null) => `RM${Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // Turn a Malaysian phone (any format) into a wa.me number: digits only, international, no leading 0/+.
@@ -277,6 +285,8 @@ export default function WorkshopBoardPage() {
         map.pending.push(c);
       }
     }
+    // Longest-waiting car first — sort by duration in the shop (oldest check-in at the top).
+    map.pending.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
     return map;
   }, [cards, debts]);
 
@@ -372,8 +382,8 @@ export default function WorkshopBoardPage() {
                 <div key={c.id} className="rounded-md border border-gray-200 bg-white p-2 shadow-sm">
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="font-mono text-sm font-bold text-gray-900">{c.plate}</span>
-                    <span className="text-[11px] text-gray-400" title={`created ${new Date(c.created_at).toLocaleString('en-MY')}`}>
-                      {c.status === 'done' ? `done ${ago(c.done_at)}` : ago(c.created_at)}
+                    <span className={`text-xs font-semibold ${c.status === 'done' ? 'text-emerald-600' : ageColor(c.created_at)}`} title={`created ${new Date(c.created_at).toLocaleString('en-MY')}`}>
+                      {c.status === 'done' ? `done ${ago(c.done_at)}` : `⏱ ${ago(c.created_at)}`}
                     </span>
                   </div>
                   {c.vehicle && <div className="text-xs text-gray-600">{c.vehicle}</div>}
