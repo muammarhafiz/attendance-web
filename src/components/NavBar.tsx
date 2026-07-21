@@ -4,7 +4,7 @@
 import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -12,6 +12,8 @@ type NavItem = { href: string; label: string; match?: string; badge?: number };
 type NotifItem = { type: string; id: string; who: string; detail: string; when: string; href: string };
 const NOTIF_ICON: Record<string, string> = { offday: '🌴', halfday: '🕧', advance: '💵', mc: '📄', po: '📦', stuckcar: '🚗', debt: '🧾', lowstock: '📉' };
 const NOTIF_LABEL: Record<string, string> = { offday: 'off-day request', halfday: 'half-day request', advance: 'advance request', mc: 'MC', po: 'purchase order', stuckcar: 'in shop > 3 days', debt: 'newly overdue', lowstock: 'to restock' };
+// Request types the owner can approve/reject right in the bell (each has approve_*/reject_* RPCs).
+const ACTIONABLE = new Set(['offday', 'halfday', 'advance', 'mc']);
 function relTime(iso: string): string {
   const m = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
   if (m < 1) return 'just now';
@@ -29,6 +31,7 @@ export default function NavBar() {
   const [canBoard, setCanBoard] = useState<boolean>(false); // supervisor or admin -> sees Workshop
   const [counts, setCounts] = useState<{ mc: number; offday: number; halfday: number; advance: number; po: number }>({ mc: 0, offday: 0, halfday: 0, advance: 0, po: 0 });
   const [items, setItems] = useState<NotifItem[]>([]);
+  const [acting, setActing] = useState<string | null>(null);
   const [bellOpen, setBellOpen] = useState(false);
   const [seenAt, setSeenAt] = useState<string>('');
   const [open, setOpen] = useState(false);
@@ -60,27 +63,47 @@ export default function NavBar() {
     return () => unsub?.unsubscribe();
   }, []);
 
+  const reloadFeed = useCallback(async () => {
+    if (!isAdmin) { setCounts({ mc: 0, offday: 0, halfday: 0, advance: 0, po: 0 }); setItems([]); return; }
+    // Don't hit the DB from a hidden/backgrounded tab; we refresh on focus (listeners below).
+    if (typeof document !== 'undefined' && document.hidden) return;
+    const { data } = await supabase.rpc('notification_feed'); // one round-trip: counts + items
+    const d = (data ?? {}) as { counts?: { mc?: number; offday?: number; halfday?: number; advance?: number; po?: number }; items?: NotifItem[] };
+    const c = d.counts ?? {};
+    setCounts({ mc: c.mc ?? 0, offday: c.offday ?? 0, halfday: c.halfday ?? 0, advance: c.advance ?? 0, po: c.po ?? 0 });
+    setItems(Array.isArray(d.items) ? (d.items as NotifItem[]) : []);
+  }, [isAdmin]);
+
   useEffect(() => {
     if (!isAdmin) { setCounts({ mc: 0, offday: 0, halfday: 0, advance: 0, po: 0 }); setItems([]); return; }
-    let active = true;
-    const load = async () => {
-      // Don't poll a hidden/backgrounded tab — a left-open admin tab would otherwise hit the DB
-      // every 60s forever. We refresh the moment the tab is focused again (listeners below).
-      if (typeof document !== 'undefined' && document.hidden) return;
-      const { data } = await supabase.rpc('notification_feed'); // one round-trip: counts + items (incl. PO)
-      if (!active) return;
-      const d = (data ?? {}) as { counts?: { mc?: number; offday?: number; halfday?: number; advance?: number; po?: number }; items?: NotifItem[] };
-      const c = d.counts ?? {};
-      setCounts({ mc: c.mc ?? 0, offday: c.offday ?? 0, halfday: c.halfday ?? 0, advance: c.advance ?? 0, po: c.po ?? 0 });
-      setItems(Array.isArray(d.items) ? (d.items as NotifItem[]) : []);
-    };
-    load();
-    const id = setInterval(load, 60000);
-    const onVisible = () => { if (typeof document === 'undefined' || !document.hidden) load(); };
+    reloadFeed();
+    const id = setInterval(reloadFeed, 60000);
+    const onVisible = () => { if (typeof document === 'undefined' || !document.hidden) reloadFeed(); };
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onVisible);
-    return () => { active = false; clearInterval(id); document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('focus', onVisible); };
-  }, [isAdmin]);
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('focus', onVisible); };
+  }, [isAdmin, reloadFeed]);
+
+  // Approve / reject a staff request right from the bell (same RPCs the pages use).
+  const act = useCallback(async (item: NotifItem, action: 'approve' | 'reject') => {
+    let params: Record<string, unknown>;
+    if (item.type === 'mc') {
+      if (action === 'reject' && !window.confirm('Reject this MC?')) return;
+      params = { p_id: item.id };
+    } else if (action === 'reject') {
+      const reason = window.prompt('Reason for rejecting (optional):', '');
+      if (reason === null) return; // cancelled
+      params = { p_id: item.id, p_note: reason };
+    } else {
+      params = { p_id: item.id, p_note: null };
+    }
+    setActing(item.id);
+    const { error } = await supabase.rpc(`${action}_${item.type}`, params);
+    setActing(null);
+    if (error) { window.alert(error.message); return; }
+    setItems((prev) => prev.filter((x) => !(x.type === item.type && String(x.id) === String(item.id))));
+    reloadFeed();
+  }, [reloadFeed]);
 
   // Close the mobile drawer / notifications whenever the route changes.
   useEffect(() => { setOpen(false); setBellOpen(false); }, [pathname]);
@@ -176,15 +199,26 @@ export default function NavBar() {
                       {items.length === 0 ? (
                         <div className="px-3 py-6 text-center text-sm text-slate-400">Nothing pending</div>
                       ) : (
-                        items.map((i) => (
-                          <button key={i.type + i.id} onClick={() => goTo(i.href)} className="flex w-full items-start gap-2 border-b border-slate-50 px-3 py-2 text-left hover:bg-slate-50">
-                            <span className="mt-0.5 text-base leading-none">{NOTIF_ICON[i.type] ?? '🔔'}</span>
-                            <span className="min-w-0 flex-1">
-                              <span className="block text-sm text-slate-800"><span className="font-medium">{i.who}</span> · {NOTIF_LABEL[i.type] ?? i.type}</span>
-                              <span className="block truncate text-xs text-slate-500">{i.detail} · {relTime(i.when)}</span>
-                            </span>
-                          </button>
-                        ))
+                        items.map((i) => {
+                          const canAct = ACTIONABLE.has(i.type);
+                          return (
+                            <div key={i.type + i.id} className="border-b border-slate-50 px-3 py-2">
+                              <button onClick={() => goTo(i.href)} className="flex w-full items-start gap-2 text-left hover:opacity-80">
+                                <span className="mt-0.5 text-base leading-none">{NOTIF_ICON[i.type] ?? '🔔'}</span>
+                                <span className="min-w-0 flex-1">
+                                  <span className="block text-sm text-slate-800"><span className="font-medium">{i.who}</span> · {NOTIF_LABEL[i.type] ?? i.type}</span>
+                                  <span className="block truncate text-xs text-slate-500">{i.detail} · {relTime(i.when)}</span>
+                                </span>
+                              </button>
+                              {canAct && (
+                                <div className="mt-1.5 flex gap-2 pl-6">
+                                  <button onClick={() => act(i, 'approve')} disabled={acting === i.id} className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">✓ Approve</button>
+                                  <button onClick={() => act(i, 'reject')} disabled={acting === i.id} className="rounded-md border border-rose-300 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50">✗ Reject</button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
                       )}
                     </div>
                   </div>
