@@ -10,8 +10,8 @@ import { supabase } from '@/lib/supabaseClient';
 
 type NavItem = { href: string; label: string; match?: string; badge?: number };
 type NotifItem = { type: string; id: string; who: string; detail: string; when: string; href: string };
-const NOTIF_ICON: Record<string, string> = { offday: '🌴', halfday: '🕧', advance: '💵', mc: '📄', po: '📦' };
-const NOTIF_LABEL: Record<string, string> = { offday: 'off-day request', halfday: 'half-day request', advance: 'advance request', mc: 'MC', po: 'purchase order' };
+const NOTIF_ICON: Record<string, string> = { offday: '🌴', halfday: '🕧', advance: '💵', mc: '📄', po: '📦', stuckcar: '🚗', debt: '🧾', lowstock: '📉' };
+const NOTIF_LABEL: Record<string, string> = { offday: 'off-day request', halfday: 'half-day request', advance: 'advance request', mc: 'MC', po: 'purchase order', stuckcar: 'in shop > 3 days', debt: 'newly overdue', lowstock: 'to restock' };
 function relTime(iso: string): string {
   const m = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
   if (m < 1) return 'just now';
