@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import BackLink from '@/components/BackLink';
 
 type Phase = 'form' | 'saving' | 'done' | 'error';
 
@@ -117,14 +118,14 @@ export default function IntakePage() {
         <button onClick={reset} className="mt-8 w-full rounded-xl bg-blue-600 px-6 py-4 text-lg font-semibold text-white hover:bg-blue-700">
           Next customer
         </button>
-        <a href="/workshop" className="mt-3 text-sm text-gray-400 underline">← Back to workshop</a>
+        <div className="mt-3 text-center"><BackLink label="Back to workshop" /></div>
       </div>
     );
   }
 
   return (
     <div className="mx-auto max-w-md px-5 py-6">
-      <a href="/workshop" className="text-sm text-gray-400 hover:text-gray-600">← Back</a>
+      <BackLink />
       <h1 className="mt-2 text-2xl font-bold text-gray-900">Car Check-in</h1>
       <p className="mt-1 text-sm text-gray-500">Please fill in your car details</p>
 

@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import BackLink from '@/components/BackLink';
 import { useVisibleInterval } from '@/lib/useVisibleInterval';
 import BarcodeScanner from '@/components/BarcodeScanner';
 
@@ -148,7 +149,7 @@ export default function AddPartPage() {
           onDetected={(code) => { setScanning(false); search(code); }}
         />
       )}
-      <a href="/workshop" className="text-sm text-gray-400 hover:text-gray-600">← Back</a>
+      <BackLink />
       <h1 className="mt-2 text-2xl font-bold text-gray-900">🔩 Part Arrived</h1>
 
       {/* 1) vehicle */}
