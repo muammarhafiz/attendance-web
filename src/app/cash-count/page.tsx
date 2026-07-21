@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import BackLink from '@/components/BackLink';
 
 const DENOMS = [100, 50, 20, 10, 5, 1] as const;
 const rm = (n: number) => `RM ${n.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -172,7 +173,7 @@ export default function CashCountPage() {
 
   return (
     <div className="mx-auto max-w-md px-5 py-6">
-      <a href="/workshop" className="text-sm text-gray-400 hover:text-gray-600">← Back</a>
+      <BackLink />
       <h1 className="mt-2 text-2xl font-bold text-gray-900">💵 Cash Book</h1>
 
       {/* Cash Book | Petty Cash tabs */}

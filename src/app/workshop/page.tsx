@@ -308,7 +308,7 @@ export default function WorkshopBoardPage() {
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold text-gray-900">Workshop</h1>
         <span className="text-sm text-gray-400">{byCol.pending.length} car(s) in the shop</span>
-        <span className="ml-auto flex gap-2">
+        <span className="flex w-full flex-wrap gap-2 sm:ml-auto sm:w-auto">
           <button onClick={refreshAll} className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">🔄 Refresh</button>
           <a href="/add-part" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-700 hover:bg-amber-100">🔩 Part arrived</a>
           {canWrite && (
