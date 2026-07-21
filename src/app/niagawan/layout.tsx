@@ -8,10 +8,7 @@ import { usePathname } from 'next/navigation';
 const TABS = [
   { href: '/niagawan/sales', label: 'Sales' },
   { href: '/niagawan/cogs', label: 'COGS' },
-  { href: '/niagawan/inventory', label: 'Inventory' },
-  { href: '/niagawan/inventory-v2', label: 'Inventory v2' },
-  { href: '/niagawan/inventory-v3', label: 'Inventory v3' },
-  { href: '/niagawan/inventory-v4', label: 'Inventory v4' },
+  { href: '/niagawan/inventory-v4', label: 'Inventory' },
   { href: '/niagawan/purchase', label: 'Purchase Invoice' },
   { href: '/niagawan/kiv', label: 'KIV Invoices' },
   { href: '/niagawan/pnl', label: 'P&L' },
