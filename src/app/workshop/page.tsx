@@ -304,17 +304,17 @@ export default function WorkshopBoardPage() {
   if (!canWrite) return <div className="p-6 text-sm text-gray-600">The workshop board is for supervisors only.</div>;
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-5">
+    <div className="mx-auto max-w-7xl px-4 py-5 pb-24 sm:pb-5">
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold text-gray-900">Workshop</h1>
         <span className="text-sm text-gray-400">{byCol.pending.length} car(s) in the shop</span>
         <span className="flex w-full flex-wrap gap-2 sm:ml-auto sm:w-auto">
           <button onClick={refreshAll} className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">🔄 Refresh</button>
-          <a href="/add-part" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-700 hover:bg-amber-100">🔩 Part arrived</a>
+          <a href="/add-part" className="hidden items-center rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-700 hover:bg-amber-100 sm:inline-flex">🔩 Part arrived</a>
           {canWrite && (
             <>
-              <a href="/intake" className="rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-100">📝 Customer check-in</a>
-              <a href="/cash-count" className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">💵 Cash Book</a>
+              <a href="/intake" className="hidden items-center rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-100 sm:inline-flex">📝 Customer check-in</a>
+              <a href="/cash-count" className="hidden items-center rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 sm:inline-flex">💵 Cash Book</a>
               <button onClick={() => setShowForm((v) => !v)} className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700">
                 {showForm ? 'Close' : '+ New job card'}
               </button>
@@ -458,6 +458,23 @@ export default function WorkshopBoardPage() {
       <p className="mt-3 text-xs text-gray-400">
         Supervisors add job cards and memos. Anyone can mark a car Done when it&apos;s ready. The board refreshes itself every 15 seconds on every PC.
       </p>
+
+      {/* Sticky bottom action bar (phones only) — the 3 daily actions in the thumb zone.
+          On desktop these live in the top row instead (see the sm:inline-flex buttons above). */}
+      <nav
+        className="fixed inset-x-0 bottom-0 z-40 flex border-t border-gray-200 bg-white/95 shadow-[0_-1px_10px_rgba(0,0,0,0.06)] backdrop-blur sm:hidden"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        <a href="/intake" className="flex flex-1 flex-col items-center justify-center gap-0.5 py-2.5 text-xs font-semibold text-blue-700 active:bg-blue-50">
+          <span className="text-xl leading-none">📝</span> Check-in
+        </a>
+        <a href="/add-part" className="flex flex-1 flex-col items-center justify-center gap-0.5 border-l border-gray-100 py-2.5 text-xs font-semibold text-amber-700 active:bg-amber-50">
+          <span className="text-xl leading-none">🔩</span> Part
+        </a>
+        <a href="/cash-count" className="flex flex-1 flex-col items-center justify-center gap-0.5 border-l border-gray-100 py-2.5 text-xs font-semibold text-emerald-700 active:bg-emerald-50">
+          <span className="text-xl leading-none">💵</span> Cash
+        </a>
+      </nav>
     </div>
   );
 }
