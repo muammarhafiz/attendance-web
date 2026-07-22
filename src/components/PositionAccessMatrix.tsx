@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-const POSITIONS = ['Manager', 'Supervisor', 'Mechanic', 'Admin', 'Temporary', 'Trainer'];
+const POSITIONS = ['Manager', 'Supervisor', 'Mechanic', 'Mechanic 2', 'Mechanic 3', 'Admin', 'Temporary', 'Trainer'];
 
 const FEATURES: { key: string; label: string; note?: string }[] = [
   { key: 'checkin', label: 'Clock-in' },

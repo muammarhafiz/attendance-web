@@ -82,7 +82,7 @@ type NewEmployee = {
   eis_enabled: boolean;
 };
 
-const POSITION_OPTIONS = ['Manager', 'Supervisor', 'Mechanic', 'Admin', 'Temporary', 'Trainer'];
+const POSITION_OPTIONS = ['Manager', 'Supervisor', 'Mechanic', 'Mechanic 2', 'Mechanic 3', 'Admin', 'Temporary', 'Trainer'];
 
 function rm(n?: number | null) {
   const v = Number(n ?? 0);
