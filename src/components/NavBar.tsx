@@ -135,7 +135,8 @@ export default function NavBar() {
   const mainLinks: NavItem[] = [
     // Owners get a Dashboard landing; everyone keeps Check-in.
     ...(access.owner ? [{ href: '/dashboard', label: 'Dashboard' } as NavItem] : []),
-    { href: '/', label: 'Check-in' },
+    // Owners' Check-in points at /checkin so it isn't bounced to the dashboard like "/".
+    { href: access.owner ? '/checkin' : '/', label: 'Check-in' },
     // The job board — supervisors and admins only.
     ...(canBoard ? [{ href: '/workshop', label: 'Workshop' } as NavItem] : []),
   ];
