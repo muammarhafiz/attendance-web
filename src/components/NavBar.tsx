@@ -27,8 +27,9 @@ export default function NavBar() {
   const pathname = usePathname();
   const router = useRouter();
   const [email, setEmail] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState<boolean>(false);
-  const [canBoard, setCanBoard] = useState<boolean>(false); // supervisor or admin -> sees Workshop
+  const [isAdmin, setIsAdmin] = useState<boolean>(false); // owner (full access) — gates the bell
+  const [canBoard, setCanBoard] = useState<boolean>(false); // can open the Workshop board
+  const [access, setAccess] = useState<Record<string, boolean>>({}); // per-feature flags from my_access()
   const [counts, setCounts] = useState<{ mc: number; offday: number; halfday: number; advance: number; po: number; pinv: number }>({ mc: 0, offday: 0, halfday: 0, advance: 0, po: 0, pinv: 0 });
   const [items, setItems] = useState<NotifItem[]>([]);
   const [acting, setActing] = useState<string | null>(null);
@@ -44,20 +45,21 @@ export default function NavBar() {
       const userEmail = userData.user?.email ?? null;
       setEmail(userEmail);
       if (userEmail) {
-        const { data, error } = await supabase.rpc('is_admin');
-        setIsAdmin(Boolean(data) && !error);
-        const { data: bw } = await supabase.rpc('can_access', { p_feature: 'workshop' });
-        setCanBoard(bw === true);
-      } else { setIsAdmin(false); setCanBoard(false); }
+        const { data } = await supabase.rpc('my_access');
+        const a = (data ?? {}) as Record<string, boolean>;
+        setAccess(a); setIsAdmin(!!a.owner); setCanBoard(!!a.workshop);
+      } else { setIsAdmin(false); setCanBoard(false); setAccess({}); }
     };
     readAuthAndRole();
     const { data } = supabase.auth.onAuthStateChange((_e, session) => {
       const userEmail = session?.user?.email ?? null;
       setEmail(userEmail);
       if (userEmail) {
-        supabase.rpc('is_admin').then(({ data, error }) => setIsAdmin(Boolean(data) && !error));
-        supabase.rpc('can_access', { p_feature: 'workshop' }).then(({ data }) => setCanBoard(data === true));
-      } else { setIsAdmin(false); setCanBoard(false); }
+        supabase.rpc('my_access').then(({ data }) => {
+          const a = (data ?? {}) as Record<string, boolean>;
+          setAccess(a); setIsAdmin(!!a.owner); setCanBoard(!!a.workshop);
+        });
+      } else { setIsAdmin(false); setCanBoard(false); setAccess({}); }
     });
     unsub = data?.subscription ?? null;
     return () => unsub?.unsubscribe();
@@ -135,13 +137,14 @@ export default function NavBar() {
     // The job board — supervisors and admins only.
     ...(canBoard ? [{ href: '/workshop', label: 'Workshop' } as NavItem] : []),
   ];
+  // Each admin link shows only if the signed-in person's position grants that feature.
   const adminLinks: NavItem[] = [
-    { href: '/attendance/checkin', match: '/attendance', label: 'Attendance', badge: counts.mc + counts.offday + counts.halfday + counts.advance },
-    { href: '/niagawan/sales', match: '/niagawan', label: 'Niagawan', badge: counts.po + counts.pinv },
-    { href: '/employees', label: 'Employees' },
+    ...(access.attendance ? [{ href: '/attendance/checkin', match: '/attendance', label: 'Attendance', badge: counts.mc + counts.offday + counts.halfday + counts.advance } as NavItem] : []),
+    ...((access.niagawan || access.pnl) ? [{ href: '/niagawan/sales', match: '/niagawan', label: 'Niagawan', badge: counts.po + counts.pinv } as NavItem] : []),
+    ...(access.employees ? [{ href: '/employees', label: 'Employees' } as NavItem] : []),
     // Records is a sub-tab inside the Payroll page now (PayrollTabs), not a navbar item.
-    { href: '/payroll/v3', match: '/payroll', label: 'Payroll' },
-    { href: '/settings', label: 'Settings' },
+    ...(access.payroll ? [{ href: '/payroll/v3', match: '/payroll', label: 'Payroll' } as NavItem] : []),
+    ...((access.access_admin || access.owner) ? [{ href: '/settings', label: 'Settings' } as NavItem] : []),
   ];
 
   const Badge = ({ n }: { n?: number }) =>
@@ -161,7 +164,7 @@ export default function NavBar() {
       isActive(item) ? 'bg-brand-700 text-white' : 'text-slate-700 hover:bg-slate-100 active:bg-slate-100'
     }`;
 
-  const allAdmin = isAdmin ? adminLinks : [];
+  const allAdmin = adminLinks; // already filtered per-feature above
 
   return (
     <nav className="no-print sticky top-0 z-40 w-full border-b border-slate-200 bg-white/90 backdrop-blur">
@@ -264,7 +267,7 @@ export default function NavBar() {
                 <Link key={l.href} href={l.href} prefetch={false} className={mobClass(l)}>{l.label}<Badge n={l.badge} /></Link>
               ))}
             </div>
-            {isAdmin && (
+            {adminLinks.length > 0 && (
               <>
                 <div className="px-4 pb-1 pt-4 text-xs font-semibold uppercase tracking-wide text-slate-400">Admin</div>
                 <div className="space-y-1">

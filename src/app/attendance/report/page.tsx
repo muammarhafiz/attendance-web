@@ -50,7 +50,7 @@ export default function AttendanceReportPage() {
       const { data } = await supabase.auth.getSession();
       setAuthed(!!data.session);
       if (data.session) {
-        const { data: ok } = await supabase.rpc('is_admin');
+        const { data: ok } = await supabase.rpc('can_access', { p_feature: 'attendance' });
         setIsAdmin(ok === true);
       } else setIsAdmin(false);
     })();
@@ -142,7 +142,7 @@ export default function AttendanceReportPage() {
 
   if (authed === null || isAdmin === null) return <div className="text-sm text-gray-500">Checking…</div>;
   if (!authed) return <div className="text-sm text-gray-600">Please sign in.</div>;
-  if (!isAdmin) return <div className="text-sm text-gray-600">This page is for admins only.</div>;
+  if (!isAdmin) return <div className="text-sm text-gray-600">You don&apos;t have access to this page.</div>;
 
   const printStaffName = staffFilter === 'ALL' ? 'All staff' : (staffList.find(([e]) => e === staffFilter)?.[1] ?? staffFilter);
   const printedOn = today.toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' });

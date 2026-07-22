@@ -90,7 +90,7 @@ export default function ReviewInvoicePage() {
 
   useEffect(() => {
     (async () => {
-      const { data: ok } = await supabase.rpc('is_admin');
+      const { data: ok } = await supabase.rpc('can_access', { p_feature: 'niagawan' });
       setIsAdmin(ok === true);
     })();
   }, []);
@@ -433,7 +433,7 @@ export default function ReviewInvoicePage() {
   }, [id, head, load]);
 
   if (isAdmin === null || loading) return <div className="text-sm text-gray-500">Loading…</div>;
-  if (!isAdmin) return <div className="text-sm text-gray-600">This page is for admins only.</div>;
+  if (!isAdmin) return <div className="text-sm text-gray-600">You don&apos;t have access to this page.</div>;
   if (!head) return <div className="text-sm text-gray-600">Invoice not found. <button onClick={() => router.push('/niagawan/purchase')} className="text-blue-600 underline">Back</button></div>;
 
   const locked = head.status === 'approved' || head.status === 'creating' || head.status === 'created' || head.status === 'dismissed';
