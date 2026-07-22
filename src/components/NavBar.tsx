@@ -10,8 +10,8 @@ import { supabase } from '@/lib/supabaseClient';
 
 type NavItem = { href: string; label: string; match?: string; badge?: number };
 type NotifItem = { type: string; id: string; who: string; detail: string; when: string; href: string };
-const NOTIF_ICON: Record<string, string> = { offday: '🌴', halfday: '🕧', advance: '💵', mc: '📄', po: '📦', stuckcar: '🚗', debt: '🧾', lowstock: '📉' };
-const NOTIF_LABEL: Record<string, string> = { offday: 'off-day request', halfday: 'half-day request', advance: 'advance request', mc: 'MC', po: 'purchase order', stuckcar: 'in shop > 3 days', debt: 'newly overdue', lowstock: 'to restock' };
+const NOTIF_ICON: Record<string, string> = { offday: '🌴', halfday: '🕧', advance: '💵', mc: '📄', po: '📦', pinv: '📥', stuckcar: '🚗', debt: '🧾', lowstock: '📉' };
+const NOTIF_LABEL: Record<string, string> = { offday: 'off-day request', halfday: 'half-day request', advance: 'advance request', mc: 'MC', po: 'purchase order', pinv: 'purchase invoice', stuckcar: 'in shop > 3 days', debt: 'newly overdue', lowstock: 'to restock' };
 // Request types the owner can approve/reject right in the bell (each has approve_*/reject_* RPCs).
 const ACTIONABLE = new Set(['offday', 'halfday', 'advance', 'mc']);
 function relTime(iso: string): string {
@@ -29,7 +29,7 @@ export default function NavBar() {
   const [email, setEmail] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [canBoard, setCanBoard] = useState<boolean>(false); // supervisor or admin -> sees Workshop
-  const [counts, setCounts] = useState<{ mc: number; offday: number; halfday: number; advance: number; po: number }>({ mc: 0, offday: 0, halfday: 0, advance: 0, po: 0 });
+  const [counts, setCounts] = useState<{ mc: number; offday: number; halfday: number; advance: number; po: number; pinv: number }>({ mc: 0, offday: 0, halfday: 0, advance: 0, po: 0, pinv: 0 });
   const [items, setItems] = useState<NotifItem[]>([]);
   const [acting, setActing] = useState<string | null>(null);
   const [bellOpen, setBellOpen] = useState(false);
@@ -64,18 +64,18 @@ export default function NavBar() {
   }, []);
 
   const reloadFeed = useCallback(async () => {
-    if (!isAdmin) { setCounts({ mc: 0, offday: 0, halfday: 0, advance: 0, po: 0 }); setItems([]); return; }
+    if (!isAdmin) { setCounts({ mc: 0, offday: 0, halfday: 0, advance: 0, po: 0, pinv: 0 }); setItems([]); return; }
     // Don't hit the DB from a hidden/backgrounded tab; we refresh on focus (listeners below).
     if (typeof document !== 'undefined' && document.hidden) return;
     const { data } = await supabase.rpc('notification_feed'); // one round-trip: counts + items
-    const d = (data ?? {}) as { counts?: { mc?: number; offday?: number; halfday?: number; advance?: number; po?: number }; items?: NotifItem[] };
+    const d = (data ?? {}) as { counts?: { mc?: number; offday?: number; halfday?: number; advance?: number; po?: number; pinv?: number }; items?: NotifItem[] };
     const c = d.counts ?? {};
-    setCounts({ mc: c.mc ?? 0, offday: c.offday ?? 0, halfday: c.halfday ?? 0, advance: c.advance ?? 0, po: c.po ?? 0 });
+    setCounts({ mc: c.mc ?? 0, offday: c.offday ?? 0, halfday: c.halfday ?? 0, advance: c.advance ?? 0, po: c.po ?? 0, pinv: c.pinv ?? 0 });
     setItems(Array.isArray(d.items) ? (d.items as NotifItem[]) : []);
   }, [isAdmin]);
 
   useEffect(() => {
-    if (!isAdmin) { setCounts({ mc: 0, offday: 0, halfday: 0, advance: 0, po: 0 }); setItems([]); return; }
+    if (!isAdmin) { setCounts({ mc: 0, offday: 0, halfday: 0, advance: 0, po: 0, pinv: 0 }); setItems([]); return; }
     reloadFeed();
     const id = setInterval(reloadFeed, 60000);
     const onVisible = () => { if (typeof document === 'undefined' || !document.hidden) reloadFeed(); };
@@ -137,7 +137,7 @@ export default function NavBar() {
   ];
   const adminLinks: NavItem[] = [
     { href: '/attendance/checkin', match: '/attendance', label: 'Attendance', badge: counts.mc + counts.offday + counts.halfday + counts.advance },
-    { href: '/niagawan/sales', match: '/niagawan', label: 'Niagawan', badge: counts.po },
+    { href: '/niagawan/sales', match: '/niagawan', label: 'Niagawan', badge: counts.po + counts.pinv },
     { href: '/employees', label: 'Employees' },
     // Records is a sub-tab inside the Payroll page now (PayrollTabs), not a navbar item.
     { href: '/payroll/v3', match: '/payroll', label: 'Payroll' },
@@ -247,7 +247,7 @@ export default function NavBar() {
             ) : (
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
             )}
-            {!open && isAdmin && (counts.mc + counts.offday + counts.halfday + counts.advance + counts.po) > 0 && (
+            {!open && isAdmin && (counts.mc + counts.offday + counts.halfday + counts.advance + counts.po + counts.pinv) > 0 && (
               <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-rose-500" />
             )}
           </button>
