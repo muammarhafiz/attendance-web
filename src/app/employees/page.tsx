@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import PositionAccessMatrix from '@/components/PositionAccessMatrix';
 
@@ -107,6 +107,9 @@ export default function EmployeesPage() {
   const [openEmail, setOpenEmail] = useState<string | null>(null);
   const [model, setModel] = useState<StaffFull | null>(null);
   const [saving, setSaving] = useState(false);
+  // Snapshot of the ORIGINAL pay-relevant fields when the editor opens, so a position/contact-only
+  // save can skip the expensive payroll rebuild (that heavy rebuild is what froze the Save button).
+  const origPayrollRef = useRef<{ basic: number; inc: boolean; sba: boolean; epf: boolean; socso: boolean; eis: boolean; trk: boolean; arch: boolean } | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
   const [editIsAdmin, setEditIsAdmin] = useState<boolean>(false);
@@ -281,6 +284,17 @@ export default function EmployeesPage() {
     setEditSocsoEnabled(row?.socso_enabled ?? true);
     setEditEisEnabled(row?.eis_enabled ?? true);
     setEditTrackAttendance(row?.track_attendance ?? true);
+
+    origPayrollRef.current = {
+      basic: Number(row?.basic_salary ?? 0),
+      inc: row?.include_in_payroll ?? true,
+      sba: row?.salary_based_on_attendance ?? true,
+      epf: row?.epf_enabled ?? true,
+      socso: row?.socso_enabled ?? true,
+      eis: row?.eis_enabled ?? true,
+      trk: row?.track_attendance ?? true,
+      arch: !!row?.archived_at,
+    };
   };
 
   const save = async () => {
@@ -333,50 +347,72 @@ export default function EmployeesPage() {
       const { error: upErr } = await supabase.from('staff').update(payload).eq('email', model.email);
       if (upErr) throw upErr;
 
-      // Refresh attendance for this month so the track-attendance change shows immediately
-      try {
-        const fom = today.slice(0, 8) + '01';
-        await supabase.rpc('attendance_v2_recompute', { p_from: fom, p_to: today });
-      } catch { /* non-fatal */ }
+      // Only run the expensive attendance/payroll side-effects when a PAY-relevant field actually
+      // changed — a position/contact-only edit now saves instantly (the payroll rebuild is what froze
+      // the Save button when several employees were saved quickly).
+      const o = origPayrollRef.current;
+      const trkChanged  = !o || (!!editTrackAttendance !== o.trk);
+      const archChanged = !o || (!!archived_at !== o.arch);
+      const payrollChanged = !o
+        || Number(model.basic_salary ?? 0) !== o.basic
+        || (!!editIncludeInPayroll !== o.inc)
+        || (!!editSalaryBasedOnAttendance !== o.sba)
+        || (!!editEpfEnabled !== o.epf)
+        || (!!editSocsoEnabled !== o.socso)
+        || (!!editEisEnabled !== o.eis)
+        || trkChanged
+        || archChanged;
 
-      // Revoke / restore login access to match archived state (best-effort)
-      try {
-        const tok = (await supabase.auth.getSession()).data.session?.access_token;
-        await fetch('/api/admin/set-login-access', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
-          body: JSON.stringify({ email: model.email, archived: editArchived }),
-        });
-      } catch { /* non-fatal */ }
+      // Refresh attendance for this month only if the track-attendance toggle changed
+      if (trkChanged) {
+        try {
+          const fom = today.slice(0, 8) + '01';
+          await supabase.rpc('attendance_v2_recompute', { p_from: fom, p_to: today });
+        } catch { /* non-fatal */ }
+      }
 
-      // Recalc latest OPEN period (if any) so toggles reflect quickly
-      const { data: period, error: perErr } = await supabase
-        .schema('pay_v2')
-        .from('periods')
-        .select('year, month, status')
-        .eq('status', 'OPEN')
-        .order('year', { ascending: false })
-        .order('month', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (perErr) throw perErr;
-
-      if (period?.year && period?.month) {
-        const b = await supabase.schema('pay_v2').rpc('build_period', { p_year: period.year, p_month: period.month });
-        // If build_period is admin-only, this should work because page is admin gated.
-        if (b.error) {
-          // fallback: at least sync base + stat
-          const s1 = await supabase.schema('pay_v2').rpc('sync_base_items_respect_archive', {
-            p_year: period.year,
-            p_month: period.month,
+      // Revoke / restore login access only when the archived state changed (best-effort)
+      if (archChanged) {
+        try {
+          const tok = (await supabase.auth.getSession()).data.session?.access_token;
+          await fetch('/api/admin/set-login-access', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
+            body: JSON.stringify({ email: model.email, archived: editArchived }),
           });
-          if (s1.error) throw s1.error;
+        } catch { /* non-fatal */ }
+      }
 
-          const s2 = await supabase.schema('pay_v2').rpc('recalc_statutories_respect_temp', {
-            p_year: period.year,
-            p_month: period.month,
-          });
-          if (s2.error) throw s2.error;
+      // Rebuild the open payroll period only when a pay field changed (this is the heavy step)
+      if (payrollChanged) {
+        const { data: period, error: perErr } = await supabase
+          .schema('pay_v2')
+          .from('periods')
+          .select('year, month, status')
+          .eq('status', 'OPEN')
+          .order('year', { ascending: false })
+          .order('month', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (perErr) throw perErr;
+
+        if (period?.year && period?.month) {
+          const b = await supabase.schema('pay_v2').rpc('build_period', { p_year: period.year, p_month: period.month });
+          // If build_period is admin-only, this should work because page is admin gated.
+          if (b.error) {
+            // fallback: at least sync base + stat
+            const s1 = await supabase.schema('pay_v2').rpc('sync_base_items_respect_archive', {
+              p_year: period.year,
+              p_month: period.month,
+            });
+            if (s1.error) throw s1.error;
+
+            const s2 = await supabase.schema('pay_v2').rpc('recalc_statutories_respect_temp', {
+              p_year: period.year,
+              p_month: period.month,
+            });
+            if (s2.error) throw s2.error;
+          }
         }
       }
 
