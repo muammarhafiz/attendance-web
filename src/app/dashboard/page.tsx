@@ -17,6 +17,7 @@ type Dash = {
 
 const rm = (n: number) => 'RM ' + Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 const rm2 = (n: number) => 'RM ' + Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtDay = (iso: string) => new Date(iso + 'T00:00:00').toLocaleDateString('en-MY', { weekday: 'short', day: 'numeric', month: 'short' });
 
 function Kpi({ label, value, sub, href }: { label: string; value: string; sub?: string; href?: string }) {
   const body = (
@@ -54,6 +55,47 @@ const Row = ({ k, v, tone }: { k: string; v: React.ReactNode; tone?: 'ok' | 'war
   </div>
 );
 
+// Interactive 14-day sales trend: the big figure + date follow whichever bar you tap/hover.
+function SalesTrend({ series, mtd, today }: { series: { day: string; sales: number }[]; mtd: number; today: number }) {
+  const [sel, setSel] = useState<number | null>(null);
+  if (!series.length) return <div className="text-sm text-slate-400">No sales data yet.</div>;
+  const max = Math.max(1, ...series.map((x) => x.sales));
+  const i = sel ?? series.length - 1;
+  const cur = series[Math.min(i, series.length - 1)];
+  return (
+    <div>
+      <div className="mb-1 flex items-baseline justify-between">
+        <span className="text-xl font-semibold text-slate-900">{rm(cur.sales)}</span>
+        <span className="text-xs font-medium text-slate-500">{fmtDay(cur.day)}</span>
+      </div>
+      <div className="flex h-20 items-end gap-[3px]">
+        {series.map((x, idx) => (
+          <button
+            key={x.day}
+            type="button"
+            onMouseEnter={() => setSel(idx)}
+            onMouseLeave={() => setSel(null)}
+            onFocus={() => setSel(idx)}
+            onClick={() => setSel(idx)}
+            aria-label={`${fmtDay(x.day)}: ${rm(x.sales)}`}
+            className={`flex-1 rounded-t transition-colors ${idx === i ? 'bg-sky-500' : 'bg-sky-200 hover:bg-sky-300'}`}
+            style={{ height: `${Math.max(4, Math.round((x.sales / max) * 100))}%` }}
+          />
+        ))}
+      </div>
+      <div className="mt-1 flex justify-between text-[10px] text-slate-400">
+        <span>{fmtDay(series[0].day)}</span>
+        <span>{fmtDay(series[series.length - 1].day)}</span>
+      </div>
+      <div className="mt-2 border-t border-slate-100 pt-2">
+        <Row k="Today" v={rm(today)} />
+        <Row k="This month" v={rm(mtd)} />
+      </div>
+      <p className="mt-1 text-[10px] text-slate-400">Tap a bar to see that day’s sales.</p>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const [d, setD] = useState<Dash | null>(null);
   const [status, setStatus] = useState<'loading' | 'denied' | 'ready'>('loading');
@@ -71,7 +113,6 @@ export default function DashboardPage() {
   if (status === 'denied' || !d) return <div className="mx-auto max-w-6xl px-4 py-6 text-sm text-slate-600">This dashboard is for owners.</div>;
 
   const dateLabel = new Date(d.today + 'T00:00:00').toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long' });
-  const maxSales = Math.max(1, ...d.sales.series.map((x) => x.sales));
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-5">
@@ -107,17 +148,8 @@ export default function DashboardPage() {
         </Card>
 
         {/* Sales trend */}
-        <Card title="Sales trend" icon="📈" href="/niagawan/sales">
-          <div className="flex h-16 items-end gap-1">
-            {d.sales.series.map((x) => (
-              <div key={x.day} title={`${x.day}: ${rm(x.sales)}`} className="flex-1 rounded-t bg-sky-400/80"
-                   style={{ height: `${Math.max(3, Math.round((x.sales / maxSales) * 100))}%` }} />
-            ))}
-          </div>
-          <div className="mt-2">
-            <Row k="This month" v={rm(d.sales.mtd)} />
-            <Row k="Today" v={rm(d.sales.today)} />
-          </div>
+        <Card title="Sales trend · 14 days" icon="📈" href="/niagawan/sales">
+          <SalesTrend series={d.sales.series} mtd={d.sales.mtd} today={d.sales.today} />
         </Card>
 
         {/* Needs attention */}
