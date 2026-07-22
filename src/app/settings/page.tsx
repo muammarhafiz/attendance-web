@@ -8,10 +8,12 @@ import AttendanceSettings from '@/components/settings/AttendanceSettings';
 import WorkshopSettings from '@/components/settings/WorkshopSettings';
 import EmailSettings from '@/components/settings/EmailSettings';
 import NotificationsSettings from '@/components/settings/NotificationsSettings';
+import AutomationOverview from '@/components/settings/AutomationOverview';
 
-type TabKey = 'automation' | 'payroll' | 'attendance' | 'workshop' | 'email' | 'notifications';
+type TabKey = 'automation' | 'payroll' | 'attendance' | 'workshop' | 'email' | 'notifications' | 'system';
 const TABS: { key: TabKey; label: string }[] = [
-  { key: 'automation', label: 'Automation' },
+  { key: 'system', label: 'Automations' },
+  { key: 'automation', label: 'Task schedules' },
   { key: 'payroll', label: 'Payroll items' },
   { key: 'attendance', label: 'Attendance' },
   { key: 'workshop', label: 'Workshop' },
@@ -22,11 +24,11 @@ const TABS: { key: TabKey; label: string }[] = [
 // One place for every admin setting, with a sub nav bar switching between the panels.
 // Each panel is the same shared component used by its section's own settings page.
 export default function SettingsPage() {
-  const [tab, setTab] = useState<TabKey>('automation');
+  const [tab, setTab] = useState<TabKey>('system');
   // Open the tab named in ?tab= — used by the old /niagawan|payroll|attendance/settings redirects.
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get('tab');
-    if (t === 'automation' || t === 'payroll' || t === 'attendance' || t === 'workshop' || t === 'email' || t === 'notifications') setTab(t);
+    if (t === 'automation' || t === 'payroll' || t === 'attendance' || t === 'workshop' || t === 'email' || t === 'notifications' || t === 'system') setTab(t);
   }, []);
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
@@ -55,6 +57,7 @@ export default function SettingsPage() {
       {tab === 'workshop' && <WorkshopSettings />}
       {tab === 'email' && <EmailSettings />}
       {tab === 'notifications' && <NotificationsSettings />}
+      {tab === 'system' && <AutomationOverview />}
     </div>
   );
 }
