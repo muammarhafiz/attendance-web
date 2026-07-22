@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import PositionAccessMatrix from '@/components/PositionAccessMatrix';
 
 /* ---------- Types ---------- */
 type StaffBrief = {
@@ -82,7 +81,7 @@ type NewEmployee = {
   eis_enabled: boolean;
 };
 
-const POSITION_OPTIONS = ['Manager', 'Supervisor', 'Mechanic', 'Mechanic 2', 'Mechanic 3', 'Admin', 'Temporary', 'Trainer'];
+const POSITION_OPTIONS = ['Owner', 'Manager', 'Office', 'Supervisor', 'Mechanic', 'Mechanic 2', 'Mechanic 3', 'Temporary', 'Trainer'];
 
 function rm(n?: number | null) {
   const v = Number(n ?? 0);
@@ -95,7 +94,8 @@ function nowIso() {
 
 export default function EmployeesPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
-  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [isAdmin, setIsAdmin] = useState<boolean>(false); // can open Employees (position grants 'employees')
+  const [isOwner, setIsOwner] = useState<boolean>(false); // full owner — gates the destructive Delete
 
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<StaffBrief[]>([]);
@@ -155,10 +155,12 @@ export default function EmployeesPage() {
       setAuthed(ok);
 
       if (ok) {
-        const { data: adminFlag } = await supabase.rpc('is_admin');
-        const adminOk = adminFlag === true;
-        setIsAdmin(adminOk);
-        if (!adminOk) {
+        const { data: a } = await supabase.rpc('my_access');
+        const acc = (a ?? {}) as Record<string, boolean>;
+        const canEmp = !!acc.employees;
+        setIsAdmin(canEmp);
+        setIsOwner(!!acc.owner);
+        if (!canEmp) {
           window.location.href = '/';
           return;
         }
@@ -170,15 +172,18 @@ export default function EmployeesPage() {
         setAuthed(ok2);
 
         if (ok2) {
-          const { data: adminFlag } = await supabase.rpc('is_admin');
-          const adminOk = adminFlag === true;
-          setIsAdmin(adminOk);
-          if (!adminOk) {
+          const { data: a } = await supabase.rpc('my_access');
+          const acc = (a ?? {}) as Record<string, boolean>;
+          const canEmp = !!acc.employees;
+          setIsAdmin(canEmp);
+          setIsOwner(!!acc.owner);
+          if (!canEmp) {
             window.location.href = '/';
             return;
           }
         } else {
           setIsAdmin(false);
+          setIsOwner(false);
         }
       });
 
@@ -570,8 +575,6 @@ export default function EmployeesPage() {
 
       {msg && <div className="mb-3 rounded border border-sky-200 bg-sky-50 p-2 text-sm text-sky-800">{msg}</div>}
 
-      <div className="mb-5"><PositionAccessMatrix /></div>
-
       <section className="overflow-x-auto">
         {loading ? (
           <div className="text-sm text-gray-600">Loading…</div>
@@ -604,7 +607,7 @@ export default function EmployeesPage() {
                       <button className="rounded border px-3 py-1.5 hover:bg-gray-50" onClick={() => openEditor(r.email)}>
                         Edit
                       </button>
-                      {showArchived && (
+                      {showArchived && isOwner && (
                         <button
                           className="rounded border border-rose-300 px-3 py-1.5 text-rose-700 hover:bg-rose-50 disabled:opacity-50"
                           disabled={deleting === r.email}
@@ -643,12 +646,10 @@ export default function EmployeesPage() {
             <div className="grid gap-6 p-4">
               {/* Access */}
               <Section title="Access">
-                <div className="flex items-center gap-2">
-                  <input id="admin-flag" type="checkbox" checked={editIsAdmin} onChange={(e) => setEditIsAdmin(e.target.checked)} />
-                  <label htmlFor="admin-flag" className="text-sm">
-                    Admin (can manage payroll, periods, employees)
-                  </label>
-                </div>
+                <p className="text-sm text-gray-600">
+                  Access is set by this person&apos;s <span className="font-medium">Position</span> (below). Manage what each
+                  position can open in <span className="font-medium">Settings → Access</span>.
+                </p>
               </Section>
 
               {/* Employment status */}
@@ -824,13 +825,6 @@ export default function EmployeesPage() {
                   <Select label="Position" value={newEmp.position} onChange={(v) => setNewEmp((e) => ({ ...e, position: v }))} options={POSITION_OPTIONS} />
                   <DateInput label="Start date" value={newEmp.start_date} onChange={(v) => setNewEmp((e) => ({ ...e, start_date: v }))} />
                   <Money label="Basic salary" value={Number(newEmp.basic_salary)} onChange={(v) => setNewEmp((e) => ({ ...e, basic_salary: String(v) }))} />
-
-                  <div className="flex items-center gap-2">
-                    <input id="new-is-admin" type="checkbox" checked={newEmp.is_admin} onChange={(e) => setNewEmp((s) => ({ ...s, is_admin: e.target.checked }))} />
-                    <label htmlFor="new-is-admin" className="text-sm">
-                      Set as admin
-                    </label>
-                  </div>
 
                   <div className="flex items-center gap-2">
                     <input id="new-archived" type="checkbox" checked={newEmp.archived} onChange={(e) => setNewEmp((s) => ({ ...s, archived: e.target.checked }))} />

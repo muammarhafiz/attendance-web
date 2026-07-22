@@ -69,7 +69,7 @@ export default function PayrollV3Page() {
     (async () => {
       const { data } = await supabase.auth.getSession();
       setAuthed(!!data.session);
-      if (data.session) { const { data: ok } = await supabase.rpc('is_admin'); setIsAdmin(ok === true); }
+      if (data.session) { const { data: ok } = await supabase.rpc('can_access', { p_feature: 'payroll' }); setIsAdmin(ok === true); }
       else setIsAdmin(false);
     })();
   }, []);
@@ -286,7 +286,7 @@ export default function PayrollV3Page() {
 
   if (authed === null || isAdmin === null) return <div className="mx-auto max-w-6xl p-6 text-sm text-gray-500">Checking…</div>;
   if (!authed) return <div className="mx-auto max-w-6xl p-6 text-sm text-gray-600">Please sign in.</div>;
-  if (!isAdmin) return <div className="mx-auto max-w-6xl p-6 text-sm text-gray-600">This page is for admins only.</div>;
+  if (!isAdmin) return <div className="mx-auto max-w-6xl p-6 text-sm text-gray-600">You don&apos;t have access to this page.</div>;
 
   const status = period?.status ?? null;
   const statusCls = status === 'LOCKED' ? 'bg-amber-100 text-amber-800' : status === 'FINALIZED' ? 'bg-blue-100 text-blue-800' : status === 'OPEN' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-500';

@@ -47,7 +47,7 @@ export default function AttendanceOffdayPage() {
       const { data } = await supabase.auth.getSession();
       setAuthed(!!data.session);
       if (data.session) {
-        const { data: ok } = await supabase.rpc('is_admin');
+        const { data: ok } = await supabase.rpc('can_access', { p_feature: 'attendance' });
         setIsAdmin(ok === true);
       } else setIsAdmin(false);
     })();
@@ -148,7 +148,7 @@ export default function AttendanceOffdayPage() {
 
   if (authed === null || isAdmin === null) return <div className="text-sm text-gray-500">Checking…</div>;
   if (!authed) return <div className="text-sm text-gray-600">Please sign in.</div>;
-  if (!isAdmin) return <div className="text-sm text-gray-600">This page is for admins only.</div>;
+  if (!isAdmin) return <div className="text-sm text-gray-600">You don&apos;t have access to this page.</div>;
 
   return (
     <div className="max-w-2xl">

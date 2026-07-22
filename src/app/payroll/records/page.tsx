@@ -79,7 +79,7 @@ export default function PayrollRecordsPage() {
       const { data } = await supabase.auth.getSession();
       setAuthed(!!data.session);
       if (data.session?.user) {
-        const { data: ok } = await supabase.rpc('is_admin');
+        const { data: ok } = await supabase.rpc('can_access', { p_feature: 'payroll' });
         setIsAdmin(ok === true);
       } else {
         setIsAdmin(false);
@@ -87,7 +87,7 @@ export default function PayrollRecordsPage() {
       unsub = supabase.auth.onAuthStateChange(async (_e, session) => {
         setAuthed(!!session);
         if (session?.user) {
-          const { data: ok2 } = await supabase.rpc('is_admin');
+          const { data: ok2 } = await supabase.rpc('can_access', { p_feature: 'payroll' });
           setIsAdmin(ok2 === true);
         } else {
           setIsAdmin(false);
@@ -265,6 +265,14 @@ export default function PayrollRecordsPage() {
     return (
       <main className="mx-auto max-w-6xl p-6">
         <div className="text-sm text-gray-600">Checking session…</div>
+      </main>
+    );
+  }
+  if (!isAdmin) {
+    return (
+      <main className="mx-auto max-w-6xl p-6">
+        <h1 className="mb-2 text-2xl font-semibold">Payroll Records</h1>
+        <p className="text-sm text-gray-600">You don&apos;t have access to this page.</p>
       </main>
     );
   }

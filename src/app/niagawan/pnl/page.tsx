@@ -47,7 +47,7 @@ export default function PnlPage() {
   const lastDay = `${monthKey}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`;
 
   useEffect(() => {
-    (async () => { const { data } = await supabase.rpc('is_admin'); setIsAdmin(data === true); })();
+    (async () => { const { data } = await supabase.rpc('can_access', { p_feature: 'pnl' }); setIsAdmin(data === true); })();
   }, []);
 
   const load = useCallback(async () => {
@@ -170,7 +170,7 @@ export default function PnlPage() {
   const nextMonth = () => { const d = new Date(year, month, 1); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); };
 
   if (isAdmin === null) return <div className="text-sm text-gray-500">Checking…</div>;
-  if (!isAdmin) return <div className="text-sm text-gray-600">This page is for admins only.</div>;
+  if (!isAdmin) return <div className="text-sm text-gray-600">You don&apos;t have access to this page.</div>;
 
   const c = calc;
   const onTargetProjected = c.netProjected - targetNet;
