@@ -21,5 +21,14 @@ export async function GET(req: Request) {
     }
   }
 
-  return NextResponse.redirect(new URL(next, url.origin))
+  // Owners land on their dashboard by default (Check-in stays in the nav).
+  let dest = next
+  if (next === '/') {
+    try {
+      const { data: acc } = await supabase.rpc('my_access')
+      if (acc && (acc as { owner?: boolean }).owner) dest = '/dashboard'
+    } catch { /* fall back to next */ }
+  }
+
+  return NextResponse.redirect(new URL(dest, url.origin))
 }
