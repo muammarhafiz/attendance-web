@@ -18,6 +18,8 @@ type Dash = {
 const rm = (n: number) => 'RM ' + Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 const rm2 = (n: number) => 'RM ' + Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDay = (iso: string) => new Date(iso + 'T00:00:00').toLocaleDateString('en-MY', { weekday: 'short', day: 'numeric', month: 'short' });
+// Drop the trailing SSM registration ("… (202001027469 (1383789-X))") for a clean supplier name.
+const cleanSupplier = (name: string) => name.replace(/\s*\(\d{6,}.*$/, '').trim() || name;
 
 function Kpi({ label, value, sub, href }: { label: string; value: string; sub?: string; href?: string }) {
   const body = (
@@ -44,14 +46,14 @@ function Card({ title, icon, href, children }: { title: string; icon: string; hr
 }
 
 const Row = ({ k, v, tone }: { k: string; v: React.ReactNode; tone?: 'ok' | 'warn' | 'bad' }) => (
-  <div className="flex items-center justify-between py-1 text-sm">
-    <span className="text-slate-600">{k}</span>
-    <span className={
+  <div className="flex items-center justify-between gap-3 py-1 text-sm">
+    <span className="min-w-0 truncate text-slate-600" title={k}>{k}</span>
+    <span className={`shrink-0 ${
       tone === 'warn' ? 'rounded-md bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700'
       : tone === 'bad' ? 'rounded-md bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700'
       : tone === 'ok' ? 'rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700'
       : 'font-semibold text-slate-900'
-    }>{v}</span>
+    }`}>{v}</span>
   </div>
 );
 
@@ -167,7 +169,7 @@ export default function DashboardPage() {
             <>
               <div className="mb-2 text-sm text-slate-600">You owe <span className="font-semibold text-slate-900">{rm2(d.payables.total)}</span> across {d.payables.count} supplier{d.payables.count !== 1 ? 's' : ''}</div>
               {d.payables.top.map((s) => (
-                <Row key={s.name} k={s.name} v={rm2(s.balance)} />
+                <Row key={s.name} k={cleanSupplier(s.name)} v={rm2(s.balance)} />
               ))}
             </>
           ) : d.payables.synced ? (
