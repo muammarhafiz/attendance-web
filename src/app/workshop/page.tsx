@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useVisibleInterval } from '@/lib/useVisibleInterval';
+import OilFinder from '@/components/workshop/OilFinder';
 
 type Card = {
   id: string;
@@ -299,6 +300,8 @@ export default function WorkshopBoardPage() {
     return { years, active, shown, total };
   }, [debts, debtYear]);
 
+  const [tab, setTab] = useState<'board' | 'oil'>('board');
+
   if (authed === null || (authed && canWrite === null)) return <div className="p-6 text-sm text-gray-500">Checking session…</div>;
   if (!authed) return <div className="p-6 text-sm text-gray-600">Please sign in to see the workshop board.</div>;
   if (!canWrite) return <div className="p-6 text-sm text-gray-600">The workshop board is for supervisors only.</div>;
@@ -322,6 +325,15 @@ export default function WorkshopBoardPage() {
           )}
         </span>
       </div>
+
+      <div className="mb-4 flex gap-1 border-b border-slate-200">
+        <button onClick={() => setTab('board')} className={`-mb-px rounded-t-md px-3 py-2 text-sm font-medium ${tab === 'board' ? 'border-b-2 border-slate-900 text-slate-900' : 'text-slate-500 hover:text-slate-800'}`}>Board</button>
+        <button onClick={() => setTab('oil')} className={`-mb-px rounded-t-md px-3 py-2 text-sm font-medium ${tab === 'oil' ? 'border-b-2 border-slate-900 text-slate-900' : 'text-slate-500 hover:text-slate-800'}`}>🛢️ Oil finder</button>
+      </div>
+
+      {tab === 'oil' && <OilFinder />}
+
+      {tab === 'board' && (<>
 
       {syncMsg && (
         <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{syncMsg}</div>
@@ -475,6 +487,7 @@ export default function WorkshopBoardPage() {
           <span className="text-xl leading-none">💵</span> Cash
         </a>
       </nav>
+      </>)}
     </div>
   );
 }
