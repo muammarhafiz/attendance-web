@@ -33,11 +33,12 @@ export default function AddPartPage() {
   const [chosen, setChosen] = useState<Product | null>(null);
   const [priceOverride, setPriceOverride] = useState(''); // feature 1: per-line selling-price override
   const [editPrice, setEditPrice] = useState(false);
-  const [newItem, setNewItem] = useState<{ descp: string; price: string } | null>(null); // feature 2: item not in catalog
+  const [newItem, setNewItem] = useState<{ barcode: string; descp: string; price: string } | null>(null); // feature 2: item not in catalog
   const [qty, setQty] = useState(1);
   const [queue, setQueue] = useState<Queued[]>([]);
   const [errMsg, setErrMsg] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false); // camera barcode scanner open
+  const [scannedCode, setScannedCode] = useState(''); // barcode from the last scan — becomes the new product's code
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -103,13 +104,15 @@ export default function AddPartPage() {
     let rpcArgs: Record<string, unknown>;
     let label: string;
     if (newItem) {
-      // brand-new item not in Niagawan -> the "--" placeholder with a typed descp + price
-      if (!newItem.descp.trim()) { setErrMsg('Enter the item description.'); return; }
+      // brand-new item not in Niagawan -> the NAS creates a real product (barcode + name + price)
+      // and adds it to the invoice; falls back to the "--" placeholder only if the create fails.
+      if (!newItem.descp.trim()) { setErrMsg('Enter the item name.'); return; }
       const priceN = Number(newItem.price);
       if (newItem.price.trim() === '' || !Number.isFinite(priceN) || priceN < 0) { setErrMsg('Enter a valid selling price.'); return; }
       rpcArgs = {
         p_inv: picked.inv, p_sale_id: picked.sale_id, p_plate: picked.customer ?? '',
         p_code: '', p_qty: qty, p_sku: null, p_descp: newItem.descp.trim(), p_price: priceN, p_is_new: true,
+        p_barcode: newItem.barcode.trim(),
       };
       label = newItem.descp.trim();
     } else {
@@ -132,7 +135,7 @@ export default function AddPartPage() {
     setQueue((prev) => [entry, ...prev].slice(0, 8));
     // fire-and-forget: reset the item immediately, keep the same vehicle selected
     setQ(''); setResults([]); setChosen(null); setQty(1);
-    setEditPrice(false); setPriceOverride(''); setNewItem(null);
+    setEditPrice(false); setPriceOverride(''); setNewItem(null); setScannedCode('');
   }, [picked, chosen, qty, editPrice, priceOverride, newItem]);
 
   if (authed === null || (authed && allowed === null)) return <div className="p-6 text-sm text-gray-500">Checking…</div>;
@@ -146,7 +149,7 @@ export default function AddPartPage() {
       {scanning && (
         <BarcodeScanner
           onClose={() => setScanning(false)}
-          onDetected={(code) => { setScanning(false); search(code); }}
+          onDetected={(code) => { setScanning(false); setScannedCode(code.trim()); search(code); }}
         />
       )}
       <BackLink />
@@ -179,11 +182,17 @@ export default function AddPartPage() {
 
       {/* 2) part search OR new item */}
       <div className="mt-5">
-        <span className="text-sm font-medium text-gray-700">2. {newItem ? 'New item (not in Niagawan yet)' : 'Search item (code or name)'}</span>
+        <span className="text-sm font-medium text-gray-700">2. {newItem ? 'New product (will be created in Niagawan)' : 'Search item (code or name)'}</span>
         {newItem ? (
           <div className="mt-1 space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="shrink-0 text-sm text-gray-600">Barcode</span>
+              <input value={newItem.barcode} onChange={(e) => setNewItem({ ...newItem, barcode: e.target.value })}
+                placeholder="scan or leave blank" autoComplete="off"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm uppercase" />
+            </div>
             <input value={newItem.descp} onChange={(e) => setNewItem({ ...newItem, descp: e.target.value })}
-              placeholder="Item description (printed on the invoice)" autoComplete="off"
+              placeholder="Item name (printed on the invoice)" autoComplete="off" autoFocus={!!newItem.barcode}
               className="w-full rounded-xl border border-gray-300 px-4 py-3 text-base" />
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-600">Selling price RM</span>
@@ -192,13 +201,13 @@ export default function AddPartPage() {
                 className="w-32 rounded-lg border border-gray-300 px-2 py-1.5 text-base" />
             </div>
             <div className="flex items-center justify-between">
-              <button onClick={() => setNewItem(null)} className="text-xs text-gray-500 underline">← back to search</button>
+              <button onClick={() => { setNewItem(null); setScannedCode(''); }} className="text-xs text-gray-500 underline">← back to search</button>
             </div>
-            <p className="text-xs text-gray-400">Added on the &ldquo;--&rdquo; item with this description &amp; price — same as keying a new item in Niagawan.</p>
+            <p className="text-xs text-gray-400">Creates a real Niagawan product{newItem.barcode ? ' with this barcode' : ''}, priced as above, and adds it to the invoice — so it&apos;s in the catalog and scannable next time.</p>
           </div>
         ) : (
           <>
-            <input value={q} onChange={(e) => search(e.target.value)} placeholder="e.g. MRDB or BRAKE PAD" autoComplete="off"
+            <input value={q} onChange={(e) => { setScannedCode(''); search(e.target.value); }} placeholder="e.g. MRDB or BRAKE PAD" autoComplete="off"
               className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3.5 text-lg uppercase" />
             {!chosen && (
               <button type="button" onClick={() => setScanning(true)}
@@ -236,12 +245,14 @@ export default function AddPartPage() {
                 ))}
               </div>
             ) : q.trim().length >= 2 ? (
-              <div className="mt-2 text-sm text-gray-400">No matching item… check the spelling.</div>
+              <div className="mt-2 text-sm text-gray-400">
+                {scannedCode ? <>Barcode <span className="font-mono">{scannedCode}</span> isn&apos;t in the system yet.</> : 'No matching item… check the spelling.'}
+              </div>
             ) : null}
             {!chosen && (
-              <button onClick={() => { setNewItem({ descp: q.trim(), price: '' }); setQ(''); setResults([]); }}
+              <button onClick={() => { setNewItem({ barcode: scannedCode, descp: scannedCode ? '' : q.trim(), price: '' }); setQ(''); setResults([]); }}
                 className="mt-2 text-xs font-medium text-blue-600 underline">
-                ➕ Item not in the list — add as a new item
+                {scannedCode ? '➕ Not in the system — create this scanned part' : '➕ Item not in the list — add as a new item'}
               </button>
             )}
           </>
