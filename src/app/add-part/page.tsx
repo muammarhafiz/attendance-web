@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import BackLink from '@/components/BackLink';
 import { useVisibleInterval } from '@/lib/useVisibleInterval';
-import BarcodeScanner from '@/components/BarcodeScanner';
+import BarcodeScanner, { looksLikeCode } from '@/components/BarcodeScanner';
 
 type OpenInv = { inv: string; sale_id: string; customer: string | null };
 type Product = { sku: string; code: string | null; descp: string | null; price: number | string | null; cost: number | string | null };
@@ -107,6 +107,12 @@ export default function AddPartPage() {
       // brand-new item not in Niagawan -> the NAS creates a real product (barcode + name + price)
       // and adds it to the invoice; falls back to the "--" placeholder only if the create fails.
       if (!newItem.descp.trim()) { setErrMsg('Enter the item name.'); return; }
+      // Last line of defence before we create a REAL product: never let a bad scan through.
+      const bc = newItem.barcode.trim();
+      if (bc && !looksLikeCode(bc)) {
+        setErrMsg('That barcode didn’t read cleanly. Scan it again, or type the code by hand.');
+        return;
+      }
       const priceN = Number(newItem.price);
       if (newItem.price.trim() === '' || !Number.isFinite(priceN) || priceN < 0) { setErrMsg('Enter a valid selling price.'); return; }
       rpcArgs = {
@@ -249,11 +255,16 @@ export default function AddPartPage() {
                 {scannedCode ? <>Barcode <span className="font-mono">{scannedCode}</span> isn&apos;t in the system yet.</> : 'No matching item… check the spelling.'}
               </div>
             ) : null}
-            {!chosen && (
+            {!chosen && (!scannedCode || looksLikeCode(scannedCode)) && (
               <button onClick={() => { setNewItem({ barcode: scannedCode, descp: scannedCode ? '' : q.trim(), price: '' }); setQ(''); setResults([]); }}
                 className="mt-2 text-xs font-medium text-blue-600 underline">
                 {scannedCode ? '➕ Not in the system — create this scanned part' : '➕ Item not in the list — add as a new item'}
               </button>
+            )}
+            {!chosen && scannedCode && !looksLikeCode(scannedCode) && (
+              <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                That barcode didn&apos;t read cleanly, so it can&apos;t be used to create a part. Scan it again, or type the code in the box above.
+              </div>
             )}
           </>
         )}
