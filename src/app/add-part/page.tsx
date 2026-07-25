@@ -33,7 +33,7 @@ export default function AddPartPage() {
   const [chosen, setChosen] = useState<Product | null>(null);
   const [priceOverride, setPriceOverride] = useState(''); // feature 1: per-line selling-price override
   const [editPrice, setEditPrice] = useState(false);
-  const [newItem, setNewItem] = useState<{ barcode: string; descp: string; price: string } | null>(null); // feature 2: item not in catalog
+  const [newItem, setNewItem] = useState<{ barcode: string; descp: string; price: string; cost: string } | null>(null); // feature 2: item not in catalog
   const [qty, setQty] = useState(1);
   const [queue, setQueue] = useState<Queued[]>([]);
   const [errMsg, setErrMsg] = useState<string | null>(null);
@@ -113,10 +113,15 @@ export default function AddPartPage() {
       }
       const priceN = Number(newItem.price);
       if (newItem.price.trim() === '' || !Number.isFinite(priceN) || priceN < 0) { setErrMsg('Enter a valid selling price.'); return; }
+      let costN: number | null = null;
+      if (newItem.cost.trim() !== '') {
+        costN = Number(newItem.cost);
+        if (!Number.isFinite(costN) || costN < 0) { setErrMsg('Enter a valid cost, or leave it blank.'); return; }
+      }
       rpcArgs = {
         p_inv: picked.inv, p_sale_id: picked.sale_id, p_plate: picked.customer ?? '',
         p_code: '', p_qty: qty, p_sku: null, p_descp: newItem.descp.trim(), p_price: priceN, p_is_new: true,
-        p_barcode: newItem.barcode.trim(),
+        p_barcode: newItem.barcode.trim(), p_cost: costN,
       };
       label = newItem.descp.trim();
     } else {
@@ -204,6 +209,13 @@ export default function AddPartPage() {
                 onChange={(e) => setNewItem({ ...newItem, price: e.target.value })} placeholder="0.00"
                 className="w-32 rounded-lg border border-gray-300 px-2 py-1.5 text-base" />
             </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-600">Cost RM</span>
+              <input type="number" inputMode="decimal" step="0.01" min="0" value={newItem.cost}
+                onChange={(e) => setNewItem({ ...newItem, cost: e.target.value })} placeholder="optional"
+                className="w-32 rounded-lg border border-gray-300 px-2 py-1.5 text-base" />
+              <span className="text-xs text-gray-400">what you paid — for profit tracking</span>
+            </div>
             <div className="flex items-center justify-between">
               <button onClick={() => { setNewItem(null); setScannedCode(''); }} className="text-xs text-gray-500 underline">← back to search</button>
             </div>
@@ -254,7 +266,7 @@ export default function AddPartPage() {
               </div>
             ) : null}
             {!chosen && (!scannedCode || looksLikeCode(scannedCode)) && (
-              <button onClick={() => { setNewItem({ barcode: scannedCode, descp: scannedCode ? '' : q.trim(), price: '' }); setQ(''); setResults([]); }}
+              <button onClick={() => { setNewItem({ barcode: scannedCode, descp: scannedCode ? '' : q.trim(), price: '', cost: '' }); setQ(''); setResults([]); }}
                 className="mt-2 text-xs font-medium text-blue-600 underline">
                 {scannedCode ? '➕ Not in the system — create this scanned part' : '➕ Item not in the list — add as a new item'}
               </button>
