@@ -19,6 +19,7 @@ const FEATURES: Feature[] = [
   { key: 'pnl', label: 'P&L (profit)', ownerOnly: true, note: 'financial' },
   { key: 'payroll', label: 'Payroll', ownerOnly: true, note: 'salary' },
   { key: 'employees', label: 'Employees', ownerOnly: true, note: 'salary' },
+  { key: 'pay_salaries', label: 'Pay salaries', ownerOnly: true, note: 'salary' },
   { key: 'access_admin', label: 'Manage access', ownerOnly: true },
 ];
 

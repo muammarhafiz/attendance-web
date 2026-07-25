@@ -16,6 +16,7 @@ type Dash = {
   bills: { id: number; label: string; amount: number | string; paid: boolean; paid_date: string | null }[];
   ticks: Record<string, Tick>;
 };
+type Salary = { email: string; name: string; net: number | string; bank_name: string | null; bank_acc_name: string | null; bank_acc_no: string | null; paid: boolean; paid_date: string | null };
 
 const rm = (x: unknown) => 'RM ' + Number(x || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDay = (iso: string) => { const p = String(iso).split('-'); return p[2] && p[1] ? `${p[2]}/${p[1]}` : String(iso); };
@@ -38,13 +39,19 @@ export default function MonthEndPage() {
   const [newLabel, setNewLabel] = useState('');
   const [newAmount, setNewAmount] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  const [canPay, setCanPay] = useState(false);      // pay_salaries feature (Office clerk + Owner)
+  const [salaries, setSalaries] = useState<Salary[]>([]);
 
   const monthKey = `${year}-${String(month).padStart(2, '0')}`;
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.rpc('can_access', { p_feature: 'month_end' });
-      setAllowed(data === true);
+      const [me, pay] = await Promise.all([
+        supabase.rpc('can_access', { p_feature: 'month_end' }),
+        supabase.rpc('can_access', { p_feature: 'pay_salaries' }),
+      ]);
+      setAllowed(me.data === true);
+      setCanPay(pay.data === true);
     })();
   }, []);
 
@@ -53,8 +60,12 @@ export default function MonthEndPage() {
     setErr(null);
     const { data } = await supabase.rpc('month_end_status', { p_month: monthKey });
     setD((data ?? null) as Dash);
+    if (canPay) {
+      const { data: sal } = await supabase.rpc('month_end_salaries', { p_month: monthKey });
+      setSalaries((sal ?? []) as Salary[]);
+    }
     setLoading(false);
-  }, [monthKey]);
+  }, [monthKey, canPay]);
 
   useEffect(() => { if (allowed) load(); }, [allowed, load]);
 
@@ -87,6 +98,12 @@ export default function MonthEndPage() {
     if (error) { setErr(error.message); load(); }
   }, [load]);
 
+  const setSalaryPaid = useCallback(async (email: string, paid: boolean, date: string) => {
+    setSalaries((prev) => prev.map((s) => (s.email === email ? { ...s, paid, paid_date: paid ? date : null } : s)));
+    const { error } = await supabase.rpc('month_end_set_salary_paid', { p_month: monthKey, p_email: email, p_paid: paid, p_date: paid ? date : null });
+    if (error) { setErr(error.message); load(); }
+  }, [monthKey, load]);
+
   const prevMonth = () => { const dt = new Date(year, month - 2, 1); setYear(dt.getFullYear()); setMonth(dt.getMonth() + 1); };
   const nextMonth = () => { const dt = new Date(year, month, 1); setYear(dt.getFullYear()); setMonth(dt.getMonth() + 1); };
 
@@ -99,6 +116,8 @@ export default function MonthEndPage() {
   const billsTotal = bills.reduce((s, b) => s + Number(b.amount || 0), 0);
   const paidCount = bills.filter((b) => b.paid).length;
   const todayIso = today.toISOString().slice(0, 10);
+  const paidSalaryCount = salaries.filter((s) => s.paid).length;
+  const salaryTotal = salaries.reduce((sum, r) => sum + Number(r.net || 0), 0);
   const doneCount = STEPS.filter((s) => tickOf(s.key)).length;
   const allDone = doneCount === STEPS.length;
 
@@ -235,6 +254,48 @@ export default function MonthEndPage() {
               </div>
             );
           })}
+
+          {canPay && (
+            <div className="rounded-xl border border-gray-200 bg-white p-4">
+              <div className="flex items-center gap-2">
+                <span className="text-base leading-none">💰</span>
+                <h2 className="text-base font-semibold text-gray-900">Pay salaries</h2>
+                {salaries.length > 0 && <span className="ml-auto text-xs text-gray-400">{paidSalaryCount}/{salaries.length} paid</span>}
+              </div>
+              <p className="mt-0.5 text-sm text-gray-600">Transfer each staff their pay, then tick them off. Amounts are confidential — keep the screen private.</p>
+              {salaries.length === 0 ? (
+                <p className="mt-2 text-xs text-gray-400">No payroll generated for this month yet.</p>
+              ) : (
+                <div className="mt-2">
+                  {salaries.map((s) => (
+                    <div key={s.email} className="border-b border-gray-50 py-2 last:border-0">
+                      <div className="flex items-start gap-2">
+                        <button
+                          onClick={() => setSalaryPaid(s.email, !s.paid, todayIso)}
+                          aria-label={`Mark ${s.name} ${s.paid ? 'unpaid' : 'paid'}`}
+                          className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 text-[10px] font-bold transition ${s.paid ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-gray-300 text-transparent hover:border-emerald-400'}`}
+                        >✓</button>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className={`min-w-0 truncate text-sm font-medium ${s.paid ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{s.name}</span>
+                            <span className={`shrink-0 text-sm font-semibold ${s.paid ? 'text-gray-400' : 'text-gray-900'}`}>{rm(s.net)}</span>
+                          </div>
+                          <div className="font-mono text-xs text-gray-500">{s.bank_name || 'no bank'} · {s.bank_acc_no || 'no account'}{s.bank_acc_name ? ` · ${s.bank_acc_name}` : ''}</div>
+                          {s.paid && (
+                            <div className="mt-0.5 flex items-center gap-1.5 text-xs text-emerald-700">
+                              Paid on
+                              <input type="date" value={s.paid_date ?? todayIso} onChange={(e) => setSalaryPaid(s.email, true, e.target.value)} className="rounded border border-gray-300 px-1.5 py-0.5 text-xs" />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="mt-2 flex justify-between border-t border-gray-100 pt-2 text-sm font-semibold"><span>Total</span><span>{rm(salaryTotal)}</span></div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
