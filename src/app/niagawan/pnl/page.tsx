@@ -14,6 +14,7 @@ type Bill = { id: number; month: string; label: string; amount: number | string 
 type Pay = { staff_name: string; total_earn: number | string; epf_er: number | string | null; socso_er: number | string | null; eis_er: number | string | null };
 type Meal = { meal_date: string; amount: number | string; item_count: number | null; drink_count: number | null };
 type StaffSales = { staff_email: string | null; staff_name: string; niagawan_names: string | null; total: number | string; invoices: number };
+type ZeroCount = { audit_date: string; n: number | string }; // days with un-priced (zero-cost) parts
 
 const n = (x: unknown) => { const v = Number(x); return Number.isFinite(v) ? v : 0; };
 const rm = (x: number) => `RM ${x.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -33,6 +34,7 @@ export default function PnlPage() {
   const [staffMeals, setStaffMeals] = useState(0); // GrabFood staff lunch total (auto from email receipts)
   const [meals, setMeals] = useState<Meal[]>([]);   // individual GrabFood receipts for the month
   const [staffSales, setStaffSales] = useState<StaffSales[]>([]); // per-staff sales (admin RPC, matches each staff's "My sales")
+  const [zeroByDay, setZeroByDay] = useState<Record<string, number>>({}); // day -> count of un-priced parts (Sales-page finality)
   const [targetNet, setTargetNet] = useState(50000);
   const [ptjPct, setPtjPct] = useState(5);
   const [loading, setLoading] = useState(true);
@@ -52,7 +54,7 @@ export default function PnlPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [d, s, t, b, p, st, g, ml, ss] = await Promise.all([
+    const [d, s, t, b, p, st, g, ml, ss, zc] = await Promise.all([
       supabase.from('niagawan_daily').select('day,invoices,sales,cogs,profit,unpaid_count').gte('day', firstDay).lte('day', lastDay).order('day'),
       supabase.from('niagawan_sale_inv').select('inv,day,customer,amount,status,staff').gte('day', firstDay).lte('day', lastDay),
       supabase.from('trade_customers').select('*').order('match'),
@@ -62,6 +64,7 @@ export default function PnlPage() {
       supabase.rpc('grab_meals_month_total', { p_month: monthKey }),
       supabase.from('grab_meals').select('meal_date,amount,item_count,drink_count').gte('meal_date', firstDay).lte('meal_date', lastDay).order('meal_date', { ascending: true }),
       supabase.rpc('all_staff_sales', { p_year: year, p_month: month }),
+      supabase.rpc('cogs_zero_day_counts'), // days with un-priced parts -> Sales-page day finality
     ]);
     const loadErr = d.error || ss.error; // surface a Staff-sales RPC failure, don't mask it as empty
     if (loadErr) setErr(loadErr.message); else setErr(null);
@@ -73,6 +76,9 @@ export default function PnlPage() {
     setStaffMeals(n(g.data) || 0);
     setMeals((ml.data ?? []) as Meal[]);
     setStaffSales((ss.data ?? []) as StaffSales[]);
+    const zmap: Record<string, number> = {};
+    for (const row of (zc.data ?? []) as ZeroCount[]) zmap[row.audit_date] = Number(row.n) || 0;
+    setZeroByDay(zmap);
     for (const row of (st.data ?? []) as Array<{ key: string; value: unknown }>) {
       if (row.key === 'target_net') setTargetNet(n(row.value) || 50000);
       if (row.key === 'putrajaya_pct') setPtjPct(n(row.value));
@@ -88,14 +94,27 @@ export default function PnlPage() {
       const c = String(cust ?? '').toLowerCase();
       return trades.some((t) => c.includes(String(t.match).toLowerCase()));
     };
-    const totalSales = daily.reduce((s, r) => s + n(r.sales), 0);
-    const totalCogs = daily.reduce((s, r) => s + n(r.cogs), 0);
-    const totalProfit = daily.reduce((s, r) => s + n(r.profit), 0);
-    const tradeRows = salesInv.filter((r) => isTrade(r.customer));
-    const repairRows = salesInv.filter((r) => !isTrade(r.customer));
+    // A day is FINAL only when it has no unpaid invoices AND no un-priced (zero-cost) parts —
+    // the SAME rule the Sales page uses. Provisional days are excluded from every figure and
+    // shown separately, so the P&L never counts money that isn't settled yet.
+    const isFinal = (r: Daily) => r.unpaid_count === 0 && (zeroByDay[r.day] ?? 0) === 0;
+    const finalDaily = daily.filter(isFinal);
+    const finalDays = new Set(finalDaily.map((r) => r.day));
+    const pendingDaily = daily.filter((r) => !isFinal(r) && n(r.sales) > 0);
+    const pendingProfit = pendingDaily.reduce((s, r) => s + n(r.profit), 0);
+    const pendingSales = pendingDaily.reduce((s, r) => s + n(r.sales), 0);
+    const pendingDays = pendingDaily.length;
+
+    const totalSales = finalDaily.reduce((s, r) => s + n(r.sales), 0);
+    const totalCogs = finalDaily.reduce((s, r) => s + n(r.cogs), 0);
+    const totalProfit = finalDaily.reduce((s, r) => s + n(r.profit), 0);
+    // per-invoice splits use only invoices on final days, to stay consistent with the totals
+    const finalInv = salesInv.filter((r) => finalDays.has(r.day));
+    const tradeRows = finalInv.filter((r) => isTrade(r.customer));
+    const repairRows = finalInv.filter((r) => !isTrade(r.customer));
     const tradeSales = tradeRows.reduce((s, r) => s + n(r.amount), 0);
     const repairSales = Math.max(0, totalSales - tradeSales);
-    const carCount = repairRows.length || daily.reduce((s, r) => s + (r.invoices || 0), 0);
+    const carCount = repairRows.length || finalDaily.reduce((s, r) => s + (r.invoices || 0), 0);
     const aro = carCount > 0 ? repairSales / carCount : 0;
     const margin = repairSales > 0 ? (totalProfit / repairSales) * 100 : 0;
     // revenue per mechanic (repair jobs only)
@@ -111,14 +130,13 @@ export default function PnlPage() {
     const employer = pay.reduce((s, r) => s + n(r.epf_er) + n(r.socso_er) + n(r.eis_er), 0);
     const billsTotal = bills.reduce((s, r) => s + n(r.amount), 0);
     const costs = payrollGross + employer + billsTotal + staffMeals;
-    // pace: profit per day with sales, projected over 26 working days
-    const daysWithSales = daily.filter((r) => n(r.sales) > 0).length;
+    // pace: profit per FINAL day with sales, projected over 26 working days
+    const daysWithSales = finalDaily.filter((r) => n(r.sales) > 0).length;
     const projProfit = daysWithSales > 0 ? (totalProfit / daysWithSales) * 26 : 0;
     const netSoFar = totalProfit - costs;
     const netProjected = projProfit - costs;
-    const pendingDays = daily.filter((r) => (r.unpaid_count ?? 0) > 0).length;
-    return { totalSales, totalCogs, totalProfit, tradeSales, tradeRows, repairSales, carCount, aro, margin, mechanics, payrollGross, employer, billsTotal, staffMeals, costs, netSoFar, netProjected, daysWithSales, pendingDays };
-  }, [daily, salesInv, trades, bills, pay, staffMeals]);
+    return { totalSales, totalCogs, totalProfit, tradeSales, tradeRows, repairSales, carCount, aro, margin, mechanics, payrollGross, employer, billsTotal, staffMeals, costs, netSoFar, netProjected, daysWithSales, pendingDays, pendingProfit, pendingSales };
+  }, [daily, salesInv, trades, bills, pay, staffMeals, zeroByDay]);
 
   /* --------------------------------- actions -------------------------------- */
   const addBill = useCallback(async () => {
@@ -261,7 +279,7 @@ export default function PnlPage() {
           {tab === 'overview' && (<>
           <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-lg border border-gray-200 bg-white p-3">
-              <div className="text-xs font-medium text-gray-500">Net so far <span className="text-gray-400">(full-month costs vs {c.daysWithSales} day(s) of profit)</span></div>
+              <div className="text-xs font-medium text-gray-500">Net so far <span className="text-gray-400">(settled days only · full-month costs)</span></div>
               <div className={`mt-1 text-xl font-semibold ${c.netSoFar < 0 ? 'text-rose-600' : 'text-emerald-700'}`}>{rm(c.netSoFar)}</div>
             </div>
             <div className="rounded-lg border border-gray-200 bg-white p-3">
@@ -273,6 +291,12 @@ export default function PnlPage() {
               <div className={`mt-1 text-xl font-semibold ${onTargetProjected >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>{onTargetProjected >= 0 ? '+' : ''}{rm(onTargetProjected)}</div>
             </div>
           </div>
+
+          {c.pendingDays > 0 && (
+            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Not counted yet: <span className="font-semibold">{rm(c.pendingProfit)}</span> profit from {c.pendingDays} day{c.pendingDays === 1 ? '' : 's'} still settling (unpaid, or parts not priced yet). It&rsquo;s added automatically once those days are finalised — same rule as the Sales page.
+            </div>
+          )}
 
           {/* Sales */}
           <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
