@@ -279,11 +279,11 @@ export default function PnlPage() {
           {tab === 'overview' && (<>
           <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-lg border border-gray-200 bg-white p-3">
-              <div className="text-xs font-medium text-gray-500">Net so far <span className="text-gray-400">(settled days only · full-month costs)</span></div>
+              <div className="text-xs font-medium text-gray-500">Net profit (so far) <span className="text-gray-400">(settled days only · full-month costs)</span></div>
               <div className={`mt-1 text-xl font-semibold ${c.netSoFar < 0 ? 'text-rose-600' : 'text-emerald-700'}`}>{rm(c.netSoFar)}</div>
             </div>
             <div className="rounded-lg border border-gray-200 bg-white p-3">
-              <div className="text-xs font-medium text-gray-500">Projected month-end <span className="text-gray-400">(at current pace, 26 working days)</span></div>
+              <div className="text-xs font-medium text-gray-500">Projected net profit <span className="text-gray-400">(full month, at current pace)</span></div>
               <div className={`mt-1 text-xl font-semibold ${c.netProjected < 0 ? 'text-rose-600' : 'text-emerald-700'}`}>{rm(c.netProjected)}</div>
             </div>
             <div className={`rounded-lg border p-3 ${onTargetProjected >= 0 ? 'border-emerald-300 bg-emerald-50' : 'border-rose-300 bg-rose-50'}`}>
@@ -303,16 +303,16 @@ export default function PnlPage() {
             <div className="mb-2 text-sm font-semibold text-gray-700">Sales (month to date{c.pendingDays > 0 ? ` · ${c.pendingDays} day(s) still pending` : ''})</div>
             <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
               <div><div className="text-xs text-gray-500">Repair sales</div><div className="font-semibold">{rm(c.repairSales)}</div></div>
-              <div><div className="text-xs text-gray-500">Trade sales (pass-through)</div><div className="font-semibold text-gray-600">{rm(c.tradeSales)}</div></div>
-              <div><div className="text-xs text-gray-500">COGS</div><div className="font-semibold">{rm(c.totalCogs)}</div></div>
-              <div><div className="text-xs text-gray-500">Sale profit</div><div className="font-semibold">{rm(c.totalProfit)}</div></div>
-              <div><div className="text-xs text-gray-500">Margin (on repair)</div><div className="font-semibold">{c.margin.toFixed(0)}%</div></div>
+              <div><div className="text-xs text-gray-500">Sold to other shops</div><div className="font-semibold text-gray-600">{rm(c.tradeSales)}</div></div>
+              <div><div className="text-xs text-gray-500">Parts cost</div><div className="font-semibold">{rm(c.totalCogs)}</div></div>
+              <div><div className="text-xs text-gray-500">Gross profit</div><div className="font-semibold">{rm(c.totalProfit)}</div></div>
+              <div><div className="text-xs text-gray-500">Profit margin</div><div className="font-semibold">{c.margin.toFixed(0)}%</div></div>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-3 border-t border-gray-100 pt-3 text-sm sm:grid-cols-5">
               <div><div className="text-xs text-gray-500">Car count</div><div className="font-semibold">{c.carCount}</div></div>
-              <div><div className="text-xs text-gray-500">Avg per job (ARO)</div><div className="font-semibold">{rm(c.aro)}</div></div>
+              <div><div className="text-xs text-gray-500">Average per car</div><div className="font-semibold">{rm(c.aro)}</div></div>
               <div className="col-span-2 sm:col-span-3">
-                <div className="text-xs text-gray-500">Top mechanics (repair revenue)</div>
+                <div className="text-xs text-gray-500">Top mechanics (repair sales)</div>
                 <div className="mt-0.5 flex flex-wrap gap-1.5">
                   {c.mechanics.slice(0, 5).map((m) => (
                     <span key={m.name} className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">{m.name}: {rm(m.total)} ({m.jobs})</span>
@@ -419,8 +419,8 @@ export default function PnlPage() {
           <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4 text-sm">
             <div className="grid grid-cols-1 gap-1 sm:max-w-md">
               <div className="flex justify-between"><span className="text-gray-600">Total operation cost</span><span className="font-semibold">{rm(c.costs)}</span></div>
-              <div className="flex justify-between"><span className="text-gray-600">Sale profit (so far)</span><span className="font-semibold">{rm(c.totalProfit)}</span></div>
-              <div className="flex justify-between border-t border-gray-100 pt-1"><span className="text-gray-600">Net (so far)</span><span className={`font-semibold ${c.netSoFar < 0 ? 'text-rose-600' : 'text-emerald-700'}`}>{rm(c.netSoFar)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-600">Gross profit (so far)</span><span className="font-semibold">{rm(c.totalProfit)}</span></div>
+              <div className="flex justify-between border-t border-gray-100 pt-1"><span className="text-gray-600">Net profit (so far)</span><span className={`font-semibold ${c.netSoFar < 0 ? 'text-rose-600' : 'text-emerald-700'}`}>{rm(c.netSoFar)}</span></div>
               <div className="flex justify-between"><span className="text-gray-600">Putrajaya share ({ptjPct}% of projected net)</span><span className="font-semibold">{rm(Math.max(0, c.netProjected) * ptjPct / 100)}</span></div>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-4 border-t border-gray-100 pt-3 text-xs text-gray-500">
