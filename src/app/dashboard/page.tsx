@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabaseClient';
 type Dash = {
   error?: string;
   today: string;
-  attendance: { present: number; late: number; off: number; absent: number; not_in_yet: number; total: number };
+  attendance: { present: number; late: number; off: number; absent: number; not_in_yet: number; total: number; not_in_yet_names?: string[]; absent_names?: string[] };
   workshop: { in_shop: number; done_today: number; over_2_days: number; waiting_parts: number };
   sales: { today: number; today_invoices: number; mtd: number; series: { day: string; sales: number }[] };
   pnl: { net: number; profit: number; payroll: number; employer: number; bills: number; meals: number };
@@ -138,7 +138,13 @@ export default function DashboardPage() {
           <Row k="Late" v={d.attendance.late} tone={d.attendance.late > 0 ? 'warn' : undefined} />
           <Row k="Off / leave / MC" v={d.attendance.off} />
           <Row k="Absent" v={d.attendance.absent} tone={d.attendance.absent > 0 ? 'bad' : undefined} />
-          {d.attendance.not_in_yet > 0 && <Row k="Not clocked in yet" v={d.attendance.not_in_yet} />}
+          {d.attendance.absent_names && d.attendance.absent_names.length > 0 && (
+            <div className="-mt-0.5 pb-1 text-xs leading-relaxed text-rose-600">{d.attendance.absent_names.join(', ')}</div>
+          )}
+          {d.attendance.not_in_yet > 0 && <Row k="Not clocked in yet" v={d.attendance.not_in_yet} tone="warn" />}
+          {d.attendance.not_in_yet_names && d.attendance.not_in_yet_names.length > 0 && (
+            <div className="-mt-0.5 pb-1 text-xs leading-relaxed text-slate-500">{d.attendance.not_in_yet_names.join(', ')}</div>
+          )}
         </Card>
 
         {/* Workshop */}
