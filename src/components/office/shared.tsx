@@ -12,6 +12,7 @@ export type Home = {
   eom: { done: number; total: number; blockers: number };
   unpaid: { count: number; total: number | string; top: { inv: string; customer: string | null; balance: number | string }[] };
   yesterday: { day: string; cash_in: number | string; cash_out: number | string; qr_in: number | string; card_in: number | string; transfer_in: number | string } | null;
+  daily_to_check: number;
   zero_cogs: { items: number; days: number };
 };
 
