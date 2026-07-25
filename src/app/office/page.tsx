@@ -33,19 +33,21 @@ export default function OfficePage() {
 function OfficeHome({ d, reload }: { d: Home; reload: () => void }) {
   const yIn = moneyIn(d.yesterday);
   const toCheck = d.daily_to_check || 0;
-  const dailyAlert = toCheck > 0;
-  const weeklyAlert = d.unpaid.count > 0 || d.zero_cogs.items > 0;
+  const noCost = d.zero_cogs.items || 0;
+  const dailyAlert = toCheck > 0 || noCost > 0;
+  const dailyBits: string[] = [];
+  if (toCheck > 0) dailyBits.push(`${toCheck} payment${toCheck === 1 ? '' : 's'} to check`);
+  if (noCost > 0) dailyBits.push(`${noCost} part${noCost === 1 ? '' : 's'} no cost`);
+  const dailySummary = dailyBits.length ? dailyBits.join(' · ') : (d.yesterday ? `Yesterday ${rm0(yIn)} in · all clear ✓` : 'Check the bank + count cash');
+  const weeklyAlert = d.unpaid.count > 0;
   const monthlyAlert = d.eom.blockers > 0 || d.eom.done < d.eom.total;
   return (
     <OfficeShell title="🗂️ Office" onRefresh={reload}>
       <p className="mb-5 text-sm text-gray-500">Tap a section to see the tasks.</p>
       <div className="space-y-3">
-        <BigCard href="/office/daily" icon="📅" title="Daily" alert={dailyAlert}
-          summary={toCheck > 0
-            ? `${toCheck} payment${toCheck === 1 ? '' : 's'} to check · yesterday ${rm0(yIn)} in`
-            : (d.yesterday ? `Yesterday ${rm0(yIn)} in · all payments checked ✓` : 'Check the bank + count cash')} />
+        <BigCard href="/office/daily" icon="📅" title="Daily" alert={dailyAlert} summary={dailySummary} />
         <BigCard href="/office/weekly" icon="🗒️" title="Weekly" alert={weeklyAlert}
-          summary={`${d.unpaid.count} unpaid (${rm0(d.unpaid.total)}) · ${d.zero_cogs.items} part${d.zero_cogs.items === 1 ? '' : 's'} no cost`} />
+          summary={d.unpaid.count > 0 ? `${d.unpaid.count} unpaid to chase (${rm0(d.unpaid.total)})` : 'Nothing unpaid ✓'} />
         <BigCard href="/month-end" icon="🗓️" title="Monthly" alert={monthlyAlert}
           summary={`End of month · ${d.eom.done}/${d.eom.total} done${d.eom.blockers > 0 ? ` · ${d.eom.blockers} day${d.eom.blockers === 1 ? '' : 's'} to clear` : ''}`} />
       </div>
