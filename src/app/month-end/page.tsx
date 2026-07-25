@@ -13,7 +13,7 @@ type Dash = {
   month: string;
   not_final_days: { day: string; unpaid: number; no_cost: number }[];
   unpaid: { inv: string; customer: string | null; balance: number | string }[];
-  bills: { id: number; label: string; amount: number | string }[];
+  bills: { id: number; label: string; amount: number | string; paid: boolean; paid_date: string | null }[];
   ticks: Record<string, Tick>;
 };
 
@@ -81,6 +81,12 @@ export default function MonthEndPage() {
     await load();
   }, [load]);
 
+  const setBillPaid = useCallback(async (id: number, paid: boolean, date: string) => {
+    setD((prev) => (prev ? { ...prev, bills: prev.bills.map((b) => (b.id === id ? { ...b, paid, paid_date: paid ? date : null } : b)) } : prev));
+    const { error } = await supabase.rpc('month_end_set_bill_paid', { p_id: id, p_paid: paid, p_date: paid ? date : null });
+    if (error) { setErr(error.message); load(); }
+  }, [load]);
+
   const prevMonth = () => { const dt = new Date(year, month - 2, 1); setYear(dt.getFullYear()); setMonth(dt.getMonth() + 1); };
   const nextMonth = () => { const dt = new Date(year, month, 1); setYear(dt.getFullYear()); setMonth(dt.getMonth() + 1); };
 
@@ -91,6 +97,8 @@ export default function MonthEndPage() {
   const unpaid = d?.unpaid ?? [];
   const bills = d?.bills ?? [];
   const billsTotal = bills.reduce((s, b) => s + Number(b.amount || 0), 0);
+  const paidCount = bills.filter((b) => b.paid).length;
+  const todayIso = today.toISOString().slice(0, 10);
   const doneCount = STEPS.filter((s) => tickOf(s.key)).length;
   const allDone = doneCount === STEPS.length;
 
@@ -181,10 +189,24 @@ export default function MonthEndPage() {
                     {s.key === 'key_bills' && (
                       <div className="mt-2 rounded-lg border border-gray-200 bg-white p-3">
                         {bills.map((b) => (
-                          <div key={b.id} className="flex items-center gap-2 py-0.5 text-sm">
-                            <span className="min-w-0 flex-1 truncate text-gray-700">{b.label}</span>
-                            <span className="shrink-0 font-medium text-gray-800">{rm(b.amount)}</span>
-                            <button onClick={() => delBill(b.id)} className="shrink-0 text-xs text-rose-400 hover:text-rose-600">✕</button>
+                          <div key={b.id} className="border-b border-gray-50 py-1 last:border-0">
+                            <div className="flex items-center gap-2 text-sm">
+                              <button
+                                onClick={() => setBillPaid(b.id, !b.paid, todayIso)}
+                                aria-label={`Mark ${b.label} ${b.paid ? 'unpaid' : 'paid'}`}
+                                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 text-[10px] font-bold transition ${b.paid ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-gray-300 text-transparent hover:border-emerald-400'}`}
+                              >✓</button>
+                              <span className={`min-w-0 flex-1 truncate ${b.paid ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{b.label}</span>
+                              <span className={`shrink-0 font-medium ${b.paid ? 'text-gray-400' : 'text-gray-800'}`}>{rm(b.amount)}</span>
+                              <button onClick={() => delBill(b.id)} className="shrink-0 text-xs text-rose-400 hover:text-rose-600">✕</button>
+                            </div>
+                            {b.paid && (
+                              <div className="ml-7 mt-0.5 flex items-center gap-1.5 text-xs text-emerald-700">
+                                Paid on
+                                <input type="date" value={b.paid_date ?? todayIso} onChange={(e) => setBillPaid(b.id, true, e.target.value)}
+                                  className="rounded border border-gray-300 px-1.5 py-0.5 text-xs" />
+                              </div>
+                            )}
                           </div>
                         ))}
                         {bills.length === 0 && <p className="text-xs text-gray-400">No bills keyed yet for this month.</p>}
@@ -193,7 +215,7 @@ export default function MonthEndPage() {
                           <input value={newAmount} onChange={(e) => setNewAmount(e.target.value)} type="number" inputMode="decimal" step="0.01" placeholder="0.00" className="w-24 rounded border border-gray-300 px-2 py-1 text-right text-sm" />
                           <button onClick={addBill} className="shrink-0 rounded bg-gray-900 px-2.5 py-1 text-sm font-medium text-white hover:bg-gray-700">Add</button>
                         </div>
-                        {bills.length > 0 && <div className="mt-2 flex justify-between border-t border-gray-100 pt-2 text-sm font-semibold"><span>Total</span><span>{rm(billsTotal)}</span></div>}
+                        {bills.length > 0 && <div className="mt-2 flex justify-between border-t border-gray-100 pt-2 text-sm font-semibold"><span>Total <span className="font-normal text-gray-400">· {paidCount}/{bills.length} paid</span></span><span>{rm(billsTotal)}</span></div>}
                       </div>
                     )}
 
