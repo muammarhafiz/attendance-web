@@ -15,6 +15,7 @@ const FEATURES: Feature[] = [
   { key: 'intake', label: 'Customer check-in' },
   { key: 'attendance', label: 'Attendance' },
   { key: 'niagawan', label: 'Niagawan' },
+  { key: 'month_end', label: 'Month-end' },
   { key: 'pnl', label: 'P&L (profit)', ownerOnly: true, note: 'financial' },
   { key: 'payroll', label: 'Payroll', ownerOnly: true, note: 'salary' },
   { key: 'employees', label: 'Employees', ownerOnly: true, note: 'salary' },
