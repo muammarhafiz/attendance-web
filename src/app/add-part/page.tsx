@@ -72,12 +72,10 @@ export default function AddPartPage() {
     const term = text.trim();
     if (term.length < 2) { setResults([]); return; }
     searchTimer.current = setTimeout(async () => {
-      const like = `%${term.replace(/[%_]/g, '')}%`;
-      const { data } = await supabase
-        .from('niagawan_products')
-        .select('sku,code,descp,price,cost')
-        .or(`code.ilike.${like},descp.ilike.${like}`)
-        .limit(12);
+      // Separator-blind: a scanned barcode drops the hyphens the catalog code carries
+      // ("485100DD60" must find "48510-0DD60"), so match on a normalized form too. Also
+      // matches by name. See search_products() RPC.
+      const { data } = await supabase.rpc('search_products', { p_term: term });
       setResults((data ?? []) as Product[]);
     }, 250);
   }, []);
