@@ -4,7 +4,7 @@
 // cash count instead). Checks persist in cash_entry_checked (survives the nightly re-scrape).
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { OfficeShell, Gate, rm, CashCountCard, type Home } from '@/components/office/shared';
+import { OfficeShell, Gate, rm, CashCountCard, ZeroCogsCard, type Home } from '@/components/office/shared';
 
 type Entry = { ekey: string; method: string; descp: string | null; amount: number | string; checked: boolean; checked_by: string | null; checked_at: string | null };
 type DayCash = {
@@ -12,6 +12,7 @@ type DayCash = {
   day: string;
   totals: { cash_in?: number | string; cash_out?: number | string; qr_in?: number | string; card_in?: number | string; transfer_in?: number | string };
   entries: Entry[];
+  zero_cogs: { items: number; days: number };
 };
 
 const METHODS = [
@@ -138,6 +139,7 @@ export default function DailyPage() {
           })}
 
           <CashCountCard />
+          {d && <ZeroCogsCard zero_cogs={d.zero_cogs} />}
         </div>
       </OfficeShell>
     </Gate>
