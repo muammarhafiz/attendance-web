@@ -63,23 +63,36 @@ export default function DailyPage() {
         </div>
         <p className="mb-4 text-sm text-gray-500">Tick each transfer / QR / card payment once you confirm it&rsquo;s in the bank, then count the cash.</p>
 
-        {d && (
-          <div className="mb-4 rounded-xl border border-gray-200 bg-white p-4">
-            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Total in by method</div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
-              {METHODS.map((m) => (
-                <div key={m.key}>
-                  <div className="text-xs text-gray-500">{m.icon} {m.label}</div>
-                  <div className="text-base font-semibold text-gray-900">{rm(num(d.totals?.[m.totalKey as keyof typeof d.totals]))}</div>
+        {d && (() => {
+          const checkable = d.entries.filter((e) => e.method !== 'cash'); // transfer/QR/card need bank-checking
+          const checkedN = checkable.filter((e) => e.checked).length;
+          const left = checkable.length - checkedN;
+          return (
+            <div className="mb-4 rounded-xl border border-gray-200 bg-white p-4">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Total in by method</div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+                {METHODS.map((m) => (
+                  <div key={m.key}>
+                    <div className="text-xs text-gray-500">{m.icon} {m.label}</div>
+                    <div className="text-base font-semibold text-gray-900">{rm(num(d.totals?.[m.totalKey as keyof typeof d.totals]))}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 flex justify-between border-t border-gray-100 pt-2 text-sm font-semibold">
+                <span>Total money in</span>
+                <span>{rm(METHODS.reduce((s, m) => s + num(d.totals?.[m.totalKey as keyof typeof d.totals]), 0))}</span>
+              </div>
+              {checkable.length > 0 && (
+                <div className="mt-1 flex justify-between text-sm">
+                  <span className="text-gray-600">Payments checked</span>
+                  <span className={left > 0 ? 'font-semibold text-amber-700' : 'font-semibold text-emerald-700'}>
+                    {checkedN}/{checkable.length}{left > 0 ? ` · ${left} to check` : ' · all done ✓'}
+                  </span>
                 </div>
-              ))}
+              )}
             </div>
-            <div className="mt-3 flex justify-between border-t border-gray-100 pt-2 text-sm font-semibold">
-              <span>Total money in</span>
-              <span>{rm(METHODS.reduce((s, m) => s + num(d.totals?.[m.totalKey as keyof typeof d.totals]), 0))}</span>
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         <div className="space-y-3">
           {d && METHODS.map((m) => {
