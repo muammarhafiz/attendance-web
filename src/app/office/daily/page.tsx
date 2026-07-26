@@ -16,7 +16,7 @@ type DayCash = {
   zero_cogs: { items: number; days: number };
   unpaid: { count: number; total: number | string; top: { inv: string; customer: string | null; balance: number | string; status?: string | null; age_days?: number | null }[] };
   pi_pending: number;
-  cash_counted: boolean;
+  cash_counted: number | null;
 };
 
 const METHODS = [
@@ -35,6 +35,7 @@ export default function DailyPage() {
   const [day, setDay] = useState(klYesterday());
   const [d, setD] = useState<DayCash | null>(null);
   const [loading, setLoading] = useState(true);
+  const [cashInput, setCashInput] = useState(''); // what the clerk keys in as counted cash
 
   useEffect(() => {
     (async () => {
@@ -42,6 +43,9 @@ export default function DailyPage() {
       setAllowed(data === true);
     })();
   }, []);
+
+  // keep the cash input in sync with the saved counted value when the day/data changes
+  useEffect(() => { setCashInput(d?.cash_counted != null ? String(d.cash_counted) : ''); }, [d?.cash_counted]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -63,9 +67,12 @@ export default function DailyPage() {
     if (error) load();
   }, [load]);
 
-  const setCashCounted = useCallback(async (done: boolean) => {
-    setD((prev) => (prev ? { ...prev, cash_counted: done } : prev));
-    const { error } = await supabase.rpc('office_set_daily_task', { p_day: day, p_task: 'cash_counted', p_done: done });
+  const saveCashCount = useCallback(async (raw: string, total: number) => {
+    const v = raw.trim() === '' ? null : Number(raw);
+    const valid = v != null && Number.isFinite(v) && v >= 0;
+    const matches = valid && Math.abs((v as number) - total) < 0.01;
+    setD((prev) => (prev ? { ...prev, cash_counted: valid ? (v as number) : null } : prev));
+    const { error } = await supabase.rpc('office_set_daily_task', { p_day: day, p_task: 'cash_counted', p_done: matches, p_value: valid ? v : null });
     if (error) load();
   }, [day, load]);
 
@@ -136,7 +143,7 @@ export default function DailyPage() {
             const mismatch = es.length > 0 && Math.abs(lineSum - total) > 0.01;
             const checkedCount = es.filter((e) => e.checked).length;
             const allChecked = m.checkable && es.length > 0 && checkedCount === es.length;
-            const cardDone = m.key === 'cash' ? !!d.cash_counted : allChecked;
+            const cardDone = m.key === 'cash' ? (d.cash_counted != null && Math.abs(Number(d.cash_counted) - total) < 0.01) : allChecked;
             return (
               <div key={m.key} className={`rounded-xl border p-4 ${cardDone ? 'border-emerald-200 bg-emerald-50/40' : 'border-gray-200 bg-white'}`}>
                 <div className="flex items-center gap-2">
@@ -151,13 +158,25 @@ export default function DailyPage() {
                   </span>
                 </div>
                 {m.key === 'card' && <p className="mt-1 text-[11px] text-gray-400">Match this against the card machine&rsquo;s daily settlement slip.</p>}
-                {m.key === 'cash' && (
-                  <button onClick={() => setCashCounted(!d.cash_counted)}
-                    className={`mt-2 flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition ${d.cash_counted ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-gray-200 text-gray-600 hover:border-emerald-300'}`}>
-                    <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 text-[10px] font-bold ${d.cash_counted ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-gray-300 text-transparent'}`}>✓</span>
-                    Counted the cash — it matches {rm(total)}
-                  </button>
-                )}
+                {m.key === 'cash' && (() => {
+                  const counted = cashInput.trim() === '' ? null : Number(cashInput);
+                  const valid = counted != null && Number.isFinite(counted) && counted >= 0;
+                  const matches = valid && Math.abs((counted as number) - total) < 0.01;
+                  const diff = valid ? (counted as number) - total : 0;
+                  return (
+                    <div className={`mt-2 rounded-lg border p-3 ${matches ? 'border-emerald-300 bg-emerald-50' : valid ? 'border-rose-200 bg-rose-50' : 'border-gray-200'}`}>
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-gray-600">Counted RM</span>
+                        <input type="number" inputMode="decimal" step="0.01" min="0" value={cashInput}
+                          onChange={(e) => setCashInput(e.target.value)} onBlur={() => saveCashCount(cashInput, total)}
+                          placeholder="0.00" className="w-28 rounded border border-gray-300 px-2 py-1 text-sm" />
+                        {matches && <span className="font-semibold text-emerald-700">✓ matches</span>}
+                      </div>
+                      {valid && !matches && <p className="mt-1 text-xs font-semibold text-rose-600">{diff > 0 ? `Over by ${rm(diff)}` : `Short by ${rm(-diff)}`} · system says {rm(total)}</p>}
+                      {!valid && <p className="mt-1 text-[11px] text-gray-400">Key in the cash you counted — it turns green when it matches {rm(total)}.</p>}
+                    </div>
+                  );
+                })()}
                 {es.length > 0 ? (
                   <div className="mt-2 divide-y divide-gray-50">
                     {es.map((e) => (
