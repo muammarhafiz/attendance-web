@@ -1,46 +1,58 @@
 'use client';
-// Owner-only bank reconciliation: upload a Maybank PDF statement, and for every transfer Niagawan
-// recorded as paid, confirm the money actually landed in the bank (matched by date + amount only).
-// The PDF is parsed entirely IN THE BROWSER — it is never uploaded or stored.
+// Owner-only bank reconciliation: upload a Maybank PDF statement; for every transfer Niagawan recorded
+// as paid, confirm the money reached the bank (matched by date + amount only). The PDF is sent to an
+// owner-gated server route, read there, reconciled, and DISCARDED — it is never stored.
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { parseMaybank, bankTransfersIn, reconcile, type ParsedStatement, type NiaTransfer, type ReconResult } from '@/lib/maybank';
+import type { ReconResult } from '@/lib/maybank';
+
+type Result = {
+  valid: { chainOk: boolean; endMatch: boolean; crMatch: boolean; drMatch: boolean; ok: boolean };
+  txnCount: number;
+  transfersIn: number;
+  recon: ReconResult;
+  synced: { days: number; span: number };
+};
 
 const rm = (x: unknown) => 'RM ' + Number(x || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDay = (iso: string) => { const [y, m, d] = String(iso).split('-'); return d && m && y ? `${Number(d)}/${Number(m)}/${y.slice(2)}` : iso; };
+
+function readBase64(file: File): Promise<string> {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result).split(',')[1] || '');
+    r.onerror = () => rej(new Error('Could not read the file'));
+    r.readAsDataURL(file);
+  });
+}
 
 export default function BankReconPage() {
   const [owner, setOwner] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
-  const [parsed, setParsed] = useState<ParsedStatement | null>(null);
-  const [recon, setRecon] = useState<ReconResult | null>(null);
-  const [synced, setSynced] = useState<{ days: number; span: number } | null>(null);
+  const [res, setRes] = useState<Result | null>(null);
   const [showMatched, setShowMatched] = useState(false);
 
   useEffect(() => { (async () => { const { data } = await supabase.rpc('my_access'); setOwner(!!(data as Record<string, boolean>)?.owner); })(); }, []);
 
   const onFile = useCallback(async (file: File) => {
-    setErr(null); setParsed(null); setRecon(null); setSynced(null); setFileName(file.name); setBusy(true);
+    setErr(null); setRes(null); setFileName(file.name); setBusy(true);
     try {
-      const buf = await file.arrayBuffer();
-      const { extractText, getDocumentProxy } = await import('unpdf');
-      const pdf = await getDocumentProxy(new Uint8Array(buf));
-      const { text } = await extractText(pdf, { mergePages: true });
-      const p = parseMaybank(text);
-      setParsed(p);
-      if (!p.rows.length) { setErr('No transactions found — is this a Maybank account statement PDF?'); setBusy(false); return; }
-      const dates = p.rows.map((r) => r.date).sort();
-      const from = dates[0], to = dates[dates.length - 1]; // statement range; the RPC pads by 3 days internally
-      const { data, error } = await supabase.rpc('owner_bank_transfers', { p_from: from, p_to: to });
-      if (error || (data as { error?: string })?.error) { setErr('Could not load Niagawan transfers: ' + (error?.message || (data as { error?: string })?.error)); setBusy(false); return; }
-      const nia = (((data as { transfers?: NiaTransfer[] })?.transfers) || []).map((t) => ({ day: String(t.day), amount: Number(t.amount), descp: t.descp }));
-      setRecon(reconcile(nia, bankTransfersIn(p.rows)));
-      const spanDays = Math.round((Date.parse(dates[dates.length - 1]) - Date.parse(dates[0])) / 86400000) + 1;
-      setSynced({ days: Number((data as { days_synced?: number })?.days_synced || 0), span: spanDays });
+      const base64 = await readBase64(file);
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (!token) { setErr('Please sign in again.'); setBusy(false); return; }
+      const resp = await fetch('/api/bank/reconcile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ base64 }),
+      });
+      const json = await resp.json();
+      if (!resp.ok) { setErr(json?.error || `Failed (${resp.status})`); setBusy(false); return; }
+      setRes(json as Result);
     } catch (e) {
-      setErr('Could not read the PDF: ' + (e instanceof Error ? e.message : String(e)));
+      setErr(e instanceof Error ? e.message : String(e));
     }
     setBusy(false);
   }, []);
@@ -48,7 +60,7 @@ export default function BankReconPage() {
   if (owner === null) return <div className="mx-auto max-w-3xl px-4 py-6 text-sm text-gray-400">Checking…</div>;
   if (!owner) return <div className="mx-auto max-w-3xl px-4 py-6 text-sm text-gray-600">This page is for the owner.</div>;
 
-  const bankIn = parsed ? bankTransfersIn(parsed.rows) : [];
+  const recon = res?.recon;
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6">
@@ -62,53 +74,44 @@ export default function BankReconPage() {
             onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.currentTarget.value = ''; }} />
           <span className="text-sm text-gray-500">{fileName || 'No file chosen'}</span>
         </label>
-        <p className="mt-2 text-[11px] text-gray-400">🔒 The statement is read in your browser only — it is never uploaded or stored.</p>
+        <p className="mt-2 text-[11px] text-gray-400">🔒 The statement is read to reconcile it and then discarded — it is never stored.</p>
       </div>
 
       {busy && <div className="mt-4 text-sm text-gray-500">Reading statement…</div>}
       {err && <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{err}</div>}
 
-      {parsed && recon && !busy && (
+      {res && recon && !busy && (
         <>
-          {/* verification + period */}
           <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-            {parsed.valid.ok
+            {res.valid.ok
               ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-700">Statement verified ✓ balances reconcile</span>
               : <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-700">⚠ Could not fully verify the statement — read the figures with care</span>}
-            <span className="text-gray-400">{parsed.rows.length} transactions · {bankIn.length} transfers in</span>
+            <span className="text-gray-400">{res.txnCount} transactions · {res.transfersIn} transfers in</span>
           </div>
-          {synced && synced.days < synced.span && (
+          {res.synced.days < res.synced.span && (
             <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-              Niagawan is only synced for {synced.days} of the {synced.span} days in this statement — some &ldquo;not received&rdquo; rows below may just be un-synced days. Re-sync that period in the Niagawan tab for a complete check.
+              Niagawan is only synced for {res.synced.days} of the {res.synced.span} days in this statement — some &ldquo;not received&rdquo; rows below may just be un-synced days. Re-sync that period in the Niagawan tab for a complete check.
             </div>
           )}
 
-          {/* summary */}
           <div className="mt-4 grid grid-cols-3 gap-3">
             <Stat label="Received ✓" value={recon.matched.length} tone="ok" />
             <Stat label="Not received" value={recon.niaOnly.length} tone={recon.niaOnly.length ? 'bad' : 'ok'} />
             <Stat label="In bank, not in Niagawan" value={recon.bankOnly.length} tone={recon.bankOnly.length ? 'warn' : 'ok'} />
           </div>
 
-          {/* NOT RECEIVED — the important one */}
           <Section title="🔴 Marked paid in Niagawan, but not found in the bank" subtitle="These transfers were recorded as received but no matching deposit (date + amount) is in the statement.">
             {recon.niaOnly.length === 0
               ? <Empty text="Every transfer Niagawan recorded was found in the bank ✓" />
-              : recon.niaOnly.map((r, i) => (
-                <Row key={i} left={fmtDay(r.day)} main={r.descp || 'Transfer'} amount={r.amount} tone="bad" />
-              ))}
+              : recon.niaOnly.map((r, i) => <Row key={i} left={fmtDay(r.day)} main={r.descp || 'Transfer'} amount={r.amount} tone="bad" />)}
           </Section>
 
-          {/* IN BANK NOT IN NIAGAWAN */}
           {recon.bankOnly.length > 0 && (
             <Section title="🔵 In the bank, but not recorded in Niagawan" subtitle="Money that came in via transfer with no matching Niagawan receipt — recorded elsewhere, a non-customer deposit, or missed.">
-              {recon.bankOnly.map((r, i) => (
-                <Row key={i} left={fmtDay(r.date)} main={r.detail || 'Transfer in'} amount={r.amount} tone="warn" />
-              ))}
+              {recon.bankOnly.map((r, i) => <Row key={i} left={fmtDay(r.date)} main={r.detail || 'Transfer in'} amount={r.amount} tone="warn" />)}
             </Section>
           )}
 
-          {/* MATCHED (collapsible) */}
           <div className="mt-4">
             <button onClick={() => setShowMatched((s) => !s)} className="text-xs font-medium text-gray-500 underline hover:text-gray-700">
               {showMatched ? 'Hide' : 'Show'} {recon.matched.length} received ✓
