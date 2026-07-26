@@ -94,6 +94,8 @@ export function bankTransfersIn(rows: Txn[]): Txn[] {
 }
 
 export type NiaTransfer = { day: string; amount: number; descp: string | null };
+// A dated money-in row from an external statement (bank transfer line OR a QR settlement line).
+export type Deposit = { date: string; amount: number; detail: string };
 export type ReconRow = { day: string; amount: number; descp: string | null; bankDate?: string; bankDetail?: string };
 export type ReconResult = {
   matched: ReconRow[]; // Niagawan transfer found in the bank
@@ -103,9 +105,10 @@ export type ReconResult = {
 
 const dayDiff = (a: string, b: string) => Math.round((Date.parse(a + 'T00:00:00Z') - Date.parse(b + 'T00:00:00Z')) / 86400000);
 
-// Primary direction: for each Niagawan transfer (date+amount), is there a matching bank credit within
-// +/- windowDays? Greedy one-to-one so two same-amount transfers need two bank credits.
-export function reconcile(nia: NiaTransfer[], bank: Txn[], windowDays = 3): ReconResult {
+// Primary direction: for each Niagawan receipt (date+amount), is there a matching statement deposit
+// within +/- windowDays? Greedy one-to-one so two same-amount receipts need two matching deposits.
+// Used for both bank transfers and QR settlements (the `bank` arg is any dated deposit list).
+export function reconcile(nia: NiaTransfer[], bank: Deposit[], windowDays = 3): ReconResult {
   const bankLeft = bank.map((b) => ({ date: b.date, amount: b.amount, detail: b.detail, used: false }));
   const matched: ReconRow[] = [];
   const niaOnly: ReconRow[] = [];
@@ -122,4 +125,48 @@ export function reconcile(nia: NiaTransfer[], bank: Txn[], windowDays = 3): Reco
   }
   const bankOnly = bankLeft.filter((b) => !b.used).map((b) => ({ date: b.date, amount: b.amount, detail: b.detail }));
   return { matched, niaOnly, bankOnly };
+}
+
+// ---- DuitNow QR merchant settlement report (CSV) ----
+function parseCsvLine(line: string): string[] {
+  const out: string[] = [];
+  let cur = '', q = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (q) { if (c === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') q = true;
+    else if (c === ',') { out.push(cur); cur = ''; }
+    else cur += c;
+  }
+  out.push(cur);
+  return out;
+}
+
+export type QrParse = { rows: Deposit[]; footerTotal: number | null; sum: number; ok: boolean };
+
+// Columns: 0 No, 1 Settlement Date, 2 Transaction Datetime (DD/MM/YYYY HH:MM:SS), ..., 7 Transaction Type,
+// 8 Transaction Amount, ..., 12 Payment Details. We key on the TRANSACTION date (when the customer paid =
+// the day Niagawan records it), not the T+1 settlement date. A trailing "Total:" row validates the parse.
+export function parseQrCsv(text: string): QrParse {
+  const lines = text.split(/\r?\n/);
+  const hi = lines.findIndex((l) => /^No,\s*Settlement Date/i.test(l));
+  const rows: Deposit[] = [];
+  let footerTotal: number | null = null;
+  if (hi >= 0) {
+    for (let i = hi + 1; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line.trim()) continue;
+      const c = parseCsvLine(line);
+      if (/total/i.test(c[7] || '')) { const t = Number(c[8]); if (Number.isFinite(t)) footerTotal = t; continue; }
+      const dm = String(c[2] || '').match(/(\d{2})\/(\d{2})\/(\d{4})/);
+      const amt = Number(c[8]);
+      if (!dm || !Number.isFinite(amt)) continue;
+      const kind = (c[7] || '').replace(/^DUITNOW_QR_?/i, '') || 'QR';
+      const note = (c[12] || '').trim();
+      rows.push({ date: `${dm[3]}-${dm[2]}-${dm[1]}`, amount: amt, detail: note ? `${kind} · ${note}` : kind });
+    }
+  }
+  const sum = Math.round(rows.reduce((s, r) => s + r.amount, 0) * 100) / 100;
+  const ok = rows.length > 0 && footerTotal != null && Math.abs(sum - footerTotal) < 0.01;
+  return { rows, footerTotal, sum, ok };
 }
