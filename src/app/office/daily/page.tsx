@@ -189,7 +189,7 @@ export default function DailyPage() {
           })}
 
           {d && <UnpaidCard unpaid={d.unpaid} />}
-          {d && <ZeroCogsCard zero_cogs={d.zero_cogs} lines={d.zero_cogs_lines} />}
+          {d && <ZeroCogsCard zero_cogs={d.zero_cogs} lines={d.zero_cogs_lines} day={day} onRecheck={load} />}
         </div>
       </OfficeShell>
     </Gate>

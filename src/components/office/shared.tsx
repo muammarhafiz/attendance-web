@@ -170,7 +170,45 @@ export function UnpaidCard({ unpaid }: { unpaid: Home['unpaid'] }) {
 
 export type ZeroLine = { day: string; inv: string | null; item: string | null; code: string | null; price: number | string };
 
-export function ZeroCogsCard({ zero_cogs, lines }: { zero_cogs: Home['zero_cogs']; lines?: ZeroLine[] }) {
+// After the clerk keys costs into Niagawan, this re-scans just that day's COGS and refreshes the card
+// (our data is a snapshot — it won't clear on a plain reload until Niagawan is re-scanned).
+function RecheckButton({ day, onDone }: { day: string; onDone?: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const recheck = useCallback(async () => {
+    setBusy(true);
+    setMsg('Re-checking with Niagawan… (~1 min)');
+    const { data, error } = await supabase.rpc('request_cogs_sync', { p_day: day });
+    const id = (data as { id?: number } | null)?.id;
+    if (error || !id) { setBusy(false); setMsg('Could not start — try again.'); return; }
+    const started = Date.now();
+    const poll = async () => {
+      const { data: st } = await supabase.rpc('cogs_sync_status', { p_id: id });
+      if (st === 'done' || st === 'error') {
+        setBusy(false);
+        setMsg(st === 'done' ? 'Updated ✓' : 'Re-check failed — try again.');
+        if (st === 'done' && onDone) onDone();
+        return;
+      }
+      if (Date.now() - started > 150000) { setBusy(false); setMsg('Still running — tap Re-check again shortly.'); return; }
+      setTimeout(poll, 4000);
+    };
+    setTimeout(poll, 4000);
+  }, [day, onDone]);
+
+  return (
+    <div className="mt-3 flex items-center gap-2 border-t border-gray-100 pt-2">
+      <button onClick={recheck} disabled={busy}
+        className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50">
+        {busy ? 'Re-checking…' : '↻ Re-check with Niagawan'}
+      </button>
+      {msg && <span className={`text-[11px] ${msg.startsWith('Updated') ? 'text-emerald-700' : 'text-gray-500'}`}>{msg}</span>}
+    </div>
+  );
+}
+
+export function ZeroCogsCard({ zero_cogs, lines, day, onRecheck }: { zero_cogs: Home['zero_cogs']; lines?: ZeroLine[]; day?: string; onRecheck?: () => void }) {
   const list = lines ?? [];
   return (
     <Card title="Parts with no cost" icon="🏷️">
@@ -194,9 +232,10 @@ export function ZeroCogsCard({ zero_cogs, lines }: { zero_cogs: Home['zero_cogs'
             </div>
           )}
           {list.length > 0 && zero_cogs.items > list.length && <div className="mt-1 text-[11px] text-gray-400">Showing first {list.length} · {zero_cogs.items - list.length} more</div>}
-          <p className="mt-2 text-[11px] text-gray-400">Key the cost in Niagawan against each invoice above so profit is correct. The <Link href="/month-end" className="text-blue-600 underline">End of month</Link> page shows the whole month.</p>
+          <p className="mt-2 text-[11px] text-gray-400">Key the cost in Niagawan against each invoice above, then tap Re-check. The <Link href="/month-end" className="text-blue-600 underline">End of month</Link> page shows the whole month.</p>
         </>
       ) : <div className="text-sm text-emerald-700">All parts have a cost ✓</div>}
+      {day && <RecheckButton day={day} onDone={onRecheck} />}
     </Card>
   );
 }
