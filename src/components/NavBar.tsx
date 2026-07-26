@@ -148,6 +148,7 @@ export default function NavBar() {
     // Records is a sub-tab inside the Payroll page now (PayrollTabs), not a navbar item.
     ...(access.payroll ? [{ href: '/payroll/v3', match: '/payroll', label: 'Payroll' } as NavItem] : []),
     ...(access.month_end ? [{ href: '/office', match: '/office', label: 'Office' } as NavItem] : []),
+    ...(access.owner ? [{ href: '/bank-recon', label: 'Bank' } as NavItem] : []),
     ...((access.access_admin || access.owner) ? [{ href: '/settings', label: 'Settings' } as NavItem] : []),
   ];
 
