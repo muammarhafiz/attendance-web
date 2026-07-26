@@ -3,7 +3,6 @@
 // ticks each transfer/QR/card line once she confirms it's in the bank (cash is verified via the
 // cash count instead). Checks persist in cash_entry_checked (survives the nightly re-scrape).
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import { OfficeShell, Gate, rm, ZeroCogsCard, UnpaidCard, type Home, type ZeroLine } from '@/components/office/shared';
 
@@ -79,21 +78,6 @@ export default function DailyPage() {
   return (
     <Gate allowed={allowed} loading={loading} d={(d ?? null) as unknown as Home}>
       <OfficeShell title="📅 Daily" back onRefresh={load}>
-        {/* Purchase invoices */}
-        {d && (
-          <div className="mb-4 rounded-xl border border-gray-200 bg-white p-4">
-            <div className="flex items-center gap-2">
-              <span className="text-base leading-none">🧾</span>
-              <h2 className="text-sm font-semibold text-gray-800">Purchase invoices</h2>
-              <Link href="/niagawan/purchase" className="ml-auto text-xs font-medium text-blue-600 hover:underline">Open page →</Link>
-            </div>
-            <p className="mt-1 text-sm text-gray-600">Check in every purchase invoice and make sure the RM amount matches the paper invoice.</p>
-            {d.pi_pending > 0
-              ? <p className="mt-1 text-xs font-medium text-amber-700">{d.pi_pending} invoice{d.pi_pending === 1 ? '' : 's'} waiting to be checked in</p>
-              : <p className="mt-1 text-xs text-emerald-700">None waiting ✓</p>}
-          </div>
-        )}
-
         <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Payments</div>
         <div className="mb-3 flex items-center gap-2 text-sm">
           <span className="text-gray-500">Payments for</span>
