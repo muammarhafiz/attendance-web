@@ -164,9 +164,19 @@ function ChaseUnpaidCard() {
   );
 }
 
-type MethodStat = { total: number; checked: number };
+type MethodStat = { total: number; checked: number; label?: string | null };
 type ClerkStatus = { error?: string; day: string | null; methods: Record<string, MethodStat>; cash_system: number | string; cash_counted: number | string | null; pi_pending: number; zero_cogs: number };
-const CLERK_METHODS: { key: string; label: string }[] = [{ key: 'transfer', label: 'Transfer' }, { key: 'qr', label: 'QR' }, { key: 'card', label: 'Card' }];
+// canonical methods always shown (even at 0); any other account (Atome, Shopee Pay, …) appears when it had money
+const CLERK_CANON: { key: string; label: string }[] = [{ key: 'transfer', label: 'Transfer' }, { key: 'qr', label: 'QR' }, { key: 'card', label: 'Card' }];
+function clerkMethodRows(methods: Record<string, MethodStat>) {
+  const rows = CLERK_CANON.map((c) => ({ key: c.key, label: methods?.[c.key]?.label || c.label, stat: methods?.[c.key] ?? { total: 0, checked: 0 } }));
+  for (const key of Object.keys(methods || {})) {
+    if (CLERK_CANON.some((c) => c.key === key)) continue;
+    const st = methods[key];
+    rows.push({ key, label: st.label || key, stat: st });
+  }
+  return rows;
+}
 const klYesterdayIso = () => new Date(Date.now() + 8 * 3600e3 - 86400e3).toISOString().slice(0, 10);
 const klTodayIso = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
 const fmtDMY = (iso: string) => { const [y, m, dd] = iso.split('-'); return `${Number(dd)}/${Number(m)}/${y.slice(2)}`; };
@@ -189,10 +199,9 @@ function ClerkStatusCard() {
       </div>
       {!s || s.error ? <div className="text-sm text-slate-400">—</div> : (
         <>
-          {CLERK_METHODS.map((m) => {
-            const ms = s.methods?.[m.key] ?? { total: 0, checked: 0 };
-            const done = ms.total > 0 && ms.checked === ms.total;
-            return <Row key={m.key} k={m.label} v={ms.total === 0 ? 'none' : `${ms.checked}/${ms.total}`} tone={ms.total === 0 ? undefined : (done ? 'ok' : 'warn')} />;
+          {clerkMethodRows(s.methods || {}).map((r) => {
+            const done = r.stat.total > 0 && r.stat.checked === r.stat.total;
+            return <Row key={r.key} k={r.label} v={r.stat.total === 0 ? 'none' : `${r.stat.checked}/${r.stat.total}`} tone={r.stat.total === 0 ? undefined : (done ? 'ok' : 'warn')} />;
           })}
           <Row k="Cash" v={counted ? (cashMatches ? 'matches ✓' : `${cashDiff > 0 ? 'over' : 'short'} ${rm2(Math.abs(cashDiff))}`) : 'not counted'} tone={counted ? (cashMatches ? 'ok' : 'bad') : 'warn'} />
           <Row k="Purchase invoices to check" v={s.pi_pending} tone={s.pi_pending > 0 ? 'warn' : 'ok'} />
