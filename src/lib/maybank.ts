@@ -53,8 +53,12 @@ export function parseMaybank(text: string): ParsedStatement {
   for (let i = 0; i < matches.length; i++) {
     const g = matches[i];
     const full = g[0], dd = g[1], mm = g[2], desc = g[3], amtStr = g[4], sign = g[5], balStr = g[6];
+    const dN = Number(dd), mN = Number(mm);
+    // A real transaction date is DD/MM (day 1-31, month 1-12). Skip spurious matches — a reference or
+    // a differently-spaced fragment (e.g. "06/26") can otherwise look like a row and yield a bad date.
+    if (mN < 1 || mN > 12 || dN < 1 || dN > 31) continue;
     let y = year ?? 0;
-    if (year && stmtMonth && Number(mm) > stmtMonth) y = year - 1; // entry dated in the prior year (Dec on a Jan statement)
+    if (year && stmtMonth && mN > stmtMonth) y = year - 1; // entry dated in the prior year (Dec on a Jan statement)
     const start = g.index + full.length;
     const nextStart = i + 1 < matches.length ? matches[i + 1].index : text.length;
     let detail = text.slice(start, nextStart).split(/Malayan Banking Berhad|URUSNIAGA AKAUN|ENDING BALANCE|TOTAL DEBIT|Perhatian/)[0];
