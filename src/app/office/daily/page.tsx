@@ -14,7 +14,7 @@ type DayCash = {
   totals: { cash_in?: number | string; cash_out?: number | string; qr_in?: number | string; card_in?: number | string; transfer_in?: number | string };
   entries: Entry[];
   zero_cogs: { items: number; days: number };
-  unpaid: { count: number; total: number | string; top: { inv: string; customer: string | null; balance: number | string }[] };
+  unpaid: { count: number; total: number | string; top: { inv: string; customer: string | null; balance: number | string; status?: string | null; age_days?: number | null }[] };
   pi_pending: number;
 };
 

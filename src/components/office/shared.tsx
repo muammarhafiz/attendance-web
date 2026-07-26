@@ -10,7 +10,7 @@ export type Home = {
   today: string;
   month: string;
   eom: { done: number; total: number; blockers: number };
-  unpaid: { count: number; total: number | string; top: { inv: string; customer: string | null; balance: number | string }[] };
+  unpaid: { count: number; total: number | string; top: { inv: string; customer: string | null; balance: number | string; status?: string | null; age_days?: number | null }[] };
   yesterday: { day: string; cash_in: number | string; cash_out: number | string; qr_in: number | string; card_in: number | string; transfer_in: number | string } | null;
   daily_to_check: number;
   zero_cogs: { items: number; days: number };
@@ -136,23 +136,31 @@ export function PurchaseOrderCard({ pending }: { pending: number }) {
   );
 }
 
+const ageClass = (n?: number | null) => (n == null ? 'text-gray-400' : n >= 60 ? 'text-rose-600' : n >= 30 ? 'text-amber-600' : 'text-gray-400');
+
 export function UnpaidCard({ unpaid }: { unpaid: Home['unpaid'] }) {
   return (
-    <Card title="Chase unpaid" icon="📞">
+    <Card title="Chase unpaid — this year" icon="📞">
       {unpaid.count > 0 ? (
         <>
-          <div className="mb-2 text-sm text-gray-600"><span className="font-semibold text-gray-900">{rm0(unpaid.total)}</span> across {unpaid.count} invoice{unpaid.count === 1 ? '' : 's'}</div>
-          <div className="max-h-56 space-y-0.5 overflow-y-auto">
+          <div className="mb-2 text-sm text-gray-600"><span className="font-semibold text-gray-900">{rm0(unpaid.total)}</span> across {unpaid.count} bill{unpaid.count === 1 ? '' : 's'}</div>
+          <div className="max-h-80 divide-y divide-gray-50 overflow-y-auto rounded-lg border border-gray-100">
             {unpaid.top.map((u) => (
-              <div key={u.inv} className="flex justify-between gap-2 text-xs">
-                <span className="min-w-0 truncate text-gray-600">{u.customer || u.inv}</span>
+              <div key={u.inv} className="flex items-center justify-between gap-2 px-2 py-1.5 text-xs">
+                <div className="min-w-0">
+                  <div className="truncate text-gray-700">{u.customer || u.inv}</div>
+                  <div className="mt-0.5 flex items-center gap-1">
+                    <span className={ageClass(u.age_days)}>{u.age_days == null ? '—' : `${u.age_days} day${u.age_days === 1 ? '' : 's'}`}</span>
+                    {u.status === 'partial' && <span className="rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-700">partial</span>}
+                  </div>
+                </div>
                 <span className="shrink-0 font-medium text-gray-800">{rm(u.balance)}</span>
               </div>
             ))}
           </div>
-          {unpaid.count > unpaid.top.length && <div className="mt-1 text-[11px] text-gray-400">Top {unpaid.top.length} shown · {unpaid.count - unpaid.top.length} more</div>}
+          {unpaid.count > unpaid.top.length && <div className="mt-1 text-[11px] text-gray-400">Showing first {unpaid.top.length} · {unpaid.count - unpaid.top.length} more</div>}
         </>
-      ) : <div className="text-sm text-emerald-700">Nothing unpaid ✓</div>}
+      ) : <div className="text-sm text-emerald-700">Nothing unpaid this year ✓</div>}
     </Card>
   );
 }
