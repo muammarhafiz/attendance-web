@@ -164,6 +164,28 @@ function ChaseUnpaidCard() {
   );
 }
 
+type ClerkStatus = { error?: string; day: string | null; pay_total: number; pay_checked: number; cash_system: number | string; cash_counted: number | string | null; pi_pending: number; zero_cogs: number; eom_done: number; eom_total: number };
+
+// Owner monitor of the clerk's daily/month-end work.
+function ClerkStatusCard() {
+  const [s, setS] = useState<ClerkStatus | null>(null);
+  useEffect(() => { (async () => { const { data } = await supabase.rpc('owner_clerk_status'); setS((data ?? null) as ClerkStatus); })(); }, []);
+  if (!s || s.error) return null;
+  const payDone = s.pay_total > 0 && s.pay_checked === s.pay_total;
+  const counted = s.cash_counted != null;
+  const cashDiff = counted ? Number(s.cash_counted) - Number(s.cash_system) : 0;
+  const cashMatches = counted && Math.abs(cashDiff) < 0.01;
+  return (
+    <Card title="Clerk — yesterday" icon="🧑‍💼" href="/office">
+      <Row k="Payments checked" v={`${s.pay_checked}/${s.pay_total}`} tone={payDone ? 'ok' : (s.pay_total > 0 ? 'warn' : undefined)} />
+      <Row k="Cash counted" v={counted ? (cashMatches ? 'matches ✓' : `${cashDiff > 0 ? 'over' : 'short'} ${rm2(Math.abs(cashDiff))}`) : 'not done'} tone={counted ? (cashMatches ? 'ok' : 'bad') : 'warn'} />
+      <Row k="Purchase invoices to check" v={s.pi_pending} tone={s.pi_pending > 0 ? 'warn' : 'ok'} />
+      <Row k="Parts with no cost (month)" v={s.zero_cogs} tone={s.zero_cogs > 0 ? 'warn' : 'ok'} />
+      <Row k="Month-end steps" v={`${s.eom_done}/${s.eom_total}`} tone={s.eom_done === s.eom_total ? 'ok' : undefined} />
+    </Card>
+  );
+}
+
 export default function DashboardPage() {
   const [d, setD] = useState<Dash | null>(null);
   const [status, setStatus] = useState<'loading' | 'denied' | 'ready'>('loading');
@@ -250,6 +272,9 @@ export default function DashboardPage() {
             <div className="text-sm text-slate-400">Supplier balances haven’t synced yet — this fills in after the next supplier sync.</div>
           )}
         </Card>
+
+        {/* Clerk monitor */}
+        <ClerkStatusCard />
 
         {/* Chase unpaid (owner monitor + ignore) */}
         <ChaseUnpaidCard />
