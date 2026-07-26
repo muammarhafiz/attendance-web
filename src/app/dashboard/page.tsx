@@ -115,11 +115,13 @@ function ChaseUnpaidCard() {
     await load();
     setBusy(false);
   };
+  const nPartial = u ? u.active.filter((r) => r.status === 'partial').length : 0;
+  const nUnpaid = u ? u.active.length - nPartial : 0;
   return (
-    <Card title="Chase unpaid · this year" icon="📞">
+    <Card title="Unpaid & partial bills" icon="📞">
       {!u || u.error ? <div className="text-sm text-slate-400">—</div> : (
         <>
-          <div className="mb-2 text-sm text-slate-600">Owed <span className="font-semibold text-slate-900">{rm2(Number(u.active_total))}</span> across {u.active_count} bill{u.active_count === 1 ? '' : 's'}</div>
+          <div className="mb-2 text-sm text-slate-600">Owed <span className="font-semibold text-slate-900">{rm2(Number(u.active_total))}</span> · {nUnpaid} unpaid · {nPartial} partial</div>
           {u.active.length === 0 ? <div className="text-sm text-emerald-700">Nothing to chase ✓</div> : (
             <div className="max-h-72 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-100">
               {u.active.map((r) => (

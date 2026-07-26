@@ -139,11 +139,13 @@ export function PurchaseOrderCard({ pending }: { pending: number }) {
 const ageClass = (n?: number | null) => (n == null ? 'text-gray-400' : n >= 60 ? 'text-rose-600' : n >= 30 ? 'text-amber-600' : 'text-gray-400');
 
 export function UnpaidCard({ unpaid }: { unpaid: Home['unpaid'] }) {
+  const nPartial = unpaid.top.filter((u) => u.status === 'partial').length;
+  const nUnpaid = unpaid.top.length - nPartial;
   return (
-    <Card title="Chase unpaid — this year" icon="📞">
+    <Card title="Unpaid & partial bills" icon="📞">
       {unpaid.count > 0 ? (
         <>
-          <div className="mb-2 text-sm text-gray-600"><span className="font-semibold text-gray-900">{rm0(unpaid.total)}</span> across {unpaid.count} bill{unpaid.count === 1 ? '' : 's'}</div>
+          <div className="mb-2 text-sm text-gray-600"><span className="font-semibold text-gray-900">{rm0(unpaid.total)}</span> owed · {nUnpaid} unpaid · {nPartial} partial</div>
           <div className="max-h-80 divide-y divide-gray-50 overflow-y-auto rounded-lg border border-gray-100">
             {unpaid.top.map((u) => (
               <div key={u.inv} className="flex items-center justify-between gap-2 px-2 py-1.5 text-xs">
