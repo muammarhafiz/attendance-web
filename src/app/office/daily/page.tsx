@@ -130,8 +130,12 @@ export default function DailyPage() {
                   {m.checkable && es.length > 0 && (
                     <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${allChecked ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>{checkedCount}/{es.length} checked</span>
                   )}
-                  <span className="ml-auto text-sm font-semibold text-gray-900">{rm(total)}</span>
+                  <span className="ml-auto text-right">
+                    {m.key === 'card' && <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Settlement</span>}
+                    <span className="text-sm font-semibold text-gray-900">{rm(total)}</span>
+                  </span>
                 </div>
+                {m.key === 'card' && <p className="mt-1 text-[11px] text-gray-400">Match this against the card machine&rsquo;s daily settlement slip.</p>}
                 {es.length > 0 ? (
                   <div className="mt-2 divide-y divide-gray-50">
                     {es.map((e) => (
