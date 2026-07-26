@@ -164,24 +164,36 @@ function ChaseUnpaidCard() {
   );
 }
 
-type ClerkStatus = { error?: string; day: string | null; pay_total: number; pay_checked: number; cash_system: number | string; cash_counted: number | string | null; pi_pending: number; zero_cogs: number; eom_done: number; eom_total: number };
+type ClerkStatus = { error?: string; day: string | null; pay_total: number; pay_checked: number; cash_system: number | string; cash_counted: number | string | null; pi_pending: number; zero_cogs: number };
+const klYesterdayIso = () => new Date(Date.now() + 8 * 3600e3 - 86400e3).toISOString().slice(0, 10);
+const klTodayIso = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+const fmtDMY = (iso: string) => { const [y, m, dd] = iso.split('-'); return `${Number(dd)}/${Number(m)}/${y.slice(2)}`; };
 
-// Owner monitor of the clerk's daily/month-end work.
+// Owner monitor of the clerk's daily work — pick a day.
 function ClerkStatusCard() {
+  const [day, setDay] = useState(klYesterdayIso());
   const [s, setS] = useState<ClerkStatus | null>(null);
-  useEffect(() => { (async () => { const { data } = await supabase.rpc('owner_clerk_status'); setS((data ?? null) as ClerkStatus); })(); }, []);
-  if (!s || s.error) return null;
-  const payDone = s.pay_total > 0 && s.pay_checked === s.pay_total;
-  const counted = s.cash_counted != null;
-  const cashDiff = counted ? Number(s.cash_counted) - Number(s.cash_system) : 0;
+  useEffect(() => { (async () => { const { data } = await supabase.rpc('owner_clerk_status', { p_day: day }); setS((data ?? null) as ClerkStatus); })(); }, [day]);
+  const shiftDay = (delta: number) => { const [y, m, dd] = day.split('-').map(Number); setDay(new Date(Date.UTC(y, m - 1, dd + delta)).toISOString().slice(0, 10)); };
+  const counted = s && s.cash_counted != null;
+  const cashDiff = counted ? Number(s!.cash_counted) - Number(s!.cash_system) : 0;
   const cashMatches = counted && Math.abs(cashDiff) < 0.01;
+  const payDone = s && s.pay_total > 0 && s.pay_checked === s.pay_total;
   return (
-    <Card title="Clerk — yesterday" icon="🧑‍💼" href="/office">
-      <Row k="Payments checked" v={`${s.pay_checked}/${s.pay_total}`} tone={payDone ? 'ok' : (s.pay_total > 0 ? 'warn' : undefined)} />
-      <Row k="Cash counted" v={counted ? (cashMatches ? 'matches ✓' : `${cashDiff > 0 ? 'over' : 'short'} ${rm2(Math.abs(cashDiff))}`) : 'not done'} tone={counted ? (cashMatches ? 'ok' : 'bad') : 'warn'} />
-      <Row k="Purchase invoices to check" v={s.pi_pending} tone={s.pi_pending > 0 ? 'warn' : 'ok'} />
-      <Row k="Parts with no cost (month)" v={s.zero_cogs} tone={s.zero_cogs > 0 ? 'warn' : 'ok'} />
-      <Row k="Month-end steps" v={`${s.eom_done}/${s.eom_total}`} tone={s.eom_done === s.eom_total ? 'ok' : undefined} />
+    <Card title="Clerk" icon="🧑‍💼" href="/office">
+      <div className="mb-2 flex items-center justify-center gap-3">
+        <button onClick={() => shiftDay(-1)} aria-label="Previous day" className="rounded-md border border-slate-200 px-2.5 py-1 text-sm hover:bg-slate-50">◀</button>
+        <span className="min-w-[80px] text-center text-sm font-semibold text-slate-800">{fmtDMY(day)}</span>
+        <button onClick={() => shiftDay(1)} disabled={day >= klTodayIso()} aria-label="Next day" className="rounded-md border border-slate-200 px-2.5 py-1 text-sm hover:bg-slate-50 disabled:opacity-40">▶</button>
+      </div>
+      {!s || s.error ? <div className="text-sm text-slate-400">—</div> : (
+        <>
+          <Row k="Payments checked" v={`${s.pay_checked}/${s.pay_total}`} tone={payDone ? 'ok' : (s.pay_total > 0 ? 'warn' : undefined)} />
+          <Row k="Cash counted" v={counted ? (cashMatches ? 'matches ✓' : `${cashDiff > 0 ? 'over' : 'short'} ${rm2(Math.abs(cashDiff))}`) : 'not done'} tone={counted ? (cashMatches ? 'ok' : 'bad') : 'warn'} />
+          <Row k="Purchase invoices to check" v={s.pi_pending} tone={s.pi_pending > 0 ? 'warn' : 'ok'} />
+          <Row k="COGS no cost" v={s.zero_cogs} tone={s.zero_cogs > 0 ? 'warn' : 'ok'} />
+        </>
+      )}
     </Card>
   );
 }
