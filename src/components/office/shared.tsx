@@ -14,6 +14,8 @@ export type Home = {
   yesterday: { day: string; cash_in: number | string; cash_out: number | string; qr_in: number | string; card_in: number | string; transfer_in: number | string } | null;
   daily_to_check: number;
   zero_cogs: { items: number; days: number };
+  pi_pending: number;
+  po_pending: number;
 };
 
 export const rm = (x: unknown) => 'RM ' + Number(x || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -113,6 +115,22 @@ export function CashCountCard() {
           <span className="ml-auto text-xs text-gray-400">Open →</span>
         </div>
         <div className="text-sm text-gray-600">Count &amp; reconcile the cash drawer.</div>
+      </div>
+    </Link>
+  );
+}
+
+export function PurchaseOrderCard({ pending }: { pending: number }) {
+  return (
+    <Link href="/niagawan/inventory-v4" className="block">
+      <div className="h-full rounded-xl border border-gray-200 bg-white p-4 transition hover:border-gray-300">
+        <div className="mb-2 flex items-center gap-2">
+          <span className="text-base leading-none">📦</span>
+          <h2 className="text-sm font-semibold text-gray-800">Purchase orders</h2>
+          <span className="ml-auto text-xs text-gray-400">Open →</span>
+        </div>
+        <div className="text-sm text-gray-600">Create the POs (Mon–Tue), WhatsApp the supplier, and submit before Wednesday so the parts arrive in time.</div>
+        {pending > 0 && <div className="mt-1 text-xs font-medium text-amber-700">{pending} item{pending === 1 ? '' : 's'} suggested to re-order</div>}
       </div>
     </Link>
   );

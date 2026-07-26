@@ -1,6 +1,6 @@
 'use client';
-// Office → Weekly: chase unpaid invoices.
-import { useClerkHome, Gate, OfficeShell, UnpaidCard } from '@/components/office/shared';
+// Office → Weekly: purchase orders (create Mon/Tue, WhatsApp supplier, submit before Wed).
+import { useClerkHome, Gate, OfficeShell, PurchaseOrderCard } from '@/components/office/shared';
 
 export default function WeeklyPage() {
   const { allowed, d, loading, reload } = useClerkHome();
@@ -8,7 +8,7 @@ export default function WeeklyPage() {
     <Gate allowed={allowed} loading={loading} d={d}>
       <OfficeShell title="🗒️ Weekly" back onRefresh={reload}>
         <div className="grid grid-cols-1 gap-3">
-          {d && <UnpaidCard unpaid={d.unpaid} />}
+          {d && <PurchaseOrderCard pending={d.po_pending} />}
         </div>
       </OfficeShell>
     </Gate>
