@@ -98,6 +98,70 @@ function SalesTrend({ series, mtd, today }: { series: { day: string; sales: numb
   );
 }
 
+type UnpaidRow = { sale_id: string; inv: string; customer: string | null; balance: number | string; status?: string | null; age_days?: number | null };
+type OwnerUnpaid = { error?: string; active_count: number; active_total: number | string; active: UnpaidRow[]; ignored: { sale_id: string; inv: string; customer: string | null; balance: number | string }[] };
+const ageC = (n?: number | null) => (n == null ? 'text-slate-400' : n >= 60 ? 'text-rose-600' : n >= 30 ? 'text-amber-600' : 'text-slate-400');
+
+// Owner-only Chase-unpaid monitor: watch the clerk's chasing + ignore won't-collect bills.
+function ChaseUnpaidCard() {
+  const [u, setU] = useState<OwnerUnpaid | null>(null);
+  const [showIgnored, setShowIgnored] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(async () => { const { data } = await supabase.rpc('owner_unpaid'); setU((data ?? null) as OwnerUnpaid); }, []);
+  useEffect(() => { load(); }, [load]);
+  const setIgnore = async (saleId: string, ignored: boolean) => {
+    setBusy(true);
+    await supabase.rpc('owner_ignore_unpaid', { p_sale_id: saleId, p_ignored: ignored });
+    await load();
+    setBusy(false);
+  };
+  return (
+    <Card title="Chase unpaid · this year" icon="📞">
+      {!u || u.error ? <div className="text-sm text-slate-400">—</div> : (
+        <>
+          <div className="mb-2 text-sm text-slate-600">Owed <span className="font-semibold text-slate-900">{rm2(Number(u.active_total))}</span> across {u.active_count} bill{u.active_count === 1 ? '' : 's'}</div>
+          {u.active.length === 0 ? <div className="text-sm text-emerald-700">Nothing to chase ✓</div> : (
+            <div className="max-h-72 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-100">
+              {u.active.map((r) => (
+                <div key={r.sale_id} className="flex items-center justify-between gap-2 px-2 py-1.5 text-xs">
+                  <div className="min-w-0">
+                    <div className="truncate text-slate-700">{r.customer || '—'}</div>
+                    <div className="mt-0.5 flex items-center gap-1.5">
+                      <span className="font-mono text-[11px] text-slate-400">{r.inv}</span>
+                      <span className={ageC(r.age_days)}>{r.age_days == null ? '—' : `${r.age_days}d`}</span>
+                      {r.status === 'partial' && <span className="rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-700">partial</span>}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className="font-medium text-slate-800">{rm2(Number(r.balance))}</span>
+                    <button onClick={() => setIgnore(r.sale_id, true)} disabled={busy} title="Ignore — stop chasing this bill" className="text-slate-300 hover:text-rose-500 disabled:opacity-40">✕</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {u.ignored.length > 0 && (
+            <div className="mt-2">
+              <button onClick={() => setShowIgnored((v) => !v)} className="text-xs text-slate-400 hover:text-slate-700">{showIgnored ? 'Hide' : 'Show'} {u.ignored.length} ignored</button>
+              {showIgnored && (
+                <div className="mt-1 space-y-0.5">
+                  {u.ignored.map((r) => (
+                    <div key={r.sale_id} className="flex items-center justify-between gap-2 text-xs text-slate-400">
+                      <span className="min-w-0 truncate line-through">{r.customer || r.inv} · {r.inv}</span>
+                      <button onClick={() => setIgnore(r.sale_id, false)} disabled={busy} className="shrink-0 text-blue-600 hover:underline">restore</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          <p className="mt-2 text-[10px] text-slate-400">Ignore = stop chasing (won&rsquo;t collect); it drops off the clerk&rsquo;s list.</p>
+        </>
+      )}
+    </Card>
+  );
+}
+
 export default function DashboardPage() {
   const [d, setD] = useState<Dash | null>(null);
   const [status, setStatus] = useState<'loading' | 'denied' | 'ready'>('loading');
@@ -184,6 +248,9 @@ export default function DashboardPage() {
             <div className="text-sm text-slate-400">Supplier balances haven’t synced yet — this fills in after the next supplier sync.</div>
           )}
         </Card>
+
+        {/* Chase unpaid (owner monitor + ignore) */}
+        <ChaseUnpaidCard />
       </div>
     </div>
   );

@@ -51,6 +51,11 @@ export default function DailyPage() {
 
   useEffect(() => { if (allowed) load(); }, [allowed, load]);
 
+  const shiftDay = (delta: number) => {
+    const [y, m, dd] = day.split('-').map(Number);
+    setDay(new Date(Date.UTC(y, m - 1, dd + delta)).toISOString().slice(0, 10));
+  };
+
   const setChecked = useCallback(async (ekey: string, checked: boolean) => {
     setD((prev) => (prev ? { ...prev, entries: prev.entries.map((e) => (e.ekey === ekey ? { ...e, checked } : e)) } : prev));
     const { error } = await supabase.rpc('clerk_set_entry_checked', { p_ekey: ekey, p_checked: checked });
@@ -78,8 +83,10 @@ export default function DailyPage() {
         <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Payments</div>
         <div className="mb-3 flex items-center gap-2 text-sm">
           <span className="text-gray-500">Payments for</span>
+          <button onClick={() => shiftDay(-1)} aria-label="Previous day" className="rounded-md border border-gray-300 px-2.5 py-1 hover:bg-gray-50">◀</button>
           <input type="date" value={day} max={klToday()} onChange={(e) => setDay(e.target.value)}
             className="rounded-lg border border-gray-300 px-2 py-1 text-sm" />
+          <button onClick={() => shiftDay(1)} disabled={day >= klToday()} aria-label="Next day" className="rounded-md border border-gray-300 px-2.5 py-1 hover:bg-gray-50 disabled:opacity-40">▶</button>
         </div>
         <p className="mb-4 text-sm text-gray-500">Tick each transfer / QR / card payment once you confirm it&rsquo;s in the bank, then count the cash.</p>
 

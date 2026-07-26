@@ -148,8 +148,9 @@ export function UnpaidCard({ unpaid }: { unpaid: Home['unpaid'] }) {
             {unpaid.top.map((u) => (
               <div key={u.inv} className="flex items-center justify-between gap-2 px-2 py-1.5 text-xs">
                 <div className="min-w-0">
-                  <div className="truncate text-gray-700">{u.customer || u.inv}</div>
-                  <div className="mt-0.5 flex items-center gap-1">
+                  <div className="truncate text-gray-700">{u.customer || '—'}</div>
+                  <div className="mt-0.5 flex items-center gap-1.5">
+                    <span className="font-mono text-[11px] text-gray-400">{u.inv}</span>
                     <span className={ageClass(u.age_days)}>{u.age_days == null ? '—' : `${u.age_days} day${u.age_days === 1 ? '' : 's'}`}</span>
                     {u.status === 'partial' && <span className="rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-700">partial</span>}
                   </div>
