@@ -43,11 +43,16 @@ export function parseMaybank(text: string): ParsedStatement {
   const totDr = money((text.match(/TOTAL DEBIT\s*:\s*([\d,]+\.\d{2})/) || [])[1] || 'NaN');
   const totCr = money((text.match(/TOTAL CREDIT\s*:\s*([\d,]+\.\d{2})/) || [])[1] || 'NaN');
 
+  // Strip the repeated per-page footer + column header. Without this, the statement date "30/06/26" in
+  // each footer is matched as a bogus "06/26" transaction whose greedy description swallows the next
+  // real transaction's amount — corrupting both. (Header/footer values above are read from the full text.)
+  const body = text.replace(/Malayan Banking Berhad[\s\S]*?STATEMENT BALANCE/g, ' ');
+
   // <entry DD/MM> <description> <amount±> <balance>
   const re = /(\d{2})\/(\d{2})\s+(.+?)\s+([\d,]*\.\d{2})([+-])\s+([\d,]+\.\d{2})/g;
   const matches: RegExpExecArray[] = [];
   let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) matches.push(m);
+  while ((m = re.exec(body)) !== null) matches.push(m);
 
   const rows: Txn[] = [];
   for (let i = 0; i < matches.length; i++) {
@@ -60,8 +65,8 @@ export function parseMaybank(text: string): ParsedStatement {
     let y = year ?? 0;
     if (year && stmtMonth && mN > stmtMonth) y = year - 1; // entry dated in the prior year (Dec on a Jan statement)
     const start = g.index + full.length;
-    const nextStart = i + 1 < matches.length ? matches[i + 1].index : text.length;
-    let detail = text.slice(start, nextStart).split(/Malayan Banking Berhad|URUSNIAGA AKAUN|ENDING BALANCE|TOTAL DEBIT|Perhatian/)[0];
+    const nextStart = i + 1 < matches.length ? matches[i + 1].index : body.length;
+    let detail = body.slice(start, nextStart).split(/Malayan Banking Berhad|URUSNIAGA AKAUN|ENDING BALANCE|TOTAL DEBIT|Perhatian/)[0];
     detail = detail.replace(/\s+/g, ' ').trim();
     const dir: 'in' | 'out' = sign === '+' ? 'in' : 'out';
     const cleanDesc = desc.replace(/\s+/g, ' ').trim();
