@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
-import { OfficeShell, Gate, rm, CashCountCard, ZeroCogsCard, UnpaidCard, type Home } from '@/components/office/shared';
+import { OfficeShell, Gate, rm, ZeroCogsCard, UnpaidCard, type Home } from '@/components/office/shared';
 
 type Entry = { ekey: string; method: string; descp: string | null; amount: number | string; checked: boolean; checked_by: string | null; checked_at: string | null };
 type DayCash = {
@@ -16,6 +16,7 @@ type DayCash = {
   zero_cogs: { items: number; days: number };
   unpaid: { count: number; total: number | string; top: { inv: string; customer: string | null; balance: number | string; status?: string | null; age_days?: number | null }[] };
   pi_pending: number;
+  cash_counted: boolean;
 };
 
 const METHODS = [
@@ -61,6 +62,12 @@ export default function DailyPage() {
     const { error } = await supabase.rpc('clerk_set_entry_checked', { p_ekey: ekey, p_checked: checked });
     if (error) load();
   }, [load]);
+
+  const setCashCounted = useCallback(async (done: boolean) => {
+    setD((prev) => (prev ? { ...prev, cash_counted: done } : prev));
+    const { error } = await supabase.rpc('office_set_daily_task', { p_day: day, p_task: 'cash_counted', p_done: done });
+    if (error) load();
+  }, [day, load]);
 
   return (
     <Gate allowed={allowed} loading={loading} d={(d ?? null) as unknown as Home}>
@@ -129,8 +136,9 @@ export default function DailyPage() {
             const mismatch = es.length > 0 && Math.abs(lineSum - total) > 0.01;
             const checkedCount = es.filter((e) => e.checked).length;
             const allChecked = m.checkable && es.length > 0 && checkedCount === es.length;
+            const cardDone = m.key === 'cash' ? !!d.cash_counted : allChecked;
             return (
-              <div key={m.key} className={`rounded-xl border p-4 ${allChecked ? 'border-emerald-200 bg-emerald-50/40' : 'border-gray-200 bg-white'}`}>
+              <div key={m.key} className={`rounded-xl border p-4 ${cardDone ? 'border-emerald-200 bg-emerald-50/40' : 'border-gray-200 bg-white'}`}>
                 <div className="flex items-center gap-2">
                   <span className="text-base leading-none">{m.icon}</span>
                   <h2 className="text-sm font-semibold text-gray-800">{m.label}</h2>
@@ -143,6 +151,13 @@ export default function DailyPage() {
                   </span>
                 </div>
                 {m.key === 'card' && <p className="mt-1 text-[11px] text-gray-400">Match this against the card machine&rsquo;s daily settlement slip.</p>}
+                {m.key === 'cash' && (
+                  <button onClick={() => setCashCounted(!d.cash_counted)}
+                    className={`mt-2 flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition ${d.cash_counted ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-gray-200 text-gray-600 hover:border-emerald-300'}`}>
+                    <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 text-[10px] font-bold ${d.cash_counted ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-gray-300 text-transparent'}`}>✓</span>
+                    Counted the cash — it matches {rm(total)}
+                  </button>
+                )}
                 {es.length > 0 ? (
                   <div className="mt-2 divide-y divide-gray-50">
                     {es.map((e) => (
@@ -169,7 +184,6 @@ export default function DailyPage() {
           })}
 
           {d && <UnpaidCard unpaid={d.unpaid} />}
-          <CashCountCard />
           {d && <ZeroCogsCard zero_cogs={d.zero_cogs} />}
         </div>
       </OfficeShell>
