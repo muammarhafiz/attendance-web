@@ -1,7 +1,9 @@
 'use client';
-// src/app/month-end/page.tsx — clerk's end-of-month routine. A simple checklist: the clerk works
-// through 4 steps and ticks each off. No profit/salary shown (clerk-safe). Data + ticks come from
-// month_end_status() / month_end_set_task(); bills are keyed here via the gated bill RPCs.
+// src/app/month-end/page.tsx — the clerk's MONTHLY routine, by deadline:
+//   By 25th  — pay all supplier invoices
+//   By 28th  — fix any staff left as ABSENT (MC/off-days) so payroll is right
+//   28–31    — payroll: transfer salaries + send payslips
+// Clerk-safe except the salary detail, which is gated behind can_access('pay_salaries').
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
@@ -11,22 +13,21 @@ type Tick = { done: boolean; by: string | null; at: string | null };
 type Dash = {
   error?: string;
   month: string;
-  not_final_days: { day: string; unpaid: number; no_cost: number }[];
-  unpaid: { inv: string; customer: string | null; balance: number | string }[];
-  bills: { id: number; label: string; amount: number | string; paid: boolean; paid_date: string | null }[];
+  suppliers: { count: number; total: number | string; synced: string | null; list: { name: string; balance: number | string }[] };
+  absents: { count: number; list: { name: string; day: string }[] };
   ticks: Record<string, Tick>;
 };
 type Salary = { email: string; name: string; net: number | string; bank_name: string | null; bank_acc_name: string | null; bank_acc_no: string | null; paid: boolean; paid_date: string | null };
 
 const rm = (x: unknown) => 'RM ' + Number(x || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const fmtDay = (iso: string) => { const p = String(iso).split('-'); return p[2] && p[1] ? `${p[2]}/${p[1]}` : String(iso); };
+const cleanSupplier = (name: string) => name.replace(/\s*\(\d{6,}.*$/, '').trim() || name;
+const fmtD = (iso: string) => { const p = String(iso).split('-'); return p[2] && p[1] ? `${p[2]}/${p[1]}` : String(iso); };
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 const STEPS = [
-  { key: 'clear_days', n: 1, title: 'Clear every day', desc: 'No day should still have unpaid invoices or parts without a cost.' },
-  { key: 'key_bills', n: 2, title: 'Key in the bills', desc: 'Enter the month’s bills — rent, utilities, makan, etc.' },
-  { key: 'cash_count', n: 3, title: 'Cash count', desc: 'Count and reconcile the cash for the month.' },
-  { key: 'stock_check', n: 4, title: 'Stock check', desc: 'Do a stock count and update the quantities in Niagawan.' },
+  { key: 'suppliers_paid', when: 'By 25th', title: 'Pay suppliers', desc: 'Pay every supplier invoice.' },
+  { key: 'fix_absent', when: 'By 28th', title: 'Fix MC / off-days', desc: 'No staff should be left ABSENT — absent is unpaid.' },
+  { key: 'payroll', when: '28th–31st', title: 'Payroll', desc: 'Transfer salaries and send payslips.' },
 ] as const;
 
 export default function MonthEndPage() {
@@ -36,13 +37,12 @@ export default function MonthEndPage() {
   const [month, setMonth] = useState(today.getMonth() + 1);
   const [d, setD] = useState<Dash | null>(null);
   const [loading, setLoading] = useState(true);
-  const [newLabel, setNewLabel] = useState('');
-  const [newAmount, setNewAmount] = useState('');
   const [err, setErr] = useState<string | null>(null);
-  const [canPay, setCanPay] = useState(false);      // pay_salaries feature (Office clerk + Owner)
+  const [canPay, setCanPay] = useState(false);
   const [salaries, setSalaries] = useState<Salary[]>([]);
 
   const monthKey = `${year}-${String(month).padStart(2, '0')}`;
+  const todayIso = today.toISOString().slice(0, 10);
 
   useEffect(() => {
     (async () => {
@@ -56,8 +56,7 @@ export default function MonthEndPage() {
   }, []);
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setErr(null);
+    setLoading(true); setErr(null);
     const { data } = await supabase.rpc('month_end_status', { p_month: monthKey });
     setD((data ?? null) as Dash);
     if (canPay) {
@@ -70,33 +69,11 @@ export default function MonthEndPage() {
   useEffect(() => { if (allowed) load(); }, [allowed, load]);
 
   const tickOf = (step: string) => !!d?.ticks?.[step]?.done;
-
   const setTask = useCallback(async (step: string, done: boolean) => {
     setD((prev) => (prev ? { ...prev, ticks: { ...prev.ticks, [step]: { done, by: null, at: null } } } : prev));
     const { error } = await supabase.rpc('month_end_set_task', { p_month: monthKey, p_step: step, p_done: done });
     if (error) { setErr(error.message); load(); }
   }, [monthKey, load]);
-
-  const addBill = useCallback(async () => {
-    if (!newLabel.trim()) return;
-    const amt = Number(newAmount);
-    if (newAmount.trim() !== '' && (!Number.isFinite(amt) || amt < 0)) { setErr('Enter a valid amount.'); return; }
-    const { error } = await supabase.rpc('month_end_add_bill', { p_month: monthKey, p_label: newLabel.trim(), p_amount: Number.isFinite(amt) ? amt : 0 });
-    if (error) { setErr(error.message); return; }
-    setNewLabel(''); setNewAmount(''); await load();
-  }, [newLabel, newAmount, monthKey, load]);
-
-  const delBill = useCallback(async (id: number) => {
-    const { error } = await supabase.rpc('month_end_delete_bill', { p_id: id });
-    if (error) { setErr(error.message); return; }
-    await load();
-  }, [load]);
-
-  const setBillPaid = useCallback(async (id: number, paid: boolean, date: string) => {
-    setD((prev) => (prev ? { ...prev, bills: prev.bills.map((b) => (b.id === id ? { ...b, paid, paid_date: paid ? date : null } : b)) } : prev));
-    const { error } = await supabase.rpc('month_end_set_bill_paid', { p_id: id, p_paid: paid, p_date: paid ? date : null });
-    if (error) { setErr(error.message); load(); }
-  }, [load]);
 
   const setSalaryPaid = useCallback(async (email: string, paid: boolean, date: string) => {
     setSalaries((prev) => prev.map((s) => (s.email === email ? { ...s, paid, paid_date: paid ? date : null } : s)));
@@ -110,16 +87,10 @@ export default function MonthEndPage() {
   if (allowed === null) return <div className="p-6 text-sm text-gray-500">Checking…</div>;
   if (!allowed) return <div className="p-6 text-sm text-gray-600">This page is for the office clerk, managers and the owner.</div>;
 
-  const blockers = d?.not_final_days ?? [];
-  const unpaid = d?.unpaid ?? [];
-  const bills = d?.bills ?? [];
-  const billsTotal = bills.reduce((s, b) => s + Number(b.amount || 0), 0);
-  const paidCount = bills.filter((b) => b.paid).length;
-  const todayIso = today.toISOString().slice(0, 10);
-  const paidSalaryCount = salaries.filter((s) => s.paid).length;
-  const salaryTotal = salaries.reduce((sum, r) => sum + Number(r.net || 0), 0);
   const doneCount = STEPS.filter((s) => tickOf(s.key)).length;
   const allDone = doneCount === STEPS.length;
+  const paidSalary = salaries.filter((s) => s.paid).length;
+  const salaryTotal = salaries.reduce((s, r) => s + Number(r.net || 0), 0);
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6">
@@ -132,9 +103,7 @@ export default function MonthEndPage() {
           <button onClick={nextMonth} className="rounded-md border px-2.5 py-1.5 text-sm hover:bg-gray-50">▶</button>
         </div>
       </div>
-      <p className="mt-1 text-sm text-gray-500">Work through the steps and tick each one. Tap <button onClick={load} className="font-medium text-blue-600 underline">Check again</button> after you fix things in Niagawan.</p>
 
-      {/* progress */}
       <div className={`mt-4 rounded-xl border px-4 py-3 ${allDone ? 'border-emerald-300 bg-emerald-50' : 'border-gray-200 bg-white'}`}>
         <div className="flex items-center justify-between">
           <span className="text-sm font-semibold text-gray-800">{allDone ? '🎉 Month-end done!' : `${doneCount} of ${STEPS.length} done`}</span>
@@ -155,147 +124,92 @@ export default function MonthEndPage() {
             return (
               <div key={s.key} className={`rounded-xl border p-4 ${done ? 'border-emerald-200 bg-emerald-50/40' : 'border-gray-200 bg-white'}`}>
                 <div className="flex items-start gap-3">
-                  <button
-                    onClick={() => setTask(s.key, !done)}
-                    aria-label={`Mark ${s.title} ${done ? 'not done' : 'done'}`}
-                    className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 text-sm font-bold transition ${done ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-gray-300 text-transparent hover:border-emerald-400'}`}
-                  >✓</button>
+                  <button onClick={() => setTask(s.key, !done)} aria-label={`Mark ${s.title} ${done ? 'not done' : 'done'}`}
+                    className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 text-sm font-bold transition ${done ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-gray-300 text-transparent hover:border-emerald-400'}`}>✓</button>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold text-gray-400">STEP {s.n}</span>
+                      <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-600">{s.when}</span>
                       <h2 className={`text-base font-semibold ${done ? 'text-emerald-800' : 'text-gray-900'}`}>{s.title}</h2>
                     </div>
                     <p className="mt-0.5 text-sm text-gray-600">{s.desc}</p>
 
-                    {/* STEP 1 — clear every day */}
-                    {s.key === 'clear_days' && (
+                    {/* By 25 — suppliers owed */}
+                    {s.key === 'suppliers_paid' && (
                       <div className="mt-2">
-                        {blockers.length === 0 ? (
-                          <p className="text-sm font-medium text-emerald-700">All days are settled ✓</p>
-                        ) : (
+                        {d.suppliers.count > 0 ? (
                           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-                            <p className="text-sm font-medium text-amber-900">{blockers.length} day{blockers.length === 1 ? '' : 's'} still need fixing in Niagawan:</p>
-                            <ul className="mt-1 space-y-0.5 text-sm text-amber-800">
-                              {blockers.map((b) => (
-                                <li key={b.day}>
-                                  <span className="font-semibold">{fmtDay(b.day)}</span> —{' '}
-                                  {b.no_cost > 0 && `${b.no_cost} part${b.no_cost === 1 ? '' : 's'} with no cost`}
-                                  {b.no_cost > 0 && b.unpaid > 0 ? ' · ' : ''}
-                                  {b.unpaid > 0 && `${b.unpaid} unpaid`}
+                            <div className="mb-1 text-sm font-medium text-amber-900">You still owe {rm(d.suppliers.total)} to {d.suppliers.count} supplier{d.suppliers.count === 1 ? '' : 's'}:</div>
+                            <ul className="space-y-0.5 text-sm text-amber-800">
+                              {d.suppliers.list.map((s2) => (
+                                <li key={s2.name} className="flex justify-between gap-2">
+                                  <span className="min-w-0 truncate">{cleanSupplier(s2.name)}</span>
+                                  <span className="shrink-0 font-semibold">{rm(s2.balance)}</span>
                                 </li>
                               ))}
                             </ul>
-                            {unpaid.length > 0 && (
-                              <div className="mt-2 border-t border-amber-200 pt-2">
-                                <p className="text-xs font-medium text-amber-900">Unpaid invoices to chase:</p>
-                                <ul className="mt-1 max-h-48 space-y-0.5 overflow-y-auto text-xs text-amber-800">
-                                  {unpaid.map((u) => (
-                                    <li key={u.inv} className="flex justify-between gap-2">
-                                      <span className="min-w-0 truncate">{u.inv} · {u.customer || '—'}</span>
-                                      <span className="shrink-0 font-semibold">{rm(u.balance)}</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-                            <p className="mt-2 text-[11px] text-amber-700/80">Fix these in Niagawan (key the part costs, settle/carry the unpaid), then tap <span className="font-medium">Check again</span>. This list refreshes after Niagawan syncs.</p>
+                            <p className="mt-2 text-[11px] text-amber-700/80">Balances refresh after the supplier sync.</p>
                           </div>
+                        ) : <p className="text-sm text-emerald-700">All suppliers paid ✓</p>}
+                      </div>
+                    )}
+
+                    {/* By 28 — absents to fix */}
+                    {s.key === 'fix_absent' && (
+                      <div className="mt-2">
+                        {d.absents.count > 0 ? (
+                          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                            <div className="mb-1 flex items-center justify-between gap-2">
+                              <span className="text-sm font-medium text-amber-900">{d.absents.count} ABSENT day{d.absents.count === 1 ? '' : 's'} to fix:</span>
+                              <Link href="/attendance/checkin" className="shrink-0 text-xs font-medium text-blue-600 hover:underline">Attendance →</Link>
+                            </div>
+                            <ul className="max-h-48 space-y-0.5 overflow-y-auto text-sm text-amber-800">
+                              {d.absents.list.map((a, i) => (
+                                <li key={i} className="flex justify-between gap-2"><span className="min-w-0 truncate">{a.name}</span><span className="shrink-0">{fmtD(a.day)}</span></li>
+                              ))}
+                            </ul>
+                            <p className="mt-2 text-[11px] text-amber-700/80">Approve their MC / off-day (or fix in attendance) so they aren&rsquo;t paid as absent.</p>
+                          </div>
+                        ) : <p className="text-sm text-emerald-700">No one left as absent ✓</p>}
+                      </div>
+                    )}
+
+                    {/* 28-31 — payroll (salary detail is gated) */}
+                    {s.key === 'payroll' && canPay && (
+                      <div className="mt-2 rounded-lg border border-gray-200 bg-white p-3">
+                        <div className="mb-2 flex items-center justify-between">
+                          <span className="text-sm font-semibold text-gray-700">Pay salaries</span>
+                          {salaries.length > 0 && <span className="text-xs text-gray-400">{paidSalary}/{salaries.length} paid</span>}
+                        </div>
+                        {salaries.length === 0 ? (
+                          <p className="text-xs text-gray-400">No payroll generated for this month yet.</p>
+                        ) : (
+                          <>
+                            {salaries.map((sal) => (
+                              <div key={sal.email} className="border-b border-gray-50 py-2 last:border-0">
+                                <div className="flex items-start gap-2">
+                                  <button onClick={() => setSalaryPaid(sal.email, !sal.paid, todayIso)} aria-label={`Mark ${sal.name} ${sal.paid ? 'unpaid' : 'paid'}`}
+                                    className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 text-[10px] font-bold transition ${sal.paid ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-gray-300 text-transparent hover:border-emerald-400'}`}>✓</button>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-baseline justify-between gap-2">
+                                      <span className={`min-w-0 truncate text-sm font-medium ${sal.paid ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{sal.name}</span>
+                                      <span className={`shrink-0 text-sm font-semibold ${sal.paid ? 'text-gray-400' : 'text-gray-900'}`}>{rm(sal.net)}</span>
+                                    </div>
+                                    <div className="font-mono text-xs text-gray-500">{sal.bank_name || 'no bank'} · {sal.bank_acc_no || 'no account'}{sal.bank_acc_name ? ` · ${sal.bank_acc_name}` : ''}</div>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                            <div className="mt-2 flex justify-between border-t border-gray-100 pt-2 text-sm font-semibold"><span>Total</span><span>{rm(salaryTotal)}</span></div>
+                            <p className="mt-1 text-[11px] text-gray-400">Amounts are confidential — keep the screen private. Send payslips from the Payroll page.</p>
+                          </>
                         )}
                       </div>
-                    )}
-
-                    {/* STEP 2 — bills */}
-                    {s.key === 'key_bills' && (
-                      <div className="mt-2 rounded-lg border border-gray-200 bg-white p-3">
-                        {bills.map((b) => (
-                          <div key={b.id} className="border-b border-gray-50 py-1 last:border-0">
-                            <div className="flex items-center gap-2 text-sm">
-                              <button
-                                onClick={() => setBillPaid(b.id, !b.paid, todayIso)}
-                                aria-label={`Mark ${b.label} ${b.paid ? 'unpaid' : 'paid'}`}
-                                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 text-[10px] font-bold transition ${b.paid ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-gray-300 text-transparent hover:border-emerald-400'}`}
-                              >✓</button>
-                              <span className={`min-w-0 flex-1 truncate ${b.paid ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{b.label}</span>
-                              <span className={`shrink-0 font-medium ${b.paid ? 'text-gray-400' : 'text-gray-800'}`}>{rm(b.amount)}</span>
-                              <button onClick={() => delBill(b.id)} className="shrink-0 text-xs text-rose-400 hover:text-rose-600">✕</button>
-                            </div>
-                            {b.paid && (
-                              <div className="ml-7 mt-0.5 flex items-center gap-1.5 text-xs text-emerald-700">
-                                Paid on
-                                <input type="date" value={b.paid_date ?? todayIso} onChange={(e) => setBillPaid(b.id, true, e.target.value)}
-                                  className="rounded border border-gray-300 px-1.5 py-0.5 text-xs" />
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                        {bills.length === 0 && <p className="text-xs text-gray-400">No bills keyed yet for this month.</p>}
-                        <div className="mt-2 flex items-center gap-2">
-                          <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="e.g. SEWA" className="min-w-0 flex-1 rounded border border-gray-300 px-2 py-1 text-sm" />
-                          <input value={newAmount} onChange={(e) => setNewAmount(e.target.value)} type="number" inputMode="decimal" step="0.01" placeholder="0.00" className="w-24 rounded border border-gray-300 px-2 py-1 text-right text-sm" />
-                          <button onClick={addBill} className="shrink-0 rounded bg-gray-900 px-2.5 py-1 text-sm font-medium text-white hover:bg-gray-700">Add</button>
-                        </div>
-                        {bills.length > 0 && <div className="mt-2 flex justify-between border-t border-gray-100 pt-2 text-sm font-semibold"><span>Total <span className="font-normal text-gray-400">· {paidCount}/{bills.length} paid</span></span><span>{rm(billsTotal)}</span></div>}
-                      </div>
-                    )}
-
-                    {/* STEP 3 — cash count */}
-                    {s.key === 'cash_count' && (
-                      <Link href="/cash-count" className="mt-2 inline-flex items-center gap-1 rounded-lg border border-blue-600 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100">
-                        Open cash count →
-                      </Link>
-                    )}
-
-                    {/* STEP 4 — stock check */}
-                    {s.key === 'stock_check' && (
-                      <p className="mt-2 text-xs text-gray-400">Count the stock on the shelf and update the quantities in Niagawan, then tick this off.</p>
                     )}
                   </div>
                 </div>
               </div>
             );
           })}
-
-          {canPay && (
-            <div className="rounded-xl border border-gray-200 bg-white p-4">
-              <div className="flex items-center gap-2">
-                <span className="text-base leading-none">💰</span>
-                <h2 className="text-base font-semibold text-gray-900">Pay salaries</h2>
-                {salaries.length > 0 && <span className="ml-auto text-xs text-gray-400">{paidSalaryCount}/{salaries.length} paid</span>}
-              </div>
-              <p className="mt-0.5 text-sm text-gray-600">Transfer each staff their pay, then tick them off. Amounts are confidential — keep the screen private.</p>
-              {salaries.length === 0 ? (
-                <p className="mt-2 text-xs text-gray-400">No payroll generated for this month yet.</p>
-              ) : (
-                <div className="mt-2">
-                  {salaries.map((s) => (
-                    <div key={s.email} className="border-b border-gray-50 py-2 last:border-0">
-                      <div className="flex items-start gap-2">
-                        <button
-                          onClick={() => setSalaryPaid(s.email, !s.paid, todayIso)}
-                          aria-label={`Mark ${s.name} ${s.paid ? 'unpaid' : 'paid'}`}
-                          className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 text-[10px] font-bold transition ${s.paid ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-gray-300 text-transparent hover:border-emerald-400'}`}
-                        >✓</button>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-baseline justify-between gap-2">
-                            <span className={`min-w-0 truncate text-sm font-medium ${s.paid ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{s.name}</span>
-                            <span className={`shrink-0 text-sm font-semibold ${s.paid ? 'text-gray-400' : 'text-gray-900'}`}>{rm(s.net)}</span>
-                          </div>
-                          <div className="font-mono text-xs text-gray-500">{s.bank_name || 'no bank'} · {s.bank_acc_no || 'no account'}{s.bank_acc_name ? ` · ${s.bank_acc_name}` : ''}</div>
-                          {s.paid && (
-                            <div className="mt-0.5 flex items-center gap-1.5 text-xs text-emerald-700">
-                              Paid on
-                              <input type="date" value={s.paid_date ?? todayIso} onChange={(e) => setSalaryPaid(s.email, true, e.target.value)} className="rounded border border-gray-300 px-1.5 py-0.5 text-xs" />
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  <div className="mt-2 flex justify-between border-t border-gray-100 pt-2 text-sm font-semibold"><span>Total</span><span>{rm(salaryTotal)}</span></div>
-                </div>
-              )}
-            </div>
-          )}
         </div>
       )}
     </div>
