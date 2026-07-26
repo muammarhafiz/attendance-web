@@ -176,7 +176,7 @@ export function ZeroCogsCard({ zero_cogs, lines }: { zero_cogs: Home['zero_cogs'
     <Card title="Parts with no cost" icon="🏷️">
       {zero_cogs.items > 0 ? (
         <>
-          <div className="text-sm text-gray-600"><span className="font-semibold text-amber-700">{zero_cogs.items} part{zero_cogs.items === 1 ? '' : 's'}</span> across {zero_cogs.days} day{zero_cogs.days === 1 ? '' : 's'} this month have no cost keyed.</div>
+          <div className="text-sm text-gray-600"><span className="font-semibold text-amber-700">{zero_cogs.items} part{zero_cogs.items === 1 ? '' : 's'}</span> sold this day {zero_cogs.items === 1 ? 'has' : 'have'} no cost keyed.</div>
           {list.length > 0 && (
             <div className="mt-2 max-h-72 divide-y divide-gray-50 overflow-y-auto rounded-lg border border-gray-100">
               {list.map((r, i) => (
@@ -194,7 +194,7 @@ export function ZeroCogsCard({ zero_cogs, lines }: { zero_cogs: Home['zero_cogs'
             </div>
           )}
           {list.length > 0 && zero_cogs.items > list.length && <div className="mt-1 text-[11px] text-gray-400">Showing first {list.length} · {zero_cogs.items - list.length} more</div>}
-          <p className="mt-2 text-[11px] text-gray-400">Key the cost in Niagawan against each invoice above so profit is correct. The <Link href="/month-end" className="text-blue-600 underline">End of month</Link> page lists which days.</p>
+          <p className="mt-2 text-[11px] text-gray-400">Key the cost in Niagawan against each invoice above so profit is correct. The <Link href="/month-end" className="text-blue-600 underline">End of month</Link> page shows the whole month.</p>
         </>
       ) : <div className="text-sm text-emerald-700">All parts have a cost ✓</div>}
     </Card>
