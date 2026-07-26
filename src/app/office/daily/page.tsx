@@ -7,11 +7,13 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import { OfficeShell, Gate, rm, ZeroCogsCard, UnpaidCard, type Home } from '@/components/office/shared';
 
-type Entry = { ekey: string; method: string; descp: string | null; amount: number | string; checked: boolean; checked_by: string | null; checked_at: string | null };
+type Entry = { ekey: string; method: string; label?: string | null; descp: string | null; amount: number | string; checked: boolean; checked_by: string | null; checked_at: string | null };
+type Method = { key: string; label: string; total: number | string; count: number; checked: number; checkable: boolean };
 type DayCash = {
   error?: string;
   day: string;
   totals: { cash_in?: number | string; cash_out?: number | string; qr_in?: number | string; card_in?: number | string; transfer_in?: number | string };
+  methods: Method[];
   entries: Entry[];
   zero_cogs: { items: number; days: number };
   unpaid: { count: number; total: number | string; top: { inv: string; customer: string | null; balance: number | string; status?: string | null; age_days?: number | null }[] };
@@ -19,12 +21,9 @@ type DayCash = {
   cash_counted: number | null;
 };
 
-const METHODS = [
-  { key: 'transfer', label: 'Bank transfer', totalKey: 'transfer_in', icon: '🏦', checkable: true },
-  { key: 'qr', label: 'QR (DuitNow)', totalKey: 'qr_in', icon: '📱', checkable: true },
-  { key: 'card', label: 'Card', totalKey: 'card_in', icon: '💳', checkable: true },
-  { key: 'cash', label: 'Cash', totalKey: 'cash_in', icon: '💵', checkable: false },
-] as const;
+// icon per method — canonical keys get a fixed glyph, anything else (atome/shopee_pay/…) gets a generic one
+const METHOD_ICONS: Record<string, string> = { transfer: '🏦', qr: '📱', card: '💳', cash: '💵' };
+const methodIcon = (key: string) => METHOD_ICONS[key] ?? '💰';
 
 const num = (x: unknown) => Number(x || 0);
 const klYesterday = () => new Date(Date.now() + 8 * 3600e3 - 86400e3).toISOString().slice(0, 10);
@@ -105,29 +104,31 @@ export default function DailyPage() {
         <p className="mb-4 text-sm text-gray-500">Tick each transfer / QR / card payment once you confirm it&rsquo;s in the bank, then count the cash.</p>
 
         {d && (() => {
-          const checkable = d.entries.filter((e) => e.method !== 'cash'); // transfer/QR/card need bank-checking
-          const checkedN = checkable.filter((e) => e.checked).length;
-          const left = checkable.length - checkedN;
+          const checkableM = d.methods.filter((m) => m.checkable); // transfer/QR/card/atome/… need bank-checking; cash is counted
+          const checkedN = checkableM.reduce((s, m) => s + m.checked, 0);
+          const totalN = checkableM.reduce((s, m) => s + m.count, 0);
+          const left = totalN - checkedN;
+          const grandTotal = d.methods.reduce((s, m) => s + num(m.total), 0);
           return (
             <div className="mb-4 rounded-xl border border-gray-200 bg-white p-4">
               <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Total in by method</div>
               <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
-                {METHODS.map((m) => (
+                {d.methods.map((m) => (
                   <div key={m.key}>
-                    <div className="text-xs text-gray-500">{m.icon} {m.label}</div>
-                    <div className="text-base font-semibold text-gray-900">{rm(num(d.totals?.[m.totalKey as keyof typeof d.totals]))}</div>
+                    <div className="text-xs text-gray-500">{methodIcon(m.key)} {m.label}</div>
+                    <div className="text-base font-semibold text-gray-900">{rm(num(m.total))}</div>
                   </div>
                 ))}
               </div>
               <div className="mt-3 flex justify-between border-t border-gray-100 pt-2 text-sm font-semibold">
                 <span>Total money in</span>
-                <span>{rm(METHODS.reduce((s, m) => s + num(d.totals?.[m.totalKey as keyof typeof d.totals]), 0))}</span>
+                <span>{rm(grandTotal)}</span>
               </div>
-              {checkable.length > 0 && (
+              {totalN > 0 && (
                 <div className="mt-1 flex justify-between text-sm">
                   <span className="text-gray-600">Payments checked</span>
                   <span className={left > 0 ? 'font-semibold text-amber-700' : 'font-semibold text-emerald-700'}>
-                    {checkedN}/{checkable.length}{left > 0 ? ` · ${left} to check` : ' · all done ✓'}
+                    {checkedN}/{totalN}{left > 0 ? ` · ${left} to check` : ' · all done ✓'}
                   </span>
                 </div>
               )}
@@ -136,9 +137,9 @@ export default function DailyPage() {
         })()}
 
         <div className="space-y-3">
-          {d && METHODS.map((m) => {
+          {d && d.methods.map((m) => {
             const es = d.entries.filter((e) => e.method === m.key);
-            const total = num(d.totals?.[m.totalKey as keyof typeof d.totals]);
+            const total = num(m.total);
             const lineSum = es.reduce((s, e) => s + num(e.amount), 0);
             const mismatch = es.length > 0 && Math.abs(lineSum - total) > 0.01;
             const checkedCount = es.filter((e) => e.checked).length;
@@ -147,7 +148,7 @@ export default function DailyPage() {
             return (
               <div key={m.key} className={`rounded-xl border p-4 ${cardDone ? 'border-emerald-200 bg-emerald-50/40' : 'border-gray-200 bg-white'}`}>
                 <div className="flex items-center gap-2">
-                  <span className="text-base leading-none">{m.icon}</span>
+                  <span className="text-base leading-none">{methodIcon(m.key)}</span>
                   <h2 className="text-sm font-semibold text-gray-800">{m.label}</h2>
                   {m.checkable && es.length > 0 && (
                     <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${allChecked ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>{checkedCount}/{es.length} checked</span>
