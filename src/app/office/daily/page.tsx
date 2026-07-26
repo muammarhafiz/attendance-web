@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
-import { OfficeShell, Gate, rm, ZeroCogsCard, UnpaidCard, type Home } from '@/components/office/shared';
+import { OfficeShell, Gate, rm, ZeroCogsCard, UnpaidCard, type Home, type ZeroLine } from '@/components/office/shared';
 
 type Entry = { ekey: string; method: string; label?: string | null; descp: string | null; amount: number | string; checked: boolean; checked_by: string | null; checked_at: string | null };
 type Method = { key: string; label: string; total: number | string; count: number; checked: number; checkable: boolean };
@@ -16,6 +16,7 @@ type DayCash = {
   methods: Method[];
   entries: Entry[];
   zero_cogs: { items: number; days: number };
+  zero_cogs_lines: ZeroLine[];
   unpaid: { count: number; total: number | string; top: { inv: string; customer: string | null; balance: number | string; status?: string | null; age_days?: number | null }[] };
   pi_pending: number;
   cash_counted: number | null;
@@ -204,7 +205,7 @@ export default function DailyPage() {
           })}
 
           {d && <UnpaidCard unpaid={d.unpaid} />}
-          {d && <ZeroCogsCard zero_cogs={d.zero_cogs} />}
+          {d && <ZeroCogsCard zero_cogs={d.zero_cogs} lines={d.zero_cogs_lines} />}
         </div>
       </OfficeShell>
     </Gate>

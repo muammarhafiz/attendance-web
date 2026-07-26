@@ -168,13 +168,33 @@ export function UnpaidCard({ unpaid }: { unpaid: Home['unpaid'] }) {
   );
 }
 
-export function ZeroCogsCard({ zero_cogs }: { zero_cogs: Home['zero_cogs'] }) {
+export type ZeroLine = { day: string; inv: string | null; item: string | null; code: string | null; price: number | string };
+
+export function ZeroCogsCard({ zero_cogs, lines }: { zero_cogs: Home['zero_cogs']; lines?: ZeroLine[] }) {
+  const list = lines ?? [];
   return (
     <Card title="Parts with no cost" icon="🏷️">
       {zero_cogs.items > 0 ? (
         <>
           <div className="text-sm text-gray-600"><span className="font-semibold text-amber-700">{zero_cogs.items} part{zero_cogs.items === 1 ? '' : 's'}</span> across {zero_cogs.days} day{zero_cogs.days === 1 ? '' : 's'} this month have no cost keyed.</div>
-          <p className="mt-2 text-[11px] text-gray-400">Key the cost in Niagawan so profit is correct. The <Link href="/month-end" className="text-blue-600 underline">End of month</Link> page lists which days.</p>
+          {list.length > 0 && (
+            <div className="mt-2 max-h-72 divide-y divide-gray-50 overflow-y-auto rounded-lg border border-gray-100">
+              {list.map((r, i) => (
+                <div key={`${r.inv || ''}-${i}`} className="flex items-start justify-between gap-2 px-2 py-1.5 text-xs">
+                  <div className="min-w-0">
+                    <div className="font-mono text-[11px] font-semibold text-gray-800">{r.inv || '—'}</div>
+                    <div className="truncate text-gray-600">{r.item || '—'}{r.code ? ` · ${r.code}` : ''}</div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <div className="font-medium text-gray-800">{rm(r.price)}</div>
+                    <div className="text-[10px] text-gray-400">{fmtDay(r.day)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {list.length > 0 && zero_cogs.items > list.length && <div className="mt-1 text-[11px] text-gray-400">Showing first {list.length} · {zero_cogs.items - list.length} more</div>}
+          <p className="mt-2 text-[11px] text-gray-400">Key the cost in Niagawan against each invoice above so profit is correct. The <Link href="/month-end" className="text-blue-600 underline">End of month</Link> page lists which days.</p>
         </>
       ) : <div className="text-sm text-emerald-700">All parts have a cost ✓</div>}
     </Card>
