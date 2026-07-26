@@ -164,7 +164,9 @@ function ChaseUnpaidCard() {
   );
 }
 
-type ClerkStatus = { error?: string; day: string | null; pay_total: number; pay_checked: number; cash_system: number | string; cash_counted: number | string | null; pi_pending: number; zero_cogs: number };
+type MethodStat = { total: number; checked: number };
+type ClerkStatus = { error?: string; day: string | null; methods: Record<string, MethodStat>; cash_system: number | string; cash_counted: number | string | null; pi_pending: number; zero_cogs: number };
+const CLERK_METHODS: { key: string; label: string }[] = [{ key: 'transfer', label: 'Transfer' }, { key: 'qr', label: 'QR' }, { key: 'card', label: 'Card' }];
 const klYesterdayIso = () => new Date(Date.now() + 8 * 3600e3 - 86400e3).toISOString().slice(0, 10);
 const klTodayIso = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
 const fmtDMY = (iso: string) => { const [y, m, dd] = iso.split('-'); return `${Number(dd)}/${Number(m)}/${y.slice(2)}`; };
@@ -178,7 +180,6 @@ function ClerkStatusCard() {
   const counted = s && s.cash_counted != null;
   const cashDiff = counted ? Number(s!.cash_counted) - Number(s!.cash_system) : 0;
   const cashMatches = counted && Math.abs(cashDiff) < 0.01;
-  const payDone = s && s.pay_total > 0 && s.pay_checked === s.pay_total;
   return (
     <Card title="Clerk" icon="🧑‍💼" href="/office">
       <div className="mb-2 flex items-center justify-center gap-3">
@@ -188,8 +189,12 @@ function ClerkStatusCard() {
       </div>
       {!s || s.error ? <div className="text-sm text-slate-400">—</div> : (
         <>
-          <Row k="Payments checked" v={`${s.pay_checked}/${s.pay_total}`} tone={payDone ? 'ok' : (s.pay_total > 0 ? 'warn' : undefined)} />
-          <Row k="Cash counted" v={counted ? (cashMatches ? 'matches ✓' : `${cashDiff > 0 ? 'over' : 'short'} ${rm2(Math.abs(cashDiff))}`) : 'not done'} tone={counted ? (cashMatches ? 'ok' : 'bad') : 'warn'} />
+          {CLERK_METHODS.map((m) => {
+            const ms = s.methods?.[m.key] ?? { total: 0, checked: 0 };
+            const done = ms.total > 0 && ms.checked === ms.total;
+            return <Row key={m.key} k={m.label} v={ms.total === 0 ? 'none' : `${ms.checked}/${ms.total}`} tone={ms.total === 0 ? undefined : (done ? 'ok' : 'warn')} />;
+          })}
+          <Row k="Cash" v={counted ? (cashMatches ? 'matches ✓' : `${cashDiff > 0 ? 'over' : 'short'} ${rm2(Math.abs(cashDiff))}`) : 'not counted'} tone={counted ? (cashMatches ? 'ok' : 'bad') : 'warn'} />
           <Row k="Purchase invoices to check" v={s.pi_pending} tone={s.pi_pending > 0 ? 'warn' : 'ok'} />
           <Row k="COGS no cost" v={s.zero_cogs} tone={s.zero_cogs > 0 ? 'warn' : 'ok'} />
         </>
