@@ -40,20 +40,35 @@ export async function POST(req: Request) {
 
   configureVapid(s);
 
-  // Bell content is admin-only, so only push to admins' devices.
-  const { data: adminRows } = await pushAdmin.from('staff').select('email').eq('is_admin', true);
-  const adminEmails = new Set((adminRows ?? []).map((r) => String((r as { email: string }).email).toLowerCase()));
-  const { data: allSubs } = await pushAdmin.from('push_subscriptions').select('endpoint, p256dh, auth, email');
-  const subs = (allSubs ?? []).filter((x) => adminEmails.has(String((x as { email: string }).email).toLowerCase())) as
-    (import('@/lib/pushServer').SubRow & { email: string })[];
+  // Two audiences: most bell content is OWNER-ONLY; the "PI created" item also goes to the office team
+  // (Manager + Office — anyone with month_end access). Everything else stays owner-only.
+  const { data: staffRows } = await pushAdmin.from('staff').select('email, is_admin, position').is('archived_at', null);
+  const { data: paRows } = await pushAdmin.from('position_access').select('position').eq('feature', 'month_end').eq('allowed', true);
+  const officePositions = new Set((paRows ?? []).map((r) => String((r as { position: string }).position)));
+  const adminEmails = new Set<string>();
+  const officeEmails = new Set<string>(); // Owner + Manager + Office (pinv_created audience)
+  for (const r of (staffRows ?? []) as { email: string | null; is_admin: boolean | null; position: string | null }[]) {
+    const e = String(r.email ?? '').toLowerCase();
+    if (!e) continue;
+    if (r.is_admin) { adminEmails.add(e); officeEmails.add(e); }
+    else if (r.position && officePositions.has(r.position)) officeEmails.add(e);
+  }
 
-  if (subs.length === 0) return NextResponse.json({ sent: 0, items: items.length, devices: 0 });
+  const { data: allSubs } = await pushAdmin.from('push_subscriptions').select('endpoint, p256dh, auth, email');
+  type Sub = import('@/lib/pushServer').SubRow & { email: string };
+  const subsFor = (emails: Set<string>) => ((allSubs ?? []) as Sub[]).filter((x) => emails.has(String(x.email).toLowerCase()));
+  const adminSubs = subsFor(adminEmails);
+  const officeSubs = subsFor(officeEmails);
+
+  if (adminSubs.length === 0 && officeSubs.length === 0) return NextResponse.json({ sent: 0, items: items.length, devices: 0 });
 
   const base = s.app_base_url ?? '';
   let sent = 0;
   const dead = new Set<string>();
 
   for (const it of items) {
+    const targetSubs = it.type === 'pinv_created' ? officeSubs : adminSubs;
+    if (targetSubs.length === 0) continue;
     const payload = JSON.stringify({
       title: LABEL[it.type] ?? 'Zordaq alert',
       body: `${it.who} · ${it.detail}`,
@@ -61,14 +76,14 @@ export async function POST(req: Request) {
       tag: `${it.type}:${it.id}`,
       icon: '/icon.png',
     });
-    const results = await Promise.all(subs.map((sub) => sendToSubscription(sub, payload)));
+    const results = await Promise.all(targetSubs.map((sub) => sendToSubscription(sub, payload)));
     results.forEach((r, i) => {
       if (r.ok) sent++;
-      if (r.dead) dead.add(subs[i].endpoint);
+      if (r.dead) dead.add(targetSubs[i].endpoint);
     });
   }
 
   if (dead.size) await pushAdmin.from('push_subscriptions').delete().in('endpoint', [...dead]);
 
-  return NextResponse.json({ sent, items: items.length, devices: subs.length, pruned: dead.size });
+  return NextResponse.json({ sent, items: items.length, adminDevices: adminSubs.length, officeDevices: officeSubs.length, pruned: dead.size });
 }
