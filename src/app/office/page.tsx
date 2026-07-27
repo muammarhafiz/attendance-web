@@ -30,10 +30,10 @@ type DailySummary = {
   day: string;
   pi_pending: number;
   zero_cogs: number;
-  methods: Record<string, { total: number; checked: number; label?: string | null }>;
+  methods: Record<string, { total: number; checked: number; kiv: number; label?: string | null }>;
   cash: { system: number | string; counted: number | string | null };
 };
-type DState = 'ok' | 'bad';
+type DState = 'ok' | 'bad' | 'kiv';
 type DRow = { label: string; value: string; state: DState };
 const CANON_METHODS = [{ key: 'transfer', label: 'Bank transfer' }, { key: 'qr', label: 'QR' }, { key: 'card', label: 'Card' }];
 
@@ -54,7 +54,11 @@ function dailyRows(s: DailySummary): DRow[] {
     shown.add(key);
     const st = m[key];
     if (!st || st.total === 0) return { label, value: 'none', state: 'ok' };
-    return { label, value: `${st.checked}/${st.total} checked`, state: st.checked >= st.total ? 'ok' : 'bad' };
+    const kiv = st.kiv || 0;
+    const backlog = st.total - st.checked - kiv;
+    if (backlog > 0) return { label, value: `${st.checked}/${st.total} checked${kiv > 0 ? ` · ${kiv} KIV` : ''}`, state: 'bad' };
+    if (kiv > 0) return { label, value: `${kiv} KIV (checking)`, state: 'kiv' };
+    return { label, value: `${st.checked}/${st.total} checked`, state: 'ok' };
   };
   for (const c of CANON_METHODS) rows.push(methodRow(c.key, c.label));
   for (const key of Object.keys(m)) {
@@ -93,14 +97,16 @@ function DailyStatusCard() {
   };
 
   const rows = s && !s.error ? dailyRows(s) : [];
-  const backlog = rows.some((r) => r.state === 'bad');
+  const hasBad = rows.some((r) => r.state === 'bad');
+  const hasKiv = rows.some((r) => r.state === 'kiv');
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-5">
       <div className="mb-2 flex items-center gap-2">
         <span className="text-2xl leading-none">📅</span>
         <h2 className="text-lg font-semibold text-gray-900">Daily</h2>
-        {backlog && <span className="h-2 w-2 rounded-full bg-rose-500" title="Has backlog" />}
+        {hasBad ? <span className="h-2 w-2 rounded-full bg-rose-500" title="Has backlog" />
+          : hasKiv ? <span className="h-2 w-2 rounded-full bg-amber-500" title="Items in KIV" /> : null}
         <Link href="/office/daily" className="ml-auto text-xs font-medium text-blue-600 hover:underline">Open →</Link>
       </div>
       <div className="mb-3 flex items-center justify-center gap-3">
@@ -112,13 +118,17 @@ function DailyStatusCard() {
         <div className="py-2 text-center text-sm text-gray-400">Loading…</div>
       ) : (
         <ul className="space-y-1.5">
-          {rows.map((r, i) => (
-            <li key={i} className="flex items-center gap-2 text-sm">
-              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${r.state === 'bad' ? 'bg-rose-500' : 'bg-emerald-500'}`} />
-              <span className="text-gray-600">{r.label}</span>
-              <span className={`ml-auto font-medium ${r.state === 'bad' ? 'text-rose-600' : 'text-emerald-600'}`}>{r.value}</span>
-            </li>
-          ))}
+          {rows.map((r, i) => {
+            const dot = r.state === 'bad' ? 'bg-rose-500' : r.state === 'kiv' ? 'bg-amber-500' : 'bg-emerald-500';
+            const txt = r.state === 'bad' ? 'text-rose-600' : r.state === 'kiv' ? 'text-amber-600' : 'text-emerald-600';
+            return (
+              <li key={i} className="flex items-center gap-2 text-sm">
+                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
+                <span className="text-gray-600">{r.label}</span>
+                <span className={`ml-auto font-medium ${txt}`}>{r.value}</span>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
