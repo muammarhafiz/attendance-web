@@ -21,6 +21,18 @@ type NewItem = { sku: string; code: string | null; descp: string | null; price: 
 
 const OPEN = new Set(['pending', 'approved', 'created']);
 const SHOW_CAP = 300; // catalog rows rendered at once — search to narrow
+// Best-guess category tag for a NEW catalog item, from its description — a scan aid on the
+// New-items card (oil brands win over an example vehicle named in an oil's description).
+function guessCategory(descp: string | null): string {
+  const d = (descp || '').toUpperCase();
+  if (d.includes('MANNOL')) return 'Oil - Mannol';
+  if (d.includes('LIQUI')) return 'Oil - Liquimoly';
+  if (d.includes('GULF')) return 'Oil - Gulf';
+  if (d.includes('SHELL')) return 'Oil - Shell';
+  if (/(^|[^A-Z0-9])(X[ -]?70|X[ -]?50|S[ -]?70)([^0-9]|$)/.test(d)) return 'Proton';
+  return 'Other';
+}
+
 // Round the order up to whole cartons (Gulf = 4 per carton). No carton set -> order exact units.
 function orderQty(need: number, carton: number | null): number {
   if (need <= 0) return 0;
@@ -516,13 +528,18 @@ export default function InventoryV4Page() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-emerald-50 bg-white">
-                  {newItems.map((it) => (
+                  {newItems.map((it) => {
+                    const cat = guessCategory(it.descp);
+                    return (
                     <tr key={it.sku} className={newBusy === it.sku ? 'opacity-50' : ''}>
                       <td className="whitespace-nowrap px-3 py-1.5 text-xs text-gray-500">
                         {new Date(it.first_seen).toLocaleString('en-MY', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kuala_Lumpur' })}
                       </td>
                       <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-gray-900">{it.code || '—'}</td>
-                      <td className="px-3 py-1.5 text-gray-700">{it.descp || '—'}</td>
+                      <td className="px-3 py-1.5 text-gray-700">
+                        {it.descp || '—'}
+                        {cat !== 'Other' && <span className="ml-1.5 inline-block whitespace-nowrap rounded bg-blue-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-blue-700">{cat}</span>}
+                      </td>
                       <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-gray-700">{it.price == null ? '—' : Number(it.price)}</td>
                       <td className="whitespace-nowrap px-3 py-1.5 text-right">
                         <select
@@ -538,7 +555,8 @@ export default function InventoryV4Page() {
                           className="rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 disabled:opacity-50">Dismiss</button>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
               <p className="px-3 py-2 text-[11px] text-emerald-700/70">New products staff created in Niagawan. <b>Add to card</b> to track it for reorder, or <b>Dismiss</b> if it&apos;s a one-off. Updated on each product sync (nightly).</p>
