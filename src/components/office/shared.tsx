@@ -19,9 +19,11 @@ export type Home = {
   pi_pending: number;
   po_pending: number;
   po_list: PoSuggestion[];
+  po_on_order: OnOrderPo[];
 };
 
 export type PoSuggestion = { id: number; supplier: string; n_items: number };
+export type OnOrderPo = { id: number; supplier: string; days: number; items: { qty: string; desc: string }[] };
 
 export const rm = (x: unknown) => 'RM ' + Number(x || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const rm0 = (x: unknown) => 'RM ' + Number(x || 0).toLocaleString('en-MY', { maximumFractionDigits: 0 });
@@ -151,6 +153,42 @@ export function PurchaseOrderCard({ list }: { list: PoSuggestion[] }) {
         ) : <div className="mt-1 text-xs text-emerald-700">No purchase orders waiting ✓</div>}
       </div>
     </Link>
+  );
+}
+
+// POs already sent to the supplier, waiting to be delivered — shows the items + how long they've waited.
+export function WaitingDeliveryCard({ list }: { list: OnOrderPo[] }) {
+  return (
+    <Card title="Waiting for delivery" icon="🚚">
+      {list.length === 0 ? (
+        <div className="text-sm text-gray-400">Nothing on order right now.</div>
+      ) : (
+        <>
+          <p className="mb-2 text-[11px] text-gray-400">POs already sent to the supplier — chase them if the parts are taking too long.</p>
+          <div className="space-y-2">
+            {list.map((p) => {
+              const dayTone = p.days >= 7 ? 'text-rose-600' : p.days >= 3 ? 'text-amber-600' : 'text-gray-400';
+              return (
+                <div key={p.id} className="rounded-lg border border-gray-100 p-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-sm font-medium text-gray-800">{p.supplier}</span>
+                    <span className={`shrink-0 text-[11px] font-medium ${dayTone}`}>ordered {p.days} day{p.days === 1 ? '' : 's'} ago</span>
+                  </div>
+                  <ul className="mt-1 divide-y divide-gray-50">
+                    {p.items.map((it, i) => (
+                      <li key={i} className="flex items-center justify-between gap-2 py-0.5 text-xs">
+                        <span className="truncate text-gray-600">{it.desc || '(item)'}</span>
+                        <span className="shrink-0 text-gray-400">×{it.qty}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </Card>
   );
 }
 
