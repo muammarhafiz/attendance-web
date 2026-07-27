@@ -25,7 +25,7 @@ export type Home = {
 
 export type PoSuggestion = { id: number; supplier: string; n_items: number };
 export type OnOrderPo = { id: number; supplier: string; days: number; items: { qty: string; desc: string }[] };
-export type WatchItem = { code: string; item: string | null; qty: number | string; sold_on: string | null };
+export type WatchItem = { supplier: string; code: string; item: string | null; qty: number | string; sold_on: string | null };
 
 export const rm = (x: unknown) => 'RM ' + Number(x || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const rm0 = (x: unknown) => 'RM ' + Number(x || 0).toLocaleString('en-MY', { maximumFractionDigits: 0 });
@@ -197,28 +197,45 @@ export function WaitingDeliveryCard({ list }: { list: OnOrderPo[] }) {
 // Watchlist tracker: inventory group-card ("watchlist") items that have SOLD and aren't on a PO yet.
 // A daily-refreshed reorder nudge — creating a PO for an item clears it; it returns if it sells again.
 export function WatchlistCard({ list }: { list: WatchItem[] }) {
+  // Group into supplier sections, preserving the RPC order (already supplier-sorted, newest-sold first).
+  const groups: { supplier: string; items: WatchItem[] }[] = [];
+  for (const w of list) {
+    const last = groups[groups.length - 1];
+    if (last && last.supplier === w.supplier) last.items.push(w);
+    else groups.push({ supplier: w.supplier, items: [w] });
+  }
   return (
     <Card title="Watchlist — sold" icon="👀">
       {list.length === 0 ? (
         <div className="text-sm text-emerald-700">Nothing on the watchlist has sold since it was last ordered ✓</div>
       ) : (
         <>
-          <div className="mb-2 text-sm text-gray-600"><span className="font-semibold text-gray-900">{list.length}</span> watchlist item{list.length === 1 ? '' : 's'} sold — not on a PO yet.</div>
-          <div className="max-h-96 divide-y divide-gray-50 overflow-y-auto rounded-lg border border-gray-100">
-            {list.map((w) => (
-              <div key={w.code} className="flex items-center justify-between gap-2 px-2 py-1.5 text-xs">
-                <div className="min-w-0">
-                  <div className="truncate text-gray-700">{w.item || w.code}</div>
-                  <div className="truncate font-mono text-[11px] text-gray-400">{w.code}</div>
+          <div className="mb-2 text-sm text-gray-600"><span className="font-semibold text-gray-900">{list.length}</span> watchlist item{list.length === 1 ? '' : 's'} sold across {groups.length} supplier{groups.length === 1 ? '' : 's'} — not on a PO yet.</div>
+          <div className="max-h-96 space-y-2 overflow-y-auto rounded-lg border border-gray-100 p-1">
+            {groups.map((g) => (
+              <div key={g.supplier}>
+                <div className="sticky top-0 z-10 flex items-center gap-2 rounded bg-gray-100 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+                  <span className="truncate">{g.supplier}</span>
+                  <span className="ml-auto shrink-0 rounded-full bg-white px-1.5 text-[10px] font-medium text-gray-500">{g.items.length}</span>
                 </div>
-                <div className="shrink-0 text-right">
-                  <div className="font-semibold text-gray-800">sold {Number(w.qty)}</div>
-                  <div className="text-[10px] text-gray-400">{w.sold_on ? fmtDay(w.sold_on) : '—'}</div>
+                <div className="divide-y divide-gray-50">
+                  {g.items.map((w, i) => (
+                    <div key={`${w.code}-${i}`} className="flex items-center justify-between gap-2 px-2 py-1.5 text-xs">
+                      <div className="min-w-0">
+                        <div className="truncate text-gray-700">{w.item || w.code}</div>
+                        <div className="truncate font-mono text-[11px] text-gray-400">{w.code}</div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <div className="font-semibold text-gray-800">sold {Number(w.qty)}</div>
+                        <div className="text-[10px] text-gray-400">{w.sold_on ? fmtDay(w.sold_on) : '—'}</div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}
           </div>
-          <p className="mt-2 text-[11px] text-gray-400">Watchlist items that sold (last 30 days) and aren&apos;t on a PO yet — refreshed nightly (~8pm). Create a <Link href="/niagawan/inventory-v4" className="text-blue-600 underline">purchase order</Link> for an item and it clears from here; it returns if it sells again.</p>
+          <p className="mt-2 text-[11px] text-gray-400">Watchlist items that sold (last 30 days) and aren&apos;t on a PO yet, grouped by supplier — refreshed nightly (~8pm). Create a <Link href="/niagawan/inventory-v4" className="text-blue-600 underline">purchase order</Link> for an item and it clears from here; it returns if it sells again.</p>
         </>
       )}
     </Card>
