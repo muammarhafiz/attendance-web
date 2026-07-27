@@ -10,8 +10,8 @@ import { supabase } from '@/lib/supabaseClient';
 
 type NavItem = { href: string; label: string; match?: string; badge?: number };
 type NotifItem = { type: string; id: string; who: string; detail: string; when: string; href: string };
-const NOTIF_ICON: Record<string, string> = { offday: '🌴', halfday: '🕧', advance: '💵', mc: '📄', po: '📦', pinv: '📥', stuckcar: '🚗', debt: '🧾', lowstock: '📉' };
-const NOTIF_LABEL: Record<string, string> = { offday: 'off-day request', halfday: 'half-day request', advance: 'advance request', mc: 'MC', po: 'purchase order', pinv: 'purchase invoice', stuckcar: 'in shop > 3 days', debt: 'newly overdue', lowstock: 'to restock' };
+const NOTIF_ICON: Record<string, string> = { offday: '🌴', halfday: '🕧', advance: '💵', mc: '📄', po: '📦', pinv: '📥', pinv_created: '✅', stuckcar: '🚗', debt: '🧾', lowstock: '📉' };
+const NOTIF_LABEL: Record<string, string> = { offday: 'off-day request', halfday: 'half-day request', advance: 'advance request', mc: 'MC', po: 'purchase order', pinv: 'purchase invoice', pinv_created: 'created in Niagawan ✓', stuckcar: 'in shop > 3 days', debt: 'newly overdue', lowstock: 'to restock' };
 // Request types the owner can approve/reject right in the bell (each has approve_*/reject_* RPCs).
 const ACTIONABLE = new Set(['offday', 'halfday', 'advance', 'mc']);
 function relTime(iso: string): string {
@@ -27,10 +27,9 @@ export default function NavBar() {
   const pathname = usePathname();
   const router = useRouter();
   const [email, setEmail] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState<boolean>(false); // owner (full access) — gates the bell
   const [canBoard, setCanBoard] = useState<boolean>(false); // can open the Workshop board
   const [access, setAccess] = useState<Record<string, boolean>>({}); // per-feature flags from my_access()
-  const [counts, setCounts] = useState<{ mc: number; offday: number; halfday: number; advance: number; po: number; pinv: number }>({ mc: 0, offday: 0, halfday: 0, advance: 0, po: 0, pinv: 0 });
+  const [counts, setCounts] = useState<{ mc: number; offday: number; halfday: number; advance: number; po: number; pinv: number; pinv_created: number }>({ mc: 0, offday: 0, halfday: 0, advance: 0, po: 0, pinv: 0, pinv_created: 0 });
   const [items, setItems] = useState<NotifItem[]>([]);
   const [acting, setActing] = useState<string | null>(null);
   const [bellOpen, setBellOpen] = useState(false);
@@ -47,8 +46,8 @@ export default function NavBar() {
       if (userEmail) {
         const { data } = await supabase.rpc('my_access');
         const a = (data ?? {}) as Record<string, boolean>;
-        setAccess(a); setIsAdmin(!!a.owner); setCanBoard(!!a.workshop);
-      } else { setIsAdmin(false); setCanBoard(false); setAccess({}); }
+        setAccess(a); setCanBoard(!!a.workshop);
+      } else { setCanBoard(false); setAccess({}); }
     };
     readAuthAndRole();
     const { data } = supabase.auth.onAuthStateChange((_e, session) => {
@@ -57,34 +56,37 @@ export default function NavBar() {
       if (userEmail) {
         supabase.rpc('my_access').then(({ data }) => {
           const a = (data ?? {}) as Record<string, boolean>;
-          setAccess(a); setIsAdmin(!!a.owner); setCanBoard(!!a.workshop);
+          setAccess(a); setCanBoard(!!a.workshop);
         });
-      } else { setIsAdmin(false); setCanBoard(false); setAccess({}); }
+      } else { setCanBoard(false); setAccess({}); }
     });
     unsub = data?.subscription ?? null;
     return () => unsub?.unsubscribe();
   }, []);
 
+  // Owner sees the full feed; Office/Manager (month_end) see ONLY the "PI created in Niagawan" items.
+  const canBell = !!access.owner || !!access.month_end;
+
   const reloadFeed = useCallback(async () => {
-    if (!isAdmin) { setCounts({ mc: 0, offday: 0, halfday: 0, advance: 0, po: 0, pinv: 0 }); setItems([]); return; }
+    if (!canBell) { setCounts({ mc: 0, offday: 0, halfday: 0, advance: 0, po: 0, pinv: 0, pinv_created: 0 }); setItems([]); return; }
     // Don't hit the DB from a hidden/backgrounded tab; we refresh on focus (listeners below).
     if (typeof document !== 'undefined' && document.hidden) return;
     const { data } = await supabase.rpc('notification_feed'); // one round-trip: counts + items
-    const d = (data ?? {}) as { counts?: { mc?: number; offday?: number; halfday?: number; advance?: number; po?: number; pinv?: number }; items?: NotifItem[] };
+    const d = (data ?? {}) as { counts?: { mc?: number; offday?: number; halfday?: number; advance?: number; po?: number; pinv?: number; pinv_created?: number }; items?: NotifItem[] };
     const c = d.counts ?? {};
-    setCounts({ mc: c.mc ?? 0, offday: c.offday ?? 0, halfday: c.halfday ?? 0, advance: c.advance ?? 0, po: c.po ?? 0, pinv: c.pinv ?? 0 });
+    setCounts({ mc: c.mc ?? 0, offday: c.offday ?? 0, halfday: c.halfday ?? 0, advance: c.advance ?? 0, po: c.po ?? 0, pinv: c.pinv ?? 0, pinv_created: c.pinv_created ?? 0 });
     setItems(Array.isArray(d.items) ? (d.items as NotifItem[]) : []);
-  }, [isAdmin]);
+  }, [canBell]);
 
   useEffect(() => {
-    if (!isAdmin) { setCounts({ mc: 0, offday: 0, halfday: 0, advance: 0, po: 0, pinv: 0 }); setItems([]); return; }
+    if (!canBell) { setCounts({ mc: 0, offday: 0, halfday: 0, advance: 0, po: 0, pinv: 0, pinv_created: 0 }); setItems([]); return; }
     reloadFeed();
     const id = setInterval(reloadFeed, 60000);
     const onVisible = () => { if (typeof document === 'undefined' || !document.hidden) reloadFeed(); };
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onVisible);
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('focus', onVisible); };
-  }, [isAdmin, reloadFeed]);
+  }, [canBell, reloadFeed]);
 
   // Approve / reject a staff request right from the bell (same RPCs the pages use).
   const act = useCallback(async (item: NotifItem, action: 'approve' | 'reject') => {
@@ -192,7 +194,7 @@ export default function NavBar() {
 
         {/* Right side */}
         <div className="flex shrink-0 items-center gap-2">
-          {email && isAdmin && (
+          {email && canBell && (
             <div className="relative">
               <button onClick={openBell} aria-label="Notifications" className="relative inline-flex h-10 w-10 items-center justify-center rounded-md text-slate-700 hover:bg-slate-100">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
@@ -255,7 +257,7 @@ export default function NavBar() {
             ) : (
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
             )}
-            {!open && isAdmin && (counts.mc + counts.offday + counts.halfday + counts.advance + counts.po + counts.pinv) > 0 && (
+            {!open && canBell && (counts.mc + counts.offday + counts.halfday + counts.advance + counts.po + counts.pinv + counts.pinv_created) > 0 && (
               <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-rose-500" />
             )}
           </button>
