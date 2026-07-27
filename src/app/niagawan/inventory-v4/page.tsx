@@ -17,6 +17,7 @@ type Item = { sku: string; code: string | null; descp: string | null; balance: n
 type PoSugg = { id: number; source: string | null; supplier_id: string | null; supplier_name: string | null; status: string; po_number: string | null; po_id: string | null; note: string | null };
 type PoLine = { id: number; suggestion_id: number; sku: string | null; code: string | null; descp: string | null; ordered_qty: number; received_qty: number };
 type Supplier = { creditor_id: string; name: string };
+type NewItem = { sku: string; code: string | null; descp: string | null; price: number | null; first_seen: string };
 
 const OPEN = new Set(['pending', 'approved', 'created']);
 const SHOW_CAP = 300; // catalog rows rendered at once — search to narrow
@@ -44,6 +45,9 @@ export default function InventoryV4Page() {
   const [editingLine, setEditingLine] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [newItems, setNewItems] = useState<NewItem[]>([]); // catalog items created in Niagawan, not tracked yet
+  const [newBusy, setNewBusy] = useState<string | null>(null); // sku being added/dismissed
+  const [showNew, setShowNew] = useState(false); // New-items card collapsed by default
   const [selected, setSelected] = useState<Set<string>>(new Set()); // sku set
   const [targetGroupId, setTargetGroupId] = useState<number | ''>('');
   const [inserting, setInserting] = useState(false);
@@ -109,6 +113,12 @@ export default function InventoryV4Page() {
     setSuppliers((data ?? []) as Supplier[]);
   }, []);
 
+  // New items = products created in Niagawan, not yet in any card (nor the old min-stock list).
+  const loadNewItems = useCallback(async () => {
+    const { data } = await supabase.rpc('new_catalog_items');
+    setNewItems((Array.isArray(data) ? data : []) as NewItem[]);
+  }, []);
+
   const PO_COLS = 'id,source,supplier_id,supplier_name,status,po_number,po_id,note';
   // Open POs (any card) -> so we don't re-suggest what's already on the way.
   const reloadPOs = useCallback(async () => {
@@ -131,8 +141,8 @@ export default function InventoryV4Page() {
   }, []);
 
   useEffect(() => {
-    if (isAdmin) { loadGroups(); loadGroupItems(); loadCatalog(); loadFreshness(); loadAvgFeed(); loadSuppliers(); reloadPOs(); }
-  }, [isAdmin, loadGroups, loadGroupItems, loadCatalog, loadFreshness, loadAvgFeed, loadSuppliers, reloadPOs]);
+    if (isAdmin) { loadGroups(); loadGroupItems(); loadCatalog(); loadFreshness(); loadAvgFeed(); loadSuppliers(); loadNewItems(); reloadPOs(); }
+  }, [isAdmin, loadGroups, loadGroupItems, loadCatalog, loadFreshness, loadAvgFeed, loadSuppliers, loadNewItems, reloadPOs]);
 
   useEffect(() => () => { if (refreshPoll.current) clearInterval(refreshPoll.current); if (avgPoll.current) clearInterval(avgPoll.current); if (supPoll.current) clearInterval(supPoll.current); }, []);
 
@@ -436,6 +446,24 @@ export default function InventoryV4Page() {
     await loadGroupItems();
   }, [targetGroupId, selected, itemBySku, loadGroupItems]);
 
+  // ---------------- New items (created in Niagawan) → add to a card / dismiss ----------------
+  const addNewToCard = useCallback(async (it: NewItem, groupId: number) => {
+    setNewBusy(it.sku);
+    const { error } = await supabase.from('inventory_po_group_items')
+      .upsert({ group_id: groupId, sku: it.sku, code: it.code ?? null, descp: it.descp ?? null }, { onConflict: 'group_id,sku', ignoreDuplicates: true });
+    setNewBusy(null);
+    if (error) { window.alert('Could not add: ' + error.message); return; }
+    await Promise.all([loadGroupItems(), loadNewItems()]); // once carded, it drops off the new-items list
+  }, [loadGroupItems, loadNewItems]);
+
+  const dismissNew = useCallback(async (sku: string) => {
+    setNewBusy(sku);
+    const { error } = await supabase.rpc('dismiss_new_item', { p_sku: sku });
+    setNewBusy(null);
+    if (error) { window.alert('Could not dismiss: ' + error.message); return; }
+    await loadNewItems();
+  }, [loadNewItems]);
+
   if (isAdmin === null) return <div className="text-sm text-gray-500">Checking…</div>;
   if (!isAdmin) return <div className="text-sm text-gray-600">You don&apos;t have access to this page.</div>;
 
@@ -464,6 +492,60 @@ export default function InventoryV4Page() {
       </div>
 
       {loading && <div className="text-sm text-gray-500">Loading…</div>}
+
+      {/* NEW ITEMS — products created in Niagawan, not tracked in any card yet. Add to a card or dismiss. */}
+      {newItems.length > 0 && (
+        <div className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50/40">
+          <button onClick={() => setShowNew((v) => !v)} className="flex w-full items-center gap-2 px-4 py-2.5 text-left">
+            <span className="text-base leading-none">🆕</span>
+            <span className="text-sm font-semibold text-emerald-900">New in Niagawan</span>
+            <span className="rounded-full bg-emerald-600 px-1.5 py-0.5 text-xs font-semibold text-white">{newItems.length}</span>
+            <span className="hidden text-xs font-normal text-emerald-700/70 sm:inline">items created in Niagawan, not tracked yet</span>
+            <span className="ml-auto text-xs text-emerald-700">{showNew ? '▲ hide' : '▼ review'}</span>
+          </button>
+          {showNew && (
+            <div className="max-h-[28rem] overflow-auto border-t border-emerald-100">
+              <table className="min-w-full divide-y divide-emerald-100 text-sm">
+                <thead className="sticky top-0 bg-emerald-50 text-left text-emerald-800">
+                  <tr>
+                    <th className="px-3 py-2 font-semibold">Seen</th>
+                    <th className="px-3 py-2 font-semibold">Item Code</th>
+                    <th className="px-3 py-2 font-semibold">Item Name</th>
+                    <th className="px-3 py-2 text-right font-semibold">Price</th>
+                    <th className="px-3 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-emerald-50 bg-white">
+                  {newItems.map((it) => (
+                    <tr key={it.sku} className={newBusy === it.sku ? 'opacity-50' : ''}>
+                      <td className="whitespace-nowrap px-3 py-1.5 text-xs text-gray-500">
+                        {new Date(it.first_seen).toLocaleString('en-MY', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kuala_Lumpur' })}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-gray-900">{it.code || '—'}</td>
+                      <td className="px-3 py-1.5 text-gray-700">{it.descp || '—'}</td>
+                      <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-gray-700">{it.price == null ? '—' : Number(it.price)}</td>
+                      <td className="whitespace-nowrap px-3 py-1.5 text-right">
+                        <select
+                          value=""
+                          disabled={newBusy === it.sku || groups.length === 0}
+                          onChange={(e) => { const g = Number(e.target.value); if (g) addNewToCard(it, g); }}
+                          title={groups.length === 0 ? 'Add a card first' : 'Add this item to a card'}
+                          className="mr-1 rounded-md border border-emerald-300 bg-white px-1.5 py-1 text-xs text-emerald-800 disabled:opacity-50">
+                          <option value="">Add to card…</option>
+                          {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                        </select>
+                        <button onClick={() => dismissNew(it.sku)} disabled={newBusy === it.sku}
+                          className="rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 disabled:opacity-50">Dismiss</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="px-3 py-2 text-[11px] text-emerald-700/70">New products staff created in Niagawan. <b>Add to card</b> to track it for reorder, or <b>Dismiss</b> if it&apos;s a one-off. Updated on each product sync (nightly).</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {groups.map((g) => {
         const rows = groupItems.filter((gi) => gi.group_id === g.id);
