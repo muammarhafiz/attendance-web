@@ -6,8 +6,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { OfficeShell, Gate, rm, ZeroCogsCard, UnpaidCard, type Home, type ZeroLine } from '@/components/office/shared';
 
-type Entry = { ekey: string; method: string; label?: string | null; descp: string | null; amount: number | string; checked: boolean; checked_by: string | null; checked_at: string | null };
-type Method = { key: string; label: string; total: number | string; count: number; checked: number; checkable: boolean };
+type Entry = { ekey: string; method: string; label?: string | null; descp: string | null; amount: number | string; checked: boolean; kiv: boolean; note: string | null; checked_by: string | null; checked_at: string | null };
+type Method = { key: string; label: string; total: number | string; count: number; checked: number; kiv: number; checkable: boolean };
 type DayCash = {
   error?: string;
   day: string;
@@ -35,6 +35,7 @@ export default function DailyPage() {
   const [d, setD] = useState<DayCash | null>(null);
   const [loading, setLoading] = useState(true);
   const [cashInput, setCashInput] = useState(''); // what the clerk keys in as counted cash
+  const [noteDraft, setNoteDraft] = useState<Record<string, string>>({}); // per-line KIV note being typed
 
   useEffect(() => {
     (async () => {
@@ -66,6 +67,13 @@ export default function DailyPage() {
     if (error) load();
   }, [load]);
 
+  // Mark a payment line KIV ("keep in view") while the supervisor checks it, with an optional note.
+  const setKiv = useCallback(async (ekey: string, kiv: boolean, note: string | null) => {
+    setD((prev) => (prev ? { ...prev, entries: prev.entries.map((e) => (e.ekey === ekey ? { ...e, kiv, note: kiv ? note : null } : e)) } : prev));
+    const { error } = await supabase.rpc('clerk_set_entry_kiv', { p_ekey: ekey, p_kiv: kiv, p_note: kiv ? note : null });
+    if (error) load();
+  }, [load]);
+
   const saveCashCount = useCallback(async (raw: string, total: number) => {
     const v = raw.trim() === '' ? null : Number(raw);
     const valid = v != null && Number.isFinite(v) && v >= 0;
@@ -86,13 +94,14 @@ export default function DailyPage() {
             className="rounded-lg border border-gray-300 px-2 py-1 text-sm" />
           <button onClick={() => shiftDay(1)} disabled={day >= klToday()} aria-label="Next day" className="rounded-md border border-gray-300 px-2.5 py-1 hover:bg-gray-50 disabled:opacity-40">▶</button>
         </div>
-        <p className="mb-4 text-sm text-gray-500">Tick each transfer / QR / card payment once you confirm it&rsquo;s in the bank, then count the cash.</p>
+        <p className="mb-4 text-sm text-gray-500">Tick each transfer / QR / card payment once it&rsquo;s in the bank, then count the cash. If one looks wrong, tap <span className="font-semibold text-amber-700">KIV</span> and note it — the supervisor will check it.</p>
 
         {d && (() => {
           const checkableM = d.methods.filter((m) => m.checkable); // transfer/QR/card/atome/… need bank-checking; cash is counted
           const checkedN = checkableM.reduce((s, m) => s + m.checked, 0);
+          const kivN = checkableM.reduce((s, m) => s + (m.kiv || 0), 0);
           const totalN = checkableM.reduce((s, m) => s + m.count, 0);
-          const left = totalN - checkedN;
+          const left = totalN - checkedN - kivN;
           const grandTotal = d.methods.reduce((s, m) => s + num(m.total), 0);
           return (
             <div className="mb-4 rounded-xl border border-gray-200 bg-white p-4">
@@ -112,8 +121,8 @@ export default function DailyPage() {
               {totalN > 0 && (
                 <div className="mt-1 flex justify-between text-sm">
                   <span className="text-gray-600">Payments checked</span>
-                  <span className={left > 0 ? 'font-semibold text-amber-700' : 'font-semibold text-emerald-700'}>
-                    {checkedN}/{totalN}{left > 0 ? ` · ${left} to check` : ' · all done ✓'}
+                  <span className={`font-semibold ${left > 0 || kivN > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
+                    {checkedN}/{totalN}{kivN > 0 ? ` · ${kivN} KIV` : ''}{left > 0 ? ` · ${left} to check` : kivN > 0 ? '' : ' · all done ✓'}
                   </span>
                 </div>
               )}
@@ -128,15 +137,23 @@ export default function DailyPage() {
             const lineSum = es.reduce((s, e) => s + num(e.amount), 0);
             const mismatch = es.length > 0 && Math.abs(lineSum - total) > 0.01;
             const checkedCount = es.filter((e) => e.checked).length;
+            const kivCount = es.filter((e) => e.kiv && !e.checked).length;
+            const backlog = m.checkable ? es.length - checkedCount - kivCount : 0; // unchecked & not KIV
             const allChecked = m.checkable && es.length > 0 && checkedCount === es.length;
-            const cardDone = m.key === 'cash' ? (d.cash_counted != null && Math.abs(Number(d.cash_counted) - total) < 0.01) : allChecked;
+            const parked = m.checkable && es.length > 0 && backlog === 0 && kivCount > 0; // all resolved, some waiting on KIV
+            const cashDone = m.key === 'cash' && d.cash_counted != null && Math.abs(Number(d.cash_counted) - total) < 0.01;
+            const border = m.key === 'cash'
+              ? (cashDone ? 'border-emerald-200 bg-emerald-50/40' : 'border-gray-200 bg-white')
+              : allChecked ? 'border-emerald-200 bg-emerald-50/40'
+              : parked ? 'border-amber-200 bg-amber-50/40'
+              : 'border-gray-200 bg-white';
             return (
-              <div key={m.key} className={`rounded-xl border p-4 ${cardDone ? 'border-emerald-200 bg-emerald-50/40' : 'border-gray-200 bg-white'}`}>
+              <div key={m.key} className={`rounded-xl border p-4 ${border}`}>
                 <div className="flex items-center gap-2">
                   <span className="text-base leading-none">{methodIcon(m.key)}</span>
                   <h2 className="text-sm font-semibold text-gray-800">{m.label}</h2>
                   {m.checkable && es.length > 0 && (
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${allChecked ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>{checkedCount}/{es.length} checked</span>
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${allChecked ? 'bg-emerald-100 text-emerald-700' : parked ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>{checkedCount}/{es.length} checked{kivCount > 0 ? ` · ${kivCount} KIV` : ''}</span>
                   )}
                   <span className="ml-auto text-right">
                     {m.key === 'card' && <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Settlement</span>}
@@ -166,13 +183,28 @@ export default function DailyPage() {
                 {es.length > 0 ? (
                   <div className="mt-2 divide-y divide-gray-50">
                     {es.map((e) => (
-                      <div key={e.ekey} className="flex items-start gap-2 py-1.5 text-sm">
-                        {m.checkable && (
-                          <button onClick={() => setChecked(e.ekey, !e.checked)} aria-label={`Mark ${e.checked ? 'not ' : ''}checked in bank`}
-                            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 text-[10px] font-bold transition ${e.checked ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-gray-300 text-transparent hover:border-emerald-400'}`}>✓</button>
+                      <div key={e.ekey} className={`py-1.5 text-sm ${e.kiv && !e.checked ? 'rounded-md bg-amber-50 px-2' : ''}`}>
+                        <div className="flex items-start gap-2">
+                          {m.checkable && (
+                            <button onClick={() => setChecked(e.ekey, !e.checked)} aria-label={`Mark ${e.checked ? 'not ' : ''}checked in bank`}
+                              className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 text-[10px] font-bold transition ${e.checked ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-gray-300 text-transparent hover:border-emerald-400'}`}>✓</button>
+                          )}
+                          <span className={`min-w-0 flex-1 ${e.checked ? 'text-gray-400 line-through' : e.kiv ? 'text-amber-800' : 'text-gray-600'}`}>{e.descp || '(no reference)'}</span>
+                          <span className={`shrink-0 font-medium ${e.checked ? 'text-gray-400' : 'text-gray-800'}`}>{rm(e.amount)}</span>
+                          {m.checkable && !e.checked && (
+                            <button onClick={() => setKiv(e.ekey, !e.kiv, e.note ?? '')} title="KIV — mark for the supervisor to check"
+                              className={`mt-0.5 shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-semibold transition ${e.kiv ? 'border-amber-400 bg-amber-100 text-amber-700' : 'border-gray-300 text-gray-400 hover:border-amber-400 hover:text-amber-600'}`}>KIV</button>
+                          )}
+                        </div>
+                        {e.kiv && !e.checked && (
+                          <div className="mt-1 pl-7">
+                            <input value={noteDraft[e.ekey] ?? e.note ?? ''}
+                              onChange={(ev) => setNoteDraft((p) => ({ ...p, [e.ekey]: ev.target.value }))}
+                              onBlur={() => setKiv(e.ekey, true, noteDraft[e.ekey] ?? e.note ?? '')}
+                              placeholder="note — what's being checked?"
+                              className="w-full rounded border border-amber-200 bg-white px-2 py-0.5 text-xs" />
+                          </div>
                         )}
-                        <span className={`min-w-0 flex-1 ${e.checked ? 'text-gray-400 line-through' : 'text-gray-600'}`}>{e.descp || '(no reference)'}</span>
-                        <span className={`shrink-0 font-medium ${e.checked ? 'text-gray-400' : 'text-gray-800'}`}>{rm(e.amount)}</span>
                       </div>
                     ))}
                   </div>
