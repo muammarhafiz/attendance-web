@@ -109,6 +109,19 @@ export default function NavBar() {
     reloadFeed();
   }, [reloadFeed]);
 
+  // Dismiss a bell item / clear all. Keyed by type|id|when (matches the push key), stored per-user so a
+  // dismissed alert stays gone until its situation changes (then it re-appears).
+  const keyOf = (i: NotifItem) => `${i.type}|${i.id}|${i.when}`;
+  const dismiss = useCallback(async (i: NotifItem) => {
+    setItems((prev) => prev.filter((x) => keyOf(x) !== keyOf(i)));
+    await supabase.rpc('dismiss_notifications', { p_keys: [keyOf(i)] });
+  }, []);
+  const clearAll = useCallback(async () => {
+    const keys = items.map(keyOf);
+    setItems([]);
+    if (keys.length) await supabase.rpc('dismiss_notifications', { p_keys: keys });
+  }, [items]);
+
   // Close the mobile drawer / notifications whenever the route changes.
   useEffect(() => { setOpen(false); setBellOpen(false); }, [pathname]);
 
@@ -205,7 +218,10 @@ export default function NavBar() {
                 <>
                   <button className="fixed inset-0 z-40 cursor-default" aria-label="Close notifications" onClick={() => setBellOpen(false)} />
                   <div className="absolute right-0 z-50 mt-1 w-80 max-w-[88vw] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
-                    <div className="border-b border-slate-100 px-3 py-2 text-sm font-semibold text-slate-700">Notifications</div>
+                    <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
+                      <span className="text-sm font-semibold text-slate-700">Notifications</span>
+                      {items.length > 0 && <button onClick={clearAll} className="text-xs font-medium text-slate-400 hover:text-slate-700">Clear all</button>}
+                    </div>
                     <div className="max-h-96 overflow-y-auto">
                       {items.length === 0 ? (
                         <div className="px-3 py-6 text-center text-sm text-slate-400">Nothing pending</div>
@@ -214,13 +230,16 @@ export default function NavBar() {
                           const canAct = ACTIONABLE.has(i.type);
                           return (
                             <div key={i.type + i.id} className="border-b border-slate-50 px-3 py-2">
-                              <button onClick={() => goTo(i.href)} className="flex w-full items-start gap-2 text-left hover:opacity-80">
-                                <span className="mt-0.5 text-base leading-none">{NOTIF_ICON[i.type] ?? '🔔'}</span>
-                                <span className="min-w-0 flex-1">
-                                  <span className="block text-sm text-slate-800"><span className="font-medium">{i.who}</span> · {NOTIF_LABEL[i.type] ?? i.type}</span>
-                                  <span className="block truncate text-xs text-slate-500">{i.detail} · {relTime(i.when)}</span>
-                                </span>
-                              </button>
+                              <div className="flex items-start gap-2">
+                                <button onClick={() => goTo(i.href)} className="flex min-w-0 flex-1 items-start gap-2 text-left hover:opacity-80">
+                                  <span className="mt-0.5 text-base leading-none">{NOTIF_ICON[i.type] ?? '🔔'}</span>
+                                  <span className="min-w-0 flex-1">
+                                    <span className="block text-sm text-slate-800"><span className="font-medium">{i.who}</span> · {NOTIF_LABEL[i.type] ?? i.type}</span>
+                                    <span className="block truncate text-xs text-slate-500">{i.detail} · {relTime(i.when)}</span>
+                                  </span>
+                                </button>
+                                <button onClick={() => dismiss(i)} aria-label="Dismiss" className="shrink-0 leading-none text-slate-300 hover:text-slate-600">✕</button>
+                              </div>
                               {canAct && (
                                 <div className="mt-1.5 flex gap-2 pl-6">
                                   <button onClick={() => act(i, 'approve')} disabled={acting === i.id} className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">✓ Approve</button>
