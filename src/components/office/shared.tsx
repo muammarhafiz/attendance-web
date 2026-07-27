@@ -13,6 +13,8 @@ export type Home = {
   unpaid: { count: number; total: number | string; top: { inv: string; customer: string | null; balance: number | string; status?: string | null; age_days?: number | null }[] };
   yesterday: { day: string; cash_in: number | string; cash_out: number | string; qr_in: number | string; card_in: number | string; transfer_in: number | string } | null;
   daily_to_check: number;
+  daily_methods: Record<string, { total: number; checked: number; label?: string | null }>;
+  daily_cash: { system: number | string; counted: number | string | null };
   zero_cogs: { items: number; days: number };
   pi_pending: number;
   po_pending: number;
