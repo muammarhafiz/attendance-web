@@ -13,9 +13,9 @@ import AutomationOverview from '@/components/settings/AutomationOverview';
 import AccessSettings from '@/components/settings/AccessSettings';
 
 type TabKey = 'access' | 'system' | 'automation' | 'payroll' | 'attendance' | 'workshop' | 'email' | 'notifications';
-type Tab = { key: TabKey; label: string; req: 'owner' | 'access_admin' };
+type Tab = { key: TabKey; label: string; req: 'owner' | 'access_admin' | 'month_end' };
 
-// 'access' is open to Owner + Manager; everything else is Owner-only.
+// 'access' = Owner + Manager; 'notifications' = Owner + Manager + Office (their own phone push); rest Owner-only.
 const ALL_TABS: Tab[] = [
   { key: 'access', label: 'Access', req: 'access_admin' },
   { key: 'system', label: 'Automations', req: 'owner' },
@@ -24,11 +24,13 @@ const ALL_TABS: Tab[] = [
   { key: 'attendance', label: 'Attendance', req: 'owner' },
   { key: 'workshop', label: 'Workshop', req: 'owner' },
   { key: 'email', label: 'Email', req: 'owner' },
-  { key: 'notifications', label: 'Notifications', req: 'owner' },
+  { key: 'notifications', label: 'Notifications', req: 'month_end' },
 ];
 
 const tabAllowed = (t: Tab, acc: Record<string, boolean>) =>
-  t.req === 'access_admin' ? !!(acc.access_admin || acc.owner) : !!acc.owner;
+  t.req === 'access_admin' ? !!(acc.access_admin || acc.owner)
+  : t.req === 'month_end' ? !!(acc.month_end || acc.owner)
+  : !!acc.owner;
 
 export default function SettingsPage() {
   const [acc, setAcc] = useState<Record<string, boolean> | null>(null);

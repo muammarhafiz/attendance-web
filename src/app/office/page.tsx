@@ -6,7 +6,6 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import { useClerkHome, Gate, OfficeShell, type Home } from '@/components/office/shared';
-import PushToggle from '@/components/PushToggle';
 
 function BigCard({ href, icon, title, summary, alert }: { href: string; icon: string; title: string; summary: string; alert?: boolean }) {
   return (
@@ -158,7 +157,6 @@ function OfficeHome({ d, reload }: { d: Home; reload: () => void }) {
         <BigCard href="/month-end" icon="🗓️" title="Monthly" alert={monthlyAlert}
           summary={`End of month · ${d.eom.done}/${d.eom.total} done`} />
       </div>
-      <div className="mt-6"><PushToggle /></div>
     </OfficeShell>
   );
 }
