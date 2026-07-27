@@ -151,9 +151,8 @@ export default function NavBar() {
     ...(access.payroll ? [{ href: '/payroll/v3', match: '/payroll', label: 'Payroll' } as NavItem] : []),
     ...(access.month_end ? [{ href: '/office', match: '/office', label: 'Office' } as NavItem] : []),
     ...(access.owner ? [{ href: '/bank-recon', label: 'Bank' } as NavItem] : []),
-    ...((access.access_admin || access.owner) ? [{ href: '/settings', label: 'Settings' } as NavItem] : []),
-    // Office/Manager can't reach the full Settings page — give them a direct link to the Notifications tab.
-    ...((access.month_end && !access.access_admin && !access.owner) ? [{ href: '/settings?tab=notifications', match: '/settings', label: 'Notifications' } as NavItem] : []),
+    // Settings shows each person only the tabs they're allowed — Office sees just Notifications there.
+    ...((access.access_admin || access.owner || access.month_end) ? [{ href: '/settings', label: 'Settings' } as NavItem] : []),
   ];
 
   const Badge = ({ n }: { n?: number }) =>
