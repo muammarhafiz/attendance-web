@@ -62,12 +62,22 @@ export async function POST(req: Request) {
 
   if (adminSubs.length === 0 && officeSubs.length === 0) return NextResponse.json({ sent: 0, items: items.length, devices: 0 });
 
+  // Per-user push preferences: skip a device whose owner turned that notification type off.
+  const { data: prefRows } = await pushAdmin.from('push_prefs').select('email, ntype').eq('enabled', false);
+  const muted = new Map<string, Set<string>>();
+  for (const r of (prefRows ?? []) as { email: string; ntype: string }[]) {
+    const e = String(r.email).toLowerCase();
+    if (!muted.has(e)) muted.set(e, new Set());
+    muted.get(e)!.add(r.ntype);
+  }
+  const notMuted = (sub: Sub, type: string) => !muted.get(String(sub.email).toLowerCase())?.has(type);
+
   const base = s.app_base_url ?? '';
   let sent = 0;
   const dead = new Set<string>();
 
   for (const it of items) {
-    const targetSubs = it.type === 'pinv_created' ? officeSubs : adminSubs;
+    const targetSubs = (it.type === 'pinv_created' ? officeSubs : adminSubs).filter((sub) => notMuted(sub, it.type));
     if (targetSubs.length === 0) continue;
     const payload = JSON.stringify({
       title: LABEL[it.type] ?? 'Zordaq alert',
