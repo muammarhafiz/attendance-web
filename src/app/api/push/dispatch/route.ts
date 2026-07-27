@@ -15,6 +15,7 @@ const LABEL: Record<string, string> = {
   mc: 'MC request',
   po: 'Purchase order',
   pinv: 'Purchase invoice',
+  pinv_created: 'Purchase invoice created ✓',
   stuckcar: 'Cars stuck in shop',
   debt: 'Newly overdue bills',
   lowstock: 'Items to restock',
