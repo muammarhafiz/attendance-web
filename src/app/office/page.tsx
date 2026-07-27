@@ -147,17 +147,18 @@ export default function OfficePage() {
 function OfficeHome({ d, reload }: { d: Home; reload: () => void }) {
   const weeklyAlert = d.po_pending > 0;
   const monthlyAlert = d.eom.done < d.eom.total;
+  const onOrder = d.po_on_order?.length || 0;
+  const weeklySummary = d.po_pending > 0
+    ? (d.po_pending === 1 && d.po_list?.[0]
+        ? `Send PO to ${d.po_list[0].supplier} (${d.po_list[0].n_items} item${d.po_list[0].n_items === 1 ? '' : 's'})`
+        : `${d.po_pending} purchase orders ready · before Wed`)
+    : onOrder > 0 ? `${onOrder} PO${onOrder === 1 ? '' : 's'} awaiting delivery` : 'Purchase orders · Mon–Tue';
   return (
     <OfficeShell title="🗂️ Office" onRefresh={reload}>
       <p className="mb-2 text-sm text-gray-500"><span className="text-rose-600">Red</span> needs doing, <span className="text-emerald-600">green</span> is done. Use the arrows to change the day.</p>
       <div className="space-y-3">
         <DailyStatusCard />
-        <BigCard href="/office/weekly" icon="🗒️" title="Weekly" alert={weeklyAlert}
-          summary={d.po_pending > 0
-            ? (d.po_pending === 1 && d.po_list?.[0]
-                ? `Send PO to ${d.po_list[0].supplier} (${d.po_list[0].n_items} item${d.po_list[0].n_items === 1 ? '' : 's'})`
-                : `${d.po_pending} purchase orders ready · before Wed`)
-            : 'Purchase orders · Mon–Tue'} />
+        <BigCard href="/office/weekly" icon="🗒️" title="Weekly" alert={weeklyAlert} summary={weeklySummary} />
         <BigCard href="/month-end" icon="🗓️" title="Monthly" alert={monthlyAlert}
           summary={`End of month · ${d.eom.done}/${d.eom.total} done`} />
       </div>
