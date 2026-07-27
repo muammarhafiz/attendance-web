@@ -10,8 +10,8 @@ import { supabase } from '@/lib/supabaseClient';
 
 type NavItem = { href: string; label: string; match?: string; badge?: number };
 type NotifItem = { type: string; id: string; who: string; detail: string; when: string; href: string };
-const NOTIF_ICON: Record<string, string> = { offday: '🌴', halfday: '🕧', advance: '💵', mc: '📄', po: '📦', pinv: '📥', pinv_created: '✅', stuckcar: '🚗', debt: '🧾', lowstock: '📉' };
-const NOTIF_LABEL: Record<string, string> = { offday: 'off-day request', halfday: 'half-day request', advance: 'advance request', mc: 'MC', po: 'purchase order', pinv: 'purchase invoice', pinv_created: 'created in Niagawan ✓', stuckcar: 'in shop > 3 days', debt: 'newly overdue', lowstock: 'to restock' };
+const NOTIF_ICON: Record<string, string> = { offday: '🌴', halfday: '🕧', advance: '💵', mc: '📄', po: '📦', pinv: '📥', pinv_created: '✅', not_checkin: '⏰', stuckcar: '🚗', debt: '🧾', lowstock: '📉' };
+const NOTIF_LABEL: Record<string, string> = { offday: 'off-day request', halfday: 'half-day request', advance: 'advance request', mc: 'MC', po: 'purchase order', pinv: 'purchase invoice', pinv_created: 'created in Niagawan ✓', not_checkin: 'not checked in', stuckcar: 'in shop > 3 days', debt: 'newly overdue', lowstock: 'to restock' };
 // Request types the owner can approve/reject right in the bell (each has approve_*/reject_* RPCs).
 const ACTIONABLE = new Set(['offday', 'halfday', 'advance', 'mc']);
 function relTime(iso: string): string {
