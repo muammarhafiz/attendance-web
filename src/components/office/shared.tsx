@@ -18,7 +18,10 @@ export type Home = {
   zero_cogs: { items: number; days: number };
   pi_pending: number;
   po_pending: number;
+  po_list: PoSuggestion[];
 };
+
+export type PoSuggestion = { id: number; supplier: string; n_items: number };
 
 export const rm = (x: unknown) => 'RM ' + Number(x || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const rm0 = (x: unknown) => 'RM ' + Number(x || 0).toLocaleString('en-MY', { maximumFractionDigits: 0 });
@@ -122,7 +125,7 @@ export function CashCountCard() {
   );
 }
 
-export function PurchaseOrderCard({ pending }: { pending: number }) {
+export function PurchaseOrderCard({ list }: { list: PoSuggestion[] }) {
   return (
     <Link href="/niagawan/inventory-v4" className="block">
       <div className="h-full rounded-xl border border-gray-200 bg-white p-4 transition hover:border-gray-300">
@@ -132,7 +135,20 @@ export function PurchaseOrderCard({ pending }: { pending: number }) {
           <span className="ml-auto text-xs text-gray-400">Open →</span>
         </div>
         <div className="text-sm text-gray-600">Create the POs (Mon–Tue), WhatsApp the supplier, and submit before Wednesday so the parts arrive in time.</div>
-        {pending > 0 && <div className="mt-1 text-xs font-medium text-amber-700">{pending} item{pending === 1 ? '' : 's'} suggested to re-order</div>}
+        {list.length > 0 ? (
+          <div className="mt-2 rounded-lg border border-amber-100 bg-amber-50/60 p-2">
+            <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-amber-700">{list.length} purchase order{list.length === 1 ? '' : 's'} ready to send</div>
+            <ul className="space-y-0.5">
+              {list.map((p) => (
+                <li key={p.id} className="flex items-center justify-between gap-2 text-xs">
+                  <span className="truncate text-gray-700">{p.supplier}</span>
+                  <span className="shrink-0 font-medium text-gray-500">{p.n_items} item{p.n_items === 1 ? '' : 's'}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-[11px] text-gray-400">Open to review the items, then WhatsApp / submit each PO.</p>
+          </div>
+        ) : <div className="mt-1 text-xs text-emerald-700">No purchase orders waiting ✓</div>}
       </div>
     </Link>
   );

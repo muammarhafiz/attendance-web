@@ -153,7 +153,11 @@ function OfficeHome({ d, reload }: { d: Home; reload: () => void }) {
       <div className="space-y-3">
         <DailyStatusCard />
         <BigCard href="/office/weekly" icon="🗒️" title="Weekly" alert={weeklyAlert}
-          summary={d.po_pending > 0 ? `${d.po_pending} to re-order · POs due before Wed` : 'Purchase orders · Mon–Tue'} />
+          summary={d.po_pending > 0
+            ? (d.po_pending === 1 && d.po_list?.[0]
+                ? `Send PO to ${d.po_list[0].supplier} (${d.po_list[0].n_items} item${d.po_list[0].n_items === 1 ? '' : 's'})`
+                : `${d.po_pending} purchase orders ready · before Wed`)
+            : 'Purchase orders · Mon–Tue'} />
         <BigCard href="/month-end" icon="🗓️" title="Monthly" alert={monthlyAlert}
           summary={`End of month · ${d.eom.done}/${d.eom.total} done`} />
       </div>

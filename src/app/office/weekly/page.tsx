@@ -8,7 +8,7 @@ export default function WeeklyPage() {
     <Gate allowed={allowed} loading={loading} d={d}>
       <OfficeShell title="🗒️ Weekly" back onRefresh={reload}>
         <div className="grid grid-cols-1 gap-3">
-          {d && <PurchaseOrderCard pending={d.po_pending} />}
+          {d && <PurchaseOrderCard list={d.po_list} />}
         </div>
       </OfficeShell>
     </Gate>
