@@ -14,7 +14,7 @@ type Dash = {
   error?: string;
   month: string;
   suppliers: { count: number; total: number | string; synced: string | null; list: { name: string; balance: number | string }[] };
-  absents: { count: number; list: { name: string; day: string }[] };
+  absents: { count: number; list: { name: string; email?: string; day: string }[] };
   ticks: Record<string, Tick>;
 };
 type Salary = { email: string; name: string; net: number | string; bank_name: string | null; bank_acc_name: string | null; bank_acc_no: string | null; paid: boolean; paid_date: string | null };
@@ -180,7 +180,12 @@ export default function MonthEndPage() {
                             </div>
                             <ul className="max-h-48 space-y-0.5 overflow-y-auto text-sm text-amber-800">
                               {d.absents.list.map((a, i) => (
-                                <li key={i} className="flex justify-between gap-2"><span className="min-w-0 truncate">{a.name}</span><span className="shrink-0">{fmtD(a.day)}</span></li>
+                                <li key={i} className="flex justify-between gap-2">
+                                  {a.email
+                                    ? <Link href={`/attendance/report?staff=${encodeURIComponent(a.email)}`} className="min-w-0 truncate font-medium text-blue-700 hover:underline">{a.name}</Link>
+                                    : <span className="min-w-0 truncate">{a.name}</span>}
+                                  <span className="shrink-0">{fmtD(a.day)}</span>
+                                </li>
                               ))}
                             </ul>
                             <p className="mt-2 text-[11px] text-amber-700/80">Approve their MC / off-day (or fix in attendance) so they aren&rsquo;t paid as absent.</p>
