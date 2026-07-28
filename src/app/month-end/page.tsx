@@ -15,6 +15,7 @@ type Dash = {
   month: string;
   suppliers: { count: number; total: number | string; synced: string | null; list: { name: string; balance: number | string }[] };
   absents: { count: number; list: { name: string; email?: string; day: string }[] };
+  bills: { id: number; label: string; amount: number | string; paid: boolean; paid_date: string | null }[];
   ticks: Record<string, Tick>;
 };
 type Salary = { email: string; name: string; net: number | string; bank_name: string | null; bank_acc_name: string | null; bank_acc_no: string | null; paid: boolean; paid_date: string | null };
@@ -40,6 +41,8 @@ export default function MonthEndPage() {
   const [err, setErr] = useState<string | null>(null);
   const [canPay, setCanPay] = useState(false);
   const [salaries, setSalaries] = useState<Salary[]>([]);
+  const [newBillLabel, setNewBillLabel] = useState('');
+  const [newBillAmount, setNewBillAmount] = useState('');
 
   const monthKey = `${year}-${String(month).padStart(2, '0')}`;
   const todayIso = today.toISOString().slice(0, 10);
@@ -90,6 +93,30 @@ export default function MonthEndPage() {
     const { error } = await supabase.rpc('month_end_set_salary_paid', { p_month: monthKey, p_email: email, p_paid: paid, p_date: paid ? date : null });
     if (error) { setErr(error.message); load(); }
   }, [monthKey, load]);
+
+  // Bills (operating cost) — via gated month_end RPCs so the clerk never needs direct finance access.
+  const billAdd = useCallback(async () => {
+    const label = newBillLabel.trim();
+    if (!label) return;
+    const { error } = await supabase.rpc('month_end_add_bill', { p_month: monthKey, p_label: label, p_amount: Number(newBillAmount) || 0 });
+    if (error) { setErr(error.message); return; }
+    setNewBillLabel(''); setNewBillAmount(''); await load();
+  }, [newBillLabel, newBillAmount, monthKey, load]);
+  const billSetPaid = useCallback(async (id: number, paid: boolean) => {
+    const { error } = await supabase.rpc('month_end_set_bill_paid', { p_id: id, p_paid: paid, p_date: paid ? todayIso : null });
+    if (error) setErr(error.message);
+    await load();
+  }, [todayIso, load]);
+  const billSetAmount = useCallback(async (id: number, amount: number) => {
+    const { error } = await supabase.rpc('month_end_update_bill', { p_id: id, p_amount: amount });
+    if (error) setErr(error.message);
+    await load();
+  }, [load]);
+  const billDelete = useCallback(async (id: number) => {
+    const { error } = await supabase.rpc('month_end_delete_bill', { p_id: id });
+    if (error) setErr(error.message);
+    await load();
+  }, [load]);
 
   const prevMonth = () => { const dt = new Date(year, month - 2, 1); setYear(dt.getFullYear()); setMonth(dt.getMonth() + 1); };
   const nextMonth = () => { const dt = new Date(year, month, 1); setYear(dt.getFullYear()); setMonth(dt.getMonth() + 1); };
@@ -231,6 +258,35 @@ export default function MonthEndPage() {
               </div>
             );
           })}
+
+          {/* Bills (operating cost) — step 7 of the routine, editable here via gated RPCs */}
+          <div className="rounded-xl border border-gray-200 bg-white p-4">
+            <div className="mb-2 flex items-center gap-2">
+              <span className="text-base leading-none">🧾</span>
+              <h2 className="text-base font-semibold text-gray-900">Bills</h2>
+              <span className="text-xs text-gray-400">operating cost · tick when paid</span>
+            </div>
+            {d.bills.length === 0 ? (
+              <p className="text-sm text-gray-400">No bills added for this month yet.</p>
+            ) : (
+              d.bills.map((b) => (
+                <div key={b.id} className="flex items-center gap-2 py-0.5 text-sm">
+                  <input type="checkbox" checked={!!b.paid} onChange={(e) => billSetPaid(b.id, e.target.checked)} title="Mark paid — stamps today's date" className="shrink-0 cursor-pointer" />
+                  <span className={`min-w-0 flex-1 truncate ${b.paid ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{b.label}</span>
+                  {b.paid && b.paid_date && <span className="shrink-0 text-[11px] font-medium text-emerald-600">paid {fmtD(b.paid_date)}</span>}
+                  <input type="number" step="0.01" defaultValue={Number(b.amount)} onBlur={(e) => { const v = Number(e.target.value) || 0; if (v !== Number(b.amount)) billSetAmount(b.id, v); }}
+                    className="w-24 rounded border border-gray-200 px-1.5 py-0.5 text-right text-sm" />
+                  <button onClick={() => billDelete(b.id)} className="shrink-0 text-xs text-rose-400 hover:text-rose-600">✕</button>
+                </div>
+              ))
+            )}
+            <div className="mt-2 flex items-center gap-2">
+              <input value={newBillLabel} onChange={(e) => setNewBillLabel(e.target.value)} placeholder="e.g. SEWA" className="min-w-0 flex-1 rounded border border-gray-300 px-2 py-1 text-sm" />
+              <input value={newBillAmount} onChange={(e) => setNewBillAmount(e.target.value)} type="number" step="0.01" placeholder="0.00" className="w-24 rounded border border-gray-300 px-2 py-1 text-right text-sm" />
+              <button onClick={billAdd} className="shrink-0 rounded bg-gray-900 px-2.5 py-1 text-sm font-medium text-white hover:bg-gray-700">Add</button>
+            </div>
+            <div className="mt-2 flex justify-between border-t border-gray-100 pt-2 text-sm font-semibold"><span>Bills total</span><span>{rm(d.bills.reduce((s, b) => s + Number(b.amount || 0), 0))}</span></div>
+          </div>
         </div>
       )}
     </div>
