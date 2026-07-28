@@ -210,7 +210,7 @@ export default function AttendanceReportPage() {
           {loading ? 'Loading…' : 'Refresh'}
         </button>
         <button onClick={() => window.print()} disabled={rows.length === 0} title="Print or save as PDF" className="rounded-md border border-line bg-card px-2.5 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5 disabled:opacity-50">
-          🖨 Print
+          Print
         </button>
       </div>
 
