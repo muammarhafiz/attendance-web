@@ -118,7 +118,7 @@ export default function HalfdayRequestsPage() {
                     </span>
                   </div>
                   {r.reason && <div className="text-xs text-ink-2">{r.reason}</div>}
-                  {r.review_note && <div className="mt-0.5 text-xs text-ink-3">📝 {r.review_note}</div>}
+                  {r.review_note && <div className="mt-0.5 text-xs text-ink-3">{r.review_note}</div>}
                 </div>
                 <div className="flex items-center gap-2">
                   {r.status === 'pending' ? (

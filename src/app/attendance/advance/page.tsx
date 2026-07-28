@@ -104,7 +104,7 @@ export default function AdvanceRequestsPage() {
                     <span className="ml-2 text-sm font-bold text-ink">{rm(r.amount)}</span>
                   </div>
                   {r.reason && <div className="text-xs text-ink-2">{r.reason}</div>}
-                  {r.review_note && <div className="mt-0.5 text-xs text-ink-3">📝 {r.review_note}</div>}
+                  {r.review_note && <div className="mt-0.5 text-xs text-ink-3">{r.review_note}</div>}
                   {r.status === 'approved' && r.credit_by && <div className="mt-0.5 text-xs font-medium text-good">Credit by {fmtD(r.credit_by)}</div>}
                 </div>
                 <div className="flex items-center gap-2">
