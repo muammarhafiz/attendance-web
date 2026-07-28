@@ -49,6 +49,42 @@ type Payslip = { year: number; month: number; net_pay: number; locked_at: string
 type SalesInfo = { year: number; month: number; total: number; invoices: number };
 type BoardRow = { staff_name: string; total: number; invoices: number; is_me: boolean };
 
+// Staff's own editable personal details (from my_profile / update_my_profile RPCs).
+// All held as strings for the form; position/start_date are read-only (management-set).
+type MyProfile = {
+  full_name: string; name: string; nationality: string; nric: string; dob: string;
+  gender: string; race: string; ability_status: string; marital_status: string;
+  phone: string; address: string;
+  emergency_name: string; emergency_phone: string; emergency_relationship: string;
+  salary_payment_method: string; bank_name: string; bank_account_name: string; bank_account_no: string;
+  epf_no: string; socso_no: string; eis_no: string;
+  position: string; start_date: string;
+};
+const EMPTY_PROFILE: MyProfile = {
+  full_name: '', name: '', nationality: '', nric: '', dob: '',
+  gender: '', race: '', ability_status: '', marital_status: '',
+  phone: '', address: '',
+  emergency_name: '', emergency_phone: '', emergency_relationship: '',
+  salary_payment_method: '', bank_name: '', bank_account_name: '', bank_account_no: '',
+  epf_no: '', socso_no: '', eis_no: '',
+  position: '', start_date: '',
+};
+// Normalise the my_profile() JSON (nullable keys) into a string-only form object.
+function toProfileForm(data: Record<string, unknown> | null | undefined): MyProfile {
+  const d = data ?? {};
+  const s = (v: unknown) => (v == null ? '' : String(v));
+  return {
+    full_name: s(d.full_name), name: s(d.name), nationality: s(d.nationality), nric: s(d.nric),
+    dob: s(d.dob).slice(0, 10),
+    gender: s(d.gender), race: s(d.race), ability_status: s(d.ability_status), marital_status: s(d.marital_status),
+    phone: s(d.phone), address: s(d.address),
+    emergency_name: s(d.emergency_name), emergency_phone: s(d.emergency_phone), emergency_relationship: s(d.emergency_relationship),
+    salary_payment_method: s(d.salary_payment_method), bank_name: s(d.bank_name), bank_account_name: s(d.bank_account_name), bank_account_no: s(d.bank_account_no),
+    epf_no: s(d.epf_no), socso_no: s(d.socso_no), eis_no: s(d.eis_no),
+    position: s(d.position), start_date: s(d.start_date).slice(0, 10),
+  };
+}
+
 function haversineM(aLat: number, aLon: number, bLat: number, bLon: number): number {
   const R = 6371000;
   const dLat = ((bLat - aLat) * Math.PI) / 180;
@@ -107,6 +143,11 @@ export default function CheckinV2() {
   const [payslips, setPayslips] = useState<Payslip[]>([]);
   const [slipBusy, setSlipBusy] = useState<string | null>(null);
   const [board, setBoard] = useState<BoardRow[]>([]); // team sales leaderboard (everyone can see)
+  const [profile, setProfile] = useState<MyProfile | null>(null); // my saved personal details
+  const [pf, setPf] = useState<MyProfile>(EMPTY_PROFILE);          // editable form buffer
+  const [editProfile, setEditProfile] = useState(false);
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [profileMsg, setProfileMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   useEffect(() => {
     setNow(new Date());
@@ -225,6 +266,52 @@ export default function CheckinV2() {
     })));
   }, [email]);
   useEffect(() => { if (email) loadPayslips(); }, [email, loadPayslips]);
+
+  // My own personal details — self-scoped via the my_profile() RPC.
+  const loadProfile = useCallback(async () => {
+    if (!email) return;
+    const { data } = await supabase.rpc('my_profile');
+    const form = toProfileForm(data as Record<string, unknown> | null);
+    setProfile(form);
+    setPf(form);
+  }, [email]);
+  useEffect(() => { if (email) loadProfile(); }, [email, loadProfile]);
+
+  const saveProfile = async () => {
+    setProfileBusy(true); setProfileMsg(null);
+    const { data, error } = await supabase.rpc('update_my_profile', {
+      p_full_name: pf.full_name,
+      p_nationality: pf.nationality,
+      p_nric: pf.nric,
+      p_dob: pf.dob || null,
+      p_gender: pf.gender,
+      p_race: pf.race,
+      p_ability_status: pf.ability_status,
+      p_marital_status: pf.marital_status,
+      p_phone: pf.phone,
+      p_address: pf.address,
+      p_emergency_name: pf.emergency_name,
+      p_emergency_phone: pf.emergency_phone,
+      p_emergency_relationship: pf.emergency_relationship,
+      p_salary_payment_method: pf.salary_payment_method,
+      p_bank_name: pf.bank_name,
+      p_bank_account_name: pf.bank_account_name,
+      p_bank_account_no: pf.bank_account_no,
+      p_epf_no: pf.epf_no,
+      p_socso_no: pf.socso_no,
+      p_eis_no: pf.eis_no,
+    });
+    if (error) {
+      setProfileMsg({ kind: 'err', text: error.message });
+    } else {
+      const form = toProfileForm(data as Record<string, unknown> | null);
+      setProfile(form);
+      setPf(form);
+      setEditProfile(false);
+      setProfileMsg({ kind: 'ok', text: 'Details saved ✓' });
+    }
+    setProfileBusy(false);
+  };
 
   const downloadPayslip = useCallback(async (p: Payslip) => {
     const key = `${p.year}-${p.month}`;
@@ -510,6 +597,108 @@ export default function CheckinV2() {
         );
       })()}
 
+      {/* My details — staff view/edit their own personal info (position & start date are read-only) */}
+      {profile && (
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-sm font-medium text-slate-700">👤 My details</div>
+            {!editProfile && (
+              <button onClick={() => { setPf(profile); setProfileMsg(null); setEditProfile(true); }}
+                className="shrink-0 rounded-lg border border-brand-700 px-3 py-1.5 text-xs font-semibold text-brand-800 hover:bg-brand-50">
+                Edit
+              </button>
+            )}
+          </div>
+
+          {/* Read-only — set by management */}
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="text-[11px] uppercase tracking-wide text-slate-400">Position</div>
+              <div className="text-sm font-semibold text-slate-800">{profile.position || '—'}</div>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="text-[11px] uppercase tracking-wide text-slate-400">Start date</div>
+              <div className="text-sm font-semibold text-slate-800">{profile.start_date || '—'}</div>
+            </div>
+          </div>
+          <div className="mt-1 text-[11px] text-slate-400">Position and start date are set by management.</div>
+
+          {!editProfile ? (
+            /* Compact summary */
+            <div className="mt-3 space-y-1.5 text-sm">
+              <ProfileRow label="Name" value={profile.full_name} />
+              <ProfileRow label="Phone" value={profile.phone} />
+              <ProfileRow label="Bank account" value={profile.bank_account_no ? `${profile.bank_name ? profile.bank_name + ' · ' : ''}${profile.bank_account_no}` : ''} />
+              <ProfileRow label="Emergency contact" value={profile.emergency_phone ? `${profile.emergency_name ? profile.emergency_name + ' · ' : ''}${profile.emergency_phone}` : ''} />
+            </div>
+          ) : (
+            /* Full editable form */
+            <div className="mt-3 space-y-3">
+              <div className="space-y-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Personal</div>
+                <ProfileField label="Full name" value={pf.full_name} onChange={(v) => setPf((p) => ({ ...p, full_name: v }))} />
+                <div className="grid grid-cols-2 gap-2">
+                  <ProfileField label="Nationality" value={pf.nationality} onChange={(v) => setPf((p) => ({ ...p, nationality: v }))} />
+                  <ProfileField label="NRIC" value={pf.nric} onChange={(v) => setPf((p) => ({ ...p, nric: v }))} />
+                  <ProfileField label="Date of birth" type="date" value={pf.dob} onChange={(v) => setPf((p) => ({ ...p, dob: v }))} />
+                  <ProfileSelect label="Gender" value={pf.gender} onChange={(v) => setPf((p) => ({ ...p, gender: v }))} options={['Male', 'Female']} />
+                  <ProfileSelect label="Race" value={pf.race} onChange={(v) => setPf((p) => ({ ...p, race: v }))} options={['Malay', 'Chinese', 'Indian', 'Other']} />
+                  <ProfileSelect label="Ability status" value={pf.ability_status} onChange={(v) => setPf((p) => ({ ...p, ability_status: v }))} options={['Non-disabled', 'Disabled']} />
+                  <ProfileSelect label="Marital status" value={pf.marital_status} onChange={(v) => setPf((p) => ({ ...p, marital_status: v }))} options={['Single', 'Married', 'Divorced/Widowed']} />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Contact</div>
+                <ProfileField label="Phone" value={pf.phone} onChange={(v) => setPf((p) => ({ ...p, phone: v }))} />
+                <ProfileField label="Address" value={pf.address} onChange={(v) => setPf((p) => ({ ...p, address: v }))} />
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Emergency contact</div>
+                <ProfileField label="Name" value={pf.emergency_name} onChange={(v) => setPf((p) => ({ ...p, emergency_name: v }))} />
+                <div className="grid grid-cols-2 gap-2">
+                  <ProfileField label="Phone" value={pf.emergency_phone} onChange={(v) => setPf((p) => ({ ...p, emergency_phone: v }))} />
+                  <ProfileField label="Relationship" value={pf.emergency_relationship} onChange={(v) => setPf((p) => ({ ...p, emergency_relationship: v }))} />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Bank</div>
+                <ProfileSelect label="Salary payment method" value={pf.salary_payment_method} onChange={(v) => setPf((p) => ({ ...p, salary_payment_method: v }))} options={['Cheque', 'Bank Transfer', 'Cash']} />
+                <ProfileField label="Bank name" value={pf.bank_name} onChange={(v) => setPf((p) => ({ ...p, bank_name: v }))} />
+                <ProfileField label="Account holder name" value={pf.bank_account_name} onChange={(v) => setPf((p) => ({ ...p, bank_account_name: v }))} />
+                <ProfileField label="Account no." value={pf.bank_account_no} onChange={(v) => setPf((p) => ({ ...p, bank_account_no: v }))} />
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Statutory IDs</div>
+                <div className="grid grid-cols-3 gap-2">
+                  <ProfileField label="EPF No" value={pf.epf_no} onChange={(v) => setPf((p) => ({ ...p, epf_no: v }))} />
+                  <ProfileField label="SOCSO No" value={pf.socso_no} onChange={(v) => setPf((p) => ({ ...p, socso_no: v }))} />
+                  <ProfileField label="EIS No" value={pf.eis_no} onChange={(v) => setPf((p) => ({ ...p, eis_no: v }))} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => { setPf(profile); setEditProfile(false); setProfileMsg(null); }} disabled={profileBusy}
+                  className="rounded-lg border border-slate-300 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                  Cancel
+                </button>
+                <button onClick={saveProfile} disabled={profileBusy}
+                  className="rounded-lg bg-brand-700 py-2.5 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-50">
+                  {profileBusy ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {profileMsg && (
+            <div className={`mt-3 rounded-md border p-2 text-sm ${profileMsg.kind === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>{profileMsg.text}</div>
+          )}
+        </div>
+      )}
+
       {/* Request off day */}
       <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <button onClick={() => setShowOff((v) => !v)} className="flex w-full items-center justify-between text-sm font-medium text-slate-700">
@@ -747,6 +936,34 @@ function DailyRow({ d }: { d: DayRow }) {
         {(d.late_min ?? 0) > 0 && <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-800">{d.late_min}m late</span>}
       </span>
     </div>
+  );
+}
+
+function ProfileRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="shrink-0 text-slate-500">{label}</span>
+      <span className={`min-w-0 truncate text-right ${value ? 'text-slate-800' : 'text-slate-400'}`}>{value || 'not set'}</span>
+    </div>
+  );
+}
+
+function ProfileField({ label, value, onChange, type = 'text' }: { label: string; value: string; onChange: (v: string) => void; type?: string }) {
+  return (
+    <label className="block text-xs text-slate-500">{label}
+      <input type={type} value={value} onChange={(e) => onChange(e.target.value)} className="mt-0.5 block w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm" />
+    </label>
+  );
+}
+
+function ProfileSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[] }) {
+  return (
+    <label className="block text-xs text-slate-500">{label}
+      <select value={value} onChange={(e) => onChange(e.target.value)} className="mt-0.5 block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm">
+        <option value="">—</option>
+        {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      </select>
+    </label>
   );
 }
 
