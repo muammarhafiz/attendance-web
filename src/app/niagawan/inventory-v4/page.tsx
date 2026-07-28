@@ -476,49 +476,49 @@ export default function InventoryV4Page() {
     await loadNewItems();
   }, [loadNewItems]);
 
-  if (isAdmin === null) return <div className="text-sm text-gray-500">Checking…</div>;
-  if (!isAdmin) return <div className="text-sm text-gray-600">You don&apos;t have access to this page.</div>;
+  if (isAdmin === null) return <div className="text-sm text-ink-2">Checking…</div>;
+  if (!isAdmin) return <div className="text-sm text-ink-2">You don&apos;t have access to this page.</div>;
 
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <div>
-          <div className="text-lg font-semibold text-gray-900">Inventory v4 — keep-level restock</div>
-          <div className="text-xs text-gray-500">Order = keep-level − stock − already-on-order, rounded up to cartons. Names/codes follow Niagawan live.</div>
+          <div className="text-lg font-semibold text-ink">Inventory v4 — keep-level restock</div>
+          <div className="text-xs text-ink-2">Order = keep-level − stock − already-on-order, rounded up to cartons. Names/codes follow Niagawan live.</div>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          {balanceAsOf && <span className="text-xs text-gray-400">stock as of {new Date(balanceAsOf).toLocaleString('en-MY', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kuala_Lumpur' })}</span>}
+          {balanceAsOf && <span className="text-xs text-ink-3">stock as of {new Date(balanceAsOf).toLocaleString('en-MY', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kuala_Lumpur' })}</span>}
           <button onClick={updateBalances} disabled={refreshState === 'running'}
-            className="rounded-md border border-gray-300 px-2.5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+            className="rounded-md border border-line px-2.5 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5 disabled:opacity-50">
             {refreshState === 'running' ? 'Updating balances…' : refreshState === 'done' ? '✓ updated' : refreshState === 'error' ? '⚠ failed' : '↻ Update balances'}
           </button>
           <button onClick={calcAverage} disabled={avgState === 'running'} title="Scan the last 3 months of sales and fill Avg/mo (takes a few minutes)"
-            className="rounded-md border border-blue-600 bg-blue-50 px-2.5 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50">
+            className="rounded-md border border-accent bg-accent-weak px-2.5 py-1.5 text-sm font-semibold text-accent hover:bg-accent/25 disabled:opacity-50">
             {avgState === 'running' ? 'Calculating…' : avgState === 'done' ? '✓ done' : avgState === 'error' ? '⚠ failed' : '📊 Calculate average'}
           </button>
           <button onClick={refreshSuppliers} disabled={supState === 'running'} title="Pull the latest supplier list from Niagawan (after creating a new supplier there)"
-            className="rounded-md border border-gray-300 px-2.5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+            className="rounded-md border border-line px-2.5 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5 disabled:opacity-50">
             {supState === 'running' ? 'Refreshing…' : supState === 'done' ? '✓ suppliers' : supState === 'error' ? '⚠ failed' : '🔄 Refresh suppliers'}
           </button>
         </div>
       </div>
 
-      {loading && <div className="text-sm text-gray-500">Loading…</div>}
+      {loading && <div className="text-sm text-ink-2">Loading…</div>}
 
       {/* NEW ITEMS — products created in Niagawan, not tracked in any card yet. Add to a card or dismiss. */}
       {newItems.length > 0 && (
-        <div className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50/40">
+        <div className="mb-5 rounded-lg border border-emerald-200 bg-good-soft">
           <button onClick={() => setShowNew((v) => !v)} className="flex w-full items-center gap-2 px-4 py-2.5 text-left">
             <span className="text-base leading-none">🆕</span>
-            <span className="text-sm font-semibold text-emerald-900">New in Niagawan</span>
-            <span className="rounded-full bg-emerald-600 px-1.5 py-0.5 text-xs font-semibold text-white">{newItems.length}</span>
-            <span className="hidden text-xs font-normal text-emerald-700/70 sm:inline">items created in Niagawan, not tracked yet</span>
-            <span className="ml-auto text-xs text-emerald-700">{showNew ? '▲ hide' : '▼ review'}</span>
+            <span className="text-sm font-semibold text-good">New in Niagawan</span>
+            <span className="rounded-full bg-good px-1.5 py-0.5 text-xs font-semibold text-white">{newItems.length}</span>
+            <span className="hidden text-xs font-normal text-good/70 sm:inline">items created in Niagawan, not tracked yet</span>
+            <span className="ml-auto text-xs text-good">{showNew ? '▲ hide' : '▼ review'}</span>
           </button>
           {showNew && (
             <div className="max-h-[28rem] overflow-auto border-t border-emerald-100">
               <table className="min-w-full divide-y divide-emerald-100 text-sm">
-                <thead className="sticky top-0 bg-emerald-50 text-left text-emerald-800">
+                <thead className="sticky top-0 bg-good-soft text-left text-good">
                   <tr>
                     <th className="px-3 py-2 font-semibold">Seen</th>
                     <th className="px-3 py-2 font-semibold">Item Code</th>
@@ -527,39 +527,39 @@ export default function InventoryV4Page() {
                     <th className="px-3 py-2"></th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-emerald-50 bg-white">
+                <tbody className="divide-y divide-emerald-50 bg-card">
                   {newItems.map((it) => {
                     const cat = guessCategory(it.descp);
                     return (
                     <tr key={it.sku} className={newBusy === it.sku ? 'opacity-50' : ''}>
-                      <td className="whitespace-nowrap px-3 py-1.5 text-xs text-gray-500">
+                      <td className="whitespace-nowrap px-3 py-1.5 text-xs text-ink-2">
                         {new Date(it.first_seen).toLocaleString('en-MY', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kuala_Lumpur' })}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-gray-900">{it.code || '—'}</td>
-                      <td className="px-3 py-1.5 text-gray-700">
+                      <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-ink">{it.code || '—'}</td>
+                      <td className="px-3 py-1.5 text-ink-2">
                         {it.descp || '—'}
-                        {cat !== 'Other' && <span className="ml-1.5 inline-block whitespace-nowrap rounded bg-blue-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-blue-700">{cat}</span>}
+                        {cat !== 'Other' && <span className="ml-1.5 inline-block whitespace-nowrap rounded bg-accent-weak px-1.5 py-0.5 align-middle text-[10px] font-semibold text-accent">{cat}</span>}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-gray-700">{it.price == null ? '—' : Number(it.price)}</td>
+                      <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-ink-2">{it.price == null ? '—' : Number(it.price)}</td>
                       <td className="whitespace-nowrap px-3 py-1.5 text-right">
                         <select
                           value=""
                           disabled={newBusy === it.sku || groups.length === 0}
                           onChange={(e) => { const g = Number(e.target.value); if (g) addNewToCard(it, g); }}
                           title={groups.length === 0 ? 'Add a card first' : 'Add this item to a card'}
-                          className="mr-1 rounded-md border border-emerald-300 bg-white px-1.5 py-1 text-xs text-emerald-800 disabled:opacity-50">
+                          className="mr-1 rounded-md border border-emerald-300 bg-card px-1.5 py-1 text-xs text-good disabled:opacity-50">
                           <option value="">Add to card…</option>
                           {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
                         </select>
                         <button onClick={() => dismissNew(it.sku)} disabled={newBusy === it.sku}
-                          className="rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 disabled:opacity-50">Dismiss</button>
+                          className="rounded-md border border-line px-2 py-1 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50">Dismiss</button>
                       </td>
                     </tr>
                     );
                   })}
                 </tbody>
               </table>
-              <p className="px-3 py-2 text-[11px] text-emerald-700/70">New products staff created in Niagawan. <b>Add to card</b> to track it for reorder, or <b>Dismiss</b> if it&apos;s a one-off. Updated on each product sync (nightly).</p>
+              <p className="px-3 py-2 text-[11px] text-good/70">New products staff created in Niagawan. <b>Add to card</b> to track it for reorder, or <b>Dismiss</b> if it&apos;s a one-off. Updated on each product sync (nightly).</p>
             </div>
           )}
         </div>
@@ -578,14 +578,14 @@ export default function InventoryV4Page() {
         }).length;
 
         return (
-          <div key={g.id} className="mb-5 rounded-lg border border-gray-200 bg-white">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-2.5">
+          <div key={g.id} className="mb-5 rounded-card bg-card shadow-card">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2.5">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="text-sm font-semibold text-gray-800">{g.name}</div>
+                <div className="text-sm font-semibold text-ink-2">{g.name}</div>
                 <select
                   value={g.creditor_id ?? ''}
                   onChange={(e) => setGroupSupplier(g.id, e.target.value)}
-                  className={`rounded-md border px-2 py-1 text-xs ${g.creditor_id ? 'border-gray-300 text-gray-800' : 'border-amber-300 bg-amber-50 text-amber-700'}`}
+                  className={`rounded-md border px-2 py-1 text-xs ${g.creditor_id ? 'border-line text-ink-2' : 'border-amber-300 bg-warn-soft text-warn'}`}
                 >
                   <option value="">— choose supplier —</option>
                   {g.creditor_id && !suppliers.some((s) => s.creditor_id === g.creditor_id) && (
@@ -595,18 +595,18 @@ export default function InventoryV4Page() {
                     <option key={s.creditor_id} value={s.creditor_id}>{s.name}</option>
                   ))}
                 </select>
-                <button onClick={() => deleteGroup(g.id, g.name)} title="Remove this group card" className="rounded border border-gray-200 px-2 py-0.5 text-xs text-rose-500 hover:bg-rose-50">✕ delete</button>
+                <button onClick={() => deleteGroup(g.id, g.name)} title="Remove this group card" className="rounded border border-line px-2 py-0.5 text-xs text-bad hover:bg-bad-soft">✕ delete</button>
               </div>
               <div className="flex items-center gap-2">
-                {need > 0 && <span className="rounded-full bg-rose-600 px-2 py-0.5 text-xs font-semibold text-white">{need} to order</span>}
+                {need > 0 && <span className="rounded-full bg-bad px-2 py-0.5 text-xs font-semibold text-white">{need} to order</span>}
                 {need > 0 && <button onClick={() => stageCardPO(g)} disabled={busyPo === -g.id}
-                  className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
+                  className="rounded-md bg-good px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">
                   {busyPo === -g.id ? 'Staging…' : 'Generate PO →'}</button>}
               </div>
             </div>
             <div className="overflow-auto">
-              <table className="min-w-full divide-y divide-gray-200 text-sm">
-                <thead className="bg-gray-50 text-left text-gray-600">
+              <table className="min-w-full divide-y divide-line text-sm">
+                <thead className="bg-ink/[0.03] text-left text-ink-2">
                   <tr>
                     <th className="px-3 py-2 font-semibold">Item Code</th>
                     <th className="px-3 py-2 font-semibold">Item Name</th>
@@ -617,9 +617,9 @@ export default function InventoryV4Page() {
                     <th className="px-3 py-2"></th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-line">
                   {rows.length === 0 ? (
-                    <tr><td colSpan={7} className="px-3 py-4 text-center text-gray-400">No items in this card.</td></tr>
+                    <tr><td colSpan={7} className="px-3 py-4 text-center text-ink-3">No items in this card.</td></tr>
                   ) : rows.map((gi) => {
                     const live = itemBySku.get(gi.sku);
                     const code = live?.code ?? gi.code ?? '—';
@@ -632,32 +632,32 @@ export default function InventoryV4Page() {
                     const onOrder = code !== '—' ? onOrderByCode.get(code) ?? 0 : 0;
                     const order = keep != null && stock != null ? orderQty(keep - stock - onOrder, gi.carton_size) : null;
                     return (
-                      <tr key={gi.id} className={`group ${order && order > 0 ? 'bg-rose-50' : ''}`}>
-                        <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-gray-900">{code}</td>
-                        <td className="px-3 py-1.5 text-gray-700">{name}</td>
-                        <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-gray-700">{stock == null ? '—' : stock}</td>
+                      <tr key={gi.id} className={`group ${order && order > 0 ? 'bg-bad-soft' : ''}`}>
+                        <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-ink">{code}</td>
+                        <td className="px-3 py-1.5 text-ink-2">{name}</td>
+                        <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-ink-2">{stock == null ? '—' : stock}</td>
                         <td className="px-3 py-1.5 text-center">
                           <input type="number" min={0} step="0.1" inputMode="decimal"
                             value={gi.avg_monthly == null ? '' : gi.avg_monthly}
                             onChange={(e) => setItemLocal(gi.id, { avg_monthly: e.target.value === '' ? null : Number(e.target.value) })}
                             onBlur={(e) => { const v = e.target.value === '' ? null : Math.max(0, Number(e.target.value) || 0); setItemLocal(gi.id, { avg_monthly: v }); persist(gi.id, 'avg_monthly', v); }}
-                            placeholder={feedAvg != null ? String(feedAvg) : '—'} className="w-16 rounded border border-gray-200 px-1.5 py-0.5 text-center text-xs" />
+                            placeholder={feedAvg != null ? String(feedAvg) : '—'} className="w-16 rounded border border-line px-1.5 py-0.5 text-center text-xs" />
                         </td>
                         <td className="px-3 py-1.5 text-center">
                           <input type="number" min={0} step="1" inputMode="numeric"
                             value={gi.keep_level == null ? '' : gi.keep_level}
                             onChange={(e) => setItemLocal(gi.id, { keep_level: e.target.value === '' ? null : Number(e.target.value) })}
                             onBlur={(e) => { const v = e.target.value === '' ? null : Math.max(0, Math.floor(Number(e.target.value) || 0)); setItemLocal(gi.id, { keep_level: v }); persist(gi.id, 'keep_level', v); }}
-                            placeholder={keepDefault != null ? String(keepDefault) : '—'} className="w-16 rounded border border-gray-200 px-1.5 py-0.5 text-center text-xs" />
+                            placeholder={keepDefault != null ? String(keepDefault) : '—'} className="w-16 rounded border border-line px-1.5 py-0.5 text-center text-xs" />
                         </td>
                         <td className="whitespace-nowrap px-3 py-1.5 text-right">
-                          {order == null ? <span className="text-xs text-gray-400">set avg</span>
-                            : order > 0 ? <span className="rounded-full bg-rose-600 px-2 py-0.5 text-xs font-semibold text-white">{order}</span>
-                            : <span className="text-xs text-emerald-600">ok</span>}
+                          {order == null ? <span className="text-xs text-ink-3">set avg</span>
+                            : order > 0 ? <span className="rounded-full bg-bad px-2 py-0.5 text-xs font-semibold text-white">{order}</span>
+                            : <span className="text-xs text-good">ok</span>}
                           {onOrder > 0 && <div className="text-[10px] text-sky-600">{onOrder} on order</div>}
                         </td>
                         <td className="px-3 py-1.5 text-right">
-                          <button onClick={() => removeGroupItem(gi.id)} title="Remove from this card" className="rounded px-1 text-xs text-rose-400 opacity-40 transition hover:bg-rose-50 hover:text-rose-600 group-hover:opacity-100">✕</button>
+                          <button onClick={() => removeGroupItem(gi.id)} title="Remove from this card" className="rounded px-1 text-xs text-bad opacity-40 transition hover:bg-bad-soft hover:text-bad group-hover:opacity-100">✕</button>
                         </td>
                       </tr>
                     );
@@ -670,51 +670,51 @@ export default function InventoryV4Page() {
       })}
 
       {/* Add a new group card */}
-      <button onClick={addGroup} className="mb-5 w-full rounded-lg border border-dashed border-gray-300 bg-white px-3 py-2.5 text-sm font-medium text-gray-600 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700">
+      <button onClick={addGroup} className="mb-5 w-full rounded-lg border border-dashed border-line bg-card px-3 py-2.5 text-sm font-medium text-ink-2 hover:border-accent hover:bg-accent-weak hover:text-accent">
         + Add a new card
       </button>
 
       {/* READY FOR PO — staged drafts awaiting approval */}
       {poSuggs.some((s) => s.source === 'inventory-v4' && s.status === 'pending') && (
-        <div className="mb-5 rounded-lg border border-gray-200 bg-white p-4">
-          <h2 className="mb-3 text-sm font-semibold text-gray-800">Ready for PO <span className="font-normal text-gray-400">· review the quantities, then approve</span></h2>
+        <div className="mb-5 rounded-card bg-card shadow-card p-4">
+          <h2 className="mb-3 text-sm font-semibold text-ink-2">Ready for PO <span className="font-normal text-ink-3">· review the quantities, then approve</span></h2>
           <div className="space-y-3">
             {poSuggs.filter((s) => s.source === 'inventory-v4' && s.status === 'pending').map((s) => {
               const lines = linesBySugg.get(s.id) ?? [];
               const totalUnits = lines.reduce((n, l) => n + Number(l.ordered_qty || 0), 0);
               return (
-                <div key={s.id} className="rounded-md border border-gray-200 p-3">
+                <div key={s.id} className="rounded-md border border-line p-3">
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-sm font-medium text-gray-800">{s.supplier_name ?? s.supplier_id}
-                      <span className="ml-1 text-xs font-normal text-gray-400">· {lines.length} item{lines.length === 1 ? '' : 's'} · {totalUnits} unit{totalUnits === 1 ? '' : 's'}</span>
+                    <div className="text-sm font-medium text-ink-2">{s.supplier_name ?? s.supplier_id}
+                      <span className="ml-1 text-xs font-normal text-ink-3">· {lines.length} item{lines.length === 1 ? '' : 's'} · {totalUnits} unit{totalUnits === 1 ? '' : 's'}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <button onClick={() => cancelPO(s)} className="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-50">Discard</button>
+                      <button onClick={() => cancelPO(s)} className="rounded border border-line px-2 py-0.5 text-xs text-ink-2 hover:bg-ink/5">Discard</button>
                       <button onClick={() => approvePO(s)} disabled={busyPo === s.id || lines.length === 0}
-                        className="rounded-md bg-emerald-600 px-3 py-0.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
+                        className="rounded-md bg-good px-3 py-0.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50">
                         {busyPo === s.id ? 'Approving…' : 'Approve → create PO'}</button>
                     </div>
                   </div>
-                  <div className="overflow-auto rounded border border-gray-100">
-                    <table className="min-w-full divide-y divide-gray-200 text-sm">
-                      <thead className="bg-gray-50 text-left text-gray-600"><tr>
+                  <div className="overflow-auto rounded border border-line">
+                    <table className="min-w-full divide-y divide-line text-sm">
+                      <thead className="bg-ink/[0.03] text-left text-ink-2"><tr>
                         <th className="px-3 py-2 font-semibold">Item Code</th><th className="px-3 py-2 font-semibold">Item Name</th>
                         <th className="px-3 py-2 text-center font-semibold">Order qty</th><th className="px-3 py-2"></th>
                       </tr></thead>
-                      <tbody className="divide-y divide-gray-100">
+                      <tbody className="divide-y divide-line">
                         {lines.map((l) => (
                           <tr key={l.id} className="group">
-                            <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-gray-900">{l.code || '—'}</td>
-                            <td className="px-3 py-1.5 text-gray-700">{l.descp || '—'}</td>
+                            <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-ink">{l.code || '—'}</td>
+                            <td className="px-3 py-1.5 text-ink-2">{l.descp || '—'}</td>
                             <td className="px-3 py-1.5 text-center">
                               <input type="number" min={1} inputMode="numeric" value={l.ordered_qty}
                                 onFocus={() => setEditingLine(l.id)}
                                 onChange={(e) => setLineQtyLocal(l.id, Math.floor(Number(e.target.value)))}
                                 onBlur={(e) => { setEditingLine(null); persistLineQty(l.id, Math.max(1, Math.floor(Number(e.target.value) || 1))); }}
-                                className="w-20 rounded border border-gray-200 px-1.5 py-0.5 text-center text-xs" />
+                                className="w-20 rounded border border-line px-1.5 py-0.5 text-center text-xs" />
                             </td>
                             <td className="px-3 py-1.5 text-right">
-                              <button onClick={() => removeLine(l.id)} title="Remove this line" className="rounded px-1 text-xs text-rose-400 opacity-40 transition hover:bg-rose-50 hover:text-rose-600 group-hover:opacity-100">✕</button>
+                              <button onClick={() => removeLine(l.id)} title="Remove this line" className="rounded px-1 text-xs text-bad opacity-40 transition hover:bg-bad-soft hover:text-bad group-hover:opacity-100">✕</button>
                             </td>
                           </tr>
                         ))}
@@ -730,53 +730,53 @@ export default function InventoryV4Page() {
 
       {/* PO TRACKER — submitted POs being created / awaiting delivery */}
       {poSuggs.some((s) => s.source === 'inventory-v4' && ['approved', 'created', 'error'].includes(s.status)) && (
-        <div className="mb-5 rounded-lg border border-gray-200 bg-white p-4">
-          <h2 className="mb-3 text-sm font-semibold text-gray-800">PO tracker <span className="font-normal text-gray-400">· creating / awaiting delivery</span></h2>
+        <div className="mb-5 rounded-card bg-card shadow-card p-4">
+          <h2 className="mb-3 text-sm font-semibold text-ink-2">PO tracker <span className="font-normal text-ink-3">· creating / awaiting delivery</span></h2>
           <div className="space-y-3">
             {poSuggs.filter((s) => s.source === 'inventory-v4' && ['approved', 'created', 'error'].includes(s.status)).map((s) => {
               const lines = linesBySugg.get(s.id) ?? [];
               const doneCount = lines.filter((l) => Number(l.received_qty) >= Number(l.ordered_qty)).length;
               return (
-                <div key={s.id} className="rounded-md border border-gray-200 p-3">
+                <div key={s.id} className="rounded-md border border-line p-3">
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-gray-800">
+                    <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-ink-2">
                       {s.status === 'created' && s.po_number ? (
-                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">{s.po_number}</span>
+                        <span className="rounded-full bg-good-soft px-2 py-0.5 text-xs font-semibold text-good">{s.po_number}</span>
                       ) : s.status === 'approved' ? (
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">creating in Niagawan…</span>
+                        <span className="rounded-full bg-warn-soft px-2 py-0.5 text-xs font-medium text-warn">creating in Niagawan…</span>
                       ) : (
-                        <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">failed</span>
+                        <span className="rounded-full bg-bad-soft px-2 py-0.5 text-xs font-medium text-bad">failed</span>
                       )}
                       <span>{s.supplier_name ?? s.supplier_id}</span>
-                      <span className="text-xs font-normal text-gray-400">· {doneCount}/{lines.length} received</span>
+                      <span className="text-xs font-normal text-ink-3">· {doneCount}/{lines.length} received</span>
                     </div>
                     {s.status === 'error' ? (
                       <div className="flex items-center gap-2">
-                        <button onClick={() => retryPO(s)} className="rounded-md bg-amber-600 px-2.5 py-0.5 text-xs font-medium text-white hover:bg-amber-700">Retry</button>
-                        <button onClick={() => cancelPO(s)} className="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-50">Discard</button>
+                        <button onClick={() => retryPO(s)} className="rounded-md bg-warn px-2.5 py-0.5 text-xs font-medium text-white hover:opacity-90">Retry</button>
+                        <button onClick={() => cancelPO(s)} className="rounded border border-line px-2 py-0.5 text-xs text-ink-2 hover:bg-ink/5">Discard</button>
                       </div>
                     ) : s.status === 'created' ? (
                       <div className="flex items-center gap-1.5">
-                        <button onClick={() => markPOReceived(s)} disabled={busyPo === s.id} className="rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50" title="Everything arrived — mark every line fully received and close">✓ All arrived</button>
-                        <button onClick={() => closePO(s)} disabled={busyPo === s.id} className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50" title="Short delivery that won't be completed — close with the amounts received; the shortfall becomes re-orderable">Close (short)</button>
-                        <button onClick={() => cancelPO(s)} className="rounded border border-gray-200 px-2 py-0.5 text-xs text-rose-500 hover:bg-rose-50" title="Remove this PO (a mistake, a test, or one deleted in Niagawan). Does not touch Niagawan.">✕ Discard</button>
+                        <button onClick={() => markPOReceived(s)} disabled={busyPo === s.id} className="rounded border border-emerald-300 bg-good-soft px-2 py-0.5 text-xs font-medium text-good hover:bg-good/15 disabled:opacity-50" title="Everything arrived — mark every line fully received and close">✓ All arrived</button>
+                        <button onClick={() => closePO(s)} disabled={busyPo === s.id} className="rounded border border-line px-2 py-0.5 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50" title="Short delivery that won't be completed — close with the amounts received; the shortfall becomes re-orderable">Close (short)</button>
+                        <button onClick={() => cancelPO(s)} className="rounded border border-line px-2 py-0.5 text-xs text-bad hover:bg-bad-soft" title="Remove this PO (a mistake, a test, or one deleted in Niagawan). Does not touch Niagawan.">✕ Discard</button>
                       </div>
                     ) : null}
                   </div>
-                  {s.status === 'error' && s.note && <div className="mb-2 text-xs text-rose-600">{s.note}</div>}
-                  <div className="overflow-auto rounded border border-gray-100">
-                    <table className="min-w-full divide-y divide-gray-200 text-sm">
-                      <thead className="bg-gray-50 text-left text-gray-600"><tr>
+                  {s.status === 'error' && s.note && <div className="mb-2 text-xs text-bad">{s.note}</div>}
+                  <div className="overflow-auto rounded border border-line">
+                    <table className="min-w-full divide-y divide-line text-sm">
+                      <thead className="bg-ink/[0.03] text-left text-ink-2"><tr>
                         <th className="px-3 py-2 font-semibold">Item Code</th><th className="px-3 py-2 font-semibold">Item Name</th>
                         <th className="px-3 py-2 text-center font-semibold">Received</th><th className="px-3 py-2"></th>
                       </tr></thead>
-                      <tbody className="divide-y divide-gray-100">
+                      <tbody className="divide-y divide-line">
                         {lines.map((l) => {
                           const done = Number(l.received_qty) >= Number(l.ordered_qty);
                           return (
-                            <tr key={l.id} className={done ? 'text-gray-400' : ''}>
-                              <td className={`whitespace-nowrap px-3 py-1.5 font-mono text-xs ${done ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{l.code || '—'}</td>
-                              <td className={`px-3 py-1.5 ${done ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{l.descp || '—'}</td>
+                            <tr key={l.id} className={done ? 'text-ink-3' : ''}>
+                              <td className={`whitespace-nowrap px-3 py-1.5 font-mono text-xs ${done ? 'text-ink-3 line-through' : 'text-ink'}`}>{l.code || '—'}</td>
+                              <td className={`px-3 py-1.5 ${done ? 'text-ink-3 line-through' : 'text-ink-2'}`}>{l.descp || '—'}</td>
                               <td className="px-3 py-1.5 text-center tabular-nums">
                                 {s.status === 'created' ? (
                                   <span className="inline-flex items-center gap-1">
@@ -785,16 +785,16 @@ export default function InventoryV4Page() {
                                       onFocus={() => setEditingLine(l.id)}
                                       onChange={(e) => setLineReceivedLocal(l.id, Math.floor(Number(e.target.value)))}
                                       onBlur={(e) => { setEditingLine(null); persistLineReceived(l.id, Number(e.target.value), Number(l.ordered_qty)); }}
-                                      className="w-14 rounded border border-gray-200 px-1 py-0.5 text-center text-xs" />
-                                    <span className="text-xs text-gray-400">/ {Number(l.ordered_qty)}</span>
+                                      className="w-14 rounded border border-line px-1 py-0.5 text-center text-xs" />
+                                    <span className="text-xs text-ink-3">/ {Number(l.ordered_qty)}</span>
                                   </span>
                                 ) : (
-                                  <span className={done ? 'text-emerald-600' : 'text-gray-700'}>{Number(l.received_qty)}/{Number(l.ordered_qty)}</span>
+                                  <span className={done ? 'text-good' : 'text-ink-2'}>{Number(l.received_qty)}/{Number(l.ordered_qty)}</span>
                                 )}
                               </td>
                               <td className="px-3 py-1.5 text-right">
-                                {s.status === 'created' && !done && <button onClick={() => markLineReceived(l)} title="This line fully received" className="rounded px-1.5 py-0.5 text-xs text-emerald-600 hover:bg-emerald-50">✓ full</button>}
-                                {done && <span className="text-xs text-emerald-600">✓</span>}
+                                {s.status === 'created' && !done && <button onClick={() => markLineReceived(l)} title="This line fully received" className="rounded px-1.5 py-0.5 text-xs text-good hover:bg-good-soft">✓ full</button>}
+                                {done && <span className="text-xs text-good">✓</span>}
                               </td>
                             </tr>
                           );
@@ -810,27 +810,27 @@ export default function InventoryV4Page() {
       )}
 
       {/* INVENTORY LIST CARD — search the full catalog and add rows into a group card */}
-      <div className="mb-5 rounded-lg border border-gray-200 bg-white p-4">
+      <div className="mb-5 rounded-card bg-card shadow-card p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-gray-800">INVENTORY LIST CARD <span className="font-normal text-gray-400">· {items.length.toLocaleString('en-MY')} items (full catalog)</span></h2>
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search code or description…" className="w-64 max-w-full rounded-md border border-gray-300 px-2 py-1 text-sm" />
+          <h2 className="text-sm font-semibold text-ink-2">INVENTORY LIST CARD <span className="font-normal text-ink-3">· {items.length.toLocaleString('en-MY')} items (full catalog)</span></h2>
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search code or description…" className="w-64 max-w-full rounded-md border border-line px-2 py-1 text-sm" />
         </div>
 
         {/* Selection action bar — appears once you tick at least one row */}
         {selected.size > 0 && (
-          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm">
-            <span className="font-medium text-blue-800">{selected.size} selected</span>
-            <button onClick={() => setSelected(new Set())} disabled={inserting} className="text-xs text-blue-600 underline hover:text-blue-800 disabled:opacity-50">clear</button>
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-blue-200 bg-accent-weak px-3 py-2 text-sm">
+            <span className="font-medium text-accent">{selected.size} selected</span>
+            <button onClick={() => setSelected(new Set())} disabled={inserting} className="text-xs text-accent underline hover:text-accent disabled:opacity-50">clear</button>
             {allShownSelected && filtered.length > SHOW_CAP && (
-              <span className="text-xs text-amber-700">first {SHOW_CAP.toLocaleString('en-MY')} of {filtered.length.toLocaleString('en-MY')} matches — narrow your search to reach the rest</span>
+              <span className="text-xs text-warn">first {SHOW_CAP.toLocaleString('en-MY')} of {filtered.length.toLocaleString('en-MY')} matches — narrow your search to reach the rest</span>
             )}
             <span className="ml-auto flex flex-wrap items-center gap-2">
-              <span className="text-gray-600">Insert into</span>
+              <span className="text-ink-2">Insert into</span>
               <select
                 value={targetGroupId}
                 onChange={(e) => setTargetGroupId(e.target.value ? Number(e.target.value) : '')}
                 disabled={inserting}
-                className="rounded-md border border-gray-300 px-2 py-1 text-sm disabled:opacity-50"
+                className="rounded-md border border-line px-2 py-1 text-sm disabled:opacity-50"
               >
                 <option value="">Choose a card…</option>
                 {groups.length === 0 && <option value="" disabled>No cards yet — add one above</option>}
@@ -841,7 +841,7 @@ export default function InventoryV4Page() {
               <button
                 onClick={insertSelected}
                 disabled={!targetGroupId || inserting}
-                className="rounded-md bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-md bg-accent px-3 py-1 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {inserting ? 'Inserting…' : (() => { const n = groups.find((g) => g.id === targetGroupId)?.name; return n ? `Insert → ${n}` : 'Insert'; })()}
               </button>
@@ -850,12 +850,12 @@ export default function InventoryV4Page() {
         )}
 
         {loading ? (
-          <div className="text-sm text-gray-500">Loading the full catalog…</div>
+          <div className="text-sm text-ink-2">Loading the full catalog…</div>
         ) : (
           <>
-            <div className="max-h-[70vh] overflow-auto rounded border border-gray-100">
-              <table className="min-w-full divide-y divide-gray-200 text-sm">
-                <thead className="sticky top-0 bg-gray-50 text-left text-gray-600">
+            <div className="max-h-[70vh] overflow-auto rounded border border-line">
+              <table className="min-w-full divide-y divide-line text-sm">
+                <thead className="sticky top-0 bg-ink/[0.03] text-left text-ink-2">
                   <tr>
                     <th className="px-3 py-2">
                       <input type="checkbox" checked={allShownSelected} onChange={toggleSelectAllShown} title="Select all shown" className="cursor-pointer" />
@@ -867,39 +867,39 @@ export default function InventoryV4Page() {
                     <th className="px-3 py-2 font-semibold">In card</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-line">
                   {shown.map((it, i) => {
                     const sel = selected.has(it.sku);
                     const inCard = skuCard.get(it.sku);
                     return (
-                      <tr key={it.sku} className={sel ? 'bg-blue-50' : inCard ? 'bg-gray-50' : ''}>
+                      <tr key={it.sku} className={sel ? 'bg-accent-weak' : inCard ? 'bg-ink/[0.03]' : ''}>
                         <td className="px-3 py-1.5">
                           <input type="checkbox" checked={sel} onChange={() => toggleSelect(it.sku)} className="cursor-pointer" />
                         </td>
-                        <td className="px-3 py-1.5 text-gray-400">{i + 1}</td>
-                        <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-gray-900">{it.code || '—'}</td>
-                        <td className={`px-3 py-1.5 ${inCard ? 'text-gray-400' : 'text-gray-700'}`}>{it.descp || '—'}</td>
-                        <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-gray-700">{it.balance == null ? '—' : it.balance}</td>
+                        <td className="px-3 py-1.5 text-ink-3">{i + 1}</td>
+                        <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-ink">{it.code || '—'}</td>
+                        <td className={`px-3 py-1.5 ${inCard ? 'text-ink-3' : 'text-ink-2'}`}>{it.descp || '—'}</td>
+                        <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-ink-2">{it.balance == null ? '—' : it.balance}</td>
                         <td className="whitespace-nowrap px-3 py-1.5">
-                          {inCard && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">in {inCard}</span>}
+                          {inCard && <span className="rounded-full bg-good-soft px-2 py-0.5 text-xs font-medium text-good">in {inCard}</span>}
                         </td>
                       </tr>
                     );
                   })}
                   {shown.length === 0 && (
-                    <tr><td colSpan={6} className="px-3 py-4 text-center text-gray-400">No items match “{search}”.</td></tr>
+                    <tr><td colSpan={6} className="px-3 py-4 text-center text-ink-3">No items match “{search}”.</td></tr>
                   )}
                 </tbody>
               </table>
             </div>
-            <div className="mt-1 text-xs text-gray-400">
+            <div className="mt-1 text-xs text-ink-3">
               Showing {shown.length.toLocaleString('en-MY')} of {filtered.length.toLocaleString('en-MY')}{filtered.length !== items.length ? ` matching (of ${items.length.toLocaleString('en-MY')} total)` : ''}{filtered.length > SHOW_CAP ? ' — search to narrow the list.' : ''}
             </div>
           </>
         )}
       </div>
 
-      <p className="mt-2 text-xs text-gray-400">
+      <p className="mt-2 text-xs text-ink-3">
         Avg/mo auto-fills from 📊 Calculate average (scans the last 3 months of sales){avgAsOf ? ` · updated ${new Date(avgAsOf).toLocaleDateString('en-MY', { day: '2-digit', month: 'short' })}` : ''}; type over any oil to override, Keep-level defaults to avg×3. “Generate PO →” on a card stages a draft; approve it and the NAS creates the PO in Niagawan.
       </p>
     </div>

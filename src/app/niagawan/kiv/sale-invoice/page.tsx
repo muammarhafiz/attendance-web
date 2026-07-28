@@ -184,72 +184,72 @@ export default function KivSaleInvoicePage() {
   );
   const shownOwed = useMemo(() => shownPartials.reduce((s, p) => s + (Number(p.balance) || 0), 0), [shownPartials]);
 
-  if (authed === null || isAdmin === null) return <div className="text-sm text-gray-500">Checking…</div>;
-  if (!authed) return <div className="text-sm text-gray-600">Please sign in.</div>;
-  if (!isAdmin) return <div className="text-sm text-gray-600">You don&apos;t have access to this page.</div>;
+  if (authed === null || isAdmin === null) return <div className="text-sm text-ink-2">Checking…</div>;
+  if (!authed) return <div className="text-sm text-ink-2">Please sign in.</div>;
+  if (!isAdmin) return <div className="text-sm text-ink-2">You don&apos;t have access to this page.</div>;
 
   return (
     <div className="space-y-4">
       {/* Card: Moved sale invoices */}
-      <div className="rounded-lg border border-gray-200 bg-white">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-3">
+      <div className="rounded-card bg-card shadow-card">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3">
           <div>
-            <h2 className="text-sm font-semibold text-gray-800">Moved sale invoices</h2>
-            <p className="mt-0.5 text-xs text-gray-400">Unpaid invoices carried forward to the next day (so each day&apos;s sales/COGS reflects only completed, paid sales).</p>
+            <h2 className="text-sm font-semibold text-ink-2">Moved sale invoices</h2>
+            <p className="mt-0.5 text-xs text-ink-3">Unpaid invoices carried forward to the next day (so each day&apos;s sales/COGS reflects only completed, paid sales).</p>
           </div>
           <div className="flex flex-wrap items-end gap-2">
-            <label className="text-[11px] text-gray-500">
+            <label className="text-[11px] text-ink-2">
               Invoices dated
               <input type="date" value={fromDate} max={todayISO} onChange={(e) => setFromDate(e.target.value)}
-                className="mt-0.5 block rounded-md border border-gray-300 px-2 py-1 text-xs" />
+                className="mt-0.5 block rounded-md border border-line px-2 py-1 text-xs" />
             </label>
-            <span className="pb-1.5 text-gray-400">→</span>
-            <label className="text-[11px] text-gray-500">
+            <span className="pb-1.5 text-ink-3">→</span>
+            <label className="text-[11px] text-ink-2">
               Move to
               <input type="date" value={toDate} max={todayISO} onChange={(e) => setToDate(e.target.value)}
-                className="mt-0.5 block rounded-md border border-gray-300 px-2 py-1 text-xs" />
+                className="mt-0.5 block rounded-md border border-line px-2 py-1 text-xs" />
             </label>
             <button
               onClick={moveNow}
               disabled={run === 'running'}
-              className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+              className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
             >
               {run === 'running' ? 'Moving…' : 'Move unpaid invoices'}
             </button>
-            <button onClick={load} disabled={loading} className="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50">{loading ? '…' : 'Refresh'}</button>
+            <button onClick={load} disabled={loading} className="rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50">{loading ? '…' : 'Refresh'}</button>
           </div>
         </div>
 
         {runMsg && (
-          <div className={`mx-3 mt-3 rounded-md border p-2 text-sm ${run === 'error' ? 'border-rose-200 bg-rose-50 text-rose-800' : run === 'done' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+          <div className={`mx-3 mt-3 rounded-md border p-2 text-sm ${run === 'error' ? 'border-rose-200 bg-bad-soft text-bad' : run === 'done' ? 'border-emerald-200 bg-good-soft text-good' : 'border-amber-200 bg-warn-soft text-warn'}`}>
             {runMsg}
           </div>
         )}
-        {err && <div className="m-3 rounded-md border border-rose-200 bg-rose-50 p-2 text-sm text-rose-800">{err}</div>}
+        {err && <div className="m-3 rounded-md border border-rose-200 bg-bad-soft p-2 text-sm text-bad">{err}</div>}
 
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
-            <thead className="bg-gray-50 text-left">
+            <thead className="bg-ink/[0.03] text-left">
               <tr>
-                <th className="px-3 py-2 font-medium text-gray-600">Invoice</th>
-                <th className="px-3 py-2 font-medium text-gray-600">Customer</th>
-                <th className="px-3 py-2 text-right font-medium text-gray-600">Amount</th>
-                <th className="px-3 py-2 font-medium text-gray-600">From</th>
-                <th className="px-3 py-2 font-medium text-gray-600">Moved to</th>
-                <th className="px-3 py-2 font-medium text-gray-600">Moved at</th>
+                <th className="px-3 py-2 font-medium text-ink-2">Invoice</th>
+                <th className="px-3 py-2 font-medium text-ink-2">Customer</th>
+                <th className="px-3 py-2 text-right font-medium text-ink-2">Amount</th>
+                <th className="px-3 py-2 font-medium text-ink-2">From</th>
+                <th className="px-3 py-2 font-medium text-ink-2">Moved to</th>
+                <th className="px-3 py-2 font-medium text-ink-2">Moved at</th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
-                <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">No moved invoices yet.</td></tr>
+                <tr><td colSpan={6} className="px-3 py-8 text-center text-ink-3">No moved invoices yet.</td></tr>
               ) : rows.map((r) => (
-                <tr key={r.id} className="border-t border-gray-100">
-                  <td className="px-3 py-2 font-mono text-gray-800">{r.sale_inv_no}</td>
-                  <td className="px-3 py-2 text-gray-700">{r.customer ?? '—'}</td>
+                <tr key={r.id} className="border-t border-line">
+                  <td className="px-3 py-2 font-mono text-ink-2">{r.sale_inv_no}</td>
+                  <td className="px-3 py-2 text-ink-2">{r.customer ?? '—'}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{rm(r.amount)}</td>
-                  <td className="px-3 py-2 text-gray-600">{fmtDate(r.original_date)}</td>
-                  <td className="px-3 py-2 font-medium text-gray-800">{fmtDate(r.new_date)}</td>
-                  <td className="px-3 py-2 text-gray-500">{fmtWhen(r.moved_at)}</td>
+                  <td className="px-3 py-2 text-ink-2">{fmtDate(r.original_date)}</td>
+                  <td className="px-3 py-2 font-medium text-ink-2">{fmtDate(r.new_date)}</td>
+                  <td className="px-3 py-2 text-ink-2">{fmtWhen(r.moved_at)}</td>
                 </tr>
               ))}
             </tbody>
@@ -258,30 +258,30 @@ export default function KivSaleInvoicePage() {
       </div>
 
       {/* Card: Partial invoices */}
-      <div className="rounded-lg border border-gray-200 bg-white">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-3">
+      <div className="rounded-card bg-card shadow-card">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3">
           <div>
-            <h2 className="text-sm font-semibold text-gray-800">Partial invoices</h2>
-            <p className="mt-0.5 text-xs text-gray-400">
+            <h2 className="text-sm font-semibold text-ink-2">Partial invoices</h2>
+            <p className="mt-0.5 text-xs text-ink-3">
               Sale invoices where the customer paid a deposit but still owes a balance (all years). Refreshed daily at the scheduled time
               {partials[0]?.scanned_at ? <> · last scanned {fmtWhen(partials[0].scanned_at)}</> : null}.
             </p>
-            <p className="mt-1 text-xs font-medium text-gray-600">
-              {shownPartials.length} invoice{shownPartials.length === 1 ? '' : 's'} in {yearFilter} · <span className="text-rose-700">{rm(shownOwed)} owed</span>
+            <p className="mt-1 text-xs font-medium text-ink-2">
+              {shownPartials.length} invoice{shownPartials.length === 1 ? '' : 's'} in {yearFilter} · <span className="text-bad">{rm(shownOwed)} owed</span>
             </p>
           </div>
           <div className="flex items-end gap-2">
-            <label className="text-[11px] text-gray-500">
+            <label className="text-[11px] text-ink-2">
               Year
               <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)}
-                className="mt-0.5 block rounded-md border border-gray-300 px-2 py-1 text-xs">
+                className="mt-0.5 block rounded-md border border-line px-2 py-1 text-xs">
                 {partialYears.map((y) => <option key={y} value={y}>{y}</option>)}
               </select>
             </label>
             <button
               onClick={scanNow}
               disabled={scan === 'running'}
-              className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              className="rounded-md border border-line px-2.5 py-1 text-xs font-medium text-ink-2 hover:bg-ink/5 disabled:opacity-50"
             >
               {scan === 'running' ? 'Scanning…' : '↻ Scan now'}
             </button>
@@ -289,34 +289,34 @@ export default function KivSaleInvoicePage() {
         </div>
 
         {scanMsg && (
-          <div className={`mx-3 mt-3 rounded-md border p-2 text-sm ${scan === 'error' ? 'border-rose-200 bg-rose-50 text-rose-800' : scan === 'done' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+          <div className={`mx-3 mt-3 rounded-md border p-2 text-sm ${scan === 'error' ? 'border-rose-200 bg-bad-soft text-bad' : scan === 'done' ? 'border-emerald-200 bg-good-soft text-good' : 'border-amber-200 bg-warn-soft text-warn'}`}>
             {scanMsg}
           </div>
         )}
 
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
-            <thead className="bg-gray-50 text-left">
+            <thead className="bg-ink/[0.03] text-left">
               <tr>
-                <th className="px-3 py-2 font-medium text-gray-600">Invoice</th>
-                <th className="px-3 py-2 font-medium text-gray-600">Customer</th>
-                <th className="px-3 py-2 font-medium text-gray-600">Date</th>
-                <th className="px-3 py-2 text-right font-medium text-gray-600">Total</th>
-                <th className="px-3 py-2 text-right font-medium text-gray-600">Paid</th>
-                <th className="px-3 py-2 text-right font-medium text-gray-600">Balance owed</th>
+                <th className="px-3 py-2 font-medium text-ink-2">Invoice</th>
+                <th className="px-3 py-2 font-medium text-ink-2">Customer</th>
+                <th className="px-3 py-2 font-medium text-ink-2">Date</th>
+                <th className="px-3 py-2 text-right font-medium text-ink-2">Total</th>
+                <th className="px-3 py-2 text-right font-medium text-ink-2">Paid</th>
+                <th className="px-3 py-2 text-right font-medium text-ink-2">Balance owed</th>
               </tr>
             </thead>
             <tbody>
               {shownPartials.length === 0 ? (
-                <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">{partials.length === 0 ? 'No partial invoices found — press “Scan now” for the first scan.' : 'No partial invoices in ' + yearFilter + '.'}</td></tr>
+                <tr><td colSpan={6} className="px-3 py-8 text-center text-ink-3">{partials.length === 0 ? 'No partial invoices found — press “Scan now” for the first scan.' : 'No partial invoices in ' + yearFilter + '.'}</td></tr>
               ) : shownPartials.map((r) => (
-                <tr key={r.id} className="border-t border-gray-100">
-                  <td className="px-3 py-2 font-mono text-gray-800">{r.sale_inv_no}</td>
-                  <td className="px-3 py-2 text-gray-700">{r.customer ?? '—'}</td>
-                  <td className="px-3 py-2 text-gray-600">{fmtDate(r.sale_date)}</td>
+                <tr key={r.id} className="border-t border-line">
+                  <td className="px-3 py-2 font-mono text-ink-2">{r.sale_inv_no}</td>
+                  <td className="px-3 py-2 text-ink-2">{r.customer ?? '—'}</td>
+                  <td className="px-3 py-2 text-ink-2">{fmtDate(r.sale_date)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{rm(r.total)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-emerald-700">{rm(r.paid)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums font-semibold text-rose-700">{rm(r.balance)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-good">{rm(r.paid)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums font-semibold text-bad">{rm(r.balance)}</td>
                 </tr>
               ))}
             </tbody>
