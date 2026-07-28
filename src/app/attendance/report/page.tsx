@@ -146,9 +146,9 @@ export default function AttendanceReportPage() {
   const prevMonth = () => { const d = new Date(year, month - 2, 1); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); };
   const nextMonth = () => { const d = new Date(year, month, 1); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); };
 
-  if (authed === null || isAdmin === null) return <div className="text-sm text-gray-500">Checking…</div>;
-  if (!authed) return <div className="text-sm text-gray-600">Please sign in.</div>;
-  if (!isAdmin) return <div className="text-sm text-gray-600">You don&apos;t have access to this page.</div>;
+  if (authed === null || isAdmin === null) return <div className="text-sm text-ink-2">Checking…</div>;
+  if (!authed) return <div className="text-sm text-ink-2">Please sign in.</div>;
+  if (!isAdmin) return <div className="text-sm text-ink-2">You don&apos;t have access to this page.</div>;
 
   const printStaffName = staffFilter === 'ALL' ? 'All staff' : (staffList.find(([e]) => e === staffFilter)?.[1] ?? staffFilter);
   const printedOn = today.toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -177,12 +177,12 @@ export default function AttendanceReportPage() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/zordaq-auto.png" alt="ZORDAQ Auto Services" className="h-11 w-auto" />
             <div>
-              <div className="text-base font-bold tracking-tight text-slate-900">ZORDAQ AUTO SERVICES</div>
-              <div className="text-[10px] leading-snug text-slate-500">No. 1, Jalan Industri Putra 1, Presint 14, 62050 Putrajaya</div>
+              <div className="text-base font-bold tracking-tight text-ink">ZORDAQ AUTO SERVICES</div>
+              <div className="text-[10px] leading-snug text-ink-2">No. 1, Jalan Industri Putra 1, Presint 14, 62050 Putrajaya</div>
             </div>
           </div>
-          <div className="text-right text-[10px] leading-snug text-slate-500">
-            <div className="text-[13px] font-semibold text-slate-900">Monthly Attendance Report</div>
+          <div className="text-right text-[10px] leading-snug text-ink-2">
+            <div className="text-[13px] font-semibold text-ink">Monthly Attendance Report</div>
             <div>{MONTHS[month - 1]} {year} &middot; {printStaffName}</div>
             <div>Printed {printedOn}</div>
           </div>
@@ -191,14 +191,14 @@ export default function AttendanceReportPage() {
 
       {/* Controls (not printed) */}
       <div className="mb-4 flex flex-wrap items-center gap-2 print:hidden">
-        <button onClick={prevMonth} className="rounded-md border border-gray-300 px-2.5 py-1.5 text-sm hover:bg-gray-50">◀</button>
-        <span className="min-w-[110px] text-center text-sm font-semibold text-gray-900">{MONTHS[month - 1]} {year}</span>
-        <button onClick={nextMonth} className="rounded-md border border-gray-300 px-2.5 py-1.5 text-sm hover:bg-gray-50">▶</button>
+        <button onClick={prevMonth} className="rounded-md border border-line px-2.5 py-1.5 text-sm hover:bg-ink/5">◀</button>
+        <span className="min-w-[110px] text-center text-sm font-semibold text-ink">{MONTHS[month - 1]} {year}</span>
+        <button onClick={nextMonth} className="rounded-md border border-line px-2.5 py-1.5 text-sm hover:bg-ink/5">▶</button>
 
         <select
           value={staffFilter}
           onChange={(e) => setStaffFilter(e.target.value)}
-          className="ml-2 rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+          className="ml-2 rounded-md border border-line px-2 py-1.5 text-sm"
         >
           <option value="ALL">All staff (summary)</option>
           {staffList.map(([email, name]) => (
@@ -206,105 +206,105 @@ export default function AttendanceReportPage() {
           ))}
         </select>
 
-        <button onClick={load} disabled={loading} className="ml-auto rounded-md border border-gray-300 px-2.5 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50">
+        <button onClick={load} disabled={loading} className="ml-auto rounded-md border border-line px-2.5 py-1.5 text-sm hover:bg-ink/5 disabled:opacity-50">
           {loading ? 'Loading…' : 'Refresh'}
         </button>
-        <button onClick={() => window.print()} disabled={rows.length === 0} title="Print or save as PDF" className="rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+        <button onClick={() => window.print()} disabled={rows.length === 0} title="Print or save as PDF" className="rounded-md border border-line bg-card px-2.5 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5 disabled:opacity-50">
           🖨 Print
         </button>
       </div>
 
       {rows.length === 0 ? (
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">No records for this month.</div>
+        <div className="rounded-lg border border-line bg-ink/[0.03] p-6 text-center text-sm text-ink-2">No records for this month.</div>
       ) : staffFilter === 'ALL' ? (
         /* Summary table */
-        <div className="overflow-x-auto rounded-lg border border-gray-200">
+        <div className="overflow-x-auto rounded-lg border border-line">
           <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="bg-gray-50 text-left">
-                <th className="px-3 py-2 font-medium text-gray-600">Staff</th>
-                <th className="px-3 py-2 text-right font-medium text-gray-600">Present</th>
-                <th className="px-3 py-2 text-right font-medium text-gray-600">Absent</th>
-                <th className="px-3 py-2 text-right font-medium text-gray-600">Late days</th>
-                <th className="px-3 py-2 text-right font-medium text-gray-600">Total late</th>
-                <th className="px-3 py-2 text-right font-medium text-gray-600">MC</th>
-                <th className="px-3 py-2 text-right font-medium text-gray-600">Off day</th>
-                <th className="px-3 py-2 text-right font-medium text-gray-600">Public holiday</th>
+              <tr className="bg-ink/[0.03] text-left">
+                <th className="px-3 py-2 font-medium text-ink-2">Staff</th>
+                <th className="px-3 py-2 text-right font-medium text-ink-2">Present</th>
+                <th className="px-3 py-2 text-right font-medium text-ink-2">Absent</th>
+                <th className="px-3 py-2 text-right font-medium text-ink-2">Late days</th>
+                <th className="px-3 py-2 text-right font-medium text-ink-2">Total late</th>
+                <th className="px-3 py-2 text-right font-medium text-ink-2">MC</th>
+                <th className="px-3 py-2 text-right font-medium text-ink-2">Off day</th>
+                <th className="px-3 py-2 text-right font-medium text-ink-2">Public holiday</th>
               </tr>
             </thead>
             <tbody>
               {summary.map((s) => (
-                <tr key={s.email} className="border-t border-gray-100 hover:bg-gray-50">
+                <tr key={s.email} className="border-t border-line hover:bg-ink/[0.03]">
                   <td className="px-3 py-2">
-                    <button onClick={() => setStaffFilter(s.email)} className="text-left text-gray-900 hover:text-blue-600 hover:underline">{s.name}</button>
+                    <button onClick={() => setStaffFilter(s.email)} className="text-left text-ink hover:text-accent hover:underline">{s.name}</button>
                   </td>
-                  <td className="px-3 py-2 text-right text-emerald-700">{s.present}</td>
-                  <td className="px-3 py-2 text-right text-rose-600">{s.absent || '—'}</td>
-                  <td className="px-3 py-2 text-right text-amber-700">{s.lateDays || '—'}</td>
-                  <td className="px-3 py-2 text-right text-amber-700">{s.lateMin ? `${s.lateMin} min` : '—'}</td>
+                  <td className="px-3 py-2 text-right text-good">{s.present}</td>
+                  <td className="px-3 py-2 text-right text-bad">{s.absent || '—'}</td>
+                  <td className="px-3 py-2 text-right text-warn">{s.lateDays || '—'}</td>
+                  <td className="px-3 py-2 text-right text-warn">{s.lateMin ? `${s.lateMin} min` : '—'}</td>
                   <td className="px-3 py-2 text-right text-purple-700">{s.mc || '—'}</td>
-                  <td className="px-3 py-2 text-right text-blue-700">{s.offday || '—'}</td>
+                  <td className="px-3 py-2 text-right text-accent">{s.offday || '—'}</td>
                   <td className="px-3 py-2 text-right text-indigo-700">{s.ph || '—'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <div className="border-t border-gray-100 px-3 py-2 text-xs text-gray-400 print:hidden">Tap a staff name to see their daily detail.</div>
+          <div className="border-t border-line px-3 py-2 text-xs text-ink-3 print:hidden">Tap a staff name to see their daily detail.</div>
         </div>
       ) : (
         /* Per-staff daily detail (editable) */
         <>
         <div className="mb-2 flex items-center gap-2 print:hidden">
-          <button onClick={() => setStaffFilter('ALL')} className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2.5 py-1 text-sm text-gray-600 hover:bg-gray-50">← All staff</button>
-          <span className="text-sm font-medium text-gray-900">{staffList.find(([e]) => e === staffFilter)?.[1] ?? staffFilter}</span>
+          <button onClick={() => setStaffFilter('ALL')} className="inline-flex items-center gap-1 rounded-md border border-line px-2.5 py-1 text-sm text-ink-2 hover:bg-ink/5">← All staff</button>
+          <span className="text-sm font-medium text-ink">{staffList.find(([e]) => e === staffFilter)?.[1] ?? staffFilter}</span>
         </div>
-        <div className="overflow-x-auto rounded-lg border border-gray-200">
+        <div className="overflow-x-auto rounded-lg border border-line">
           <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="bg-gray-50 text-left">
-                <th className="px-3 py-2 font-medium text-gray-600">Date</th>
-                <th className="px-3 py-2 font-medium text-gray-600">Status</th>
-                <th className="px-3 py-2 font-medium text-gray-600">In</th>
-                <th className="px-3 py-2 font-medium text-gray-600">Out</th>
-                <th className="px-3 py-2 text-right font-medium text-gray-600">Late</th>
+              <tr className="bg-ink/[0.03] text-left">
+                <th className="px-3 py-2 font-medium text-ink-2">Date</th>
+                <th className="px-3 py-2 font-medium text-ink-2">Status</th>
+                <th className="px-3 py-2 font-medium text-ink-2">In</th>
+                <th className="px-3 py-2 font-medium text-ink-2">Out</th>
+                <th className="px-3 py-2 text-right font-medium text-ink-2">Late</th>
                 <th className="px-3 py-2 print:hidden"></th>
               </tr>
             </thead>
             <tbody>
               {detail.map((r) => (
                 <Fragment key={r.day}>
-                  <tr className="border-t border-gray-100">
-                    <td className="px-3 py-2 text-gray-700">{fmtDay(r.day)}</td>
+                  <tr className="border-t border-line">
+                    <td className="px-3 py-2 text-ink-2">{fmtDay(r.day)}</td>
                     <td className="px-3 py-2">
-                      {r.status === 'PRESENT' && <span className="text-emerald-700">Present</span>}
-                      {r.status === 'HOME' && <span className="text-emerald-700">Home (WFH)</span>}
-                      {r.status === 'ABSENT' && <span className="text-rose-600">Absent</span>}
-                      {r.status === 'OFF' && <span className="text-gray-500">Closed</span>}
-                      {r.status === 'OFFDAY' && <span className="text-blue-700">Off day</span>}
+                      {r.status === 'PRESENT' && <span className="text-good">Present</span>}
+                      {r.status === 'HOME' && <span className="text-good">Home (WFH)</span>}
+                      {r.status === 'ABSENT' && <span className="text-bad">Absent</span>}
+                      {r.status === 'OFF' && <span className="text-ink-2">Closed</span>}
+                      {r.status === 'OFFDAY' && <span className="text-accent">Off day</span>}
                       {r.status === 'PH' && <span className="text-indigo-700">Public holiday</span>}
-                      {r.status === 'MC' && <span className="text-blue-700">MC</span>}
-                      {r.half && <span className="ml-1 rounded-full bg-sky-50 px-1.5 py-0.5 text-xs font-medium text-sky-700" title={r.half === 'AM' ? 'Half day · morning (9:30–1:30)' : 'Half day · afternoon (1:30–6:00)'}>½ {r.half}</span>}
+                      {r.status === 'MC' && <span className="text-accent">MC</span>}
+                      {r.half && <span className="ml-1 rounded-full bg-accent-weak px-1.5 py-0.5 text-xs font-medium text-accent" title={r.half === 'AM' ? 'Half day · morning (9:30–1:30)' : 'Half day · afternoon (1:30–6:00)'}>½ {r.half}</span>}
                     </td>
-                    <td className="px-3 py-2 text-gray-700">{fmt12(r.check_in_kl)}</td>
-                    <td className="px-3 py-2 text-gray-700">{fmt12(r.check_out_kl)}</td>
-                    <td className={`px-3 py-2 text-right ${(r.late_min ?? 0) > 0 ? 'font-semibold text-rose-600' : 'text-gray-400'}`}>
+                    <td className="px-3 py-2 text-ink-2">{fmt12(r.check_in_kl)}</td>
+                    <td className="px-3 py-2 text-ink-2">{fmt12(r.check_out_kl)}</td>
+                    <td className={`px-3 py-2 text-right ${(r.late_min ?? 0) > 0 ? 'font-semibold text-bad' : 'text-ink-3'}`}>
                       {(r.late_min ?? 0) > 0 ? `${r.late_min} min` : '—'}
                     </td>
                     <td className="px-3 py-2 text-right print:hidden">
                       <button
                         onClick={() => (editDay === r.day ? setEditDay(null) : startEdit(r))}
-                        className="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-100"
+                        className="rounded border border-line px-2 py-0.5 text-xs text-ink-2 hover:bg-ink/5"
                       >
                         {editDay === r.day ? 'Close' : 'Edit'}
                       </button>
                     </td>
                   </tr>
                   {editDay === r.day && (
-                    <tr className="border-t border-gray-100 bg-gray-50 print:hidden">
+                    <tr className="border-t border-line bg-ink/[0.03] print:hidden">
                       <td colSpan={6} className="px-3 py-3">
                         <div className="flex flex-wrap items-end gap-3">
-                          <label className="text-xs text-gray-500">Status
-                            <select value={eStatus} onChange={(e) => setEStatus(e.target.value)} className="mt-0.5 block rounded-md border border-gray-300 px-2 py-1 text-sm">
+                          <label className="text-xs text-ink-2">Status
+                            <select value={eStatus} onChange={(e) => setEStatus(e.target.value)} className="mt-0.5 block rounded-md border border-line px-2 py-1 text-sm">
                               <option value="WORKING">Working day</option>
                               <option value="HALF_AM">Half day — morning (9:30–1:30)</option>
                               <option value="HALF_PM">Half day — afternoon (1:30–6:00)</option>
@@ -315,16 +315,16 @@ export default function AttendanceReportPage() {
                           </label>
                           {eStatus === 'WORKING' && (
                             <>
-                              <label className="text-xs text-gray-500">Check-in
-                                <input type="time" value={eIn} onChange={(e) => setEIn(e.target.value)} className="mt-0.5 block rounded-md border border-gray-300 px-2 py-1 text-sm" />
+                              <label className="text-xs text-ink-2">Check-in
+                                <input type="time" value={eIn} onChange={(e) => setEIn(e.target.value)} className="mt-0.5 block rounded-md border border-line px-2 py-1 text-sm" />
                               </label>
-                              <label className="text-xs text-gray-500">Check-out
-                                <input type="time" value={eOut} onChange={(e) => setEOut(e.target.value)} className="mt-0.5 block rounded-md border border-gray-300 px-2 py-1 text-sm" />
+                              <label className="text-xs text-ink-2">Check-out
+                                <input type="time" value={eOut} onChange={(e) => setEOut(e.target.value)} className="mt-0.5 block rounded-md border border-line px-2 py-1 text-sm" />
                               </label>
                             </>
                           )}
-                          <label className="text-xs text-gray-500">Note
-                            <input value={eNote} onChange={(e) => setENote(e.target.value)} placeholder="optional" className="mt-0.5 block rounded-md border border-gray-300 px-2 py-1 text-sm" />
+                          <label className="text-xs text-ink-2">Note
+                            <input value={eNote} onChange={(e) => setENote(e.target.value)} placeholder="optional" className="mt-0.5 block rounded-md border border-line px-2 py-1 text-sm" />
                           </label>
                           <button
                             onClick={() => saveEdit(r.staff_email, r.day)}
@@ -333,9 +333,9 @@ export default function AttendanceReportPage() {
                           >
                             {saving ? 'Saving…' : 'Save'}
                           </button>
-                          <button onClick={() => setEditDay(null)} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100">Cancel</button>
+                          <button onClick={() => setEditDay(null)} className="rounded-md border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">Cancel</button>
                         </div>
-                        <div className="mt-2 text-xs text-gray-400">
+                        <div className="mt-2 text-xs text-ink-3">
                           &quot;Working day&quot; clears any off-day/MC and uses real check-ins (with your time edits, if any).
                         </div>
                       </td>
@@ -350,7 +350,7 @@ export default function AttendanceReportPage() {
       )}
 
       {/* Print-only footer */}
-      <div className="mt-5 hidden border-t border-slate-300 pt-2 text-[10px] text-slate-400 print:block">
+      <div className="mt-5 hidden border-t border-slate-300 pt-2 text-[10px] text-ink-3 print:block">
         Generated by the ZORDAQ Attendance System &middot; {printedOn}
       </div>
     </div>

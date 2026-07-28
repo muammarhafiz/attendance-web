@@ -113,48 +113,48 @@ export default function AttendanceTodayPage() {
     return { present, absent, late, off, notYet };
   }, [rows, cutoffFor]);
 
-  if (authed === null || isAdmin === null) return <div className="text-sm text-gray-500">Checking…</div>;
-  if (!authed) return <div className="text-sm text-gray-600">Please sign in.</div>;
-  if (!isAdmin) return <div className="text-sm text-gray-600">You don&apos;t have access to this page.</div>;
+  if (authed === null || isAdmin === null) return <div className="text-sm text-ink-2">Checking…</div>;
+  if (!authed) return <div className="text-sm text-ink-2">Please sign in.</div>;
+  if (!isAdmin) return <div className="text-sm text-ink-2">You don&apos;t have access to this page.</div>;
 
   return (
     <div>
       {/* Summary */}
       <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
         {[
-          { label: 'Present', value: counts.present, cls: 'text-emerald-700' },
-          { label: 'Late', value: counts.late, cls: 'text-amber-700' },
-          { label: 'Not in yet', value: counts.notYet, cls: 'text-gray-500' },
-          { label: 'Absent', value: counts.absent, cls: 'text-rose-700' },
-          { label: 'Off / MC', value: counts.off, cls: 'text-blue-700' },
+          { label: 'Present', value: counts.present, cls: 'text-good' },
+          { label: 'Late', value: counts.late, cls: 'text-warn' },
+          { label: 'Not in yet', value: counts.notYet, cls: 'text-ink-2' },
+          { label: 'Absent', value: counts.absent, cls: 'text-bad' },
+          { label: 'Off / MC', value: counts.off, cls: 'text-accent' },
         ].map((c) => (
-          <div key={c.label} className="rounded-lg border border-gray-200 bg-white p-3 text-center">
+          <div key={c.label} className="rounded-card bg-card shadow-card p-3 text-center">
             <div className={`text-2xl font-bold ${c.cls}`}>{c.value}</div>
-            <div className="text-xs text-gray-500">{c.label}</div>
+            <div className="text-xs text-ink-2">{c.label}</div>
           </div>
         ))}
       </div>
 
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs text-gray-400">Updated {updated || '…'} · auto-refreshes</span>
+        <span className="text-xs text-ink-3">Updated {updated || '…'} · auto-refreshes</span>
         <button
           onClick={load}
           disabled={loading}
-          className="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+          className="rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50"
         >
           {loading ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
+      <div className="overflow-x-auto rounded-lg border border-line">
         <table className="w-full border-collapse text-sm">
           <thead>
-            <tr className="bg-gray-50 text-left">
-              <th className="px-3 py-2 font-medium text-gray-600">Name</th>
-              <th className="px-3 py-2 font-medium text-gray-600">Status</th>
-              <th className="px-3 py-2 font-medium text-gray-600">Check-in</th>
-              <th className="px-3 py-2 font-medium text-gray-600">Check-out</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-600">Late</th>
+            <tr className="bg-ink/[0.03] text-left">
+              <th className="px-3 py-2 font-medium text-ink-2">Name</th>
+              <th className="px-3 py-2 font-medium text-ink-2">Status</th>
+              <th className="px-3 py-2 font-medium text-ink-2">Check-in</th>
+              <th className="px-3 py-2 font-medium text-ink-2">Check-out</th>
+              <th className="px-3 py-2 text-right font-medium text-ink-2">Late</th>
             </tr>
           </thead>
           <tbody>
@@ -166,21 +166,21 @@ export default function AttendanceTodayPage() {
               const isLate = r.status === 'PRESENT' && (r.late_min ?? 0) > 0;
               const halfLabel = r.half === 'AM' ? 'Half day · AM (9:30–1:30)' : r.half === 'PM' ? 'Half day · PM (1:30–6:00)' : null;
               return (
-                <tr key={r.staff_email} className="border-t border-gray-100">
-                  <td className="px-3 py-2 text-gray-900">{r.display_name ?? r.staff_email}</td>
+                <tr key={r.staff_email} className="border-t border-line">
+                  <td className="px-3 py-2 text-ink">{r.display_name ?? r.staff_email}</td>
                   <td className="px-3 py-2">
-                    {r.status === 'PRESENT' && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Present</span>}
-                    {r.status === 'HOME' && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Home</span>}
-                    {r.status === 'OFF' && <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Closed</span>}
+                    {r.status === 'PRESENT' && <span className="rounded-full bg-good-soft px-2 py-0.5 text-xs font-medium text-good">Present</span>}
+                    {r.status === 'HOME' && <span className="rounded-full bg-good-soft px-2 py-0.5 text-xs font-medium text-good">Home</span>}
+                    {r.status === 'OFF' && <span className="rounded-full bg-ink/5 px-2 py-0.5 text-xs font-medium text-ink-2">Closed</span>}
                     {r.status === 'PH' && <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">Public holiday</span>}
-                    {(r.status === 'OFFDAY' || r.status === 'MC') && <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{r.status === 'OFFDAY' ? 'Off day' : 'MC'}</span>}
-                    {showAbsent && <span className="rounded-full bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700">Absent</span>}
-                    {showNotYet && <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">Not in yet</span>}
-                    {halfLabel && <span className="ml-1 rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700" title={halfLabel}>½ {r.half}</span>}
+                    {(r.status === 'OFFDAY' || r.status === 'MC') && <span className="rounded-full bg-accent-weak px-2 py-0.5 text-xs font-medium text-accent">{r.status === 'OFFDAY' ? 'Off day' : 'MC'}</span>}
+                    {showAbsent && <span className="rounded-full bg-bad-soft px-2 py-0.5 text-xs font-medium text-bad">Absent</span>}
+                    {showNotYet && <span className="rounded-full bg-ink/5 px-2 py-0.5 text-xs font-medium text-ink-2">Not in yet</span>}
+                    {halfLabel && <span className="ml-1 rounded-full bg-accent-weak px-2 py-0.5 text-xs font-medium text-accent" title={halfLabel}>½ {r.half}</span>}
                   </td>
-                  <td className="px-3 py-2 text-gray-700">{fmtTime(r.check_in_kl)}</td>
-                  <td className="px-3 py-2 text-gray-700">{fmtTime(r.check_out_kl)}</td>
-                  <td className={`px-3 py-2 text-right ${isLate ? 'font-semibold text-rose-600' : 'text-gray-400'}`}>
+                  <td className="px-3 py-2 text-ink-2">{fmtTime(r.check_in_kl)}</td>
+                  <td className="px-3 py-2 text-ink-2">{fmtTime(r.check_out_kl)}</td>
+                  <td className={`px-3 py-2 text-right ${isLate ? 'font-semibold text-bad' : 'text-ink-3'}`}>
                     {(r.late_min ?? 0) > 0 ? `${r.late_min} min` : '—'}
                   </td>
                 </tr>
@@ -188,7 +188,7 @@ export default function AttendanceTodayPage() {
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-3 py-6 text-center text-sm text-gray-500">
+                <td colSpan={5} className="px-3 py-6 text-center text-sm text-ink-2">
                   No check-ins recorded today yet.
                 </td>
               </tr>

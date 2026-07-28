@@ -82,60 +82,60 @@ export default function McReviewPage() {
     setBusy(null);
   }, [load]);
 
-  if (authed === null || isAdmin === null) return <div className="text-sm text-gray-500">Checking…</div>;
-  if (!authed) return <div className="text-sm text-gray-600">Please sign in.</div>;
-  if (!isAdmin) return <div className="text-sm text-gray-600">You don&apos;t have access to this page.</div>;
+  if (authed === null || isAdmin === null) return <div className="text-sm text-ink-3">Checking…</div>;
+  if (!authed) return <div className="text-sm text-ink-2">Please sign in.</div>;
+  if (!isAdmin) return <div className="text-sm text-ink-2">You don&apos;t have access to this page.</div>;
 
   const pendingCount = reqs.filter((r) => r.status === 'pending').length;
 
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <span className="text-sm text-gray-600">{pendingCount} pending</span>
-        <select value={staffF} onChange={(e) => setStaffF(e.target.value)} className="ml-2 rounded-md border border-gray-300 px-2 py-1.5 text-sm">
+        <span className="text-sm text-ink-2">{pendingCount} pending</span>
+        <select value={staffF} onChange={(e) => setStaffF(e.target.value)} className="ml-2 rounded-md border border-line px-2 py-1.5 text-sm">
           <option value="ALL">All staff</option>
           {staffList.map(([email, name]) => <option key={email} value={email}>{name}</option>)}
         </select>
-        <select value={statusF} onChange={(e) => setStatusF(e.target.value)} className="rounded-md border border-gray-300 px-2 py-1.5 text-sm">
+        <select value={statusF} onChange={(e) => setStatusF(e.target.value)} className="rounded-md border border-line px-2 py-1.5 text-sm">
           <option value="all">All statuses</option>
           <option value="pending">Pending</option>
           <option value="approved">Approved</option>
           <option value="rejected">Rejected</option>
         </select>
-        <button onClick={load} disabled={loading} className="ml-auto rounded-md border border-gray-300 px-2.5 py-1.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50">
+        <button onClick={load} disabled={loading} className="ml-auto rounded-md border border-line px-2.5 py-1.5 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50">
           {loading ? 'Loading…' : 'Refresh'}
         </button>
       </div>
 
       {filtered.length === 0 ? (
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">No MC submissions match.</div>
+        <div className="rounded-lg border border-line bg-ink/[0.03] p-6 text-center text-sm text-ink-2">No MC submissions match.</div>
       ) : (
         <div className="space-y-2">
           {filtered.map((r) => (
-            <div key={r.id} className={`rounded-lg border p-3 ${r.status === 'pending' ? 'border-amber-200 bg-amber-50/40' : 'border-gray-200 bg-white'}`}>
+            <div key={r.id} className={`rounded-card p-3 shadow-card ${r.status === 'pending' ? 'bg-warn-soft' : 'bg-card'}`}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <div className="text-sm font-medium text-gray-900">
+                  <div className="text-sm font-medium text-ink">
                     {names.get(r.staff_email.toLowerCase()) ?? r.staff_email}
-                    <span className="ml-2 text-xs font-normal text-gray-500">
+                    <span className="ml-2 text-xs font-normal text-ink-2">
                       {fmtD(r.date_from)}{r.date_to !== r.date_from ? ` – ${fmtD(r.date_to)}` : ''}
                     </span>
                   </div>
-                  {r.note && <div className="text-xs text-gray-500">{r.note}</div>}
+                  {r.note && <div className="text-xs text-ink-2">{r.note}</div>}
                 </div>
                 <div className="flex items-center gap-2">
                   {r.file_path && (
-                    <button onClick={() => viewCert(r.file_path)} className="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50">View certificate</button>
+                    <button onClick={() => viewCert(r.file_path)} className="rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-ink/5">View certificate</button>
                   )}
                   {r.status === 'pending' ? (
                     <>
-                      <button onClick={() => decide(r.id, true)} disabled={busy === r.id} className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
+                      <button onClick={() => decide(r.id, true)} disabled={busy === r.id} className="rounded-md bg-good px-2.5 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50">
                         {busy === r.id ? '…' : 'Approve'}
                       </button>
-                      <button onClick={() => decide(r.id, false)} disabled={busy === r.id} className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-500 hover:bg-gray-100 disabled:opacity-50">Reject</button>
+                      <button onClick={() => decide(r.id, false)} disabled={busy === r.id} className="rounded-md border border-line px-2.5 py-1 text-xs text-ink-3 hover:bg-ink/5 disabled:opacity-50">Reject</button>
                     </>
                   ) : (
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${r.status === 'approved' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${r.status === 'approved' ? 'bg-good-soft text-good' : 'bg-bad-soft text-bad'}`}>
                       {r.status === 'approved' ? 'Approved ✓' : 'Rejected'}
                     </span>
                   )}

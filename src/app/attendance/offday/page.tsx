@@ -146,72 +146,72 @@ export default function AttendanceOffdayPage() {
     }
   }, [loadExisting]);
 
-  if (authed === null || isAdmin === null) return <div className="text-sm text-gray-500">Checking…</div>;
-  if (!authed) return <div className="text-sm text-gray-600">Please sign in.</div>;
-  if (!isAdmin) return <div className="text-sm text-gray-600">You don&apos;t have access to this page.</div>;
+  if (authed === null || isAdmin === null) return <div className="text-sm text-ink-3">Checking…</div>;
+  if (!authed) return <div className="text-sm text-ink-2">Please sign in.</div>;
+  if (!isAdmin) return <div className="text-sm text-ink-2">You don&apos;t have access to this page.</div>;
 
   return (
     <div className="max-w-2xl">
-      <div className="mb-5 rounded-lg border border-gray-200 bg-white p-4">
+      <div className="mb-5 rounded-card bg-card shadow-card p-4">
         <div className="grid gap-3 sm:grid-cols-2">
-          <label className="text-xs text-gray-500">From
-            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+          <label className="text-xs text-ink-3">From
+            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
           </label>
-          <label className="text-xs text-gray-500">To
-            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+          <label className="text-xs text-ink-3">To
+            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
           </label>
-          <label className="text-xs text-gray-500">Who
-            <select value={who} onChange={(e) => setWho(e.target.value)} className="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm">
+          <label className="text-xs text-ink-3">Who
+            <select value={who} onChange={(e) => setWho(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm">
               <option value="ALL">All staff</option>
               {staff.map((s) => <option key={s.email} value={s.email}>{s.name ?? s.email}</option>)}
             </select>
           </label>
-          <label className="text-xs text-gray-500">Status
-            <select value={status} onChange={(e) => setStatus(e.target.value)} className="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm">
+          <label className="text-xs text-ink-3">Status
+            <select value={status} onChange={(e) => setStatus(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm">
               {STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
           </label>
-          <label className="text-xs text-gray-500 sm:col-span-2">Note (optional)
-            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Hari Raya, Medical leave" className="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+          <label className="text-xs text-ink-3 sm:col-span-2">Note (optional)
+            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Hari Raya, Medical leave" className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
           </label>
         </div>
         <div className="mt-3 flex items-center gap-3">
           <button onClick={apply} disabled={busy} className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50">
             {busy ? 'Saving…' : 'Set'}
           </button>
-          <span className="text-xs text-gray-400">Tip: for a government holiday, pick &quot;Public holiday&quot; + All staff.</span>
+          <span className="text-xs text-ink-3">Tip: for a government holiday, pick &quot;Public holiday&quot; + All staff.</span>
         </div>
         {msg && (
-          <div className={`mt-3 rounded-md border p-2 text-sm ${msg.kind === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>
+          <div className={`mt-3 rounded-md border border-line p-2 text-sm ${msg.kind === 'ok' ? 'bg-good-soft text-good' : 'bg-bad-soft text-bad'}`}>
             {msg.text}
           </div>
         )}
       </div>
 
-      <h2 className="mb-2 text-sm font-semibold text-gray-700">Set for {from.slice(0, 7)}</h2>
+      <h2 className="mb-2 text-sm font-semibold text-ink-2">Set for {from.slice(0, 7)}</h2>
       {existing.length === 0 ? (
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-center text-sm text-gray-500">Nothing set this month.</div>
+        <div className="rounded-lg border border-line bg-ink/[0.03] p-4 text-center text-sm text-ink-3">Nothing set this month.</div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-gray-200">
+        <div className="overflow-x-auto rounded-lg border border-line">
           <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="bg-gray-50 text-left">
-                <th className="px-3 py-2 font-medium text-gray-600">Date</th>
-                <th className="px-3 py-2 font-medium text-gray-600">Staff</th>
-                <th className="px-3 py-2 font-medium text-gray-600">Status</th>
-                <th className="px-3 py-2 font-medium text-gray-600">Note</th>
+              <tr className="bg-ink/[0.03] text-left">
+                <th className="px-3 py-2 font-medium text-ink-2">Date</th>
+                <th className="px-3 py-2 font-medium text-ink-2">Staff</th>
+                <th className="px-3 py-2 font-medium text-ink-2">Status</th>
+                <th className="px-3 py-2 font-medium text-ink-2">Note</th>
                 <th className="px-3 py-2"></th>
               </tr>
             </thead>
             <tbody>
               {existing.map((r) => (
-                <tr key={`${r.day}|${r.staff_email}`} className="border-t border-gray-100">
-                  <td className="px-3 py-2 text-gray-700">{r.day.slice(8)}/{r.day.slice(5, 7)}</td>
-                  <td className="px-3 py-2 text-gray-700">{nameByEmail.get(r.staff_email) ?? r.staff_email}</td>
-                  <td className="px-3 py-2"><span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{STATUS_LABEL[r.status] ?? r.status}</span></td>
-                  <td className="px-3 py-2 text-gray-500">{r.note ?? '—'}</td>
+                <tr key={`${r.day}|${r.staff_email}`} className="border-t border-line">
+                  <td className="px-3 py-2 text-ink-2">{r.day.slice(8)}/{r.day.slice(5, 7)}</td>
+                  <td className="px-3 py-2 text-ink-2">{nameByEmail.get(r.staff_email) ?? r.staff_email}</td>
+                  <td className="px-3 py-2"><span className="rounded-full bg-accent-weak px-2 py-0.5 text-xs font-medium text-accent">{STATUS_LABEL[r.status] ?? r.status}</span></td>
+                  <td className="px-3 py-2 text-ink-3">{r.note ?? '—'}</td>
                   <td className="px-3 py-2 text-right">
-                    <button onClick={() => clearOne(r)} disabled={busy} className="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-100 disabled:opacity-50">Clear</button>
+                    <button onClick={() => clearOne(r)} disabled={busy} className="rounded border border-line px-2 py-0.5 text-xs text-ink-3 hover:bg-ink/5 disabled:opacity-50">Clear</button>
                   </td>
                 </tr>
               ))}
