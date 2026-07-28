@@ -96,7 +96,7 @@ function haversineM(aLat: number, aLon: number, bLat: number, bLon: number): num
   return Math.round(R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s)));
 }
 
-export default function CheckinV2() {
+export default function CheckinV2({ embedded = false }: { embedded?: boolean } = {}) {
   const router = useRouter();
   const [email, setEmail] = useState<string | null | undefined>(undefined);
   const [tab, setTab] = useState<'record' | 'requests' | 'details'>('record');
@@ -442,11 +442,13 @@ export default function CheckinV2() {
 
   return (
     <div className="mx-auto max-w-5xl">
-      {/* Header — left aligned, like the other pages */}
-      <div className="mb-4 flex items-baseline justify-between gap-3">
-        <h1 className="text-xl font-semibold tracking-tight text-ink">Check in</h1>
-        <span className="text-sm text-ink-3">{dateStr}</span>
-      </div>
+      {/* Header — left aligned, like the other pages. Hidden when embedded in the Attendance tabs. */}
+      {!embedded && (
+        <div className="mb-4 flex items-baseline justify-between gap-3">
+          <h1 className="text-xl font-semibold tracking-tight text-ink">Check in</h1>
+          <span className="text-sm text-ink-3">{dateStr}</span>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(300px,360px)_1fr] lg:items-start">
         {/* LEFT — the hero: clock, status, location, and the check-in action, all in one card */}
@@ -523,7 +525,7 @@ export default function CheckinV2() {
 
           {/* MY RECORD */}
           {tab === 'record' && (
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
               {/* Attendance performance this month — late/absent highlighted */}
               {perf && (
                 <div className="rounded-card bg-card p-4 shadow-card">
