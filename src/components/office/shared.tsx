@@ -9,7 +9,7 @@ export type Home = {
   error?: string;
   today: string;
   month: string;
-  eom: { done: number; total: number; blockers: number };
+  eom: { done: number; total: number; blockers: number; suppliers_owed: number; absents: number; bills_total: number; bills_unpaid: number; ticks: Record<string, boolean> };
   unpaid: { count: number; total: number | string; top: { inv: string; customer: string | null; balance: number | string; status?: string | null; age_days?: number | null }[] };
   yesterday: { day: string; cash_in: number | string; cash_out: number | string; qr_in: number | string; card_in: number | string; transfer_in: number | string } | null;
   daily_to_check: number;

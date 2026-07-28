@@ -146,7 +146,6 @@ export default function OfficePage() {
 
 function OfficeHome({ d, reload }: { d: Home; reload: () => void }) {
   const weeklyAlert = d.po_pending > 0;
-  const monthlyAlert = d.eom.done < d.eom.total;
   const onOrder = d.po_on_order?.length || 0;
   const weeklySummary = d.po_pending > 0
     ? (d.po_pending === 1 && d.po_list?.[0]
@@ -159,9 +158,49 @@ function OfficeHome({ d, reload }: { d: Home; reload: () => void }) {
       <div className="space-y-3">
         <DailyStatusCard />
         <BigCard href="/office/weekly" icon="🗒️" title="Weekly" alert={weeklyAlert} summary={weeklySummary} />
-        <BigCard href="/month-end" icon="🗓️" title="Monthly" alert={monthlyAlert}
-          summary={`End of month · ${d.eom.done}/${d.eom.total} done`} />
+        <MonthlyStatusCard d={d} />
       </div>
     </OfficeShell>
+  );
+}
+
+// Month-end at a glance: what's SETTLED (green) vs PENDING (red) for the current month.
+function MonthlyStatusCard({ d }: { d: Home }) {
+  const e = d.eom;
+  const ticks = e.ticks || {};
+  const rows: DRow[] = [
+    { label: 'Pay suppliers', state: (ticks.suppliers_paid || e.suppliers_owed === 0) ? 'ok' : 'bad',
+      value: ticks.suppliers_paid ? 'paid ✓' : e.suppliers_owed > 0 ? `${e.suppliers_owed} owed` : 'none owed' },
+    { label: 'Fix MC / off-days', state: (ticks.fix_absent || e.absents === 0) ? 'ok' : 'bad',
+      value: ticks.fix_absent ? 'done ✓' : e.absents > 0 ? `${e.absents} absent` : 'none' },
+    { label: 'Payroll', state: ticks.payroll ? 'ok' : 'bad',
+      value: ticks.payroll ? 'done ✓' : 'pending' },
+    { label: 'Bills', state: e.bills_unpaid > 0 ? 'bad' : 'ok',
+      value: e.bills_total === 0 ? 'none' : e.bills_unpaid > 0 ? `${e.bills_unpaid} unpaid` : 'all paid ✓' },
+  ];
+  const hasBad = rows.some((r) => r.state === 'bad');
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-5">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="text-2xl leading-none">🗓️</span>
+        <h2 className="text-lg font-semibold text-gray-900">Monthly</h2>
+        {hasBad ? <span className="h-2 w-2 rounded-full bg-rose-500" title="Pending items" />
+          : <span className="h-2 w-2 rounded-full bg-emerald-500" title="All settled" />}
+        <Link href="/month-end" className="ml-auto text-xs font-medium text-blue-600 hover:underline">Open →</Link>
+      </div>
+      <ul className="space-y-1.5">
+        {rows.map((r, i) => {
+          const dot = r.state === 'bad' ? 'bg-rose-500' : 'bg-emerald-500';
+          const txt = r.state === 'bad' ? 'text-rose-600' : 'text-emerald-600';
+          return (
+            <li key={i} className="flex items-center gap-2 text-sm">
+              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
+              <span className="text-gray-600">{r.label}</span>
+              <span className={`ml-auto font-medium ${txt}`}>{r.value}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
