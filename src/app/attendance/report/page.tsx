@@ -67,6 +67,12 @@ export default function AttendanceReportPage() {
     if (isAdmin) load();
   }, [isAdmin, load]);
 
+  // Deep-link from the month-end fix-absent card: /attendance/report?staff=<email> preselects that staff.
+  useEffect(() => {
+    const s = new URLSearchParams(window.location.search).get('staff');
+    if (s) setStaffFilter(s);
+  }, []);
+
   const staffList = useMemo(() => {
     const m = new Map<string, string>();
     rows.forEach((r) => m.set(r.staff_email, r.staff_name ?? r.staff_email));
