@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
+import { Icon, type IconName } from '@/components/icons';
 
 type Dash = {
   error?: string;
@@ -23,22 +24,22 @@ const cleanSupplier = (name: string) => name.replace(/\s*\(\d{6,}.*$/, '').trim(
 
 function Kpi({ label, value, sub, href }: { label: string; value: string; sub?: string; href?: string }) {
   const body = (
-    <div className="rounded-xl bg-white p-4 ring-1 ring-slate-200 transition hover:ring-slate-300">
-      <div className="text-xs font-medium text-slate-500">{label}</div>
-      <div className="mt-1 text-2xl font-semibold text-slate-900">{value}</div>
-      {sub && <div className="mt-0.5 text-xs text-slate-400">{sub}</div>}
+    <div className="rounded-card bg-card p-4 shadow-card transition hover:-translate-y-px">
+      <div className="text-xs font-medium text-ink-2">{label}</div>
+      <div className="mt-1 text-2xl font-semibold tracking-tight text-ink">{value}</div>
+      {sub && <div className="mt-0.5 text-xs text-ink-3">{sub}</div>}
     </div>
   );
   return href ? <Link href={href}>{body}</Link> : body;
 }
 
-function Card({ title, icon, href, children }: { title: string; icon: string; href?: string; children: React.ReactNode }) {
+function Card({ title, icon, href, children }: { title: string; icon: IconName; href?: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl bg-white p-4 ring-1 ring-slate-200">
-      <div className="mb-3 flex items-center gap-2">
-        <span className="text-base leading-none">{icon}</span>
-        <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
-        {href && <Link href={href} className="ml-auto text-xs text-slate-400 hover:text-slate-700">Open →</Link>}
+    <div className="rounded-card bg-card p-5 shadow-card">
+      <div className="mb-3 flex items-center gap-2.5">
+        <span className="text-ink-2"><Icon name={icon} size={17} /></span>
+        <h3 className="text-sm font-semibold tracking-tight text-ink">{title}</h3>
+        {href && <Link href={href} className="ml-auto text-xs font-medium text-accent hover:opacity-80">Open →</Link>}
       </div>
       {children}
     </div>
@@ -47,12 +48,12 @@ function Card({ title, icon, href, children }: { title: string; icon: string; hr
 
 const Row = ({ k, v, tone }: { k: string; v: React.ReactNode; tone?: 'ok' | 'warn' | 'bad' }) => (
   <div className="flex items-center justify-between gap-3 py-1 text-sm">
-    <span className="min-w-0 truncate text-slate-600" title={k}>{k}</span>
+    <span className="min-w-0 truncate text-ink-2" title={k}>{k}</span>
     <span className={`shrink-0 ${
-      tone === 'warn' ? 'rounded-md bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700'
-      : tone === 'bad' ? 'rounded-md bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700'
-      : tone === 'ok' ? 'rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700'
-      : 'font-semibold text-slate-900'
+      tone === 'warn' ? 'rounded-md bg-warn-soft px-2 py-0.5 text-xs font-semibold text-warn'
+      : tone === 'bad' ? 'rounded-md bg-bad-soft px-2 py-0.5 text-xs font-semibold text-bad'
+      : tone === 'ok' ? 'rounded-md bg-good-soft px-2 py-0.5 text-xs font-semibold text-good'
+      : 'font-semibold text-ink'
     }`}>{v}</span>
   </div>
 );
@@ -60,15 +61,15 @@ const Row = ({ k, v, tone }: { k: string; v: React.ReactNode; tone?: 'ok' | 'war
 // Interactive 14-day sales trend: the big figure + date follow whichever bar you tap/hover.
 function SalesTrend({ series, mtd, today }: { series: { day: string; sales: number }[]; mtd: number; today: number }) {
   const [sel, setSel] = useState<number | null>(null);
-  if (!series.length) return <div className="text-sm text-slate-400">No sales data yet.</div>;
+  if (!series.length) return <div className="text-sm text-ink-3">No sales data yet.</div>;
   const max = Math.max(1, ...series.map((x) => x.sales));
   const i = sel ?? series.length - 1;
   const cur = series[Math.min(i, series.length - 1)];
   return (
     <div>
       <div className="mb-1 flex items-baseline justify-between">
-        <span className="text-xl font-semibold text-slate-900">{rm(cur.sales)}</span>
-        <span className="text-xs font-medium text-slate-500">{fmtDay(cur.day)}</span>
+        <span className="text-xl font-semibold tracking-tight text-ink">{rm(cur.sales)}</span>
+        <span className="text-xs font-medium text-ink-2">{fmtDay(cur.day)}</span>
       </div>
       <div className="flex h-20 items-end gap-[3px]">
         {series.map((x, idx) => (
@@ -80,27 +81,27 @@ function SalesTrend({ series, mtd, today }: { series: { day: string; sales: numb
             onFocus={() => setSel(idx)}
             onClick={() => setSel(idx)}
             aria-label={`${fmtDay(x.day)}: ${rm(x.sales)}`}
-            className={`flex-1 rounded-t transition-colors ${idx === i ? 'bg-sky-500' : 'bg-sky-200 hover:bg-sky-300'}`}
+            className={`flex-1 rounded-t transition-colors ${idx === i ? 'bg-accent' : 'bg-accent/25 hover:bg-accent/45'}`}
             style={{ height: `${Math.max(4, Math.round((x.sales / max) * 100))}%` }}
           />
         ))}
       </div>
-      <div className="mt-1 flex justify-between text-[10px] text-slate-400">
+      <div className="mt-1 flex justify-between text-[10px] text-ink-3">
         <span>{fmtDay(series[0].day)}</span>
         <span>{fmtDay(series[series.length - 1].day)}</span>
       </div>
-      <div className="mt-2 border-t border-slate-100 pt-2">
+      <div className="mt-2 border-t border-line pt-2">
         <Row k="Today" v={rm(today)} />
         <Row k="This month" v={rm(mtd)} />
       </div>
-      <p className="mt-1 text-[10px] text-slate-400">Tap a bar to see that day’s sales.</p>
+      <p className="mt-1 text-[10px] text-ink-3">Tap a bar to see that day’s sales.</p>
     </div>
   );
 }
 
 type UnpaidRow = { sale_id: string; inv: string; customer: string | null; balance: number | string; status?: string | null; age_days?: number | null };
 type OwnerUnpaid = { error?: string; active_count: number; active_total: number | string; active: UnpaidRow[]; ignored: { sale_id: string; inv: string; customer: string | null; balance: number | string }[] };
-const ageC = (n?: number | null) => (n == null ? 'text-slate-400' : n >= 60 ? 'text-rose-600' : n >= 30 ? 'text-amber-600' : 'text-slate-400');
+const ageC = (n?: number | null) => (n == null ? 'text-ink-3' : n >= 60 ? 'text-bad' : n >= 30 ? 'text-warn' : 'text-ink-3');
 
 // Owner-only Chase-unpaid monitor: watch the clerk's chasing + ignore won't-collect bills.
 function ChaseUnpaidCard() {
@@ -118,25 +119,25 @@ function ChaseUnpaidCard() {
   const nPartial = u ? u.active.filter((r) => r.status === 'partial').length : 0;
   const nUnpaid = u ? u.active.length - nPartial : 0;
   return (
-    <Card title="Unpaid & partial bills" icon="📞">
-      {!u || u.error ? <div className="text-sm text-slate-400">—</div> : (
+    <Card title="Unpaid & partial bills" icon="phone">
+      {!u || u.error ? <div className="text-sm text-ink-3">—</div> : (
         <>
-          <div className="mb-2 text-sm text-slate-600">Owed <span className="font-semibold text-slate-900">{rm2(Number(u.active_total))}</span> · {nUnpaid} unpaid · {nPartial} partial</div>
-          {u.active.length === 0 ? <div className="text-sm text-emerald-700">Nothing to chase ✓</div> : (
-            <div className="max-h-72 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-100">
+          <div className="mb-2 text-sm text-ink-2">Owed <span className="font-semibold text-ink">{rm2(Number(u.active_total))}</span> · {nUnpaid} unpaid · {nPartial} partial</div>
+          {u.active.length === 0 ? <div className="text-sm text-good">Nothing to chase ✓</div> : (
+            <div className="max-h-72 divide-y divide-line overflow-y-auto rounded-lg border border-line">
               {u.active.map((r) => (
                 <div key={r.sale_id} className="flex items-center justify-between gap-2 px-2 py-1.5 text-xs">
                   <div className="min-w-0">
-                    <div className="truncate text-slate-700">{r.customer || '—'}</div>
+                    <div className="truncate text-ink">{r.customer || '—'}</div>
                     <div className="mt-0.5 flex items-center gap-1.5">
-                      <span className="font-mono text-[11px] text-slate-400">{r.inv}</span>
+                      <span className="font-mono text-[11px] text-ink-3">{r.inv}</span>
                       <span className={ageC(r.age_days)}>{r.age_days == null ? '—' : `${r.age_days}d`}</span>
-                      {r.status === 'partial' && <span className="rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-700">partial</span>}
+                      {r.status === 'partial' && <span className="rounded bg-warn-soft px-1 py-0.5 text-[10px] font-medium text-warn">partial</span>}
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    <span className="font-medium text-slate-800">{rm2(Number(r.balance))}</span>
-                    <button onClick={() => setIgnore(r.sale_id, true)} disabled={busy} title="Ignore — stop chasing this bill" className="text-slate-300 hover:text-rose-500 disabled:opacity-40">✕</button>
+                    <span className="font-medium text-ink">{rm2(Number(r.balance))}</span>
+                    <button onClick={() => setIgnore(r.sale_id, true)} disabled={busy} title="Ignore — stop chasing this bill" className="text-ink-3 hover:text-bad disabled:opacity-40">✕</button>
                   </div>
                 </div>
               ))}
@@ -144,20 +145,20 @@ function ChaseUnpaidCard() {
           )}
           {u.ignored.length > 0 && (
             <div className="mt-2">
-              <button onClick={() => setShowIgnored((v) => !v)} className="text-xs text-slate-400 hover:text-slate-700">{showIgnored ? 'Hide' : 'Show'} {u.ignored.length} ignored</button>
+              <button onClick={() => setShowIgnored((v) => !v)} className="text-xs text-ink-3 hover:text-ink">{showIgnored ? 'Hide' : 'Show'} {u.ignored.length} ignored</button>
               {showIgnored && (
                 <div className="mt-1 space-y-0.5">
                   {u.ignored.map((r) => (
-                    <div key={r.sale_id} className="flex items-center justify-between gap-2 text-xs text-slate-400">
+                    <div key={r.sale_id} className="flex items-center justify-between gap-2 text-xs text-ink-3">
                       <span className="min-w-0 truncate line-through">{r.customer || r.inv} · {r.inv}</span>
-                      <button onClick={() => setIgnore(r.sale_id, false)} disabled={busy} className="shrink-0 text-blue-600 hover:underline">restore</button>
+                      <button onClick={() => setIgnore(r.sale_id, false)} disabled={busy} className="shrink-0 text-accent hover:underline">restore</button>
                     </div>
                   ))}
                 </div>
               )}
             </div>
           )}
-          <p className="mt-2 text-[10px] text-slate-400">Ignore = stop chasing (won&rsquo;t collect); it drops off the clerk&rsquo;s list.</p>
+          <p className="mt-2 text-[10px] text-ink-3">Ignore = stop chasing (won&rsquo;t collect); it drops off the clerk&rsquo;s list.</p>
         </>
       )}
     </Card>
@@ -191,13 +192,13 @@ function ClerkStatusCard() {
   const cashDiff = counted ? Number(s!.cash_counted) - Number(s!.cash_system) : 0;
   const cashMatches = counted && Math.abs(cashDiff) < 0.01;
   return (
-    <Card title="Clerk" icon="🧑‍💼" href="/office">
+    <Card title="Clerk" icon="briefcase" href="/office">
       <div className="mb-2 flex items-center justify-center gap-3">
-        <button onClick={() => shiftDay(-1)} aria-label="Previous day" className="rounded-md border border-slate-200 px-2.5 py-1 text-sm hover:bg-slate-50">◀</button>
-        <span className="min-w-[80px] text-center text-sm font-semibold text-slate-800">{fmtDMY(day)}</span>
-        <button onClick={() => shiftDay(1)} disabled={day >= klTodayIso()} aria-label="Next day" className="rounded-md border border-slate-200 px-2.5 py-1 text-sm hover:bg-slate-50 disabled:opacity-40">▶</button>
+        <button onClick={() => shiftDay(-1)} aria-label="Previous day" className="rounded-md border border-line px-2.5 py-1 text-sm text-ink-2 hover:bg-ink/5">◀</button>
+        <span className="min-w-[80px] text-center text-sm font-semibold text-ink">{fmtDMY(day)}</span>
+        <button onClick={() => shiftDay(1)} disabled={day >= klTodayIso()} aria-label="Next day" className="rounded-md border border-line px-2.5 py-1 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-40">▶</button>
       </div>
-      {!s || s.error ? <div className="text-sm text-slate-400">—</div> : (
+      {!s || s.error ? <div className="text-sm text-ink-3">—</div> : (
         <>
           {clerkMethodRows(s.methods || {}).map((r) => {
             const done = r.stat.total > 0 && r.stat.checked === r.stat.total;
@@ -225,7 +226,7 @@ function OfficeMonthlyCard({ h }: { h: OfficeHome | null }) {
   const e = h.eom;
   const t = e.ticks || {};
   return (
-    <Card title="Monthly · end of month" icon="🗓️" href="/month-end">
+    <Card title="Monthly · end of month" icon="calendar" href="/month-end">
       <Row k="Pay suppliers" v={t.suppliers_paid ? 'paid ✓' : e.suppliers_owed > 0 ? `${e.suppliers_owed} owed` : 'none owed'} tone={(t.suppliers_paid || e.suppliers_owed === 0) ? 'ok' : 'bad'} />
       <Row k="Fix MC / off-days" v={t.fix_absent ? 'done ✓' : e.absents > 0 ? `${e.absents} absent` : 'none'} tone={(t.fix_absent || e.absents === 0) ? 'ok' : 'bad'} />
       <Row k="Payroll" v={t.payroll ? 'done ✓' : 'pending'} tone={t.payroll ? 'ok' : 'bad'} />
@@ -238,7 +239,7 @@ function OfficeWeeklyCard({ h }: { h: OfficeHome | null }) {
   if (!h || h.error) return null;
   const onOrder = h.po_on_order?.length || 0;
   return (
-    <Card title="Weekly · purchase orders" icon="🗒️" href="/office/weekly">
+    <Card title="Weekly · purchase orders" icon="clipboard" href="/office/weekly">
       <Row k="POs to send" v={h.po_pending > 0 ? h.po_pending : 'none'} tone={h.po_pending > 0 ? 'warn' : 'ok'} />
       <Row k="Awaiting delivery" v={onOrder > 0 ? onOrder : 'none'} tone={onOrder > 0 ? 'warn' : 'ok'} />
     </Card>
@@ -287,30 +288,30 @@ export default function DashboardPage() {
     try { localStorage.setItem(DASH_ORDER_KEY, JSON.stringify(next)); } catch { /* ignore unavailable storage */ }
   }, []);
 
-  if (status === 'loading') return <div className="mx-auto max-w-6xl px-4 py-6 text-sm text-slate-400">Loading your shop…</div>;
-  if (status === 'denied' || !d) return <div className="mx-auto max-w-6xl px-4 py-6 text-sm text-slate-600">This dashboard is for owners.</div>;
+  if (status === 'loading') return <div className="mx-auto max-w-6xl px-4 py-6 text-sm text-ink-3">Loading your shop…</div>;
+  if (status === 'denied' || !d) return <div className="mx-auto max-w-6xl px-4 py-6 text-sm text-ink-2">This dashboard is for owners.</div>;
 
   const dateLabel = new Date(d.today + 'T00:00:00').toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long' });
 
   // id → card element. Order + visibility are driven by `order` below; behaviour is identical to before.
   const cardEls: Record<string, React.ReactNode> = {
     attendance: (
-      <Card title="Attendance" icon="🧑‍🔧" href="/attendance/today">
+      <Card title="Attendance" icon="users" href="/attendance/today">
         <Row k="Present" v={d.attendance.present} tone="ok" />
         <Row k="Late" v={d.attendance.late} tone={d.attendance.late > 0 ? 'warn' : undefined} />
         <Row k="Off / leave / MC" v={d.attendance.off} />
         <Row k="Absent" v={d.attendance.absent} tone={d.attendance.absent > 0 ? 'bad' : undefined} />
         {d.attendance.absent_names && d.attendance.absent_names.length > 0 && (
-          <div className="-mt-0.5 pb-1 text-xs leading-relaxed text-rose-600">{d.attendance.absent_names.join(', ')}</div>
+          <div className="-mt-0.5 pb-1 text-xs leading-relaxed text-bad">{d.attendance.absent_names.join(', ')}</div>
         )}
         {d.attendance.not_in_yet > 0 && <Row k="Not clocked in yet" v={d.attendance.not_in_yet} tone="warn" />}
         {d.attendance.not_in_yet_names && d.attendance.not_in_yet_names.length > 0 && (
-          <div className="-mt-0.5 pb-1 text-xs leading-relaxed text-slate-500">{d.attendance.not_in_yet_names.join(', ')}</div>
+          <div className="-mt-0.5 pb-1 text-xs leading-relaxed text-ink-2">{d.attendance.not_in_yet_names.join(', ')}</div>
         )}
       </Card>
     ),
     workshop: (
-      <Card title="Workshop" icon="🔧" href="/workshop">
+      <Card title="Workshop" icon="wrench" href="/workshop">
         <Row k="In shop now" v={d.workshop.in_shop} />
         <Row k="Done today" v={d.workshop.done_today} tone="ok" />
         <Row k="In shop over 2 days" v={d.workshop.over_2_days} tone={d.workshop.over_2_days > 0 ? 'warn' : undefined} />
@@ -320,12 +321,12 @@ export default function DashboardPage() {
     'office-monthly': <OfficeMonthlyCard h={office} />,
     'office-weekly': <OfficeWeeklyCard h={office} />,
     sales: (
-      <Card title="Sales trend · 14 days" icon="📈" href="/niagawan/sales">
+      <Card title="Sales trend · 14 days" icon="trending" href="/niagawan/sales">
         <SalesTrend series={d.sales.series} mtd={d.sales.mtd} today={d.sales.today} />
       </Card>
     ),
     attention: (
-      <Card title="Needs attention" icon="🔔">
+      <Card title="Needs attention" icon="bell">
         <Link href="/attendance/checkin" className="block hover:opacity-80"><Row k="Requests to approve" v={d.attention.requests} tone={d.attention.requests > 0 ? 'warn' : undefined} /></Link>
         <Link href="/niagawan/purchase" className="block hover:opacity-80"><Row k="Purchase invoices to review" v={d.attention.pinv} tone={d.attention.pinv > 0 ? 'warn' : undefined} /></Link>
         <Link href="/niagawan/inventory-v4" className="block hover:opacity-80"><Row k="Purchase orders to approve" v={d.attention.po} tone={d.attention.po > 0 ? 'warn' : undefined} /></Link>
@@ -334,18 +335,18 @@ export default function DashboardPage() {
       </Card>
     ),
     payables: (
-      <Card title="Supplier payments due" icon="🧾">
+      <Card title="Supplier payments due" icon="receipt">
         {d.payables.count > 0 ? (
           <>
-            <div className="mb-2 text-sm text-slate-600">You owe <span className="font-semibold text-slate-900">{rm2(d.payables.total)}</span> across {d.payables.count} supplier{d.payables.count !== 1 ? 's' : ''}</div>
+            <div className="mb-2 text-sm text-ink-2">You owe <span className="font-semibold text-ink">{rm2(d.payables.total)}</span> across {d.payables.count} supplier{d.payables.count !== 1 ? 's' : ''}</div>
             {d.payables.top.map((s) => (
               <Row key={s.name} k={cleanSupplier(s.name)} v={rm2(s.balance)} />
             ))}
           </>
         ) : d.payables.synced ? (
-          <div className="text-sm text-emerald-700">All suppliers paid up ✓</div>
+          <div className="text-sm text-good">All suppliers paid up ✓</div>
         ) : (
-          <div className="text-sm text-slate-400">Supplier balances haven’t synced yet — this fills in after the next supplier sync.</div>
+          <div className="text-sm text-ink-3">Supplier balances haven’t synced yet — this fills in after the next supplier sync.</div>
         )}
       </Card>
     ),
@@ -381,15 +382,15 @@ export default function DashboardPage() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-5">
       <div className="mb-4 flex items-baseline justify-between">
-        <h1 className="text-xl font-semibold text-slate-900">Overview</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-ink">Overview</h1>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setArranging((v) => !v)}
-            className={`rounded-md border px-2 py-1 text-xs ${arranging ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+            className={`rounded-md border px-2 py-1 text-xs transition ${arranging ? 'border-accent/40 bg-accent-weak text-accent' : 'border-line text-ink-2 hover:bg-ink/5'}`}
           >
             {arranging ? '✓ Done' : '⠿ Arrange'}
           </button>
-          <button onClick={load} className="text-xs text-slate-400 hover:text-slate-700">{dateLabel} · refresh</button>
+          <button onClick={load} className="text-xs text-ink-3 hover:text-ink">{dateLabel} · refresh</button>
         </div>
       </div>
 
@@ -405,7 +406,7 @@ export default function DashboardPage() {
         {visible.map((id, idx) => (
           <div
             key={id}
-            className={arranging ? `relative rounded-xl p-2 ring-1 ring-blue-200 ${dragId === id ? 'opacity-50' : ''}` : ''}
+            className={arranging ? `relative rounded-card p-2 ring-1 ring-accent/30 ${dragId === id ? 'opacity-50' : ''}` : ''}
             draggable={arranging}
             onDragStart={arranging ? () => setDragId(id) : undefined}
             onDragOver={arranging ? (e) => e.preventDefault() : undefined}
@@ -413,9 +414,9 @@ export default function DashboardPage() {
           >
             {arranging && (
               <div className="mb-1.5 flex items-center gap-1">
-                <span className="cursor-move select-none px-1 text-slate-400" title="Drag to reorder">⠿</span>
-                <button type="button" onClick={() => move(id, -1)} disabled={idx === 0} aria-label="Move up" className="rounded border border-slate-200 px-1.5 py-0.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40">↑</button>
-                <button type="button" onClick={() => move(id, 1)} disabled={idx === visible.length - 1} aria-label="Move down" className="rounded border border-slate-200 px-1.5 py-0.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40">↓</button>
+                <span className="cursor-move select-none px-1 text-ink-3" title="Drag to reorder">⠿</span>
+                <button type="button" onClick={() => move(id, -1)} disabled={idx === 0} aria-label="Move up" className="rounded border border-line px-1.5 py-0.5 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-40">↑</button>
+                <button type="button" onClick={() => move(id, 1)} disabled={idx === visible.length - 1} aria-label="Move down" className="rounded border border-line px-1.5 py-0.5 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-40">↓</button>
               </div>
             )}
             {cardEls[id]}
