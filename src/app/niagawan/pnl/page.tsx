@@ -10,7 +10,7 @@ import { supabase } from '@/lib/supabaseClient';
 type Daily = { day: string; invoices: number; sales: number | string; cogs: number | string; profit: number | string; unpaid_count: number | null };
 type SaleInv = { inv: string; day: string; customer: string | null; amount: number | string | null; status: string | null; staff: string | null };
 type Trade = { id: number; match: string; note: string | null };
-type Bill = { id: number; month: string; label: string; amount: number | string };
+type Bill = { id: number; month: string; label: string; amount: number | string; paid?: boolean | null; paid_date?: string | null };
 type Pay = { staff_name: string; total_earn: number | string; epf_er: number | string | null; socso_er: number | string | null; eis_er: number | string | null };
 type Meal = { meal_date: string; amount: number | string; item_count: number | null; drink_count: number | null };
 type StaffSales = { staff_email: string | null; staff_name: string; niagawan_names: string | null; total: number | string; invoices: number };
@@ -154,6 +154,13 @@ export default function PnlPage() {
 
   const deleteBill = useCallback(async (id: number) => {
     await supabase.from('opex_bills').delete().eq('id', id);
+    await load();
+  }, [load]);
+
+  // Tick a bill as paid -> auto-stamps today's date (untick clears it).
+  const updateBillPaid = useCallback(async (id: number, paid: boolean) => {
+    const todayIso = new Date().toISOString().slice(0, 10);
+    await supabase.from('opex_bills').update({ paid, paid_date: paid ? todayIso : null }).eq('id', id);
     await load();
   }, [load]);
 
@@ -344,7 +351,9 @@ export default function PnlPage() {
               </div>
               {bills.map((b) => (
                 <div key={b.id} className="flex items-center gap-2 py-0.5 text-sm">
-                  <span className="min-w-0 flex-1 truncate text-gray-700">{b.label}</span>
+                  <input type="checkbox" checked={!!b.paid} onChange={(e) => updateBillPaid(b.id, e.target.checked)} title="Mark paid — stamps today's date" className="shrink-0 cursor-pointer" />
+                  <span className={`min-w-0 flex-1 truncate ${b.paid ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{b.label}</span>
+                  {b.paid && b.paid_date && <span className="shrink-0 text-[11px] font-medium text-emerald-600">paid {fmtDate(b.paid_date)}</span>}
                   <input type="number" step="0.01" defaultValue={n(b.amount)} onBlur={(e) => { const v = Number(e.target.value) || 0; if (v !== n(b.amount)) updateBill(b.id, v); }}
                     className="w-28 rounded border border-gray-200 px-1.5 py-0.5 text-right text-sm" />
                   <button onClick={() => deleteBill(b.id)} className="text-xs text-rose-400 hover:text-rose-600">✕</button>
