@@ -68,6 +68,16 @@ export default function MonthEndPage() {
 
   useEffect(() => { if (allowed) load(); }, [allowed, load]);
 
+  // Auto-refresh when the user comes back to this tab/page (e.g. after fixing attendance on the
+  // report page) so the "Fix MC / off-days" card never shows stale data.
+  useEffect(() => {
+    if (!allowed) return;
+    const refetch = () => { if (document.visibilityState === 'visible') load(); };
+    window.addEventListener('focus', refetch);
+    document.addEventListener('visibilitychange', refetch);
+    return () => { window.removeEventListener('focus', refetch); document.removeEventListener('visibilitychange', refetch); };
+  }, [allowed, load]);
+
   const tickOf = (step: string) => !!d?.ticks?.[step]?.done;
   const setTask = useCallback(async (step: string, done: boolean) => {
     setD((prev) => (prev ? { ...prev, ticks: { ...prev.ticks, [step]: { done, by: null, at: null } } } : prev));
@@ -101,6 +111,8 @@ export default function MonthEndPage() {
           <button onClick={prevMonth} className="rounded-md border px-2.5 py-1.5 text-sm hover:bg-gray-50">◀</button>
           <span className="min-w-[120px] text-center text-sm font-semibold">{MONTHS[month - 1]} {year}</span>
           <button onClick={nextMonth} className="rounded-md border px-2.5 py-1.5 text-sm hover:bg-gray-50">▶</button>
+          <button onClick={load} disabled={loading} title="Reload the latest — tap after fixing attendance"
+            className="ml-1 rounded-md border px-2.5 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50">{loading ? '…' : '↻'}</button>
         </div>
       </div>
 
