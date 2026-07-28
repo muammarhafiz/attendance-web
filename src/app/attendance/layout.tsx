@@ -22,12 +22,9 @@ export default function AttendanceLayout({ children }: { children: React.ReactNo
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-6">
-      <h1 className="text-2xl font-semibold text-gray-900 no-print">Attendance</h1>
-      <p className="mt-1 mb-4 text-sm text-gray-500 no-print">
-        New attendance system (v2) — running in parallel. The old pages stay live until this is proven.
-      </p>
+      <h1 className="text-2xl font-semibold tracking-tight text-ink no-print">Attendance</h1>
 
-      <div className="mb-6 flex flex-wrap gap-1 border-b border-gray-200 no-print">
+      <div className="mb-6 mt-4 flex flex-wrap gap-1 border-b border-line no-print">
         {TABS.map((t) => (
           <Link
             key={t.href}
@@ -35,8 +32,8 @@ export default function AttendanceLayout({ children }: { children: React.ReactNo
             prefetch={false}
             className={`-mb-px rounded-t-md px-3 py-2 text-sm font-medium transition ${
               active(t.href)
-                ? 'border-b-2 border-gray-900 text-gray-900'
-                : 'text-gray-500 hover:text-gray-900'
+                ? 'border-b-2 border-accent text-ink'
+                : 'text-ink-2 hover:text-ink'
             }`}
           >
             {t.label}
