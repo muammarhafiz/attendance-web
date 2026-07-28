@@ -21,7 +21,7 @@ export default function HomePage() {
     return () => { alive = false; };
   }, [router]);
 
-  if (!ready) return <div className="py-8 text-center text-sm text-slate-400">Loading…</div>;
+  if (!ready) return <div className="py-8 text-center text-sm text-ink-3">Loading…</div>;
   return (
     <div className="py-2">
       <CheckinV2 />
