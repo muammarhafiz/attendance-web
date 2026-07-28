@@ -26,7 +26,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen antialiased">
         <PwaRegister />
         <NavBar />
-        <main>
+        {/* Clear the fixed sidebar (desktop) and the mobile top bar. */}
+        <main className="pt-14 lg:pl-64 lg:pt-0">
           <Container>
             <RouteKeyed>{children}</RouteKeyed>
           </Container>
