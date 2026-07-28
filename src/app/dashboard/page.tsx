@@ -219,32 +219,43 @@ type OfficeHome = {
   po_pending: number;
   po_on_order: unknown[];
 };
-function OfficeCards() {
-  const [h, setH] = useState<OfficeHome | null>(null);
-  useEffect(() => { (async () => { const { data } = await supabase.rpc('clerk_home'); setH((data ?? null) as OfficeHome); })(); }, []);
+// Monthly end-of-month card — clerk_home data is fetched once up in DashboardPage and passed in.
+function OfficeMonthlyCard({ h }: { h: OfficeHome | null }) {
   if (!h || h.error) return null;
   const e = h.eom;
   const t = e.ticks || {};
-  const onOrder = h.po_on_order?.length || 0;
   return (
-    <>
-      <Card title="Monthly · end of month" icon="🗓️" href="/month-end">
-        <Row k="Pay suppliers" v={t.suppliers_paid ? 'paid ✓' : e.suppliers_owed > 0 ? `${e.suppliers_owed} owed` : 'none owed'} tone={(t.suppliers_paid || e.suppliers_owed === 0) ? 'ok' : 'bad'} />
-        <Row k="Fix MC / off-days" v={t.fix_absent ? 'done ✓' : e.absents > 0 ? `${e.absents} absent` : 'none'} tone={(t.fix_absent || e.absents === 0) ? 'ok' : 'bad'} />
-        <Row k="Payroll" v={t.payroll ? 'done ✓' : 'pending'} tone={t.payroll ? 'ok' : 'bad'} />
-        <Row k="Bills" v={e.bills_total === 0 ? 'none' : e.bills_unpaid > 0 ? `${e.bills_unpaid} unpaid` : 'all paid ✓'} tone={e.bills_unpaid > 0 ? 'bad' : 'ok'} />
-      </Card>
-      <Card title="Weekly · purchase orders" icon="🗒️" href="/office/weekly">
-        <Row k="POs to send" v={h.po_pending > 0 ? h.po_pending : 'none'} tone={h.po_pending > 0 ? 'warn' : 'ok'} />
-        <Row k="Awaiting delivery" v={onOrder > 0 ? onOrder : 'none'} tone={onOrder > 0 ? 'warn' : 'ok'} />
-      </Card>
-    </>
+    <Card title="Monthly · end of month" icon="🗓️" href="/month-end">
+      <Row k="Pay suppliers" v={t.suppliers_paid ? 'paid ✓' : e.suppliers_owed > 0 ? `${e.suppliers_owed} owed` : 'none owed'} tone={(t.suppliers_paid || e.suppliers_owed === 0) ? 'ok' : 'bad'} />
+      <Row k="Fix MC / off-days" v={t.fix_absent ? 'done ✓' : e.absents > 0 ? `${e.absents} absent` : 'none'} tone={(t.fix_absent || e.absents === 0) ? 'ok' : 'bad'} />
+      <Row k="Payroll" v={t.payroll ? 'done ✓' : 'pending'} tone={t.payroll ? 'ok' : 'bad'} />
+      <Row k="Bills" v={e.bills_total === 0 ? 'none' : e.bills_unpaid > 0 ? `${e.bills_unpaid} unpaid` : 'all paid ✓'} tone={e.bills_unpaid > 0 ? 'bad' : 'ok'} />
+    </Card>
   );
 }
+// Weekly purchase-orders card — same clerk_home data passed in as a prop.
+function OfficeWeeklyCard({ h }: { h: OfficeHome | null }) {
+  if (!h || h.error) return null;
+  const onOrder = h.po_on_order?.length || 0;
+  return (
+    <Card title="Weekly · purchase orders" icon="🗒️" href="/office/weekly">
+      <Row k="POs to send" v={h.po_pending > 0 ? h.po_pending : 'none'} tone={h.po_pending > 0 ? 'warn' : 'ok'} />
+      <Row k="Awaiting delivery" v={onOrder > 0 ? onOrder : 'none'} tone={onOrder > 0 ? 'warn' : 'ok'} />
+    </Card>
+  );
+}
+
+// Reorderable-cards persistence: saved order lives in localStorage, merged with the default on load.
+const DASH_ORDER_KEY = 'dashboard_card_order_v1';
+const DEFAULT_ORDER = ['attendance', 'workshop', 'office-monthly', 'office-weekly', 'sales', 'attention', 'payables', 'clerk', 'chase'];
 
 export default function DashboardPage() {
   const [d, setD] = useState<Dash | null>(null);
   const [status, setStatus] = useState<'loading' | 'denied' | 'ready'>('loading');
+  const [office, setOffice] = useState<OfficeHome | null>(null);
+  const [order, setOrder] = useState<string[]>(DEFAULT_ORDER);
+  const [arranging, setArranging] = useState(false);
+  const [dragId, setDragId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const { data } = await supabase.rpc('owner_dashboard');
@@ -255,16 +266,131 @@ export default function DashboardPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Lifted clerk_home fetch — feeds the two office cards so each is an independent, movable unit.
+  useEffect(() => { (async () => { const { data } = await supabase.rpc('clerk_home'); setOffice((data ?? null) as OfficeHome); })(); }, []);
+
+  // Load the saved order on mount and merge with DEFAULT_ORDER (drop removed ids, append new ones).
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DASH_ORDER_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as unknown;
+      if (!Array.isArray(saved)) return;
+      const merged = saved.filter((id): id is string => typeof id === 'string' && DEFAULT_ORDER.includes(id));
+      for (const id of DEFAULT_ORDER) if (!merged.includes(id)) merged.push(id);
+      setOrder(merged);
+    } catch { /* ignore malformed / unavailable storage */ }
+  }, []);
+
+  const applyOrder = useCallback((next: string[]) => {
+    setOrder(next);
+    try { localStorage.setItem(DASH_ORDER_KEY, JSON.stringify(next)); } catch { /* ignore unavailable storage */ }
+  }, []);
+
   if (status === 'loading') return <div className="mx-auto max-w-6xl px-4 py-6 text-sm text-slate-400">Loading your shop…</div>;
   if (status === 'denied' || !d) return <div className="mx-auto max-w-6xl px-4 py-6 text-sm text-slate-600">This dashboard is for owners.</div>;
 
   const dateLabel = new Date(d.today + 'T00:00:00').toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long' });
 
+  // id → card element. Order + visibility are driven by `order` below; behaviour is identical to before.
+  const cardEls: Record<string, React.ReactNode> = {
+    attendance: (
+      <Card title="Attendance" icon="🧑‍🔧" href="/attendance/today">
+        <Row k="Present" v={d.attendance.present} tone="ok" />
+        <Row k="Late" v={d.attendance.late} tone={d.attendance.late > 0 ? 'warn' : undefined} />
+        <Row k="Off / leave / MC" v={d.attendance.off} />
+        <Row k="Absent" v={d.attendance.absent} tone={d.attendance.absent > 0 ? 'bad' : undefined} />
+        {d.attendance.absent_names && d.attendance.absent_names.length > 0 && (
+          <div className="-mt-0.5 pb-1 text-xs leading-relaxed text-rose-600">{d.attendance.absent_names.join(', ')}</div>
+        )}
+        {d.attendance.not_in_yet > 0 && <Row k="Not clocked in yet" v={d.attendance.not_in_yet} tone="warn" />}
+        {d.attendance.not_in_yet_names && d.attendance.not_in_yet_names.length > 0 && (
+          <div className="-mt-0.5 pb-1 text-xs leading-relaxed text-slate-500">{d.attendance.not_in_yet_names.join(', ')}</div>
+        )}
+      </Card>
+    ),
+    workshop: (
+      <Card title="Workshop" icon="🔧" href="/workshop">
+        <Row k="In shop now" v={d.workshop.in_shop} />
+        <Row k="Done today" v={d.workshop.done_today} tone="ok" />
+        <Row k="In shop over 2 days" v={d.workshop.over_2_days} tone={d.workshop.over_2_days > 0 ? 'warn' : undefined} />
+        {d.workshop.waiting_parts > 0 && <Row k="Waiting for parts" v={d.workshop.waiting_parts} />}
+      </Card>
+    ),
+    'office-monthly': <OfficeMonthlyCard h={office} />,
+    'office-weekly': <OfficeWeeklyCard h={office} />,
+    sales: (
+      <Card title="Sales trend · 14 days" icon="📈" href="/niagawan/sales">
+        <SalesTrend series={d.sales.series} mtd={d.sales.mtd} today={d.sales.today} />
+      </Card>
+    ),
+    attention: (
+      <Card title="Needs attention" icon="🔔">
+        <Link href="/attendance/checkin" className="block hover:opacity-80"><Row k="Requests to approve" v={d.attention.requests} tone={d.attention.requests > 0 ? 'warn' : undefined} /></Link>
+        <Link href="/niagawan/purchase" className="block hover:opacity-80"><Row k="Purchase invoices to review" v={d.attention.pinv} tone={d.attention.pinv > 0 ? 'warn' : undefined} /></Link>
+        <Link href="/niagawan/inventory-v4" className="block hover:opacity-80"><Row k="Purchase orders to approve" v={d.attention.po} tone={d.attention.po > 0 ? 'warn' : undefined} /></Link>
+        <Link href="/workshop" className="block hover:opacity-80"><Row k="Overdue bills" v={d.attention.debt_count > 0 ? `${d.attention.debt_count} · ${rm(d.attention.debt_amount)}` : 0} tone={d.attention.debt_count > 0 ? 'bad' : undefined} /></Link>
+        <Link href="/niagawan/inventory-v4" className="block hover:opacity-80"><Row k="Items to restock" v={d.attention.lowstock} tone={d.attention.lowstock > 0 ? 'bad' : undefined} /></Link>
+      </Card>
+    ),
+    payables: (
+      <Card title="Supplier payments due" icon="🧾">
+        {d.payables.count > 0 ? (
+          <>
+            <div className="mb-2 text-sm text-slate-600">You owe <span className="font-semibold text-slate-900">{rm2(d.payables.total)}</span> across {d.payables.count} supplier{d.payables.count !== 1 ? 's' : ''}</div>
+            {d.payables.top.map((s) => (
+              <Row key={s.name} k={cleanSupplier(s.name)} v={rm2(s.balance)} />
+            ))}
+          </>
+        ) : d.payables.synced ? (
+          <div className="text-sm text-emerald-700">All suppliers paid up ✓</div>
+        ) : (
+          <div className="text-sm text-slate-400">Supplier balances haven’t synced yet — this fills in after the next supplier sync.</div>
+        )}
+      </Card>
+    ),
+    clerk: <ClerkStatusCard />,
+    chase: <ChaseUnpaidCard />,
+  };
+
+  const visible = order.filter((id) => cardEls[id] != null);
+
+  // ↑ / ↓: swap a card with its visible neighbour, keeping any hidden ids untouched, then persist.
+  const move = (id: string, delta: number) => {
+    const i = visible.indexOf(id);
+    const j = i + delta;
+    if (j < 0 || j >= visible.length) return;
+    const swapWith = visible[j];
+    const next = order.slice();
+    const ai = next.indexOf(id);
+    const bi = next.indexOf(swapWith);
+    [next[ai], next[bi]] = [next[bi], next[ai]];
+    applyOrder(next);
+  };
+
+  // Drag & drop: pull the dragged id out and re-insert it at the drop target's position.
+  const onDrop = (targetId: string) => {
+    if (!dragId || dragId === targetId) { setDragId(null); return; }
+    const next = order.filter((x) => x !== dragId);
+    const ti = next.indexOf(targetId);
+    next.splice(ti < 0 ? next.length : ti, 0, dragId);
+    applyOrder(next);
+    setDragId(null);
+  };
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-5">
       <div className="mb-4 flex items-baseline justify-between">
         <h1 className="text-xl font-semibold text-slate-900">Overview</h1>
-        <button onClick={load} className="text-xs text-slate-400 hover:text-slate-700">{dateLabel} · refresh</button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setArranging((v) => !v)}
+            className={`rounded-md border px-2 py-1 text-xs ${arranging ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+          >
+            {arranging ? '✓ Done' : '⠿ Arrange'}
+          </button>
+          <button onClick={load} className="text-xs text-slate-400 hover:text-slate-700">{dateLabel} · refresh</button>
+        </div>
       </div>
 
       {/* KPI row */}
@@ -276,67 +402,25 @@ export default function DashboardPage() {
       </div>
 
       <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
-        {/* Attendance */}
-        <Card title="Attendance" icon="🧑‍🔧" href="/attendance/today">
-          <Row k="Present" v={d.attendance.present} tone="ok" />
-          <Row k="Late" v={d.attendance.late} tone={d.attendance.late > 0 ? 'warn' : undefined} />
-          <Row k="Off / leave / MC" v={d.attendance.off} />
-          <Row k="Absent" v={d.attendance.absent} tone={d.attendance.absent > 0 ? 'bad' : undefined} />
-          {d.attendance.absent_names && d.attendance.absent_names.length > 0 && (
-            <div className="-mt-0.5 pb-1 text-xs leading-relaxed text-rose-600">{d.attendance.absent_names.join(', ')}</div>
-          )}
-          {d.attendance.not_in_yet > 0 && <Row k="Not clocked in yet" v={d.attendance.not_in_yet} tone="warn" />}
-          {d.attendance.not_in_yet_names && d.attendance.not_in_yet_names.length > 0 && (
-            <div className="-mt-0.5 pb-1 text-xs leading-relaxed text-slate-500">{d.attendance.not_in_yet_names.join(', ')}</div>
-          )}
-        </Card>
-
-        {/* Workshop */}
-        <Card title="Workshop" icon="🔧" href="/workshop">
-          <Row k="In shop now" v={d.workshop.in_shop} />
-          <Row k="Done today" v={d.workshop.done_today} tone="ok" />
-          <Row k="In shop over 2 days" v={d.workshop.over_2_days} tone={d.workshop.over_2_days > 0 ? 'warn' : undefined} />
-          {d.workshop.waiting_parts > 0 && <Row k="Waiting for parts" v={d.workshop.waiting_parts} />}
-        </Card>
-
-        {/* Office — month-end + weekly */}
-        <OfficeCards />
-
-        {/* Sales trend */}
-        <Card title="Sales trend · 14 days" icon="📈" href="/niagawan/sales">
-          <SalesTrend series={d.sales.series} mtd={d.sales.mtd} today={d.sales.today} />
-        </Card>
-
-        {/* Needs attention */}
-        <Card title="Needs attention" icon="🔔">
-          <Link href="/attendance/checkin" className="block hover:opacity-80"><Row k="Requests to approve" v={d.attention.requests} tone={d.attention.requests > 0 ? 'warn' : undefined} /></Link>
-          <Link href="/niagawan/purchase" className="block hover:opacity-80"><Row k="Purchase invoices to review" v={d.attention.pinv} tone={d.attention.pinv > 0 ? 'warn' : undefined} /></Link>
-          <Link href="/niagawan/inventory-v4" className="block hover:opacity-80"><Row k="Purchase orders to approve" v={d.attention.po} tone={d.attention.po > 0 ? 'warn' : undefined} /></Link>
-          <Link href="/workshop" className="block hover:opacity-80"><Row k="Overdue bills" v={d.attention.debt_count > 0 ? `${d.attention.debt_count} · ${rm(d.attention.debt_amount)}` : 0} tone={d.attention.debt_count > 0 ? 'bad' : undefined} /></Link>
-          <Link href="/niagawan/inventory-v4" className="block hover:opacity-80"><Row k="Items to restock" v={d.attention.lowstock} tone={d.attention.lowstock > 0 ? 'bad' : undefined} /></Link>
-        </Card>
-
-        {/* Supplier payments due */}
-        <Card title="Supplier payments due" icon="🧾">
-          {d.payables.count > 0 ? (
-            <>
-              <div className="mb-2 text-sm text-slate-600">You owe <span className="font-semibold text-slate-900">{rm2(d.payables.total)}</span> across {d.payables.count} supplier{d.payables.count !== 1 ? 's' : ''}</div>
-              {d.payables.top.map((s) => (
-                <Row key={s.name} k={cleanSupplier(s.name)} v={rm2(s.balance)} />
-              ))}
-            </>
-          ) : d.payables.synced ? (
-            <div className="text-sm text-emerald-700">All suppliers paid up ✓</div>
-          ) : (
-            <div className="text-sm text-slate-400">Supplier balances haven’t synced yet — this fills in after the next supplier sync.</div>
-          )}
-        </Card>
-
-        {/* Clerk monitor */}
-        <ClerkStatusCard />
-
-        {/* Chase unpaid (owner monitor + ignore) */}
-        <ChaseUnpaidCard />
+        {visible.map((id, idx) => (
+          <div
+            key={id}
+            className={arranging ? `relative rounded-xl p-2 ring-1 ring-blue-200 ${dragId === id ? 'opacity-50' : ''}` : ''}
+            draggable={arranging}
+            onDragStart={arranging ? () => setDragId(id) : undefined}
+            onDragOver={arranging ? (e) => e.preventDefault() : undefined}
+            onDrop={arranging ? () => onDrop(id) : undefined}
+          >
+            {arranging && (
+              <div className="mb-1.5 flex items-center gap-1">
+                <span className="cursor-move select-none px-1 text-slate-400" title="Drag to reorder">⠿</span>
+                <button type="button" onClick={() => move(id, -1)} disabled={idx === 0} aria-label="Move up" className="rounded border border-slate-200 px-1.5 py-0.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40">↑</button>
+                <button type="button" onClick={() => move(id, 1)} disabled={idx === visible.length - 1} aria-label="Move down" className="rounded border border-slate-200 px-1.5 py-0.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40">↓</button>
+              </div>
+            )}
+            {cardEls[id]}
+          </div>
+        ))}
       </div>
     </div>
   );
