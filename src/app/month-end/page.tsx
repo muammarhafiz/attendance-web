@@ -168,6 +168,10 @@ export default function MonthEndPage() {
                     {/* By 28 — absents to fix */}
                     {s.key === 'fix_absent' && (
                       <div className="mt-2">
+                        <div className="mb-1.5 flex justify-end">
+                          <button onClick={load} disabled={loading} title="Reload the latest after fixing attendance"
+                            className="rounded-md border border-amber-300 bg-white px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-50 disabled:opacity-50">{loading ? '…' : '↻ Refresh'}</button>
+                        </div>
                         {d.absents.count > 0 ? (
                           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
                             <div className="mb-1 flex items-center justify-between gap-2">
