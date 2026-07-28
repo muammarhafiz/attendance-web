@@ -212,6 +212,36 @@ function ClerkStatusCard() {
   );
 }
 
+// Office month-end + weekly, on the owner dashboard (reads clerk_home; owners have month_end access).
+type OfficeHome = {
+  error?: string;
+  eom: { done: number; total: number; suppliers_owed: number; absents: number; bills_total: number; bills_unpaid: number; ticks: Record<string, boolean> };
+  po_pending: number;
+  po_on_order: unknown[];
+};
+function OfficeCards() {
+  const [h, setH] = useState<OfficeHome | null>(null);
+  useEffect(() => { (async () => { const { data } = await supabase.rpc('clerk_home'); setH((data ?? null) as OfficeHome); })(); }, []);
+  if (!h || h.error) return null;
+  const e = h.eom;
+  const t = e.ticks || {};
+  const onOrder = h.po_on_order?.length || 0;
+  return (
+    <>
+      <Card title="Monthly · end of month" icon="🗓️" href="/month-end">
+        <Row k="Pay suppliers" v={t.suppliers_paid ? 'paid ✓' : e.suppliers_owed > 0 ? `${e.suppliers_owed} owed` : 'none owed'} tone={(t.suppliers_paid || e.suppliers_owed === 0) ? 'ok' : 'bad'} />
+        <Row k="Fix MC / off-days" v={t.fix_absent ? 'done ✓' : e.absents > 0 ? `${e.absents} absent` : 'none'} tone={(t.fix_absent || e.absents === 0) ? 'ok' : 'bad'} />
+        <Row k="Payroll" v={t.payroll ? 'done ✓' : 'pending'} tone={t.payroll ? 'ok' : 'bad'} />
+        <Row k="Bills" v={e.bills_total === 0 ? 'none' : e.bills_unpaid > 0 ? `${e.bills_unpaid} unpaid` : 'all paid ✓'} tone={e.bills_unpaid > 0 ? 'bad' : 'ok'} />
+      </Card>
+      <Card title="Weekly · purchase orders" icon="🗒️" href="/office/weekly">
+        <Row k="POs to send" v={h.po_pending > 0 ? h.po_pending : 'none'} tone={h.po_pending > 0 ? 'warn' : 'ok'} />
+        <Row k="Awaiting delivery" v={onOrder > 0 ? onOrder : 'none'} tone={onOrder > 0 ? 'warn' : 'ok'} />
+      </Card>
+    </>
+  );
+}
+
 export default function DashboardPage() {
   const [d, setD] = useState<Dash | null>(null);
   const [status, setStatus] = useState<'loading' | 'denied' | 'ready'>('loading');
@@ -268,6 +298,9 @@ export default function DashboardPage() {
           <Row k="In shop over 2 days" v={d.workshop.over_2_days} tone={d.workshop.over_2_days > 0 ? 'warn' : undefined} />
           {d.workshop.waiting_parts > 0 && <Row k="Waiting for parts" v={d.workshop.waiting_parts} />}
         </Card>
+
+        {/* Office — month-end + weekly */}
+        <OfficeCards />
 
         {/* Sales trend */}
         <Card title="Sales trend · 14 days" icon="📈" href="/niagawan/sales">
