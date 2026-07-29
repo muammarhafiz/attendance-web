@@ -71,15 +71,15 @@ function taskCadence(t: Task): string {
 }
 
 const Chip = ({ text }: { text: string }) => (
-  <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">{text}</span>
+  <span className="shrink-0 rounded-full bg-ink/5 px-2 py-0.5 text-[11px] font-medium text-ink-2">{text}</span>
 );
 
 const Card = ({ title, desc, cadence, children }: { title: string; desc: string; cadence: string; children?: React.ReactNode }) => (
-  <div className="rounded-lg border border-gray-200 bg-white p-3">
+  <div className="rounded-card bg-card shadow-card p-3">
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
-        <h4 className="text-sm font-semibold text-gray-900">{title}</h4>
-        <p className="mt-0.5 text-xs text-gray-500">{desc}</p>
+        <h4 className="text-sm font-semibold text-ink">{title}</h4>
+        <p className="mt-0.5 text-xs text-ink-2">{desc}</p>
       </div>
       <Chip text={cadence} />
     </div>
@@ -90,8 +90,8 @@ const Card = ({ title, desc, cadence, children }: { title: string; desc: string;
 function Section({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   return (
     <div>
-      <h3 className="text-sm font-semibold text-gray-800">{title}</h3>
-      <p className="mb-2 mt-0.5 text-xs text-gray-500">{subtitle}</p>
+      <h3 className="text-sm font-semibold text-ink-2">{title}</h3>
+      <p className="mb-2 mt-0.5 text-xs text-ink-2">{subtitle}</p>
       <div className="space-y-2">{children}</div>
     </div>
   );
@@ -121,29 +121,29 @@ export default function AutomationOverview() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-gray-900">Automations</h2>
-        <p className="mt-1 text-sm text-gray-500">
+        <h2 className="text-lg font-semibold text-ink">Automations</h2>
+        <p className="mt-1 text-sm text-ink-2">
           Everything that runs by itself, and how often. This page is read-only — to turn the sync / PO tasks on or off or change
           their times, use the <span className="font-medium">Task schedules</span> tab.
         </p>
       </div>
 
       {loading ? (
-        <div className="text-sm text-gray-400">Loading…</div>
+        <div className="text-sm text-ink-3">Loading…</div>
       ) : (
         <>
           <Section title="Scheduled jobs (Supabase)" subtitle="Run on a fixed clock inside the database. Live status below.">
-            {cron.length === 0 && <div className="text-xs text-gray-400">No scheduled jobs found.</div>}
+            {cron.length === 0 && <div className="text-xs text-ink-3">No scheduled jobs found.</div>}
             {cron.map((j) => {
               const meta = CRON_META[j.jobname];
               const ok = j.last_status === 'succeeded';
               return (
                 <Card key={j.jobname} title={meta?.title ?? j.jobname} desc={meta?.desc ?? j.jobname} cadence={cronHuman(j.schedule)}>
-                  <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-2 text-xs">
-                    {!j.active && <span className="rounded bg-gray-100 px-1.5 py-0.5 font-medium text-gray-500">paused</span>}
-                    <span className="text-gray-400">Last run {relTime(j.last_run)}</span>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-line pt-2 text-xs">
+                    {!j.active && <span className="rounded bg-ink/5 px-1.5 py-0.5 font-medium text-ink-2">paused</span>}
+                    <span className="text-ink-3">Last run {relTime(j.last_run)}</span>
                     {j.last_status && (
-                      <span className={`rounded px-1.5 py-0.5 font-medium ${ok ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                      <span className={`rounded px-1.5 py-0.5 font-medium ${ok ? 'bg-good-soft text-good' : 'bg-bad-soft text-bad'}`}>
                         {ok ? '✓ ' : '⚠ '}{j.last_status}
                       </span>
                     )}
@@ -154,10 +154,10 @@ export default function AutomationOverview() {
           </Section>
 
           <Section title="Configurable tasks (NAS engine)" subtitle="You control these in the Automation tab — shown here for the full picture.">
-            {orderedTasks.length === 0 && <div className="text-xs text-gray-400">No tasks configured.</div>}
+            {orderedTasks.length === 0 && <div className="text-xs text-ink-3">No tasks configured.</div>}
             {orderedTasks.map((t) => (
               <Card key={t.key} title={TASK_TITLE[t.key] ?? t.label ?? t.key} desc="" cadence={t.enabled ? taskCadence(t) : 'off'}>
-                {!t.enabled && <div className="mt-1 text-xs text-gray-400">Currently turned off.</div>}
+                {!t.enabled && <div className="mt-1 text-xs text-ink-3">Currently turned off.</div>}
               </Card>
             ))}
           </Section>

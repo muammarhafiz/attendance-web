@@ -55,22 +55,22 @@ export default function SettingsPage() {
     });
   }, [acc]);
 
-  if (acc === null) return <div className="mx-auto max-w-6xl px-4 py-6 text-sm text-gray-400">Checking…</div>;
+  if (acc === null) return <div className="mx-auto max-w-6xl px-4 py-6 text-sm text-ink-3">Checking…</div>;
   const visible = ALL_TABS.filter((t) => tabAllowed(t, acc));
-  if (visible.length === 0) return <div className="mx-auto max-w-6xl px-4 py-6 text-sm text-gray-600">You don&apos;t have access to Settings.</div>;
+  if (visible.length === 0) return <div className="mx-auto max-w-6xl px-4 py-6 text-sm text-ink-2">You don&apos;t have access to Settings.</div>;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
-      <h1 className="text-2xl font-semibold text-gray-900">Settings</h1>
-      <p className="mt-1 mb-4 text-sm text-gray-500">Admin controls for how the system runs.</p>
+      <h1 className="text-2xl font-semibold text-ink">Settings</h1>
+      <p className="mt-1 mb-4 text-sm text-ink-2">Admin controls for how the system runs.</p>
 
-      <div className="mb-6 flex flex-wrap gap-1 border-b border-gray-200">
+      <div className="mb-6 flex flex-wrap gap-1 border-b border-line">
         {visible.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
             className={`-mb-px rounded-t-md px-3 py-2 text-sm font-medium transition ${
-              tab === t.key ? 'border-b-2 border-gray-900 text-gray-900' : 'text-gray-500 hover:text-gray-900'
+              tab === t.key ? 'border-b-2 border-gray-900 text-ink' : 'text-ink-2 hover:text-ink'
             }`}
           >
             {t.label}
