@@ -68,6 +68,7 @@ export default function NavBar() {
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false); // desktop-only: sidebar hidden to reclaim width
   const [expanded, setExpanded] = useState<Set<string>>(new Set()); // which expandable areas are open
+  const [salesPending, setSalesPending] = useState(0); // count of not-final sales days (Sales badge)
   useEffect(() => { setSeenAt(localStorage.getItem('notif_seen_at') || ''); }, []);
   // The <html> class is applied pre-paint by an inline script in layout.tsx (no flash on reload);
   // mirror it into state so the toggle button reflects the current mode.
@@ -135,6 +136,22 @@ export default function NavBar() {
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('focus', onVisible); };
   }, [canBell, reloadFeed]);
 
+  // Count of "not final" sales days (unpaid or zero-cost) → badge on the Sales tab. Available to
+  // anyone with Niagawan access (independent of the bell); refreshes on focus.
+  const loadSalesPending = useCallback(async () => {
+    if (!access.niagawan) { setSalesPending(0); return; }
+    if (typeof document !== 'undefined' && document.hidden) return;
+    const { data } = await supabase.rpc('sales_pending_days_count');
+    setSalesPending(Number(data) || 0);
+  }, [access.niagawan]);
+  useEffect(() => {
+    loadSalesPending();
+    const onVisible = () => { if (typeof document === 'undefined' || !document.hidden) loadSalesPending(); };
+    window.addEventListener('focus', onVisible);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { window.removeEventListener('focus', onVisible); document.removeEventListener('visibilitychange', onVisible); };
+  }, [loadSalesPending]);
+
   // Approve / reject a staff request right from the bell (same RPCs the pages use).
   const act = useCallback(async (item: NotifItem, action: 'approve' | 'reject') => {
     let params: Record<string, unknown>;
@@ -200,7 +217,7 @@ export default function NavBar() {
     const reqBadge = counts.mc + counts.offday + counts.halfday + counts.advance;
     const niagawanChildren: NavChild[] = access.niagawan
       ? [
-          { href: '/niagawan/sales', label: 'Sales' },
+          { href: '/niagawan/sales', label: 'Sales', badge: salesPending },
           { href: '/niagawan/cogs', label: 'COGS' },
           { href: '/niagawan/inventory-v4', match: '/niagawan/inventory', label: 'Inventory', badge: counts.po },
           { href: '/niagawan/purchase', match: '/niagawan/purchase', label: 'Purchase Invoice', badge: counts.pinv },
@@ -216,7 +233,7 @@ export default function NavBar() {
       ] },
       { label: 'Shop', items: [
         ...(canBoard ? [{ label: 'Workshop', href: '/workshop', icon: 'wrench' } as NavItem] : []),
-        ...(niagawanChildren.length ? [{ label: 'Niagawan', icon: 'box', badge: counts.po + counts.pinv, children: niagawanChildren } as NavItem] : []),
+        ...(niagawanChildren.length ? [{ label: 'Niagawan', icon: 'box', badge: counts.po + counts.pinv + salesPending, children: niagawanChildren } as NavItem] : []),
       ] },
       { label: 'Finance', items: [
         ...(access.owner ? [{ label: 'Bank', href: '/bank-recon', icon: 'bank' } as NavItem] : []),
@@ -248,7 +265,7 @@ export default function NavBar() {
       ] },
     ];
     return groups.filter((g) => g.items.length > 0);
-  }, [access, canBoard, counts]);
+  }, [access, canBoard, counts, salesPending]);
 
   // Auto-open the area that contains the current route (so you always see where you are).
   useEffect(() => {
