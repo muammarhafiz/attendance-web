@@ -364,7 +364,7 @@ export default function PayrollRecordsPage() {
               <button
                 onClick={finalizeAndGenerate}
                 disabled={busy}
-                className="rounded bg-black px-3 py-1.5 text-sm text-white hover:bg-gray-800 disabled:opacity-50"
+                className="rounded bg-btn px-3 py-1.5 text-sm text-btn-ink hover:opacity-90 disabled:opacity-50"
                 title="Generate Summary + Payslips (and LOCK the period)"
               >
                 {busy ? 'Working…' : 'Finalize & Generate PDFs'}

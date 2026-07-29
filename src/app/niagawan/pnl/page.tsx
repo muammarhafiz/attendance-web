@@ -362,7 +362,7 @@ export default function PnlPage() {
               <div className="mt-2 flex items-center gap-2">
                 <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="e.g. SEWA" className="min-w-0 flex-1 rounded border border-line px-2 py-1 text-sm" />
                 <input value={newAmount} onChange={(e) => setNewAmount(e.target.value)} type="number" step="0.01" placeholder="0.00" className="w-28 rounded border border-line px-2 py-1 text-right text-sm" />
-                <button onClick={addBill} className="rounded bg-gray-900 px-2.5 py-1 text-sm font-medium text-white hover:bg-gray-700">Add</button>
+                <button onClick={addBill} className="rounded bg-btn px-2.5 py-1 text-sm font-medium text-btn-ink hover:opacity-90">Add</button>
               </div>
               <div className="mt-2 flex justify-between border-t border-line pt-2 text-sm font-semibold"><span>Bills total</span><span>{rm(c.billsTotal)}</span></div>
               <div className="mt-1 text-xs text-ink-3">Bonus/commission is already inside Payroll — don&rsquo;t add it here again.</div>

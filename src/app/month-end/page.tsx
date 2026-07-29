@@ -284,7 +284,7 @@ export default function MonthEndPage() {
             <div className="mt-2 flex items-center gap-2">
               <input value={newBillLabel} onChange={(e) => setNewBillLabel(e.target.value)} placeholder="e.g. SEWA" className="min-w-0 flex-1 rounded border border-line px-2 py-1 text-sm" />
               <input value={newBillAmount} onChange={(e) => setNewBillAmount(e.target.value)} type="number" step="0.01" placeholder="0.00" className="w-24 rounded border border-line px-2 py-1 text-right text-sm" />
-              <button onClick={billAdd} className="shrink-0 rounded bg-gray-900 px-2.5 py-1 text-sm font-medium text-white hover:bg-gray-700">Add</button>
+              <button onClick={billAdd} className="shrink-0 rounded bg-btn px-2.5 py-1 text-sm font-medium text-btn-ink hover:opacity-90">Add</button>
             </div>
             <div className="mt-2 flex justify-between border-t border-line pt-2 text-sm font-semibold"><span>Bills total</span><span>{rm(d.bills.reduce((s, b) => s + Number(b.amount || 0), 0))}</span></div>
           </div>

@@ -423,7 +423,7 @@ export default function PurchaseInvoicePage() {
                       </button>
                     )}
                     {(r.status === 'extracted' || r.status === 'approved' || r.status === 'creating' || r.status === 'created') && (
-                      <button onClick={() => router.push(`/niagawan/purchase/${r.id}`)} className="rounded bg-gray-900 px-2 py-0.5 text-xs font-semibold text-white hover:bg-gray-700">
+                      <button onClick={() => router.push(`/niagawan/purchase/${r.id}`)} className="rounded bg-btn px-2 py-0.5 text-xs font-semibold text-btn-ink hover:opacity-90">
                         {r.status === 'extracted' ? 'Review' : 'View'}
                       </button>
                     )}

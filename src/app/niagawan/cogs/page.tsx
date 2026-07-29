@@ -464,7 +464,7 @@ export default function NiagawanCogsPage() {
                   className="mt-1 block rounded-md border border-line px-2 py-1 text-xs" />
               </label>
               <button onClick={addRule} disabled={!newValue.trim()}
-                className="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-700 disabled:opacity-40">
+                className="rounded-md bg-btn px-3 py-1.5 text-xs font-medium text-btn-ink hover:opacity-90 disabled:opacity-40">
                 Add rule
               </button>
             </div>

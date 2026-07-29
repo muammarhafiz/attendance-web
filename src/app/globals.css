@@ -15,11 +15,11 @@
 }
 
 :root {
-  --background: #f5f6f8;   /* soft neutral canvas */
-  --foreground: #0f172a;   /* slate-900 */
+  --background: var(--app-canvas);   /* body bg — follows the active theme */
+  --foreground: var(--app-ink);
 
   /* Apple-clean design tokens (light). Dark values live under [data-theme="dark"]
-     below — defined but DORMANT until dark mode is switched on app-wide. */
+     + the prefers-color-scheme block below. */
   --app-canvas: #f5f5f7;
   --app-card: #ffffff;
   --app-ink: #1d1d1f;      /* primary text — warm near-black */
@@ -31,10 +31,16 @@
   --app-good: #1ca34a;  --app-good-soft: #e7f6ec;
   --app-warn: #b25e00;  --app-warn-soft: #fbf0e2;
   --app-bad:  #e5342b;  --app-bad-soft:  #fdeceb;
+  --app-btn: #1d1d1f;   --app-btn-ink: #ffffff;   /* neutral primary button — dark-on-light */
   --app-radius: 18px;
   --app-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 6px 20px rgba(0, 0, 0, 0.05);
+  color-scheme: light;
 }
 
+/* Dark theme values. Applied when the user explicitly picks dark, OR when the OS
+   prefers dark and the user hasn't explicitly picked light. The two blocks share
+   identical values (CSS can't combine an attribute selector with a media query in
+   one rule) — keep them in sync. */
 :root[data-theme="dark"] {
   --app-canvas: #000000;
   --app-card: #1c1c1e;
@@ -47,7 +53,27 @@
   --app-good: #30d158;  --app-good-soft: #10381f;
   --app-warn: #ff9f0a;  --app-warn-soft: #3a2a10;
   --app-bad:  #ff453a;  --app-bad-soft:  #3a1512;
+  --app-btn: #f5f5f7;   --app-btn-ink: #1d1d1f;   /* light-on-dark */
   --app-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.4);
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --app-canvas: #000000;
+    --app-card: #1c1c1e;
+    --app-ink: #f5f5f7;
+    --app-ink-2: #9a9aa0;
+    --app-ink-3: #8a8a8f;
+    --app-accent: #0a84ff;
+    --app-accent-weak: #132a44;
+    --app-line: rgba(255, 255, 255, 0.10);
+    --app-good: #30d158;  --app-good-soft: #10381f;
+    --app-warn: #ff9f0a;  --app-warn-soft: #3a2a10;
+    --app-bad:  #ff453a;  --app-bad-soft:  #3a1512;
+    --app-btn: #f5f5f7;   --app-btn-ink: #1d1d1f;
+    --app-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.4);
+    color-scheme: dark;
+  }
 }
 
 @theme inline {
@@ -68,6 +94,8 @@
   --color-warn-soft: var(--app-warn-soft);
   --color-bad: var(--app-bad);
   --color-bad-soft: var(--app-bad-soft);
+  --color-btn: var(--app-btn);
+  --color-btn-ink: var(--app-btn-ink);
   --radius-card: var(--app-radius);
   --shadow-card: var(--app-shadow);
 }

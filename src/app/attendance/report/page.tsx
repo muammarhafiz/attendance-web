@@ -329,7 +329,7 @@ export default function AttendanceReportPage() {
                           <button
                             onClick={() => saveEdit(r.staff_email, r.day)}
                             disabled={saving}
-                            className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-black disabled:opacity-50"
+                            className="rounded-md bg-btn px-3 py-1.5 text-sm font-medium text-btn-ink hover:opacity-90 disabled:opacity-50"
                           >
                             {saving ? 'Saving…' : 'Save'}
                           </button>

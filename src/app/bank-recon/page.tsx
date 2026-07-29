@@ -94,7 +94,7 @@ export default function BankReconPage() {
 
       <div className="mt-4 rounded-card bg-card shadow-card p-4">
         <label className="flex cursor-pointer items-center gap-3">
-          <span className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-700">Choose PDF or CSV</span>
+          <span className="rounded-md bg-btn px-3 py-1.5 text-sm font-medium text-btn-ink hover:opacity-90">Choose PDF or CSV</span>
           <input type="file" accept="application/pdf,.pdf,text/csv,.csv" className="hidden"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.currentTarget.value = ''; }} />
           <span className="text-sm text-ink-2">{fileName || 'No file chosen'}</span>
