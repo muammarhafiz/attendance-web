@@ -6,7 +6,8 @@ import React from 'react';
 export type IconName =
   | 'users' | 'wrench' | 'calendar' | 'clipboard' | 'trending'
   | 'bell' | 'receipt' | 'briefcase' | 'phone'
-  | 'user' | 'award' | 'sun' | 'clock' | 'wallet' | 'file' | 'mappin';
+  | 'user' | 'award' | 'sun' | 'clock' | 'wallet' | 'file' | 'mappin'
+  | 'box' | 'truck' | 'eye' | 'tag';
 
 const PATHS: Record<IconName, React.ReactNode> = {
   users: (<><path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20" /><circle cx="10" cy="7.5" r="3.5" /><path d="M20 20v-1.5a3.5 3.5 0 0 0-2.7-3.4" /><path d="M15 4.1a3.5 3.5 0 0 1 0 6.8" /></>),
@@ -25,6 +26,10 @@ const PATHS: Record<IconName, React.ReactNode> = {
   wallet: (<><rect x="2.5" y="6" width="19" height="13" rx="2.5" /><path d="M2.5 10h19" /><path d="M16 15h2" /></>),
   file: (<><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z" /><path d="M14 3v5h5M9 13h6M9 17h4" /></>),
   mappin: (<><path d="M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11Z" /><circle cx="12" cy="10" r="2.5" /></>),
+  box: (<><path d="M12 2.5 20.5 7v10L12 21.5 3.5 17V7L12 2.5Z" /><path d="M3.7 7 12 11.7 20.3 7" /><path d="M12 11.7V21.5" /></>),
+  truck: (<><rect x="1.5" y="6.5" width="12" height="9.5" rx="1" /><path d="M13.5 10h4l3.5 3.5V16h-7.5" /><circle cx="6" cy="18.5" r="1.7" /><circle cx="17.5" cy="18.5" r="1.7" /></>),
+  eye: (<><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></>),
+  tag: (<><path d="M3.5 3.5h8l9 9a2 2 0 0 1 0 2.8l-5.2 5.2a2 2 0 0 1-2.8 0l-9-9v-8Z" /><circle cx="7.5" cy="7.5" r="1.5" /></>),
 };
 
 export function Icon({ name, size = 18, className }: { name: IconName; size?: number; className?: string }) {

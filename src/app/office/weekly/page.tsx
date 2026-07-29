@@ -6,7 +6,7 @@ export default function WeeklyPage() {
   const { allowed, d, loading, reload } = useClerkHome();
   return (
     <Gate allowed={allowed} loading={loading} d={d}>
-      <OfficeShell title="🗒️ Weekly" back onRefresh={reload}>
+      <OfficeShell title="Weekly" back onRefresh={reload}>
         <div className="grid grid-cols-1 gap-3">
           {d && <PurchaseOrderCard list={d.po_list} />}
           {d && <WaitingDeliveryCard list={d.po_on_order} />}
