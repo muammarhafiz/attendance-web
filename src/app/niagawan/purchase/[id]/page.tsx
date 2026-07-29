@@ -524,23 +524,23 @@ export default function ReviewInvoicePage() {
               className="mt-1 w-full rounded-md border border-line px-2 py-1.5 text-sm disabled:bg-ink/[0.03]" />
           </label>
           <label className="block">
-            <span className="text-xs font-medium text-ink-3">Supplier invoice ref#</span>
+            <span className="text-xs font-medium text-ink-2">Supplier invoice ref#</span>
             <input disabled={locked} value={head.ref_no ?? ''} onChange={(e) => setHead({ ...head, ref_no: e.target.value })}
               className="mt-1 w-full rounded-md border border-line px-2 py-1.5 text-sm disabled:bg-ink/[0.03]" />
           </label>
           <label className="block">
-            <span className="text-xs font-medium text-ink-3">Invoice date</span>
+            <span className="text-xs font-medium text-ink-2">Invoice date</span>
             <input disabled={locked} type="date" value={head.invoice_date ?? ''} onChange={(e) => setHead({ ...head, invoice_date: e.target.value })}
               className="mt-1 w-full rounded-md border border-line px-2 py-1.5 text-sm disabled:bg-ink/[0.03]" />
           </label>
           <label className="block">
-            <span className="text-xs font-medium text-ink-3">Invoice total (from PDF)</span>
+            <span className="text-xs font-medium text-ink-2">Invoice total (from PDF)</span>
             <input disabled={locked} type="number" step="0.01" value={head.total ?? ''} onChange={(e) => setHead({ ...head, total: e.target.value === '' ? null : Number(e.target.value) })}
               className="mt-1 w-full rounded-md border border-line px-2 py-1.5 text-sm disabled:bg-ink/[0.03]" />
           </label>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-          <span className="text-ink-3">Line items total: <b className="tabular-nums text-ink-2">{rm(computedTotal)}</b></span>
+          <span className="text-ink-2">Line items total: <b className="tabular-nums text-ink">{rm(computedTotal)}</b></span>
           {totalMismatch
             ? <span className="rounded bg-bad-soft px-1.5 py-0.5 font-medium text-bad">⚠ differs from PDF total {rm(head.total ?? 0)} — fix before approving</span>
             : <span className="rounded bg-good-soft px-1.5 py-0.5 font-medium text-good">✓ matches PDF total</span>}

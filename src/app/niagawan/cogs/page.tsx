@@ -361,7 +361,7 @@ export default function NiagawanCogsPage() {
       ) : kept.length === 0 ? (
         <div className="rounded-lg border border-dashed border-line bg-card p-6 text-sm text-ink-2">
           Nothing to chase for {day ? fmtDay(day) : 'this day'} — every part has a cost (or is covered by an ignore
-          rule). 🎉
+          rule).
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-line">
