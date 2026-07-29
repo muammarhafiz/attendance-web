@@ -221,41 +221,41 @@ export default function NavBar() {
     return groups.filter((g) => g.items.length > 0);
   }, [access, canBoard, counts]);
 
-  // Sidebar row — active gets the brand pill; the rest are quiet slate.
+  // Sidebar row — active gets a soft accent tint; the rest are quiet ink.
   const rowClass = (item: NavItem) =>
     `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
-      isActive(item) ? 'bg-brand-700 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+      isActive(item) ? 'bg-accent-weak font-semibold text-accent' : 'text-ink-2 hover:bg-ink/5 hover:text-ink'
     }`;
 
   const SideBadge = ({ n }: { n?: number }) =>
     n && n > 0 ? (
-      <span className="ml-auto inline-flex min-w-[18px] items-center justify-center rounded-full bg-rose-500 px-1 text-[11px] font-semibold leading-4 text-white">{n}</span>
+      <span className="ml-auto inline-flex min-w-[18px] items-center justify-center rounded-full bg-bad px-1 text-[11px] font-semibold leading-4 text-white">{n}</span>
     ) : null;
 
   // The bell button (same markup for the mobile top bar and the desktop sidebar).
   const bellButton = (
-    <button onClick={openBell} aria-label="Notifications" className="relative inline-flex h-10 w-10 items-center justify-center rounded-md text-slate-700 hover:bg-slate-100">
+    <button onClick={openBell} aria-label="Notifications" className="relative inline-flex h-10 w-10 items-center justify-center rounded-md text-ink-2 hover:bg-ink/5">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
-      {unseen > 0 && <span className="absolute right-1 top-1 inline-flex min-w-[16px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-semibold leading-4 text-white">{unseen}</span>}
+      {unseen > 0 && <span className="absolute right-1 top-1 inline-flex min-w-[16px] items-center justify-center rounded-full bg-bad px-1 text-[10px] font-semibold leading-4 text-white">{unseen}</span>}
     </button>
   );
 
   return (
     <>
       {/* Mobile top bar */}
-      <header className="no-print fixed inset-x-0 top-0 z-40 flex h-14 items-center gap-2 border-b border-slate-200 bg-white/90 px-3 backdrop-blur lg:hidden">
+      <header className="no-print fixed inset-x-0 top-0 z-40 flex h-14 items-center gap-2 border-b border-line bg-card/90 px-3 backdrop-blur lg:hidden">
         <button
           onClick={() => setOpen((v) => !v)}
           aria-label="Menu"
           aria-expanded={open}
-          className="relative inline-flex h-10 w-10 items-center justify-center rounded-md text-slate-700 hover:bg-slate-100"
+          className="relative inline-flex h-10 w-10 items-center justify-center rounded-md text-ink-2 hover:bg-ink/5"
         >
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
-          {canBell && pendingTotal > 0 && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-rose-500" />}
+          {canBell && pendingTotal > 0 && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-bad" />}
         </button>
         <Link href="/" prefetch={false} className="flex min-w-0 items-center gap-2" aria-label="ZORDAQ Auto Service — Home">
           <Image src="/zordaq-auto.png" alt="ZORDAQ Auto Service" width={717} height={1174} priority className="h-8 w-auto" />
-          <span className="truncate text-sm font-extrabold tracking-tight text-slate-900">Zordaq Auto Services</span>
+          <span className="truncate text-sm font-extrabold tracking-tight text-ink">Zordaq Auto Services</span>
         </Link>
         {email && canBell && <div className="ml-auto">{bellButton}</div>}
       </header>
@@ -263,27 +263,27 @@ export default function NavBar() {
       {/* Show-sidebar button — desktop only, appears when the sidebar is collapsed */}
       {collapsed && (
         <button onClick={toggleCollapsed} aria-label="Show sidebar" title="Show sidebar"
-          className="no-print fixed left-3 top-3 z-50 hidden h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white/95 text-slate-600 shadow-sm backdrop-blur transition hover:bg-slate-100 lg:inline-flex">
+          className="no-print fixed left-3 top-3 z-50 hidden h-9 w-9 items-center justify-center rounded-md border border-line bg-card/95 text-ink-2 shadow-sm backdrop-blur transition hover:bg-ink/5 lg:inline-flex">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
         </button>
       )}
 
       {/* Backdrop for the mobile drawer */}
-      {open && <button className="no-print fixed inset-0 z-40 bg-slate-900/20 lg:hidden" aria-label="Close menu" onClick={() => setOpen(false)} />}
+      {open && <button className="no-print fixed inset-0 z-40 bg-black/20 lg:hidden" aria-label="Close menu" onClick={() => setOpen(false)} />}
 
       {/* Sidebar — fixed on desktop, slide-in drawer on mobile */}
       <aside
-        className={`app-sidebar no-print fixed left-0 top-0 z-50 flex h-screen w-64 max-w-[85vw] flex-col border-r border-slate-200 bg-white transition-transform lg:z-30 lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}
+        className={`app-sidebar no-print fixed left-0 top-0 z-50 flex h-screen w-64 max-w-[85vw] flex-col border-r border-line bg-card transition-transform lg:z-30 lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}
       >
         {/* Brand + desktop bell */}
         <div className="flex items-center gap-2 px-4 py-3">
           <Link href="/" prefetch={false} className="flex min-w-0 items-center gap-2" aria-label="ZORDAQ Auto Service — Home" onClick={() => setOpen(false)}>
             <Image src="/zordaq-auto.png" alt="ZORDAQ Auto Service" width={717} height={1174} priority className="h-9 w-auto" />
-            <span className="truncate text-sm font-extrabold tracking-tight text-slate-900">Zordaq Auto Services</span>
+            <span className="truncate text-sm font-extrabold tracking-tight text-ink">Zordaq Auto Services</span>
           </Link>
           <div className="ml-auto hidden items-center gap-0.5 lg:flex">
             {email && canBell && bellButton}
-            <button onClick={toggleCollapsed} aria-label="Hide sidebar" title="Hide sidebar" className="inline-flex h-9 w-9 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-800">
+            <button onClick={toggleCollapsed} aria-label="Hide sidebar" title="Hide sidebar" className="inline-flex h-9 w-9 items-center justify-center rounded-md text-ink-3 transition hover:bg-ink/5 hover:text-ink">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 6l-6 6 6 6" /></svg>
             </button>
           </div>
@@ -293,7 +293,7 @@ export default function NavBar() {
         <nav className="flex-1 overflow-y-auto px-3 pb-3">
           {navGroups.map((group) => (
             <div key={group.label} className="mb-1">
-              <div className="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{group.label}</div>
+              <div className="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-ink-3">{group.label}</div>
               <div className="space-y-0.5">
                 {group.items.map((l) => (
                   <Link key={l.href} href={l.href} prefetch={false} className={rowClass(l)} onClick={() => setOpen(false)}>
@@ -308,14 +308,14 @@ export default function NavBar() {
         </nav>
 
         {/* Footer — account */}
-        <div className="border-t border-slate-200 p-3">
+        <div className="border-t border-line p-3">
           {email ? (
             <div className="flex items-center gap-2">
-              <span className="min-w-0 flex-1 truncate text-xs text-slate-500" title={email}>{email}</span>
-              <button onClick={handleSignOut} className="shrink-0 rounded-md bg-slate-100 px-2.5 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-200">Sign out</button>
+              <span className="min-w-0 flex-1 truncate text-xs text-ink-3" title={email}>{email}</span>
+              <button onClick={handleSignOut} className="shrink-0 rounded-md bg-ink/5 px-2.5 py-1.5 text-xs font-medium text-ink-2 transition hover:bg-ink/10">Sign out</button>
             </div>
           ) : (
-            <Link href="/login" prefetch={false} className="block rounded-md bg-brand-700 px-3 py-2 text-center text-sm font-semibold text-white transition hover:bg-brand-800">Sign in</Link>
+            <Link href="/login" prefetch={false} className="block rounded-md bg-accent px-3 py-2 text-center text-sm font-semibold text-white transition hover:opacity-90">Sign in</Link>
           )}
         </div>
       </aside>
@@ -324,33 +324,33 @@ export default function NavBar() {
       {email && canBell && bellOpen && (
         <>
           <button className="no-print fixed inset-0 z-40 cursor-default" aria-label="Close notifications" onClick={() => setBellOpen(false)} />
-          <div className="no-print fixed right-3 top-16 z-50 w-80 max-w-[88vw] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg lg:left-[268px] lg:right-auto lg:top-14">
-            <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
-              <span className="text-sm font-semibold text-slate-700">Notifications</span>
-              {items.length > 0 && <button onClick={clearAll} className="text-xs font-medium text-slate-400 hover:text-slate-700">Clear all</button>}
+          <div className="no-print fixed right-3 top-16 z-50 w-80 max-w-[88vw] overflow-hidden rounded-lg border border-line bg-card shadow-lg lg:left-[268px] lg:right-auto lg:top-14">
+            <div className="flex items-center justify-between border-b border-line px-3 py-2">
+              <span className="text-sm font-semibold text-ink-2">Notifications</span>
+              {items.length > 0 && <button onClick={clearAll} className="text-xs font-medium text-ink-3 hover:text-ink">Clear all</button>}
             </div>
             <div className="max-h-96 overflow-y-auto">
               {items.length === 0 ? (
-                <div className="px-3 py-6 text-center text-sm text-slate-400">Nothing pending</div>
+                <div className="px-3 py-6 text-center text-sm text-ink-3">Nothing pending</div>
               ) : (
                 items.map((i) => {
                   const canAct = ACTIONABLE.has(i.type);
                   return (
-                    <div key={i.type + i.id} className="border-b border-slate-50 px-3 py-2">
+                    <div key={i.type + i.id} className="border-b border-line px-3 py-2">
                       <div className="flex items-start gap-2">
                         <button onClick={() => goTo(i.href)} className="flex min-w-0 flex-1 items-start gap-2 text-left hover:opacity-80">
                           <span className="mt-0.5 text-base leading-none">{NOTIF_ICON[i.type] ?? '🔔'}</span>
                           <span className="min-w-0 flex-1">
-                            <span className="block text-sm text-slate-800"><span className="font-medium">{i.who}</span> · {NOTIF_LABEL[i.type] ?? i.type}</span>
-                            <span className="block truncate text-xs text-slate-500">{i.detail} · {relTime(i.when)}</span>
+                            <span className="block text-sm text-ink"><span className="font-medium">{i.who}</span> · {NOTIF_LABEL[i.type] ?? i.type}</span>
+                            <span className="block truncate text-xs text-ink-3">{i.detail} · {relTime(i.when)}</span>
                           </span>
                         </button>
-                        <button onClick={() => dismiss(i)} aria-label="Dismiss" className="shrink-0 leading-none text-slate-300 hover:text-slate-600">✕</button>
+                        <button onClick={() => dismiss(i)} aria-label="Dismiss" className="shrink-0 leading-none text-ink-3 hover:text-ink">✕</button>
                       </div>
                       {canAct && (
                         <div className="mt-1.5 flex gap-2 pl-6">
-                          <button onClick={() => act(i, 'approve')} disabled={acting === i.id} className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">✓ Approve</button>
-                          <button onClick={() => act(i, 'reject')} disabled={acting === i.id} className="rounded-md border border-rose-300 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50">✗ Reject</button>
+                          <button onClick={() => act(i, 'approve')} disabled={acting === i.id} className="rounded-md bg-good px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">✓ Approve</button>
+                          <button onClick={() => act(i, 'reject')} disabled={acting === i.id} className="rounded-md border border-line bg-bad-soft px-2.5 py-1 text-xs font-semibold text-bad hover:bg-bad-soft disabled:opacity-50">✗ Reject</button>
                         </div>
                       )}
                     </div>
