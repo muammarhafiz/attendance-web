@@ -6,20 +6,21 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import { useClerkHome, Gate, OfficeShell, type Home } from '@/components/office/shared';
+import { Icon, type IconName } from '@/components/icons';
 
-function BigCard({ href, icon, title, summary, alert }: { href: string; icon: string; title: string; summary: string; alert?: boolean }) {
+function BigCard({ href, icon, title, summary, alert }: { href: string; icon: IconName; title: string; summary: string; alert?: boolean }) {
   return (
     <Link href={href} className="block">
-      <div className="flex items-center gap-4 rounded-xl border border-gray-200 bg-white p-5 transition hover:border-gray-300">
-        <span className="text-3xl leading-none">{icon}</span>
+      <div className="flex items-center gap-4 rounded-card bg-card shadow-card p-5 transition hover:-translate-y-px">
+        <span className="text-ink-2"><Icon name={icon} size={22} /></span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-            {alert && <span className="h-2 w-2 rounded-full bg-amber-500" title="Needs attention" />}
+            <h2 className="text-lg font-semibold text-ink">{title}</h2>
+            {alert && <span className="h-2 w-2 rounded-full bg-warn" title="Needs attention" />}
           </div>
-          <p className="mt-0.5 text-sm text-gray-500">{summary}</p>
+          <p className="mt-0.5 text-sm text-ink-2">{summary}</p>
         </div>
-        <span className="shrink-0 text-2xl text-gray-300">›</span>
+        <span className="shrink-0 text-2xl text-ink-3">›</span>
       </div>
     </Link>
   );
@@ -101,30 +102,30 @@ function DailyStatusCard() {
   const hasKiv = rows.some((r) => r.state === 'kiv');
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5">
+    <div className="rounded-card bg-card shadow-card p-5">
       <div className="mb-2 flex items-center gap-2">
-        <span className="text-2xl leading-none">📅</span>
-        <h2 className="text-lg font-semibold text-gray-900">Daily</h2>
-        {hasBad ? <span className="h-2 w-2 rounded-full bg-rose-500" title="Has backlog" />
-          : hasKiv ? <span className="h-2 w-2 rounded-full bg-amber-500" title="Items in KIV" /> : null}
-        <Link href="/office/daily" className="ml-auto text-xs font-medium text-blue-600 hover:underline">Open →</Link>
+        <span className="text-ink-2"><Icon name="calendar" size={22} /></span>
+        <h2 className="text-lg font-semibold text-ink">Daily</h2>
+        {hasBad ? <span className="h-2 w-2 rounded-full bg-bad" title="Has backlog" />
+          : hasKiv ? <span className="h-2 w-2 rounded-full bg-warn" title="Items in KIV" /> : null}
+        <Link href="/office/daily" className="ml-auto text-xs font-medium text-accent hover:underline">Open →</Link>
       </div>
       <div className="mb-3 flex items-center justify-center gap-3">
-        <button onClick={() => shiftDay(-1)} aria-label="Previous day" className="rounded-md border border-gray-300 px-2.5 py-1 text-sm hover:bg-gray-50">◀</button>
-        <span className="min-w-[72px] text-center text-sm font-semibold text-gray-800">{fmtDMY(day)}</span>
-        <button onClick={() => shiftDay(1)} disabled={day >= klToday()} aria-label="Next day" className="rounded-md border border-gray-300 px-2.5 py-1 text-sm hover:bg-gray-50 disabled:opacity-40">▶</button>
+        <button onClick={() => shiftDay(-1)} aria-label="Previous day" className="rounded-md border border-line px-2.5 py-1 text-sm hover:bg-ink/5">◀</button>
+        <span className="min-w-[72px] text-center text-sm font-semibold text-ink-2">{fmtDMY(day)}</span>
+        <button onClick={() => shiftDay(1)} disabled={day >= klToday()} aria-label="Next day" className="rounded-md border border-line px-2.5 py-1 text-sm hover:bg-ink/5 disabled:opacity-40">▶</button>
       </div>
       {loading || !s ? (
-        <div className="py-2 text-center text-sm text-gray-400">Loading…</div>
+        <div className="py-2 text-center text-sm text-ink-3">Loading…</div>
       ) : (
         <ul className="space-y-1.5">
           {rows.map((r, i) => {
-            const dot = r.state === 'bad' ? 'bg-rose-500' : r.state === 'kiv' ? 'bg-amber-500' : 'bg-emerald-500';
-            const txt = r.state === 'bad' ? 'text-rose-600' : r.state === 'kiv' ? 'text-amber-600' : 'text-emerald-600';
+            const dot = r.state === 'bad' ? 'bg-bad' : r.state === 'kiv' ? 'bg-warn' : 'bg-good';
+            const txt = r.state === 'bad' ? 'text-bad' : r.state === 'kiv' ? 'text-warn' : 'text-good';
             return (
               <li key={i} className="flex items-center gap-2 text-sm">
                 <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
-                <span className="text-gray-600">{r.label}</span>
+                <span className="text-ink-2">{r.label}</span>
                 <span className={`ml-auto font-medium ${txt}`}>{r.value}</span>
               </li>
             );
@@ -153,11 +154,11 @@ function OfficeHome({ d, reload }: { d: Home; reload: () => void }) {
         : `${d.po_pending} purchase orders ready · before Wed`)
     : onOrder > 0 ? `${onOrder} PO${onOrder === 1 ? '' : 's'} awaiting delivery` : 'Purchase orders · Mon–Tue';
   return (
-    <OfficeShell title="🗂️ Office" onRefresh={reload}>
-      <p className="mb-2 text-sm text-gray-500"><span className="text-rose-600">Red</span> needs doing, <span className="text-emerald-600">green</span> is done. Use the arrows to change the day.</p>
+    <OfficeShell title="Office" onRefresh={reload}>
+      <p className="mb-2 text-sm text-ink-2"><span className="text-bad">Red</span> needs doing, <span className="text-good">green</span> is done. Use the arrows to change the day.</p>
       <div className="space-y-3">
         <DailyStatusCard />
-        <BigCard href="/office/weekly" icon="🗒️" title="Weekly" alert={weeklyAlert} summary={weeklySummary} />
+        <BigCard href="/office/weekly" icon="clipboard" title="Weekly" alert={weeklyAlert} summary={weeklySummary} />
         <MonthlyStatusCard d={d} />
       </div>
     </OfficeShell>
@@ -180,22 +181,22 @@ function MonthlyStatusCard({ d }: { d: Home }) {
   ];
   const hasBad = rows.some((r) => r.state === 'bad');
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5">
+    <div className="rounded-card bg-card shadow-card p-5">
       <div className="mb-2 flex items-center gap-2">
-        <span className="text-2xl leading-none">🗓️</span>
-        <h2 className="text-lg font-semibold text-gray-900">Monthly</h2>
-        {hasBad ? <span className="h-2 w-2 rounded-full bg-rose-500" title="Pending items" />
-          : <span className="h-2 w-2 rounded-full bg-emerald-500" title="All settled" />}
-        <Link href="/month-end" className="ml-auto text-xs font-medium text-blue-600 hover:underline">Open →</Link>
+        <span className="text-ink-2"><Icon name="calendar" size={22} /></span>
+        <h2 className="text-lg font-semibold text-ink">Monthly</h2>
+        {hasBad ? <span className="h-2 w-2 rounded-full bg-bad" title="Pending items" />
+          : <span className="h-2 w-2 rounded-full bg-good" title="All settled" />}
+        <Link href="/month-end" className="ml-auto text-xs font-medium text-accent hover:underline">Open →</Link>
       </div>
       <ul className="space-y-1.5">
         {rows.map((r, i) => {
-          const dot = r.state === 'bad' ? 'bg-rose-500' : 'bg-emerald-500';
-          const txt = r.state === 'bad' ? 'text-rose-600' : 'text-emerald-600';
+          const dot = r.state === 'bad' ? 'bg-bad' : 'bg-good';
+          const txt = r.state === 'bad' ? 'text-bad' : 'text-good';
           return (
             <li key={i} className="flex items-center gap-2 text-sm">
               <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
-              <span className="text-gray-600">{r.label}</span>
+              <span className="text-ink-2">{r.label}</span>
               <span className={`ml-auto font-medium ${txt}`}>{r.value}</span>
             </li>
           );
