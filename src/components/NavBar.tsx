@@ -8,7 +8,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
-type NavItem = { href: string; label: string; match?: string; badge?: number; icon: IconName };
+type NavChild = { href: string; label: string; match?: string; badge?: number };
+type NavItem = { href?: string; label: string; match?: string; badge?: number; icon: IconName; children?: NavChild[] };
 type NavGroup = { label: string; items: NavItem[] };
 type NotifItem = { type: string; id: string; who: string; detail: string; when: string; href: string };
 const NOTIF_ICON: Record<string, string> = { offday: '🌴', halfday: '🕧', advance: '💵', mc: '📄', po: '📦', pinv: '📥', pinv_created: '✅', not_checkin: '⏰', stuckcar: '🚗', debt: '🧾', lowstock: '📉' };
@@ -47,6 +48,12 @@ function NavIcon({ name }: { name: IconName }) {
   );
 }
 
+// Notification-count badge (rose → bad token).
+function Badge({ n, className = 'ml-auto' }: { n?: number; className?: string }) {
+  if (!n || n <= 0) return null;
+  return <span className={`${className} inline-flex min-w-[18px] items-center justify-center rounded-full bg-bad px-1 text-[11px] font-semibold leading-4 text-white`}>{n}</span>;
+}
+
 export default function NavBar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -60,6 +67,7 @@ export default function NavBar() {
   const [seenAt, setSeenAt] = useState<string>('');
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false); // desktop-only: sidebar hidden to reclaim width
+  const [expanded, setExpanded] = useState<Set<string>>(new Set()); // which expandable areas are open
   useEffect(() => { setSeenAt(localStorage.getItem('notif_seen_at') || ''); }, []);
   // The <html> class is applied pre-paint by an inline script in layout.tsx (no flash on reload);
   // mirror it into state so the toggle button reflects the current mode.
@@ -71,6 +79,9 @@ export default function NavBar() {
       try { localStorage.setItem('nav_collapsed', next ? '1' : '0'); } catch {}
       return next;
     });
+  }, []);
+  const toggleArea = useCallback((label: string) => {
+    setExpanded((prev) => { const n = new Set(prev); if (n.has(label)) n.delete(label); else n.add(label); return n; });
   }, []);
 
   useEffect(() => {
@@ -176,61 +187,86 @@ export default function NavBar() {
   const unseen = items.filter((i) => !seenAt || i.when > seenAt).length;
   const pendingTotal = counts.mc + counts.offday + counts.halfday + counts.advance + counts.po + counts.pinv + counts.pinv_created;
 
-  const isActive = useMemo(
-    () => (item: NavItem) => {
-      const base = item.match ?? item.href;
-      return pathname === base || pathname?.startsWith(base + '/') || pathname === base + '/';
-    },
-    [pathname]
-  );
+  // True when `base` matches the current path (exact, or a parent of it).
+  const pathActive = useCallback((base?: string) => {
+    if (!base) return false;
+    return pathname === base || (pathname?.startsWith(base + '/') ?? false) || pathname === base + '/';
+  }, [pathname]);
+  const isActive = useCallback((item: NavItem) => pathActive(item.match ?? item.href), [pathActive]);
 
-  // Grouped navigation. Each item shows only if the signed-in person's position grants that feature —
-  // same gates as before, just reorganised into a sidebar. Empty groups are dropped.
+  // Grouped navigation. Each item shows only if the signed-in person's position grants that feature.
+  // Areas (Niagawan / Attendance / Payroll) hold their sub-tabs as `children`; the rest are leaves.
   const navGroups: NavGroup[] = useMemo(() => {
     const reqBadge = counts.mc + counts.offday + counts.halfday + counts.advance;
+    const niagawanChildren: NavChild[] = access.niagawan
+      ? [
+          { href: '/niagawan/sales', label: 'Sales' },
+          { href: '/niagawan/cogs', label: 'COGS' },
+          { href: '/niagawan/inventory-v4', match: '/niagawan/inventory', label: 'Inventory', badge: counts.po },
+          { href: '/niagawan/purchase', match: '/niagawan/purchase', label: 'Purchase Invoice', badge: counts.pinv },
+          { href: '/niagawan/kiv', label: 'KIV Invoices' },
+          { href: '/niagawan/pnl', label: 'P&L' },
+        ]
+      : access.pnl
+      ? [{ href: '/niagawan/pnl', label: 'P&L' }]
+      : [];
     const groups: NavGroup[] = [
       { label: 'Overview', items: [
-        ...(access.owner ? [{ href: '/dashboard', label: 'Dashboard', icon: 'dashboard' } as NavItem] : []),
+        ...(access.owner ? [{ label: 'Dashboard', href: '/dashboard', icon: 'dashboard' } as NavItem] : []),
       ] },
       { label: 'Shop', items: [
-        ...(canBoard ? [{ href: '/workshop', label: 'Workshop', icon: 'wrench' } as NavItem] : []),
-        ...(access.niagawan ? [
-          { href: '/niagawan/sales', match: '/niagawan/sales', label: 'Sales', icon: 'sales' } as NavItem,
-          { href: '/niagawan/inventory-v4', match: '/niagawan/inventory', label: 'Inventory', icon: 'box', badge: counts.po } as NavItem,
-          { href: '/niagawan/purchase', match: '/niagawan/purchase', label: 'Purchase', icon: 'cart', badge: counts.pinv } as NavItem,
-        ] : []),
+        ...(canBoard ? [{ label: 'Workshop', href: '/workshop', icon: 'wrench' } as NavItem] : []),
+        ...(niagawanChildren.length ? [{ label: 'Niagawan', icon: 'box', badge: counts.po + counts.pinv, children: niagawanChildren } as NavItem] : []),
       ] },
       { label: 'Finance', items: [
-        ...((access.niagawan || access.pnl) ? [{ href: '/niagawan/pnl', match: '/niagawan/pnl', label: 'P&L', icon: 'bars' } as NavItem] : []),
-        ...(access.owner ? [{ href: '/bank-recon', label: 'Bank', icon: 'bank' } as NavItem] : []),
+        ...(access.owner ? [{ label: 'Bank', href: '/bank-recon', icon: 'bank' } as NavItem] : []),
       ] },
       { label: 'People', items: [
         // Owners' Check-in points at /checkin so it isn't bounced to the dashboard like "/".
-        { href: access.owner ? '/checkin' : '/', match: access.owner ? '/checkin' : undefined, label: 'Check-in', icon: 'clock' } as NavItem,
-        ...(access.attendance ? [{ href: '/attendance/checkin', match: '/attendance', label: 'Attendance', icon: 'calendar', badge: reqBadge } as NavItem] : []),
-        ...(access.employees ? [{ href: '/employees', label: 'Employees', icon: 'users' } as NavItem] : []),
-        ...(access.payroll ? [{ href: '/payroll/v3', match: '/payroll', label: 'Payroll', icon: 'wallet' } as NavItem] : []),
+        { label: 'Check-in', href: access.owner ? '/checkin' : '/', match: access.owner ? '/checkin' : undefined, icon: 'clock' } as NavItem,
+        ...(access.attendance ? [{ label: 'Attendance', icon: 'calendar', badge: reqBadge, children: [
+          { href: '/attendance/today', label: 'Today' },
+          { href: '/attendance/report', label: 'Report' },
+          { href: '/attendance/offday', label: 'Off-day' },
+          { href: '/attendance/leave', label: 'Off-day requests' },
+          { href: '/attendance/halfday-req', label: 'Half-day requests' },
+          { href: '/attendance/advance', label: 'Advance' },
+          { href: '/attendance/mc', label: 'MC' },
+        ] } as NavItem] : []),
+        ...(access.employees ? [{ label: 'Employees', href: '/employees', icon: 'users' } as NavItem] : []),
+        ...(access.payroll ? [{ label: 'Payroll', icon: 'wallet', children: [
+          { href: '/payroll/v3', match: '/payroll/v3', label: 'Run payroll' },
+          { href: '/payroll/records', label: 'Records' },
+          { href: '/payroll/settings', label: 'Settings' },
+        ] } as NavItem] : []),
       ] },
       { label: 'Office', items: [
-        ...(access.month_end ? [{ href: '/office', match: '/office', label: 'Office', icon: 'office' } as NavItem] : []),
+        ...(access.month_end ? [{ label: 'Office', href: '/office', match: '/office', icon: 'office' } as NavItem] : []),
       ] },
       { label: 'System', items: [
-        ...((access.access_admin || access.owner || access.month_end) ? [{ href: '/settings', label: 'Settings', icon: 'settings' } as NavItem] : []),
+        ...((access.access_admin || access.owner || access.month_end) ? [{ label: 'Settings', href: '/settings', icon: 'settings' } as NavItem] : []),
       ] },
     ];
     return groups.filter((g) => g.items.length > 0);
   }, [access, canBoard, counts]);
 
-  // Sidebar row — active gets a soft accent tint; the rest are quiet ink.
+  // Auto-open the area that contains the current route (so you always see where you are).
+  useEffect(() => {
+    setExpanded((prev) => {
+      let changed = false;
+      const n = new Set(prev);
+      for (const g of navGroups) for (const it of g.items) {
+        if (it.children && !n.has(it.label) && it.children.some((c) => pathActive(c.match ?? c.href))) { n.add(it.label); changed = true; }
+      }
+      return changed ? n : prev;
+    });
+  }, [navGroups, pathActive]);
+
+  // Leaf row — active gets a soft accent tint; the rest are quiet ink.
   const rowClass = (item: NavItem) =>
     `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
       isActive(item) ? 'bg-accent-weak font-semibold text-accent' : 'text-ink-2 hover:bg-ink/5 hover:text-ink'
     }`;
-
-  const SideBadge = ({ n }: { n?: number }) =>
-    n && n > 0 ? (
-      <span className="ml-auto inline-flex min-w-[18px] items-center justify-center rounded-full bg-bad px-1 text-[11px] font-semibold leading-4 text-white">{n}</span>
-    ) : null;
 
   // The bell button (same markup for the mobile top bar and the desktop sidebar).
   const bellButton = (
@@ -295,13 +331,54 @@ export default function NavBar() {
             <div key={group.label} className="mb-1">
               <div className="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-ink-3">{group.label}</div>
               <div className="space-y-0.5">
-                {group.items.map((l) => (
-                  <Link key={l.href} href={l.href} prefetch={false} className={rowClass(l)} onClick={() => setOpen(false)}>
-                    <NavIcon name={l.icon} />
-                    <span className="truncate">{l.label}</span>
-                    <SideBadge n={l.badge} />
-                  </Link>
-                ))}
+                {group.items.map((item) => {
+                  // Leaf link
+                  if (!item.children) {
+                    return (
+                      <Link key={item.label} href={item.href ?? '#'} prefetch={false} className={rowClass(item)} onClick={() => setOpen(false)}>
+                        <NavIcon name={item.icon} />
+                        <span className="truncate">{item.label}</span>
+                        <Badge n={item.badge} />
+                      </Link>
+                    );
+                  }
+                  // Expandable area
+                  const isOpen = expanded.has(item.label);
+                  const areaActive = item.children.some((c) => pathActive(c.match ?? c.href));
+                  return (
+                    <div key={item.label}>
+                      <button
+                        onClick={() => toggleArea(item.label)}
+                        aria-expanded={isOpen}
+                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${areaActive ? 'text-ink' : 'text-ink-2 hover:bg-ink/5 hover:text-ink'}`}
+                      >
+                        <NavIcon name={item.icon} />
+                        <span className="flex-1 truncate text-left">{item.label}</span>
+                        <Badge n={item.badge} className="" />
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 text-ink-3 transition-transform ${isOpen ? 'rotate-90' : ''}`}><path d="M9 6l6 6-6 6" /></svg>
+                      </button>
+                      {isOpen && (
+                        <div className="mb-1 mt-0.5 space-y-0.5 pl-[30px]">
+                          {item.children.map((c) => {
+                            const cActive = pathActive(c.match ?? c.href);
+                            return (
+                              <Link
+                                key={c.href}
+                                href={c.href}
+                                prefetch={false}
+                                onClick={() => setOpen(false)}
+                                className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] font-medium transition ${cActive ? 'bg-accent-weak text-accent' : 'text-ink-2 hover:bg-ink/5 hover:text-ink'}`}
+                              >
+                                <span className="truncate">{c.label}</span>
+                                <Badge n={c.badge} />
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           ))}
