@@ -47,7 +47,7 @@ function buildPrompt(categoryNames: string[], invoiceText: string): string {
     '"items":[{"codes":[string],"description":string,"qty":number,"unit_price":number,"discount":number,"amount":number,"category":string}]}. ' +
     'For each line item, "codes" = the list of ALL product/part codes for that item. ' +
     'A part code is a short alphanumeric token (letters and/or digits, may contain dashes or a brand prefix such as "APM 927Q"), e.g. "CXA-0578","1643ZY","CD-2119BB","720505","KM7194","FEW-R126". ' +
-    'A code is NOT: a vehicle model (JAZZ, FREED, CRZ), a part type (CONDENSER, RADIATOR), a generic word (OEM, HQ, NEW), a unit (UNIT, PCS), or any shelf / "Group" / location column value (e.g. "A6.1") — IGNORE those. ' +
+    'A code is NOT: a vehicle model (JAZZ, FREED, CRZ), a part type (CONDENSER, RADIATOR), a generic word (OEM, HQ, NEW), a unit (UNIT, PCS), an oil VISCOSITY grade (0W-20, 5W-30, 5W-40, 10W-30, 10W-40, 15W-40, 20W-50), a pack/carton SIZE (4X4L, 4X3L, 6X1L, 24X1L), or any shelf / "Group" / location column value (e.g. "A6.1") — IGNORE those. Viscosity grades and pack sizes belong in "description", NEVER in "codes". ' +
     'If the invoice has a clean Item Code column, that single code is the only entry in "codes". If several codes are embedded in the description, include them ALL, in the order they appear. ' +
     '"description" = a clean human description of the item WITHOUT the codes: item type + vehicle model + year, e.g. "CONDENSER W/DRIER JAZZ FREED CRZ 09". ' +
     '"unit_price" = the GROSS unit price as printed, BEFORE any discount. "discount" = the per-line discount as a PERCENT number (e.g. 15 if the line shows a "15%" discount column); use 0 when there is no discount. "amount" = the NET line total after discount, i.e. qty * unit_price * (1 - discount/100). ' +
@@ -242,6 +242,12 @@ export async function POST(req: Request) {
         // Normalise the codes list (fallback to a single item_code if the model returned that).
         let codes = Array.isArray(it.codes) ? it.codes.map((c) => String(c ?? '').trim()).filter(Boolean) : [];
         if (codes.length === 0 && it.item_code) { const c = String(it.item_code).trim(); if (c) codes = [c]; }
+        // Guardrail: an oil VISCOSITY grade (5W-30, 10W-40, 0W-20) or a pack/carton SIZE
+        // (4X4L, 6X1L) is a spec, never a product code — but gemini-3.5-flash intermittently
+        // grabs one as the "code" (esp. on Gulf/Atomlubes oils, which DO carry real SGxxxx codes).
+        // Strip those tokens so the line falls back to description-matching instead of a bogus
+        // create-new. Neither pattern can match a genuine part code.
+        codes = codes.filter((c) => !/^\d{1,2}w-?\d{1,2}$/i.test(c) && !/^\d+\s*x\s*\d+\s*(l|ml)$/i.test(c));
         // Narrow Item Code columns wrap long codes onto a second line (e.g. Grand prints
         // "AU1006-" / "9LX2L/L588"); the AI then sees two codes. A code ending in "-" is
         // really the first half of ONE wrapped code — join it with the next piece.
