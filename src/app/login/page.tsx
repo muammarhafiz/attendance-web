@@ -15,17 +15,17 @@ export default function Login() {
 
   return (
     <div className="flex min-h-[70vh] items-center justify-center px-4">
-      <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
+      <div className="w-full max-w-sm rounded-2xl border border-line bg-card p-7 shadow-sm">
         <div className="flex justify-center">
           <Image src="/zordaq-auto.png" alt="ZORDAQ Auto Service" width={717} height={1174} priority className="h-24 w-auto" />
         </div>
-        <h1 className="mt-5 text-center text-lg font-semibold text-slate-900">Zordaq Auto Services</h1>
-        <p className="mt-1 text-center text-sm text-slate-500">Putrajaya</p>
+        <h1 className="mt-5 text-center text-lg font-semibold text-ink">Zordaq Auto Services</h1>
+        <p className="mt-1 text-center text-sm text-ink-2">Putrajaya</p>
 
         <button
           onClick={signInGoogle}
           disabled={busy}
-          className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+          className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg border border-line bg-card px-4 py-3 text-sm font-medium text-ink-2 transition hover:bg-ink/5 disabled:opacity-60"
         >
           <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
             <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.9 2.4 30.4 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.9 6.1C12.4 13.1 17.7 9.5 24 9.5z" />

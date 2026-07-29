@@ -216,7 +216,7 @@ export default function BarcodeScanner({
         <button
           type="button"
           onClick={onClose}
-          className="rounded-md bg-white/15 px-3 py-1.5 text-sm font-medium text-white hover:bg-white/25"
+          className="rounded-md bg-card/15 px-3 py-1.5 text-sm font-medium text-white hover:bg-card/25"
         >
           Cancel
         </button>
@@ -231,7 +231,7 @@ export default function BarcodeScanner({
         )}
         {error && (
           <div className="absolute inset-0 flex items-center justify-center p-6">
-            <div className="max-w-sm rounded-lg bg-white p-4 text-center text-sm text-gray-700">{error}</div>
+            <div className="max-w-sm rounded-lg bg-card p-4 text-center text-sm text-ink-2">{error}</div>
           </div>
         )}
       </div>
@@ -241,7 +241,7 @@ export default function BarcodeScanner({
           <button
             type="button"
             onClick={toggleTorch}
-            className="rounded-md bg-white/15 px-3 py-1.5 text-sm font-medium text-white hover:bg-white/25"
+            className="rounded-md bg-card/15 px-3 py-1.5 text-sm font-medium text-white hover:bg-card/25"
           >
             {torchOn ? '🔦 Torch off' : '🔦 Torch on'}
           </button>

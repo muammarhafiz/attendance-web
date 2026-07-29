@@ -136,7 +136,7 @@ export default function AutomationSettings() {
                     role="switch"
                     aria-checked={t.enabled}
                     onClick={() => persist(t.key, { enabled: !t.enabled })}
-                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${t.enabled ? 'bg-good' : 'bg-gray-300'}`}
+                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${t.enabled ? 'bg-good' : 'bg-ink/15'}`}
                   >
                     <span className={`inline-block h-5 w-5 transform rounded-full bg-card shadow transition ${t.enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
                   </button>

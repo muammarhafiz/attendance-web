@@ -128,9 +128,9 @@ export default function PushToggle() {
   }, []);
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4">
-      <h2 className="text-sm font-semibold text-gray-900">🔔 Phone notifications</h2>
-      <p className="mt-1 text-xs text-gray-500">Get a push on this phone when there&rsquo;s a new alert — even when the app is closed. Turn it on once on each phone you use.</p>
+    <div className="rounded-xl border border-line bg-card p-4">
+      <h2 className="text-sm font-semibold text-ink">🔔 Phone notifications</h2>
+      <p className="mt-1 text-xs text-ink-2">Get a push on this phone when there&rsquo;s a new alert — even when the app is closed. Turn it on once on each phone you use.</p>
 
       {/* This device */}
       {needsInstall ? (
@@ -139,7 +139,7 @@ export default function PushToggle() {
           <span className="font-medium"> Add to Home Screen</span>, then open <span className="font-medium">Zordaq</span> from that icon and come back here to turn it on.
         </div>
       ) : supported === false ? (
-        <div className="mt-3 text-sm text-gray-500">This browser doesn&apos;t support push notifications.</div>
+        <div className="mt-3 text-sm text-ink-2">This browser doesn&apos;t support push notifications.</div>
       ) : (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {!subscribed ? (
@@ -149,35 +149,35 @@ export default function PushToggle() {
           ) : (
             <>
               <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1.5 text-sm font-medium text-emerald-700">✓ On for this phone</span>
-              <button onClick={sendTest} disabled={busy} className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Send test</button>
+              <button onClick={sendTest} disabled={busy} className="rounded-md border border-line px-3 py-2 text-sm font-medium text-ink-2 hover:bg-ink/5 disabled:opacity-50">Send test</button>
               <button onClick={disable} disabled={busy} className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-50">Turn off</button>
             </>
           )}
         </div>
       )}
 
-      {msg && <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">{msg}</div>}
+      {msg && <div className="mt-3 rounded-lg border border-line bg-ink/5 px-3 py-2 text-xs text-ink-2">{msg}</div>}
 
       {/* All registered devices */}
-      <div className="mt-4 border-t border-gray-100 pt-3">
-        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">Phones getting your notifications</div>
+      <div className="mt-4 border-t border-line pt-3">
+        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-ink-3">Phones getting your notifications</div>
         {devices.length === 0 ? (
-          <p className="text-sm text-gray-500">None yet — turn it on above.</p>
+          <p className="text-sm text-ink-2">None yet — turn it on above.</p>
         ) : (
-          <ul className="divide-y divide-gray-50">
+          <ul className="divide-y divide-line">
             {devices.map((dv) => (
               <li key={dv.endpoint} className="flex items-center justify-between gap-2 py-1.5 text-sm">
                 <div className="min-w-0">
-                  <span className="text-gray-800">{deviceLabel(dv.ua, dv.host)}</span>
+                  <span className="text-ink-2">{deviceLabel(dv.ua, dv.host)}</span>
                   {dv.endpoint === currentEndpoint && <span className="ml-1.5 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">this phone</span>}
-                  <span className="ml-1.5 text-[11px] text-gray-400">added {fmtWhen(dv.created)}</span>
+                  <span className="ml-1.5 text-[11px] text-ink-3">added {fmtWhen(dv.created)}</span>
                 </div>
-                <button onClick={() => removeDevice(dv.endpoint)} disabled={busy} className="shrink-0 text-xs text-gray-400 hover:text-rose-600 disabled:opacity-50">Remove</button>
+                <button onClick={() => removeDevice(dv.endpoint)} disabled={busy} className="shrink-0 text-xs text-ink-3 hover:text-rose-600 disabled:opacity-50">Remove</button>
               </li>
             ))}
           </ul>
         )}
-        {devices.length > 1 && <p className="mt-1.5 text-[11px] text-gray-400">Not getting pushes on a phone? Remove old entries here, then Turn off &amp; on again on that phone.</p>}
+        {devices.length > 1 && <p className="mt-1.5 text-[11px] text-ink-3">Not getting pushes on a phone? Remove old entries here, then Turn off &amp; on again on that phone.</p>}
       </div>
     </div>
   );

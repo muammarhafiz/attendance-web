@@ -551,7 +551,7 @@ export default function EmployeesPage() {
     <main className="mx-auto max-w-7xl p-6">
       <header className="mb-4 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold">Employees</h1>
-        {showArchived && <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-ink-2">Archived</span>}
+        {showArchived && <span className="rounded-full bg-ink/10 px-2 py-0.5 text-xs font-medium text-ink-2">Archived</span>}
         <div className="ml-auto flex items-center gap-2">
           <input
             className="rounded border border-line px-3 py-2 w-72"
@@ -573,7 +573,7 @@ export default function EmployeesPage() {
         </div>
       </header>
 
-      {msg && <div className="mb-3 rounded border border-sky-200 bg-sky-50 p-2 text-sm text-sky-800">{msg}</div>}
+      {msg && <div className="mb-3 rounded border border-accent/40 bg-accent-weak p-2 text-sm text-accent">{msg}</div>}
 
       <section className="overflow-x-auto">
         {loading ? (
@@ -594,7 +594,7 @@ export default function EmployeesPage() {
               {filtered.map((r) => (
                 <tr key={r.email} className="hover:bg-ink/5">
                   <td className="border-b px-3 py-2">
-                    <button className="text-sky-700 hover:underline" onClick={() => openEditor(r.email)}>
+                    <button className="text-accent hover:underline" onClick={() => openEditor(r.email)}>
                       {r.display_name ?? r.email}
                     </button>
                   </td>
@@ -792,7 +792,7 @@ export default function EmployeesPage() {
                   Cancel
                 </button>
                 <button
-                  className="rounded bg-sky-600 px-3 py-2 text-white hover:bg-sky-700 disabled:opacity-50"
+                  className="rounded bg-accent px-3 py-2 text-white hover:opacity-90 disabled:opacity-50"
                   onClick={save}
                   disabled={saving}
                 >

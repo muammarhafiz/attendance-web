@@ -231,7 +231,7 @@ export default function PayrollItemsSettings() {
                     <tr key={it.id} className={`border-t border-line ${it.enabled ? '' : 'opacity-50'}`}>
                       <td className="px-3 py-2">
                         <span className="font-medium text-ink">{it.name}</span>
-                        {it.is_custom && <span className="ml-2 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700">CUSTOM</span>}
+                        {it.is_custom && <span className="ml-2 rounded bg-accent-weak px-1.5 py-0.5 text-[10px] font-semibold text-accent">CUSTOM</span>}
                         {it.is_system && <span className="ml-2 rounded bg-ink/5 px-1.5 py-0.5 text-[10px] font-semibold text-ink-2">SYSTEM</span>}
                         <div className="text-xs text-ink-3">{it.code}</div>
                       </td>
@@ -244,7 +244,7 @@ export default function PayrollItemsSettings() {
                       <td className="px-3 py-2 text-ink-2">{it.ea_field}</td>
                       <td className="px-3 py-2 text-center">
                         <button onClick={() => toggleEnabled(it)} title={it.enabled ? 'Enabled — click to disable' : 'Disabled — click to enable'}
-                          className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${it.enabled ? 'bg-good' : 'bg-gray-300'}`}>
+                          className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${it.enabled ? 'bg-good' : 'bg-ink/15'}`}>
                           <span className={`inline-block h-4 w-4 transform rounded-full bg-card transition ${it.enabled ? 'translate-x-4' : 'translate-x-1'}`} />
                         </button>
                       </td>
@@ -263,7 +263,7 @@ export default function PayrollItemsSettings() {
 
       <p className="mt-2 text-xs text-ink-3">
         <b>Statutory (set)</b> = your dots: <span className="font-semibold text-warn">EPF</span> · <span className="font-semibold text-bad">SOCSO</span> ·
-        {' '}<span className="font-semibold text-sky-600">EIS</span> · <span className="font-semibold text-good">HRDF</span>.
+        {' '}<span className="font-semibold text-accent">EIS</span> · <span className="font-semibold text-good">HRDF</span>.
         <br /><b>By law</b> = the standard KWSP/PERKESO treatment (<span className="font-semibold text-good">YES</span> / <span className="font-semibold text-warn">DEPENDS</span> / <span className="font-semibold text-ink-3">NO</span>);
         {' '}<span className="text-warn">⚠</span> means the law treats it as subject but it&apos;s currently switched off. Final classification depends on how a payment is structured — confirm with your accountant.
         <br />For <b>deductions</b>, By law shows the <b>Employment Act 1955 §24</b> status: <span className="font-semibold text-good">✓ allowed</span> / <span className="font-semibold text-warn">⚠ conditions</span> / <span className="font-semibold text-bad">✕ not a lawful deduction</span> (hover for the rule).

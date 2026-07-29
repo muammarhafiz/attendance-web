@@ -126,7 +126,7 @@ export default function FinalizePayrollPanel({ year, month, onAfterFinalize }: P
         </div>
       </div>
 
-      {msg && <div className="mb-3 rounded border border-sky-200 bg-sky-50 p-2 text-sm text-sky-800">{msg}</div>}
+      {msg && <div className="mb-3 rounded border border-accent/40 bg-accent-weak p-2 text-sm text-accent">{msg}</div>}
       {error && <div className="mb-3 rounded border border-rose-200 bg-bad-soft p-2 text-sm text-bad">{error}</div>}
 
       <div className="grid gap-3">

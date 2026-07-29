@@ -172,7 +172,7 @@ export default function AttendanceTodayPage() {
                     {r.status === 'PRESENT' && <span className="rounded-full bg-good-soft px-2 py-0.5 text-xs font-medium text-good">Present</span>}
                     {r.status === 'HOME' && <span className="rounded-full bg-good-soft px-2 py-0.5 text-xs font-medium text-good">Home</span>}
                     {r.status === 'OFF' && <span className="rounded-full bg-ink/5 px-2 py-0.5 text-xs font-medium text-ink-2">Closed</span>}
-                    {r.status === 'PH' && <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">Public holiday</span>}
+                    {r.status === 'PH' && <span className="rounded-full bg-accent-weak px-2 py-0.5 text-xs font-medium text-accent">Public holiday</span>}
                     {(r.status === 'OFFDAY' || r.status === 'MC') && <span className="rounded-full bg-accent-weak px-2 py-0.5 text-xs font-medium text-accent">{r.status === 'OFFDAY' ? 'Off day' : 'MC'}</span>}
                     {showAbsent && <span className="rounded-full bg-bad-soft px-2 py-0.5 text-xs font-medium text-bad">Absent</span>}
                     {showNotYet && <span className="rounded-full bg-ink/5 px-2 py-0.5 text-xs font-medium text-ink-2">Not in yet</span>}
