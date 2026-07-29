@@ -69,7 +69,7 @@ function StatDots({ it }: { it: ItemType }) {
     </span>
   );
 }
-const Tick = ({ on }: { on: boolean }) => <span className={on ? 'text-emerald-600' : 'text-gray-300'}>{on ? '✓' : '—'}</span>;
+const Tick = ({ on }: { on: boolean }) => <span className={on ? 'text-good' : 'text-ink-3'}>{on ? '✓' : '—'}</span>;
 
 function LawBadge({ label, val }: { label: string; val?: string | null }) {
   if (!val) return null;
@@ -87,10 +87,10 @@ const DEDUCT_LAW: Record<string, { bg: string; label: string }> = {
 function LawCell({ it }: { it: ItemType }) {
   if (it.kind === 'DEDUCT') {
     const d = it.law_deduct ? DEDUCT_LAW[it.law_deduct] : null;
-    if (!d) return <span className="text-gray-300">—</span>;
+    if (!d) return <span className="text-ink-3">—</span>;
     return <span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-bold text-white" style={{ background: d.bg }} title={it.law_note || ''}>{d.label}</span>;
   }
-  if (it.kind !== 'EARN' || (!it.law_epf && !it.law_socso && !it.law_eis)) return <span className="text-gray-300">—</span>;
+  if (it.kind !== 'EARN' || (!it.law_epf && !it.law_socso && !it.law_eis)) return <span className="text-ink-3">—</span>;
   const gap =
     (it.law_epf === 'YES' && !it.stat_epf) ||
     (it.law_socso === 'YES' && !it.stat_socso) ||
@@ -100,7 +100,7 @@ function LawCell({ it }: { it: ItemType }) {
       <LawBadge label="EPF" val={it.law_epf} />
       <LawBadge label="SOC" val={it.law_socso} />
       <LawBadge label="EIS" val={it.law_eis} />
-      {gap && <span title="Law says subject, but currently not charged" className="text-amber-600">⚠</span>}
+      {gap && <span title="Law says subject, but currently not charged" className="text-warn">⚠</span>}
     </span>
   );
 }
@@ -185,9 +185,9 @@ export default function PayrollItemsSettings() {
     else { setEditing(null); setMsg({ kind: 'ok', text: 'Saved.' }); await load(); }
   };
 
-  if (authed === null || isAdmin === null) return <div className="text-sm text-gray-500">Checking…</div>;
-  if (!authed) return <div className="text-sm text-gray-600">Please sign in.</div>;
-  if (!isAdmin) return <div className="text-sm text-gray-600">This page is for admins only.</div>;
+  if (authed === null || isAdmin === null) return <div className="text-sm text-ink-2">Checking…</div>;
+  if (!authed) return <div className="text-sm text-ink-2">Please sign in.</div>;
+  if (!isAdmin) return <div className="text-sm text-ink-2">This page is for admins only.</div>;
 
   const set = (patch: Partial<ItemType>) => setEditing((e) => (e ? { ...e, ...patch } : e));
 
@@ -195,24 +195,24 @@ export default function PayrollItemsSettings() {
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <h2 className="text-lg font-semibold">Payroll Items</h2>
-        <span className="text-sm text-gray-500">Define the earning &amp; deduction types used across payroll.</span>
+        <span className="text-sm text-ink-2">Define the earning &amp; deduction types used across payroll.</span>
         <button onClick={() => setEditing(blankForm('REMUNERATION'))}
           className="ml-auto rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-black">+ Payroll Item</button>
       </div>
 
-      {msg && <div className={`mb-3 rounded-md border p-2 text-sm ${msg.kind === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>{msg.text}</div>}
+      {msg && <div className={`mb-3 rounded-md border p-2 text-sm ${msg.kind === 'ok' ? 'border-emerald-200 bg-good-soft text-good' : 'border-rose-200 bg-bad-soft text-bad'}`}>{msg.text}</div>}
 
       {loading ? (
-        <div className="text-sm text-gray-500">Loading…</div>
+        <div className="text-sm text-ink-2">Loading…</div>
       ) : (
         CATEGORIES.map((c) => {
           const rows = grouped[c.key] ?? [];
           if (!rows.length) return null;
           return (
-            <section key={c.key} className="mb-6 overflow-x-auto rounded-lg border border-gray-200">
-              <div className="border-b bg-gray-50 px-3 py-2 text-xs font-bold uppercase tracking-wide text-gray-600">{c.label}</div>
+            <section key={c.key} className="mb-6 overflow-x-auto rounded-card bg-card shadow-card">
+              <div className="border-b bg-ink/5 px-3 py-2 text-xs font-bold uppercase tracking-wide text-ink-2">{c.label}</div>
               <table className="w-full min-w-[980px] border-collapse text-sm">
-                <thead className="bg-white text-left text-xs uppercase tracking-wide text-gray-400">
+                <thead className="bg-card text-left text-xs uppercase tracking-wide text-ink-3">
                   <tr>
                     <th className="px-3 py-2 font-medium">Name</th>
                     <th className="px-3 py-2 text-center font-medium">Per unit</th>
@@ -228,29 +228,29 @@ export default function PayrollItemsSettings() {
                 </thead>
                 <tbody>
                   {rows.map((it) => (
-                    <tr key={it.id} className={`border-t border-gray-100 ${it.enabled ? '' : 'opacity-50'}`}>
+                    <tr key={it.id} className={`border-t border-line ${it.enabled ? '' : 'opacity-50'}`}>
                       <td className="px-3 py-2">
-                        <span className="font-medium text-gray-900">{it.name}</span>
+                        <span className="font-medium text-ink">{it.name}</span>
                         {it.is_custom && <span className="ml-2 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700">CUSTOM</span>}
-                        {it.is_system && <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500">SYSTEM</span>}
-                        <div className="text-xs text-gray-400">{it.code}</div>
+                        {it.is_system && <span className="ml-2 rounded bg-ink/5 px-1.5 py-0.5 text-[10px] font-semibold text-ink-2">SYSTEM</span>}
+                        <div className="text-xs text-ink-3">{it.code}</div>
                       </td>
                       <td className="px-3 py-2 text-center"><Tick on={it.per_unit} /></td>
                       <td className="px-3 py-2 text-center"><Tick on={it.in_gross} /></td>
                       <td className="px-3 py-2 text-center"><Tick on={it.in_net} /></td>
                       <td className="px-3 py-2 text-center"><StatDots it={it} /></td>
                       <td className="px-3 py-2 text-center"><LawCell it={it} /></td>
-                      <td className="px-3 py-2 text-right tabular-nums text-gray-600">{Number(it.pcb_exemption_limit) ? Number(it.pcb_exemption_limit).toLocaleString('en-MY') : '—'}</td>
-                      <td className="px-3 py-2 text-gray-600">{it.ea_field}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-ink-2">{Number(it.pcb_exemption_limit) ? Number(it.pcb_exemption_limit).toLocaleString('en-MY') : '—'}</td>
+                      <td className="px-3 py-2 text-ink-2">{it.ea_field}</td>
                       <td className="px-3 py-2 text-center">
                         <button onClick={() => toggleEnabled(it)} title={it.enabled ? 'Enabled — click to disable' : 'Disabled — click to enable'}
-                          className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${it.enabled ? 'bg-emerald-500' : 'bg-gray-300'}`}>
-                          <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${it.enabled ? 'translate-x-4' : 'translate-x-1'}`} />
+                          className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${it.enabled ? 'bg-good' : 'bg-gray-300'}`}>
+                          <span className={`inline-block h-4 w-4 transform rounded-full bg-card transition ${it.enabled ? 'translate-x-4' : 'translate-x-1'}`} />
                         </button>
                       </td>
                       <td className="px-3 py-2 text-right whitespace-nowrap">
-                        <button onClick={() => setEditing(it)} className="rounded border px-2 py-0.5 text-xs hover:bg-gray-50">Edit</button>
-                        {!it.is_system && <button onClick={() => archive(it)} className="ml-1 rounded border px-2 py-0.5 text-xs text-rose-700 hover:bg-rose-50">Archive</button>}
+                        <button onClick={() => setEditing(it)} className="rounded border px-2 py-0.5 text-xs hover:bg-ink/5">Edit</button>
+                        {!it.is_system && <button onClick={() => archive(it)} className="ml-1 rounded border px-2 py-0.5 text-xs text-bad hover:bg-bad-soft">Archive</button>}
                       </td>
                     </tr>
                   ))}
@@ -261,37 +261,37 @@ export default function PayrollItemsSettings() {
         })
       )}
 
-      <p className="mt-2 text-xs text-gray-400">
-        <b>Statutory (set)</b> = your dots: <span className="font-semibold text-amber-600">EPF</span> · <span className="font-semibold text-rose-600">SOCSO</span> ·
-        {' '}<span className="font-semibold text-sky-600">EIS</span> · <span className="font-semibold text-emerald-600">HRDF</span>.
-        <br /><b>By law</b> = the standard KWSP/PERKESO treatment (<span className="font-semibold text-green-700">YES</span> / <span className="font-semibold text-amber-600">DEPENDS</span> / <span className="font-semibold text-slate-400">NO</span>);
-        {' '}<span className="text-amber-600">⚠</span> means the law treats it as subject but it&apos;s currently switched off. Final classification depends on how a payment is structured — confirm with your accountant.
-        <br />For <b>deductions</b>, By law shows the <b>Employment Act 1955 §24</b> status: <span className="font-semibold text-green-700">✓ allowed</span> / <span className="font-semibold text-amber-600">⚠ conditions</span> / <span className="font-semibold text-red-600">✕ not a lawful deduction</span> (hover for the rule).
+      <p className="mt-2 text-xs text-ink-3">
+        <b>Statutory (set)</b> = your dots: <span className="font-semibold text-warn">EPF</span> · <span className="font-semibold text-bad">SOCSO</span> ·
+        {' '}<span className="font-semibold text-sky-600">EIS</span> · <span className="font-semibold text-good">HRDF</span>.
+        <br /><b>By law</b> = the standard KWSP/PERKESO treatment (<span className="font-semibold text-good">YES</span> / <span className="font-semibold text-warn">DEPENDS</span> / <span className="font-semibold text-ink-3">NO</span>);
+        {' '}<span className="text-warn">⚠</span> means the law treats it as subject but it&apos;s currently switched off. Final classification depends on how a payment is structured — confirm with your accountant.
+        <br />For <b>deductions</b>, By law shows the <b>Employment Act 1955 §24</b> status: <span className="font-semibold text-good">✓ allowed</span> / <span className="font-semibold text-warn">⚠ conditions</span> / <span className="font-semibold text-bad">✕ not a lawful deduction</span> (hover for the rule).
         <br />PCB-exemption &amp; EA-field are stored for the future PCB / EA-form features and don&apos;t affect pay yet.
       </p>
 
       {/* Add / Edit modal */}
       {editing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3" onClick={(e) => { if (e.target === e.currentTarget && !saving) setEditing(null); }}>
-          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white shadow-xl">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-card shadow-xl">
             <div className="flex items-center justify-between border-b px-4 py-3">
               <div className="font-semibold">{editing.id ? 'Edit payroll item' : 'New payroll item'}</div>
-              <button onClick={() => setEditing(null)} className="rounded-md border px-2.5 py-1 text-xs hover:bg-gray-50">Close</button>
+              <button onClick={() => setEditing(null)} className="rounded-md border px-2.5 py-1 text-xs hover:bg-ink/5">Close</button>
             </div>
             <div className="space-y-3 p-4 text-sm">
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Name</label>
+                <label className="mb-1 block text-xs font-medium text-ink-2">Name</label>
                 <input value={editing.name ?? ''} onChange={(e) => set({ name: e.target.value })} className="w-full rounded-md border px-2 py-1.5" placeholder="e.g. Travel Allowance" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-600">Code</label>
+                  <label className="mb-1 block text-xs font-medium text-ink-2">Code</label>
                   <input value={editing.code ?? ''} disabled={!!editing.id}
                     onChange={(e) => set({ code: e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_') })}
-                    className="w-full rounded-md border px-2 py-1.5 disabled:bg-gray-100 disabled:text-gray-500" placeholder="TRAVEL_ALLOW" />
+                    className="w-full rounded-md border px-2 py-1.5 disabled:bg-ink/5 disabled:text-ink-2" placeholder="TRAVEL_ALLOW" />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-600">Category</label>
+                  <label className="mb-1 block text-xs font-medium text-ink-2">Category</label>
                   <select value={editing.category} onChange={(e) => { const cat = e.target.value; set({ category: cat, kind: DEDUCT_CATS.has(cat) ? 'DEDUCT' : 'EARN', in_gross: !DEDUCT_CATS.has(cat) }); }}
                     className="w-full rounded-md border px-2 py-1.5">
                     {CATEGORIES.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
@@ -300,42 +300,42 @@ export default function PayrollItemsSettings() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-600">Type</label>
+                  <label className="mb-1 block text-xs font-medium text-ink-2">Type</label>
                   <select value={editing.kind} onChange={(e) => set({ kind: e.target.value as 'EARN' | 'DEDUCT' })} className="w-full rounded-md border px-2 py-1.5">
                     <option value="EARN">Earning</option><option value="DEDUCT">Deduction</option>
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-600">EA field</label>
+                  <label className="mb-1 block text-xs font-medium text-ink-2">EA field</label>
                   <select value={editing.ea_field} onChange={(e) => set({ ea_field: e.target.value })} className="w-full rounded-md border px-2 py-1.5">
                     {EA_FIELDS.map((f) => <option key={f} value={f}>{f}</option>)}
                   </select>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-x-4 gap-y-2 rounded-md border border-gray-100 bg-gray-50 p-3">
+              <div className="flex flex-wrap gap-x-4 gap-y-2 rounded-md border border-line bg-ink/5 p-3">
                 {([['per_unit', 'Per unit'], ['in_gross', 'Part of gross'], ['in_net', 'Part of net']] as const).map(([k, lbl]) => (
                   <label key={k} className="flex items-center gap-1.5"><input type="checkbox" checked={!!editing[k]} onChange={(e) => set({ [k]: e.target.checked } as Partial<ItemType>)} />{lbl}</label>
                 ))}
               </div>
               <div>
-                <div className="mb-1 text-xs font-medium text-gray-600">Subject to statutory</div>
-                <div className="flex flex-wrap gap-x-4 gap-y-2 rounded-md border border-gray-100 bg-gray-50 p-3">
+                <div className="mb-1 text-xs font-medium text-ink-2">Subject to statutory</div>
+                <div className="flex flex-wrap gap-x-4 gap-y-2 rounded-md border border-line bg-ink/5 p-3">
                   {([['stat_epf', 'EPF'], ['stat_socso', 'SOCSO'], ['stat_eis', 'EIS'], ['stat_hrdf', 'HRDF']] as const).map(([k, lbl]) => (
                     <label key={k} className="flex items-center gap-1.5"><input type="checkbox" checked={!!editing[k]} onChange={(e) => set({ [k]: e.target.checked } as Partial<ItemType>)} />{lbl}</label>
                   ))}
                 </div>
-                <div className="mt-1 text-[11px] text-gray-400">These don&apos;t change pay yet — engine wiring is a later step.</div>
+                <div className="mt-1 text-[11px] text-ink-3">These don&apos;t change pay yet — engine wiring is a later step.</div>
               </div>
               <div className="grid grid-cols-2 items-end gap-3">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-600">PCB exemption limit (RM/yr)</label>
+                  <label className="mb-1 block text-xs font-medium text-ink-2">PCB exemption limit (RM/yr)</label>
                   <input type="number" value={Number(editing.pcb_exemption_limit) || 0} onChange={(e) => set({ pcb_exemption_limit: e.target.value })} className="w-full rounded-md border px-2 py-1.5 text-right tabular-nums" />
                 </div>
                 <label className="flex items-center gap-1.5 pb-2"><input type="checkbox" checked={editing.enabled !== false} onChange={(e) => set({ enabled: e.target.checked })} />Enabled</label>
               </div>
             </div>
             <div className="flex justify-end gap-2 border-t px-4 py-3">
-              <button onClick={() => setEditing(null)} className="rounded-md border px-3 py-1.5 text-sm hover:bg-gray-50">Cancel</button>
+              <button onClick={() => setEditing(null)} className="rounded-md border px-3 py-1.5 text-sm hover:bg-ink/5">Cancel</button>
               <button onClick={save} disabled={saving} className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-black disabled:opacity-50">{saving ? 'Saving…' : 'Save'}</button>
             </div>
           </div>

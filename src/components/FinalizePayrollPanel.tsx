@@ -102,15 +102,15 @@ export default function FinalizePayrollPanel({ year, month, onAfterFinalize }: P
   }
 
   return (
-    <section className="mt-6 rounded border bg-white p-4">
+    <section className="mt-6 rounded-card bg-card shadow-card p-4">
       <div className="mb-3 flex items-center gap-3">
         <h2 className="text-lg font-semibold">Finalize & PDFs</h2>
-        <span className="text-sm text-gray-500">Period {basePath}</span>
+        <span className="text-sm text-ink-2">Period {basePath}</span>
         <div className="ml-auto flex gap-2">
           <button
             onClick={loadPdfLinks}
             disabled={busy}
-            className="rounded border px-3 py-1.5 hover:bg-gray-50 disabled:opacity-50"
+            className="rounded border border-line px-3 py-1.5 hover:bg-ink/5 disabled:opacity-50"
             title="Refresh the list of generated PDFs from storage"
           >
             Refresh list
@@ -127,29 +127,29 @@ export default function FinalizePayrollPanel({ year, month, onAfterFinalize }: P
       </div>
 
       {msg && <div className="mb-3 rounded border border-sky-200 bg-sky-50 p-2 text-sm text-sky-800">{msg}</div>}
-      {error && <div className="mb-3 rounded border border-rose-200 bg-rose-50 p-2 text-sm text-rose-800">{error}</div>}
+      {error && <div className="mb-3 rounded border border-rose-200 bg-bad-soft p-2 text-sm text-bad">{error}</div>}
 
       <div className="grid gap-3">
         <div>
           <div className="font-medium">Summary</div>
           {summaryUrl ? (
-            <a href={summaryUrl} target="_blank" rel="noreferrer" className="text-blue-600 underline">
+            <a href={summaryUrl} target="_blank" rel="noreferrer" className="text-accent underline">
               Download Payroll Summary ({basePath})
             </a>
           ) : (
-            <div className="text-sm text-gray-500">No summary for this month yet.</div>
+            <div className="text-sm text-ink-2">No summary for this month yet.</div>
           )}
         </div>
 
         <div>
           <div className="font-medium">Payslips</div>
           {payslipUrls.length === 0 ? (
-            <div className="text-sm text-gray-500">No payslips found for this month.</div>
+            <div className="text-sm text-ink-2">No payslips found for this month.</div>
           ) : (
             <div className="max-h-72 overflow-auto rounded border">
               <table className="w-full border-collapse text-sm">
                 <thead>
-                  <tr className="bg-gray-50 text-left">
+                  <tr className="bg-ink/5 text-left">
                     <th className="border-b px-2 py-1">File</th>
                     <th className="border-b px-2 py-1">Link</th>
                   </tr>
@@ -159,7 +159,7 @@ export default function FinalizePayrollPanel({ year, month, onAfterFinalize }: P
                     <tr key={f.url}>
                       <td className="border-b px-2 py-1">{f.name}</td>
                       <td className="border-b px-2 py-1">
-                        <a href={f.url} target="_blank" rel="noreferrer" className="text-blue-600 underline">
+                        <a href={f.url} target="_blank" rel="noreferrer" className="text-accent underline">
                           Open
                         </a>
                       </td>

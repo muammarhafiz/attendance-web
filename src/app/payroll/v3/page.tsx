@@ -283,12 +283,12 @@ export default function PayrollV3Page() {
     window.open(`/payroll/slip?year=${year}&month=${month}&email=${encodeURIComponent(sel.staff_email.toLowerCase())}`, '_blank', 'noopener');
   };
 
-  if (authed === null || isAdmin === null) return <div className="mx-auto max-w-6xl p-6 text-sm text-gray-500">Checking…</div>;
-  if (!authed) return <div className="mx-auto max-w-6xl p-6 text-sm text-gray-600">Please sign in.</div>;
-  if (!isAdmin) return <div className="mx-auto max-w-6xl p-6 text-sm text-gray-600">You don&apos;t have access to this page.</div>;
+  if (authed === null || isAdmin === null) return <div className="mx-auto max-w-6xl p-6 text-sm text-ink-2">Checking…</div>;
+  if (!authed) return <div className="mx-auto max-w-6xl p-6 text-sm text-ink-2">Please sign in.</div>;
+  if (!isAdmin) return <div className="mx-auto max-w-6xl p-6 text-sm text-ink-2">You don&apos;t have access to this page.</div>;
 
   const status = period?.status ?? null;
-  const statusCls = status === 'LOCKED' ? 'bg-amber-100 text-amber-800' : status === 'FINALIZED' ? 'bg-blue-100 text-blue-800' : status === 'OPEN' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-500';
+  const statusCls = status === 'LOCKED' ? 'bg-warn-soft text-warn' : status === 'FINALIZED' ? 'bg-accent-weak text-accent' : status === 'OPEN' ? 'bg-good-soft text-good' : 'bg-ink/5 text-ink-2';
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
@@ -296,14 +296,14 @@ export default function PayrollV3Page() {
         <h1 className="text-2xl font-semibold">Payroll</h1>
         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusCls}`}>{status ?? 'Not generated'}</span>
         <div className="ml-auto flex items-center gap-2">
-          <button onClick={prevMonth} className="rounded-md border px-2.5 py-1.5 text-sm hover:bg-gray-50">◀</button>
+          <button onClick={prevMonth} className="rounded-md border px-2.5 py-1.5 text-sm hover:bg-ink/5">◀</button>
           <span className="min-w-[120px] text-center text-sm font-semibold">{MONTHS[month - 1]} {year}</span>
-          <button onClick={nextMonth} className="rounded-md border px-2.5 py-1.5 text-sm hover:bg-gray-50">▶</button>
+          <button onClick={nextMonth} className="rounded-md border px-2.5 py-1.5 text-sm hover:bg-ink/5">▶</button>
         </div>
       </div>
 
       {/* Workflow card */}
-      <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
+      <div className="mb-4 rounded-card bg-card p-4 shadow-card">
         <div className="flex flex-wrap items-center gap-2">
           {(status === null || status === 'OPEN') && (
             <button onClick={generate} disabled={!!busy} className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50">
@@ -312,80 +312,80 @@ export default function PayrollV3Page() {
           )}
           {status === 'OPEN' && (
             <>
-              <button onClick={finalize} disabled={!!busy} className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
+              <button onClick={finalize} disabled={!!busy} className="rounded-md bg-good px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50">
                 {busy === 'Finalize' ? 'Finalizing…' : 'Finalize & generate payslips'}
               </button>
-              <button onClick={lock} disabled={!!busy} className="rounded-md border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50">Lock (no PDFs)</button>
+              <button onClick={lock} disabled={!!busy} className="rounded-md border px-3 py-2 text-sm hover:bg-ink/5 disabled:opacity-50">Lock (no PDFs)</button>
             </>
           )}
           {(status === 'LOCKED' || status === 'FINALIZED') && (
             <>
-              <button onClick={unlock} disabled={!!busy} className="rounded-md border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50">Unlock to edit</button>
-              <button onClick={sendPayslips} disabled={!!busy} className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+              <button onClick={unlock} disabled={!!busy} className="rounded-md border px-3 py-2 text-sm hover:bg-ink/5 disabled:opacity-50">Unlock to edit</button>
+              <button onClick={sendPayslips} disabled={!!busy} className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50">
                 {busy === 'Send' ? 'Sending…' : 'Email payslips to staff'}
               </button>
             </>
           )}
-          <button onClick={sendTest} disabled={!!busy} title="Sends one payslip to your own email so you can check it before emailing staff." className="rounded-md border border-blue-300 px-3 py-2 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50">
+          <button onClick={sendTest} disabled={!!busy} title="Sends one payslip to your own email so you can check it before emailing staff." className="rounded-md border border-accent px-3 py-2 text-sm text-accent hover:bg-accent-weak disabled:opacity-50">
             {busy === 'Test' ? 'Sending test…' : 'Send test to my email'}
           </button>
-          <button onClick={refresh} className="ml-auto rounded-md border px-3 py-2 text-sm hover:bg-gray-50">Refresh</button>
+          <button onClick={refresh} className="ml-auto rounded-md border px-3 py-2 text-sm hover:bg-ink/5">Refresh</button>
         </div>
-        <p className="mt-2 text-xs text-gray-500">
+        <p className="mt-2 text-xs text-ink-2">
           <b>Generate</b> pulls each person&apos;s base salary, this month&apos;s unpaid leave (from attendance absences), recurring items &amp; statutory deductions.
           Edit anyone via <b>Details</b>, then <b>Finalize</b> to produce payslip PDFs (and lock the month). Past payslips live under <b>Payroll Records</b>.
         </p>
-        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3">
-          <span className="text-xs font-medium text-gray-700">Unpaid-leave daily rate</span>
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
+          <span className="text-xs font-medium text-ink-2">Unpaid-leave daily rate</span>
           {(['26', '25'] as const).map((d) => (
             <button key={d} onClick={() => setUnpaidDivisor(d)} disabled={!!busy}
-              className={`rounded-md border px-2.5 py-1 text-xs font-semibold transition disabled:opacity-50 ${divisor === d ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
+              className={`rounded-md border px-2.5 py-1 text-xs font-semibold transition disabled:opacity-50 ${divisor === d ? 'border-gray-900 bg-gray-900 text-white' : 'border-line text-ink-2 hover:bg-ink/5'}`}>
               ÷{d}
             </button>
           ))}
-          <span className="text-[11px] text-gray-400">monthly salary ÷ {divisor} per day{divisor === '26' ? ' · EA-1955 standard' : ''} · re-Generate to apply</span>
+          <span className="text-[11px] text-ink-3">monthly salary ÷ {divisor} per day{divisor === '26' ? ' · EA-1955 standard' : ''} · re-Generate to apply</span>
         </div>
-        {msg && <div className={`mt-2 rounded-md border p-2 text-sm ${msg.kind === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>{msg.text}</div>}
+        {msg && <div className={`mt-2 rounded-md border p-2 text-sm ${msg.kind === 'ok' ? 'border-emerald-200 bg-good-soft text-good' : 'border-rose-200 bg-bad-soft text-bad'}`}>{msg.text}</div>}
       </div>
 
       {/* Summary table */}
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
+      <div className="overflow-x-auto rounded-lg border border-line">
         <table className="w-full min-w-[900px] border-collapse text-sm">
-          <thead className="bg-gray-50 text-left">
+          <thead className="bg-ink/5 text-left">
             <tr>
-              <th className="px-3 py-2 font-medium text-gray-600">Staff</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-600">Base</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-600">Commission</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-600">Gross</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-600">Unpaid</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-600">Deductions</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-600">Net pay</th>
-              <th className="px-3 py-2 text-center font-medium text-gray-600">Absent</th>
+              <th className="px-3 py-2 font-medium text-ink-2">Staff</th>
+              <th className="px-3 py-2 text-right font-medium text-ink-2">Base</th>
+              <th className="px-3 py-2 text-right font-medium text-ink-2">Commission</th>
+              <th className="px-3 py-2 text-right font-medium text-ink-2">Gross</th>
+              <th className="px-3 py-2 text-right font-medium text-ink-2">Unpaid</th>
+              <th className="px-3 py-2 text-right font-medium text-ink-2">Deductions</th>
+              <th className="px-3 py-2 text-right font-medium text-ink-2">Net pay</th>
+              <th className="px-3 py-2 text-center font-medium text-ink-2">Absent</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} className="px-3 py-6 text-center text-gray-500">Loading…</td></tr>
+              <tr><td colSpan={9} className="px-3 py-6 text-center text-ink-2">Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={9} className="px-3 py-6 text-center text-gray-500">Nothing yet — tap &quot;Generate payroll from attendance&quot;.</td></tr>
+              <tr><td colSpan={9} className="px-3 py-6 text-center text-ink-2">Nothing yet — tap &quot;Generate payroll from attendance&quot;.</td></tr>
             ) : rows.map((r) => (
-              <tr key={r.staff_email} className="border-t border-gray-100">
-                <td className="px-3 py-2"><div className="font-medium text-gray-900">{r.staff_name ?? r.staff_email}</div><div className="text-xs text-gray-400">{r.staff_email}</div></td>
+              <tr key={r.staff_email} className="border-t border-line">
+                <td className="px-3 py-2"><div className="font-medium text-ink">{r.staff_name ?? r.staff_email}</div><div className="text-xs text-ink-3">{r.staff_email}</div></td>
                 <td className="px-3 py-2 text-right tabular-nums">{rm(r.base_wage)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{commissionOf(r) ? rm(commissionOf(r)) : '—'}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{rm(r.total_earn)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-rose-600">{n(r.unpaid_auto) ? rm(r.unpaid_auto) : '—'}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-bad">{n(r.unpaid_auto) ? rm(r.unpaid_auto) : '—'}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{rm(r.total_deduct)}</td>
                 <td className="px-3 py-2 text-right font-semibold tabular-nums">{rm(r.net_pay)}</td>
                 <td className="px-3 py-2 text-center">{absent[(r.staff_email || '').toLowerCase()] || 0}</td>
-                <td className="px-3 py-2 text-right"><button onClick={() => openDetails(r)} className="rounded-md border px-2.5 py-1 text-xs hover:bg-gray-50">Details</button></td>
+                <td className="px-3 py-2 text-right"><button onClick={() => openDetails(r)} className="rounded-md border px-2.5 py-1 text-xs hover:bg-ink/5">Details</button></td>
               </tr>
             ))}
           </tbody>
           {rows.length > 0 && (
             <tfoot>
-              <tr className="border-t border-gray-200 bg-gray-50 font-semibold">
+              <tr className="border-t border-line bg-ink/5 font-semibold">
                 <td className="px-3 py-2 text-right">Totals</td>
                 <td className="px-3 py-2 text-right tabular-nums">{rm(totals.base)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{rm(totals.commission)}</td>
@@ -408,10 +408,10 @@ export default function PayrollV3Page() {
             { label: 'SOCSO + EIS', value: totals.socso.er + totals.socso.emp + totals.eis.er + totals.eis.emp, hint: 'Employer + employee' },
             { label: 'Total payroll cost', value: totals.cost, hint: 'Net + employer statutories' },
           ].map((c) => (
-            <div key={c.label} className="rounded-lg border border-gray-200 bg-white p-3">
-              <div className="text-xs text-gray-500">{c.label}</div>
-              <div className="text-lg font-bold text-gray-900">{rm(c.value)}</div>
-              <div className="text-[11px] text-gray-400">{c.hint}</div>
+            <div key={c.label} className="rounded-card bg-card p-3 shadow-card">
+              <div className="text-xs text-ink-2">{c.label}</div>
+              <div className="text-lg font-bold text-ink">{rm(c.value)}</div>
+              <div className="text-[11px] text-ink-3">{c.hint}</div>
             </div>
           ))}
         </div>
@@ -420,29 +420,29 @@ export default function PayrollV3Page() {
       {/* Details modal */}
       {sel && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3" onClick={(e) => { if (e.target === e.currentTarget && !mWorking) setSel(null); }}>
-          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white shadow-xl">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-card shadow-xl">
             <div className="flex items-center justify-between border-b px-4 py-3">
-              <div><div className="font-semibold">{sel.staff_name ?? sel.staff_email}</div><div className="text-xs text-gray-400">{sel.staff_email}</div></div>
+              <div><div className="font-semibold">{sel.staff_name ?? sel.staff_email}</div><div className="text-xs text-ink-3">{sel.staff_email}</div></div>
               <div className="flex gap-2">
-                <button onClick={printSlip} className="rounded-md border px-2.5 py-1 text-xs hover:bg-gray-50">Print payslip</button>
-                <button onClick={() => setSel(null)} className="rounded-md border px-2.5 py-1 text-xs hover:bg-gray-50">Close</button>
+                <button onClick={printSlip} className="rounded-md border px-2.5 py-1 text-xs hover:bg-ink/5">Print payslip</button>
+                <button onClick={() => setSel(null)} className="rounded-md border px-2.5 py-1 text-xs hover:bg-ink/5">Close</button>
               </div>
             </div>
 
-            {!isOpen && <div className="mx-4 mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">Period is {status}. Unlock it to edit items.</div>}
+            {!isOpen && <div className="mx-4 mt-3 rounded-md border border-amber-200 bg-warn-soft px-3 py-2 text-xs text-warn">Period is {status}. Unlock it to edit items.</div>}
 
             <div className="grid gap-3 p-4 md:grid-cols-2">
               <div className="rounded-lg border">
-                <div className="border-b bg-gray-50 px-3 py-2 text-sm font-semibold">Earnings</div>
+                <div className="border-b bg-ink/5 px-3 py-2 text-sm font-semibold">Earnings</div>
                 <div className="max-h-56 overflow-auto p-3 text-sm">
-                  {earn.length === 0 ? <div className="text-gray-400">None.</div> : (
+                  {earn.length === 0 ? <div className="text-ink-3">None.</div> : (
                     <ul className="space-y-2">
                       {earn.map((it) => (
                         <li key={it.id} className="flex items-center justify-between gap-2">
-                          <div><div className="font-medium">{it.label ?? it.code}</div><div className="text-xs text-gray-400">{it.code}</div></div>
+                          <div><div className="font-medium">{it.label ?? it.code}</div><div className="text-xs text-ink-3">{it.code}</div></div>
                           <div className="flex items-center gap-2"><span className="tabular-nums">{rm(it.amount)}</span>
-                            {isOpen && <><button onClick={() => editItem(it)} className="rounded border px-2 py-0.5 text-xs hover:bg-gray-50">Edit</button>
-                            <button onClick={() => removeItem(it)} className="rounded border px-2 py-0.5 text-xs text-rose-700 hover:bg-rose-50">✕</button></>}
+                            {isOpen && <><button onClick={() => editItem(it)} className="rounded border px-2 py-0.5 text-xs hover:bg-ink/5">Edit</button>
+                            <button onClick={() => removeItem(it)} className="rounded border px-2 py-0.5 text-xs text-bad hover:bg-bad-soft">✕</button></>}
                           </div>
                         </li>
                       ))}
@@ -452,20 +452,20 @@ export default function PayrollV3Page() {
               </div>
 
               <div className="rounded-lg border">
-                <div className="border-b bg-gray-50 px-3 py-2 text-sm font-semibold">Deductions</div>
+                <div className="border-b bg-ink/5 px-3 py-2 text-sm font-semibold">Deductions</div>
                 <div className="flex items-center justify-between gap-2 border-b px-3 py-2 text-sm">
-                  <div className="font-medium">Unpaid leave {isOpen && <button onClick={setUnpaid} className="ml-1 rounded border px-2 py-0.5 text-xs hover:bg-gray-50">Edit</button>}</div>
+                  <div className="font-medium">Unpaid leave {isOpen && <button onClick={setUnpaid} className="ml-1 rounded border px-2 py-0.5 text-xs hover:bg-ink/5">Edit</button>}</div>
                   <span className="tabular-nums">{rm(sel.unpaid_auto)}</span>
                 </div>
                 <div className="max-h-44 overflow-auto p-3 text-sm">
-                  {deduct.length === 0 ? <div className="text-gray-400">No other deductions.</div> : (
+                  {deduct.length === 0 ? <div className="text-ink-3">No other deductions.</div> : (
                     <ul className="space-y-2">
                       {deduct.map((it) => (
                         <li key={it.id} className="flex items-center justify-between gap-2">
-                          <div><div className="font-medium">{it.label ?? it.code}</div><div className="text-xs text-gray-400">{it.code}</div></div>
+                          <div><div className="font-medium">{it.label ?? it.code}</div><div className="text-xs text-ink-3">{it.code}</div></div>
                           <div className="flex items-center gap-2"><span className="tabular-nums">{rm(it.amount)}</span>
-                            {isOpen && <><button onClick={() => editItem(it)} className="rounded border px-2 py-0.5 text-xs hover:bg-gray-50">Edit</button>
-                            <button onClick={() => removeItem(it)} className="rounded border px-2 py-0.5 text-xs text-rose-700 hover:bg-rose-50">✕</button></>}
+                            {isOpen && <><button onClick={() => editItem(it)} className="rounded border px-2 py-0.5 text-xs hover:bg-ink/5">Edit</button>
+                            <button onClick={() => removeItem(it)} className="rounded border px-2 py-0.5 text-xs text-bad hover:bg-bad-soft">✕</button></>}
                           </div>
                         </li>
                       ))}
@@ -492,7 +492,7 @@ export default function PayrollV3Page() {
                 </div>
               </div>
             )}
-            {mMsg && <div className={`mx-4 mb-4 rounded-md border p-2 text-sm ${mMsg.kind === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>{mMsg.text}</div>}
+            {mMsg && <div className={`mx-4 mb-4 rounded-md border p-2 text-sm ${mMsg.kind === 'ok' ? 'border-emerald-200 bg-good-soft text-good' : 'border-rose-200 bg-bad-soft text-bad'}`}>{mMsg.text}</div>}
           </div>
         </div>
       )}

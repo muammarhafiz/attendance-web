@@ -256,14 +256,14 @@ export default function PayrollRecordsPage() {
     return (
       <main className="mx-auto max-w-6xl p-6">
         <h1 className="mb-2 text-2xl font-semibold">Payroll Records</h1>
-        <p className="text-sm text-gray-600">Please sign in to view records.</p>
+        <p className="text-sm text-ink-2">Please sign in to view records.</p>
       </main>
     );
   }
   if (authed === null) {
     return (
       <main className="mx-auto max-w-6xl p-6">
-        <div className="text-sm text-gray-600">Checking session…</div>
+        <div className="text-sm text-ink-2">Checking session…</div>
       </main>
     );
   }
@@ -271,7 +271,7 @@ export default function PayrollRecordsPage() {
     return (
       <main className="mx-auto max-w-6xl p-6">
         <h1 className="mb-2 text-2xl font-semibold">Payroll Records</h1>
-        <p className="text-sm text-gray-600">You don&apos;t have access to this page.</p>
+        <p className="text-sm text-ink-2">You don&apos;t have access to this page.</p>
       </main>
     );
   }
@@ -293,16 +293,16 @@ export default function PayrollRecordsPage() {
       <header className="mb-6 flex flex-wrap items-end gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Payroll Records</h1>
-          <div className="flex items-center gap-2 text-sm text-gray-500">
+          <div className="flex items-center gap-2 text-sm text-ink-2">
             <span>Period {yyyymm}</span>
             {period?.status && (
               <span
                 className={`ml-1 inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${
                   period.status === 'LOCKED'
-                    ? 'bg-yellow-100 text-yellow-800'
+                    ? 'bg-warn-soft text-warn'
                     : period.status === 'FINALIZED'
-                    ? 'bg-blue-100 text-blue-800'
-                    : 'bg-green-100 text-green-800'
+                    ? 'bg-accent-weak text-accent'
+                    : 'bg-good-soft text-good'
                 }`}
               >
                 {period.status}
@@ -311,9 +311,9 @@ export default function PayrollRecordsPage() {
           </div>
         </div>
         <div className="ml-auto flex items-end gap-2 sm:gap-3">
-          <button onClick={onPrevMonth} className="rounded border px-2 py-1.5 text-sm hover:bg-gray-50">◀</button>
+          <button onClick={onPrevMonth} className="rounded border px-2 py-1.5 text-sm hover:bg-ink/5">◀</button>
           <div>
-            <label className="block text-xs font-medium text-gray-600">Year</label>
+            <label className="block text-xs font-medium text-ink-2">Year</label>
             <input
               type="number"
               className="w-24 rounded border px-2 py-1"
@@ -324,7 +324,7 @@ export default function PayrollRecordsPage() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600">Month</label>
+            <label className="block text-xs font-medium text-ink-2">Month</label>
             <input
               type="number"
               className="w-20 rounded border px-2 py-1"
@@ -334,11 +334,11 @@ export default function PayrollRecordsPage() {
               onChange={(e) => setMonth(Number(e.target.value))}
             />
           </div>
-          <button onClick={onNextMonth} className="rounded border px-2 py-1.5 text-sm hover:bg-gray-50">▶</button>
+          <button onClick={onNextMonth} className="rounded border px-2 py-1.5 text-sm hover:bg-ink/5">▶</button>
           <button
             onClick={() => { loadPeriod(); loadSummary(); loadPdfLinks(); }}
             disabled={loading || busy}
-            className="rounded border px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
+            className="rounded border px-3 py-1.5 text-sm hover:bg-ink/5 disabled:opacity-50"
           >
             Refresh
           </button>
@@ -346,15 +346,15 @@ export default function PayrollRecordsPage() {
       </header>
 
       {/* Finalize & PDFs panel */}
-      <section className="mb-6 rounded border bg-white p-4">
+      <section className="mb-6 rounded-card bg-card shadow-card p-4">
         <div className="mb-3 flex items-center gap-3">
           <h2 className="text-lg font-semibold">Generated Files</h2>
-          <span className="text-sm text-gray-500">Period {basePath}</span>
+          <span className="text-sm text-ink-2">Period {basePath}</span>
           <div className="ml-auto flex gap-2">
             <button
               onClick={loadPdfLinks}
               disabled={busy}
-              className="rounded border px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
+              className="rounded border px-3 py-1.5 text-sm hover:bg-ink/5 disabled:opacity-50"
             >
               Refresh list
             </button>
@@ -374,29 +374,29 @@ export default function PayrollRecordsPage() {
         </div>
 
         {finMsg && <div className="mb-3 rounded border border-sky-200 bg-sky-50 p-2 text-sm text-sky-800">{finMsg}</div>}
-        {finErr && <div className="mb-3 rounded border border-rose-200 bg-rose-50 p-2 text-sm text-rose-800">{finErr}</div>}
+        {finErr && <div className="mb-3 rounded border border-rose-200 bg-bad-soft p-2 text-sm text-bad">{finErr}</div>}
 
         <div className="grid gap-3">
           <div>
             <div className="font-medium">Summary</div>
             {summaryUrl ? (
-              <a href={summaryUrl} target="_blank" rel="noreferrer" className="text-blue-600 underline">
+              <a href={summaryUrl} target="_blank" rel="noreferrer" className="text-accent underline">
                 Download Payroll Summary ({basePath})
               </a>
             ) : (
-              <div className="text-sm text-gray-500">No summary for this month yet.</div>
+              <div className="text-sm text-ink-2">No summary for this month yet.</div>
             )}
           </div>
 
           <div>
             <div className="font-medium">Payslips</div>
             {payslips.length === 0 ? (
-              <div className="text-sm text-gray-500">No payslips found for this month.</div>
+              <div className="text-sm text-ink-2">No payslips found for this month.</div>
             ) : (
               <div className="max-h-72 overflow-auto rounded border">
                 <table className="w-full border-collapse text-sm">
                   <thead>
-                    <tr className="bg-gray-50 text-left">
+                    <tr className="bg-ink/5 text-left">
                       <th className="border-b px-2 py-1">File</th>
                       <th className="border-b px-2 py-1">Link</th>
                     </tr>
@@ -406,7 +406,7 @@ export default function PayrollRecordsPage() {
                       <tr key={f.url}>
                         <td className="border-b px-2 py-1">{f.name}</td>
                         <td className="border-b px-2 py-1">
-                          <a href={f.url} target="_blank" rel="noreferrer" className="text-blue-600 underline">
+                          <a href={f.url} target="_blank" rel="noreferrer" className="text-accent underline">
                             Open
                           </a>
                         </td>
@@ -421,7 +421,7 @@ export default function PayrollRecordsPage() {
       </section>
 
       {msg && (
-        <div className="mb-4 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+        <div className="mb-4 rounded border border-amber-200 bg-warn-soft p-3 text-sm text-warn">
           {msg}
         </div>
       )}
@@ -429,40 +429,40 @@ export default function PayrollRecordsPage() {
       {/* Records table */}
       <section>
         {loading ? (
-          <div className="text-sm text-gray-500">Loading…</div>
+          <div className="text-sm text-ink-2">Loading…</div>
         ) : rows.length === 0 ? (
-          <div className="text-sm text-gray-500">No data for this period.</div>
+          <div className="text-sm text-ink-2">No data for this period.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1200px] border-collapse text-sm">
               <thead>
                 <tr>
-                  <th className="border-b bg-white px-3 py-2 text-left">Employee</th>
-                  <th className="border-b bg-white px-3 py-2 text-right">Gross (All EARN)</th>
-                  <th className="border-b bg-white px-3 py-2 text-right">Base (Statutory)</th>
-                  <th className="border-b bg-white px-3 py-2 text-right">Commission</th>
-                  <th className="border-b bg-rose-50 px-3 py-2 text-center font-semibold text-rose-700" colSpan={4}>
+                  <th className="border-b bg-card px-3 py-2 text-left">Employee</th>
+                  <th className="border-b bg-card px-3 py-2 text-right">Gross (All EARN)</th>
+                  <th className="border-b bg-card px-3 py-2 text-right">Base (Statutory)</th>
+                  <th className="border-b bg-card px-3 py-2 text-right">Commission</th>
+                  <th className="border-b bg-bad-soft px-3 py-2 text-center font-semibold text-bad" colSpan={4}>
                     Employee Deductions
                   </th>
-                  <th className="border-b bg-white px-3 py-2 text-right">Net Pay</th>
-                  <th className="border-b bg-emerald-50 px-3 py-2 text-center font-semibold text-emerald-700" colSpan={3}>
+                  <th className="border-b bg-card px-3 py-2 text-right">Net Pay</th>
+                  <th className="border-b bg-good-soft px-3 py-2 text-center font-semibold text-good" colSpan={3}>
                     Employer Contributions
                   </th>
-                  <th className="border-b bg-white px-3 py-2 text-right">Employer Cost</th>
+                  <th className="border-b bg-card px-3 py-2 text-right">Employer Cost</th>
                 </tr>
-                <tr className="bg-gray-50 text-left">
+                <tr className="bg-ink/5 text-left">
                   <th className="border-b px-3 py-2">Employee</th>
                   <th className="border-b px-3 py-2 text-right">Gross</th>
                   <th className="border-b px-3 py-2 text-right">Base</th>
                   <th className="border-b px-3 py-2 text-right">Commission</th>
-                  <th className="border-b bg-rose-50 px-3 py-2 text-right">EPF (Emp)</th>
-                  <th className="border-b bg-rose-50 px-3 py-2 text-right">SOCSO (Emp)</th>
-                  <th className="border-b bg-rose-50 px-3 py-2 text-right">EIS (Emp)</th>
-                  <th className="border-b bg-rose-50 px-3 py-2 text-right">Manual Deduct</th>
+                  <th className="border-b bg-bad-soft px-3 py-2 text-right">EPF (Emp)</th>
+                  <th className="border-b bg-bad-soft px-3 py-2 text-right">SOCSO (Emp)</th>
+                  <th className="border-b bg-bad-soft px-3 py-2 text-right">EIS (Emp)</th>
+                  <th className="border-b bg-bad-soft px-3 py-2 text-right">Manual Deduct</th>
                   <th className="border-b px-3 py-2 text-right">Net</th>
-                  <th className="border-b bg-emerald-50 px-3 py-2 text-right">EPF (Er)</th>
-                  <th className="border-b bg-emerald-50 px-3 py-2 text-right">SOCSO (Er)</th>
-                  <th className="border-b bg-emerald-50 px-3 py-2 text-right">EIS (Er)</th>
+                  <th className="border-b bg-good-soft px-3 py-2 text-right">EPF (Er)</th>
+                  <th className="border-b bg-good-soft px-3 py-2 text-right">SOCSO (Er)</th>
+                  <th className="border-b bg-good-soft px-3 py-2 text-right">EIS (Er)</th>
                   <th className="border-b px-3 py-2 text-right">Total Cost</th>
                 </tr>
               </thead>
@@ -487,33 +487,33 @@ export default function PayrollRecordsPage() {
                       <td className="border-b px-3 py-2 text-right">{rm(gross)}</td>
                       <td className="border-b px-3 py-2 text-right">{rm(base)}</td>
                       <td className="border-b px-3 py-2 text-right">{commission ? rm(commission) : '—'}</td>
-                      <td className="border-b bg-rose-50 px-3 py-2 text-right">{rm(epfEmp)}</td>
-                      <td className="border-b bg-rose-50 px-3 py-2 text-right">{rm(socsoEmp)}</td>
-                      <td className="border-b bg-rose-50 px-3 py-2 text-right">{rm(eisEmp)}</td>
-                      <td className="border-b bg-rose-50 px-3 py-2 text-right">{rm(manual)}</td>
+                      <td className="border-b bg-bad-soft px-3 py-2 text-right">{rm(epfEmp)}</td>
+                      <td className="border-b bg-bad-soft px-3 py-2 text-right">{rm(socsoEmp)}</td>
+                      <td className="border-b bg-bad-soft px-3 py-2 text-right">{rm(eisEmp)}</td>
+                      <td className="border-b bg-bad-soft px-3 py-2 text-right">{rm(manual)}</td>
                       <td className="border-b px-3 py-2 text-right font-medium">{rm(net)}</td>
-                      <td className="border-b bg-emerald-50 px-3 py-2 text-right">{rm(epfEr)}</td>
-                      <td className="border-b bg-emerald-50 px-3 py-2 text-right">{rm(socsoEr)}</td>
-                      <td className="border-b bg-emerald-50 px-3 py-2 text-right">{rm(eisEr)}</td>
+                      <td className="border-b bg-good-soft px-3 py-2 text-right">{rm(epfEr)}</td>
+                      <td className="border-b bg-good-soft px-3 py-2 text-right">{rm(socsoEr)}</td>
+                      <td className="border-b bg-good-soft px-3 py-2 text-right">{rm(eisEr)}</td>
                       <td className="border-b px-3 py-2 text-right">{rm(employerCost)}</td>
                     </tr>
                   );
                 })}
               </tbody>
               <tfoot>
-                <tr className="bg-gray-50 font-semibold">
+                <tr className="bg-ink/5 font-semibold">
                   <td className="border-t px-3 py-2 text-right">Totals:</td>
                   <td className="border-t px-3 py-2 text-right">{rm(totals.gross)}</td>
                   <td className="border-t px-3 py-2 text-right">{rm(totals.baseWage)}</td>
                   <td className="border-t px-3 py-2 text-right">{rm(totals.commission)}</td>
-                  <td className="border-t bg-rose-50 px-3 py-2 text-right">{rm(totals.epfEmp)}</td>
-                  <td className="border-t bg-rose-50 px-3 py-2 text-right">{rm(totals.socsoEmp)}</td>
-                  <td className="border-t bg-rose-50 px-3 py-2 text-right">{rm(totals.eisEmp)}</td>
-                  <td className="border-t bg-rose-50 px-3 py-2 text-right">{rm(totals.manual)}</td>
+                  <td className="border-t bg-bad-soft px-3 py-2 text-right">{rm(totals.epfEmp)}</td>
+                  <td className="border-t bg-bad-soft px-3 py-2 text-right">{rm(totals.socsoEmp)}</td>
+                  <td className="border-t bg-bad-soft px-3 py-2 text-right">{rm(totals.eisEmp)}</td>
+                  <td className="border-t bg-bad-soft px-3 py-2 text-right">{rm(totals.manual)}</td>
                   <td className="border-t px-3 py-2 text-right">{rm(totals.net)}</td>
-                  <td className="border-t bg-emerald-50 px-3 py-2 text-right">{rm(totals.epfEr)}</td>
-                  <td className="border-t bg-emerald-50 px-3 py-2 text-right">{rm(totals.socsoEr)}</td>
-                  <td className="border-t bg-emerald-50 px-3 py-2 text-right">{rm(totals.eisEr)}</td>
+                  <td className="border-t bg-good-soft px-3 py-2 text-right">{rm(totals.epfEr)}</td>
+                  <td className="border-t bg-good-soft px-3 py-2 text-right">{rm(totals.socsoEr)}</td>
+                  <td className="border-t bg-good-soft px-3 py-2 text-right">{rm(totals.eisEr)}</td>
                   <td className="border-t px-3 py-2 text-right">{rm(totals.employerCost)}</td>
                 </tr>
               </tfoot>
