@@ -20,14 +20,14 @@ type MailSupplier = { id: string; name: string; match_terms: string[]; enabled: 
 type DriveFolder = { folder_id: string; name: string };
 
 const STATUS_STYLE: Record<string, string> = {
-  uploaded: 'bg-gray-100 text-gray-600',
-  extracting: 'bg-amber-100 text-amber-700',
-  extracted: 'bg-blue-100 text-blue-700',
+  uploaded: 'bg-ink/5 text-ink-2',
+  extracting: 'bg-warn-soft text-warn',
+  extracted: 'bg-accent-weak text-accent',
   approved: 'bg-indigo-100 text-indigo-700',
-  creating: 'bg-amber-100 text-amber-700',
-  created: 'bg-emerald-100 text-emerald-700',
-  error: 'bg-rose-100 text-rose-700',
-  dismissed: 'bg-gray-200 text-gray-500',
+  creating: 'bg-warn-soft text-warn',
+  created: 'bg-good-soft text-good',
+  error: 'bg-bad-soft text-bad',
+  dismissed: 'bg-gray-200 text-ink-2',
 };
 const fmtD = (d: string | null) => { if (!d) return '—'; const [y, m, dd] = d.split('-'); return `${dd}/${m}/${y}`; };
 const rm = (n: number | null) => (n == null ? '—' : `RM ${Number(n).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
@@ -154,8 +154,8 @@ export default function PurchaseInvoicePage() {
           setMsg({
             kind: 'ok',
             text: saved
-              ? `📧 Email checked — ${saved} invoice(s) saved to the “Supplier Invoices” folder in Drive (details emailed).${unknown ? ` ${unknown} PDF(s) from unknown senders were skipped.` : ''}`
-              : `📧 Email checked — no new supplier invoices found.${unknown ? ` ${unknown} PDF(s) from unknown senders were skipped (see email).` : ''}`,
+              ? `Email checked — ${saved} invoice(s) saved to the “Supplier Invoices” folder in Drive (details emailed).${unknown ? ` ${unknown} PDF(s) from unknown senders were skipped.` : ''}`
+              : `Email checked — no new supplier invoices found.${unknown ? ` ${unknown} PDF(s) from unknown senders were skipped (see email).` : ''}`,
           });
         } else {
           setMsg({ kind: 'err', text: 'Email check failed — make sure the v2 mailbox script is deployed (see email/NAS log).' });
@@ -238,102 +238,102 @@ export default function PurchaseInvoicePage() {
     await loadSuppliers();
   }, [loadSuppliers]);
 
-  if (authed === null || isAdmin === null) return <div className="text-sm text-gray-500">Checking…</div>;
-  if (!authed) return <div className="text-sm text-gray-600">Please sign in.</div>;
-  if (!isAdmin) return <div className="text-sm text-gray-600">You don&apos;t have access to this page.</div>;
+  if (authed === null || isAdmin === null) return <div className="text-sm text-ink-2">Checking…</div>;
+  if (!authed) return <div className="text-sm text-ink-2">Please sign in.</div>;
+  if (!isAdmin) return <div className="text-sm text-ink-2">You don&apos;t have access to this page.</div>;
 
   return (
     <div>
       {/* Upload */}
-      <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
-        <div className="text-sm font-medium text-gray-800">Upload a supplier purchase invoice (PDF)</div>
-        <div className="mt-0.5 text-xs text-gray-400">
+      <div className="mb-4 rounded-card bg-card shadow-card p-4">
+        <div className="text-sm font-medium text-ink-2">Upload a supplier purchase invoice (PDF)</div>
+        <div className="mt-0.5 text-xs text-ink-3">
           Upload the PDF → click <b>Read</b> so the system extracts it → <b>Review</b> &amp; fix → approve to create it in Niagawan.
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <label className="inline-flex cursor-pointer items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
-            📎 Choose PDF
+          <label className="inline-flex cursor-pointer items-center rounded-md border border-line bg-card px-3 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5">
+            Choose PDF
             <input type="file" accept="application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="hidden" />
           </label>
-          <span className="min-w-0 flex-1 truncate text-xs text-gray-500">{file ? file.name : 'No file chosen'}</span>
-          <button onClick={upload} disabled={busy || !file} className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+          <span className="min-w-0 flex-1 truncate text-xs text-ink-2">{file ? file.name : 'No file chosen'}</span>
+          <button onClick={upload} disabled={busy || !file} className="rounded-md bg-accent px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
             {busy ? 'Uploading…' : 'Upload'}
           </button>
           <button onClick={checkEmail} disabled={mailCheck === 'running'} title="Pull supplier invoices now — scans the workshop email AND your watched supplier folders (PDFs dropped into them)"
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
-            {mailCheck === 'running' ? 'Checking…' : '📧 Check email & folders now'}
+            className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5 disabled:opacity-50">
+            {mailCheck === 'running' ? 'Checking…' : 'Check email & folders now'}
           </button>
         </div>
-        {msg && <div className={`mt-2 rounded-md border p-2 text-sm ${msg.kind === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>{msg.text}</div>}
+        {msg && <div className={`mt-2 rounded-md border p-2 text-sm ${msg.kind === 'ok' ? 'border-line bg-good-soft text-good' : 'border-line bg-bad-soft text-bad'}`}>{msg.text}</div>}
       </div>
 
       {/* Auto-import suppliers — self-service list the mailbox reads to recognise senders */}
-      <div className="mb-4 rounded-lg border border-gray-200 bg-white">
+      <div className="mb-4 rounded-card bg-card shadow-card">
         <button onClick={() => setShowSuppliers((v) => !v)} className="flex w-full items-center justify-between px-4 py-3 text-left">
-          <span className="text-sm font-medium text-gray-800">📥 Auto-import suppliers <span className="text-gray-400">({suppliers.length})</span></span>
-          <span className="text-xs text-gray-400">{showSuppliers ? 'hide' : 'manage'}</span>
+          <span className="text-sm font-medium text-ink-2">Auto-import suppliers <span className="text-ink-3">({suppliers.length})</span></span>
+          <span className="text-xs text-ink-3">{showSuppliers ? 'hide' : 'manage'}</span>
         </button>
         {showSuppliers && (
-          <div className="border-t border-gray-100 px-4 py-3">
-            <p className="text-xs text-gray-500">
+          <div className="border-t border-line px-4 py-3">
+            <p className="text-xs text-ink-2">
               Invoices emailed from these suppliers are picked up &amp; read automatically. Add one by name + a word
               that appears in their email, and pick the <b>folder</b> where their invoices save — that folder is also
               <b> watched</b>, so any PDF you drop into it imports too.
             </p>
             <div className="mt-3 flex flex-wrap items-end gap-2">
               <label className="block">
-                <span className="block text-xs font-medium text-gray-600">Supplier name</span>
+                <span className="block text-xs font-medium text-ink-2">Supplier name</span>
                 <input value={supName} onChange={(e) => setSupName(e.target.value)} placeholder="e.g. Tat Seng"
-                  className="mt-0.5 w-40 rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+                  className="mt-0.5 w-40 rounded-md border border-line px-2 py-1.5 text-sm" />
               </label>
               <label className="block min-w-0 flex-1">
-                <span className="block text-xs font-medium text-gray-600">Recognise by (comma-separated)</span>
+                <span className="block text-xs font-medium text-ink-2">Recognise by (comma-separated)</span>
                 <input value={supTerms} onChange={(e) => setSupTerms(e.target.value)} placeholder="e.g. tat seng, tatseng"
-                  className="mt-0.5 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+                  className="mt-0.5 w-full rounded-md border border-line px-2 py-1.5 text-sm" />
               </label>
               <label className="block">
-                <span className="block text-xs font-medium text-gray-600">Folder (save + watch) *</span>
+                <span className="block text-xs font-medium text-ink-2">Folder (save + watch) *</span>
                 <select value={supFolder} onChange={(e) => setSupFolder(e.target.value)}
-                  className="mt-0.5 w-48 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm">
+                  className="mt-0.5 w-48 rounded-md border border-line bg-card px-2 py-1.5 text-sm">
                   <option value="">— pick folder —</option>
                   {folders.map((f) => <option key={f.folder_id} value={f.folder_id}>{f.name}</option>)}
                 </select>
               </label>
               <button onClick={addSupplier} disabled={supBusy}
-                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+                className="rounded-md bg-accent px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
                 {supBusy ? 'Adding…' : 'Add'}
               </button>
             </div>
             {folders.length === 0 && (
-              <p className="mt-1 text-[11px] text-amber-600">
-                Folder list is empty — it fills in after the next email check (runs every 15 min, or click &ldquo;📧 Check email now&rdquo; above), then pick a folder.
+              <p className="mt-1 text-[11px] text-warn">
+                Folder list is empty — it fills in after the next email check (runs every 15 min, or click &ldquo;Check email now&rdquo; above), then pick a folder.
               </p>
             )}
             <div className="mt-3 space-y-1.5">
               {suppliers.length === 0 ? (
-                <div className="text-xs text-gray-400">No custom suppliers added yet.</div>
+                <div className="text-xs text-ink-3">No custom suppliers added yet.</div>
               ) : suppliers.map((s) => (
-                <div key={s.id} className={`flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-sm ${s.enabled ? 'border-gray-200 bg-white' : 'border-gray-200 bg-gray-50 opacity-60'}`}>
+                <div key={s.id} className={`flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-sm ${s.enabled ? 'border-line bg-card' : 'border-line bg-ink/[0.03] opacity-60'}`}>
                   <div className="min-w-0 flex-1">
-                    <span className="font-medium text-gray-800">{s.name}</span>
-                    <span className="ml-2 text-xs text-gray-400">{(s.match_terms || []).join(', ')}</span>
+                    <span className="font-medium text-ink-2">{s.name}</span>
+                    <span className="ml-2 text-xs text-ink-3">{(s.match_terms || []).join(', ')}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <select value={s.folder_id ?? ''} onChange={(e) => setSupplierFolder(s, e.target.value)}
                       title="Folder where invoices save & are watched"
-                      className={`rounded-md border px-2 py-0.5 text-xs ${s.folder_id ? 'border-gray-300 bg-white text-gray-700' : 'border-amber-300 bg-amber-50 text-amber-700'}`}>
+                      className={`rounded-md border px-2 py-0.5 text-xs ${s.folder_id ? 'border-line bg-card text-ink-2' : 'border-line bg-warn-soft text-warn'}`}>
                       <option value="">⚠ pick folder</option>
                       {folders.map((f) => <option key={f.folder_id} value={f.folder_id}>{f.name}</option>)}
                     </select>
-                    <label className="flex cursor-pointer items-center gap-1 text-xs text-gray-500">
+                    <label className="flex cursor-pointer items-center gap-1 text-xs text-ink-2">
                       <input type="checkbox" checked={s.enabled} onChange={() => toggleSupplier(s)} className="h-3.5 w-3.5" /> on
                     </label>
-                    <button onClick={() => deleteSupplier(s)} title="Remove" className="rounded border border-gray-200 px-2 py-0.5 text-xs text-rose-500 hover:bg-rose-50">✕</button>
+                    <button onClick={() => deleteSupplier(s)} title="Remove" className="rounded border border-line px-2 py-0.5 text-xs text-bad hover:bg-bad-soft">✕</button>
                   </div>
                 </div>
               ))}
             </div>
-            <p className="mt-3 text-[11px] text-gray-400">
+            <p className="mt-3 text-[11px] text-ink-3">
               Built-in (always recognised): Grand Auto, Liqui Moly, Mannol, Gulf, Atomlubes — no need to add these.
             </p>
           </div>
@@ -342,16 +342,16 @@ export default function PurchaseInvoicePage() {
 
       {/* Live processing banner — shows the AI read is actively working (not stuck) */}
       {readingId && (
-        <div className="mb-4 flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
-          <svg className="h-5 w-5 shrink-0 animate-spin text-amber-600" viewBox="0 0 24 24" fill="none">
+        <div className="mb-4 flex items-center gap-3 rounded-lg border border-line bg-warn-soft p-3">
+          <svg className="h-5 w-5 shrink-0 animate-spin text-warn" viewBox="0 0 24 24" fill="none">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z" />
           </svg>
           <div className="min-w-0 text-sm">
-            <div className="font-semibold text-amber-900">
+            <div className="font-semibold text-warn">
               Reading {readingRow?.ref_no ? <span className="font-mono">{readingRow.ref_no}</span> : 'invoice'} with AI… <span className="tabular-nums">({readSecs}s)</span>
             </div>
-            <div className="text-xs text-amber-700">
+            <div className="text-xs text-warn">
               This usually takes 15–50 seconds (up to ~60s for big invoices). Please keep this page open — don&apos;t press Read again.
             </div>
           </div>
@@ -361,64 +361,64 @@ export default function PurchaseInvoicePage() {
       {/* List */}
       <div className="mb-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold text-gray-700">Uploaded invoices</h2>
+          <h2 className="text-sm font-semibold text-ink-2">Uploaded invoices</h2>
           {supplierFilter && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+            <span className="inline-flex items-center gap-1 rounded-full bg-accent-weak px-2 py-0.5 text-xs font-medium text-accent">
               {supplierFilter}
-              <button onClick={() => setSupplierFilter(null)} title="Clear supplier filter" className="text-blue-500 hover:text-blue-800">✕</button>
+              <button onClick={() => setSupplierFilter(null)} title="Clear supplier filter" className="text-accent hover:opacity-80">✕</button>
             </span>
           )}
         </div>
         <div className="flex items-center gap-3">
-          <label className="flex cursor-pointer items-center gap-1.5 text-xs text-gray-500">
+          <label className="flex cursor-pointer items-center gap-1.5 text-xs text-ink-2">
             <input type="checkbox" checked={showDismissed} onChange={(e) => setShowDismissed(e.target.checked)} className="h-3.5 w-3.5" />
             Show dismissed
           </label>
-          <button onClick={load} disabled={loading} className="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50">{loading ? '…' : 'Refresh'}</button>
+          <button onClick={load} disabled={loading} className="rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50">{loading ? '…' : 'Refresh'}</button>
         </div>
       </div>
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
+      <div className="overflow-x-auto rounded-lg border border-line">
         <table className="w-full border-collapse text-sm">
-          <thead className="bg-gray-50 text-left">
+          <thead className="bg-ink/[0.03] text-left">
             <tr>
-              <th className="px-3 py-2 font-medium text-gray-600">Uploaded</th>
-              <th className="px-3 py-2 font-medium text-gray-600">Supplier</th>
-              <th className="px-3 py-2 font-medium text-gray-600">Ref#</th>
-              <th className="px-3 py-2 font-medium text-gray-600">Date</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-600">Total</th>
-              <th className="px-3 py-2 font-medium text-gray-600">Status</th>
+              <th className="px-3 py-2 font-medium text-ink-2">Uploaded</th>
+              <th className="px-3 py-2 font-medium text-ink-2">Supplier</th>
+              <th className="px-3 py-2 font-medium text-ink-2">Ref#</th>
+              <th className="px-3 py-2 font-medium text-ink-2">Date</th>
+              <th className="px-3 py-2 text-right font-medium text-ink-2">Total</th>
+              <th className="px-3 py-2 font-medium text-ink-2">Status</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
-              <tr><td colSpan={7} className="px-3 py-6 text-center text-gray-500">No invoices uploaded yet.</td></tr>
+              <tr><td colSpan={7} className="px-3 py-6 text-center text-ink-2">No invoices uploaded yet.</td></tr>
             ) : rows.map((r) => (
-              <tr key={r.id} className="border-t border-gray-100">
-                <td className="px-3 py-2 text-gray-500">{new Date(r.created_at).toLocaleDateString('en-MY')}</td>
-                <td className="px-3 py-2 text-gray-900">
+              <tr key={r.id} className="border-t border-line">
+                <td className="px-3 py-2 text-ink-2">{new Date(r.created_at).toLocaleDateString('en-MY')}</td>
+                <td className="px-3 py-2 text-ink">
                   {r.supplier_name ? (
                     <button
                       onClick={() => setSupplierFilter(r.supplier_name)}
                       title={`Show only invoices from ${r.supplier_name}`}
-                      className="text-left text-blue-600 hover:text-blue-800 hover:underline"
+                      className="text-left text-accent hover:opacity-80 hover:underline"
                     >
                       {r.supplier_name}
                     </button>
                   ) : '—'}
                 </td>
-                <td className="px-3 py-2 text-gray-700">{r.ref_no ?? '—'}</td>
-                <td className="px-3 py-2 text-gray-700">{fmtD(r.invoice_date)}</td>
+                <td className="px-3 py-2 text-ink-2">{r.ref_no ?? '—'}</td>
+                <td className="px-3 py-2 text-ink-2">{fmtD(r.invoice_date)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{rm(r.total)}</td>
                 <td className="px-3 py-2">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[r.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[r.status] ?? 'bg-ink/5 text-ink-2'}`}>
                     {r.status === 'created' && r.niagawan_pi_no ? r.niagawan_pi_no : r.status}
                   </span>
                 </td>
                 <td className="px-3 py-2 text-right">
                   <div className="flex items-center justify-end gap-1.5">
                     {(r.status === 'uploaded' || r.status === 'error') && (
-                      <button onClick={() => readInvoice(r.id)} disabled={readingId === r.id} className="rounded bg-blue-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+                      <button onClick={() => readInvoice(r.id)} disabled={readingId === r.id} className="rounded bg-accent px-2 py-0.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">
                         {readingId === r.id ? 'Reading…' : 'Read'}
                       </button>
                     )}
@@ -428,18 +428,18 @@ export default function PurchaseInvoicePage() {
                       </button>
                     )}
                     {r.status === 'extracted' && (
-                      <button onClick={() => readInvoice(r.id)} disabled={readingId === r.id} className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50">
+                      <button onClick={() => readInvoice(r.id)} disabled={readingId === r.id} className="rounded border border-line px-2 py-0.5 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50">
                         {readingId === r.id ? 'Reading…' : 'Re-read'}
                       </button>
                     )}
-                    {r.file_path && <button onClick={() => viewPdf(r.file_path)} className="rounded border border-gray-200 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50">View PDF</button>}
+                    {r.file_path && <button onClick={() => viewPdf(r.file_path)} className="rounded border border-line px-2 py-0.5 text-xs text-ink-2 hover:bg-ink/5">View PDF</button>}
                     {(r.status === 'uploaded' || r.status === 'extracted' || r.status === 'error') && (
-                      <button onClick={() => dismiss(r)} title="Hide this invoice (e.g. it's already in Niagawan). Nothing is changed in Niagawan." className="rounded border border-gray-200 px-2 py-0.5 text-xs text-rose-500 hover:bg-rose-50">
+                      <button onClick={() => dismiss(r)} title="Hide this invoice (e.g. it's already in Niagawan). Nothing is changed in Niagawan." className="rounded border border-line px-2 py-0.5 text-xs text-bad hover:bg-bad-soft">
                         ✕ Dismiss
                       </button>
                     )}
                     {r.status === 'dismissed' && (
-                      <button onClick={() => restore(r)} className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50">
+                      <button onClick={() => restore(r)} className="rounded border border-line px-2 py-0.5 text-xs text-ink-2 hover:bg-ink/5">
                         ↩ Restore
                       </button>
                     )}

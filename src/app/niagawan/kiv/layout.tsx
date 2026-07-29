@@ -22,7 +22,7 @@ export default function KivLayout({ children }: { children: React.ReactNode }) {
             href={t.href}
             prefetch={false}
             className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-              active(t.href) ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              active(t.href) ? 'bg-accent text-white' : 'bg-ink/5 text-ink-2 hover:bg-ink/10'
             }`}
           >
             {t.label}

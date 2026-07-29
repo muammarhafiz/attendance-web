@@ -194,8 +194,8 @@ export default function PnlPage() {
   const prevMonth = () => { const d = new Date(year, month - 2, 1); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); };
   const nextMonth = () => { const d = new Date(year, month, 1); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); };
 
-  if (isAdmin === null) return <div className="text-sm text-gray-500">Checking…</div>;
-  if (!isAdmin) return <div className="text-sm text-gray-600">You don&apos;t have access to this page.</div>;
+  if (isAdmin === null) return <div className="text-sm text-ink-2">Checking…</div>;
+  if (!isAdmin) return <div className="text-sm text-ink-2">You don&apos;t have access to this page.</div>;
 
   const c = calc;
   const onTargetProjected = c.netProjected - targetNet;
@@ -213,22 +213,22 @@ export default function PnlPage() {
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <h2 className="text-lg font-semibold text-gray-900">Profit &amp; Loss</h2>
+        <h2 className="text-lg font-semibold text-ink">Profit &amp; Loss</h2>
         <div className="ml-auto flex items-center gap-2">
-          <button onClick={prevMonth} className="rounded-md border px-2.5 py-1.5 text-sm hover:bg-gray-50">◀</button>
+          <button onClick={prevMonth} className="rounded-md border px-2.5 py-1.5 text-sm hover:bg-ink/5">◀</button>
           <span className="min-w-[130px] text-center text-sm font-semibold">{MONTHS[month - 1]} {year}</span>
-          <button onClick={nextMonth} className="rounded-md border px-2.5 py-1.5 text-sm hover:bg-gray-50">▶</button>
+          <button onClick={nextMonth} className="rounded-md border px-2.5 py-1.5 text-sm hover:bg-ink/5">▶</button>
         </div>
       </div>
 
-      {err && <div className="mb-3 rounded-md border border-rose-200 bg-rose-50 p-2 text-sm text-rose-700">{err}</div>}
-      {loading ? <div className="text-sm text-gray-500">Loading…</div> : (
+      {err && <div className="mb-3 rounded-md border border-rose-200 bg-bad-soft p-2 text-sm text-bad">{err}</div>}
+      {loading ? <div className="text-sm text-ink-2">Loading…</div> : (
         <>
           {/* Tabs */}
-          <div className="mb-4 flex gap-1 border-b border-gray-200">
+          <div className="mb-4 flex gap-1 border-b border-line">
             {([['overview', 'Overview'], ['costs', 'Operating costs'], ['staff', 'Staff sales']] as const).map(([k, label]) => (
               <button key={k} onClick={() => setTab(k)}
-                className={`-mb-px border-b-2 px-3 py-1.5 text-sm font-medium ${tab === k ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>
+                className={`-mb-px border-b-2 px-3 py-1.5 text-sm font-medium ${tab === k ? 'border-accent text-accent' : 'border-transparent text-ink-2 hover:text-ink-2'}`}>
                 {label}
               </button>
             ))}
@@ -236,17 +236,17 @@ export default function PnlPage() {
 
           {/* Staff sales — per-salesperson, matches each staff's own "My sales" */}
           {tab === 'staff' && (
-            <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
+            <div className="mb-4 rounded-card bg-card shadow-card p-4">
               <div className="mb-2 flex items-center justify-between gap-2">
-                <span className="text-sm font-semibold text-gray-700">Staff sales <span className="font-normal text-gray-400">· {MONTHS[month - 1]} {year} · matches each staff&rsquo;s own &ldquo;My sales&rdquo;</span></span>
+                <span className="text-sm font-semibold text-ink-2">Staff sales <span className="font-normal text-ink-3">· {MONTHS[month - 1]} {year} · matches each staff&rsquo;s own &ldquo;My sales&rdquo;</span></span>
                 <span className="text-sm font-semibold">{rm(staffSalesTotal)}</span>
               </div>
               {staffRows.length === 0 ? (
-                <div className="text-xs text-gray-400">No sales data for this month yet.</div>
+                <div className="text-xs text-ink-3">No sales data for this month yet.</div>
               ) : (
-                <div className="max-h-[28rem] overflow-y-auto rounded border border-gray-100">
+                <div className="max-h-[28rem] overflow-y-auto rounded border border-line">
                   <table className="min-w-full text-sm">
-                    <thead className="sticky top-0 bg-gray-50 text-left text-gray-500">
+                    <thead className="sticky top-0 bg-ink/[0.03] text-left text-ink-2">
                       <tr>
                         <th className="px-3 py-1.5 font-semibold">#</th>
                         <th className="px-3 py-1.5 font-semibold">Staff</th>
@@ -254,21 +254,21 @@ export default function PnlPage() {
                         <th className="px-3 py-1.5 text-right font-semibold">Sales</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100">
+                    <tbody className="divide-y divide-line">
                       {staffRows.map((r, i) => (
-                        <tr key={r.staff_email ?? '__unmapped__'} className={r.staff_email === null ? 'bg-gray-50/50' : ''}>
-                          <td className="px-3 py-1.5 tabular-nums text-gray-400">{r.staff_email === null ? '·' : i + 1}</td>
+                        <tr key={r.staff_email ?? '__unmapped__'} className={r.staff_email === null ? 'bg-ink/[0.03]' : ''}>
+                          <td className="px-3 py-1.5 tabular-nums text-ink-3">{r.staff_email === null ? '·' : i + 1}</td>
                           <td className="px-3 py-1.5">
-                            <div className={r.staff_email === null ? 'text-gray-500' : 'text-gray-800'}>{r.staff_name}</div>
-                            {r.niagawan_names && <div className="text-xs text-gray-400">{r.niagawan_names}</div>}
+                            <div className={r.staff_email === null ? 'text-ink-2' : 'text-ink-2'}>{r.staff_name}</div>
+                            {r.niagawan_names && <div className="text-xs text-ink-3">{r.niagawan_names}</div>}
                           </td>
-                          <td className="px-3 py-1.5 text-right tabular-nums text-gray-600">{n(r.invoices)}</td>
-                          <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums font-medium text-gray-800">{rm(n(r.total))}</td>
+                          <td className="px-3 py-1.5 text-right tabular-nums text-ink-2">{n(r.invoices)}</td>
+                          <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums font-medium text-ink-2">{rm(n(r.total))}</td>
                         </tr>
                       ))}
                     </tbody>
                     <tfoot>
-                      <tr className="border-t border-gray-200 font-semibold">
+                      <tr className="border-t border-line font-semibold">
                         <td className="px-3 py-1.5"></td>
                         <td className="px-3 py-1.5">Total</td>
                         <td className="px-3 py-1.5 text-right tabular-nums">{staffSalesInv}</td>
@@ -278,53 +278,53 @@ export default function PnlPage() {
                   </table>
                 </div>
               )}
-              <div className="mt-2 text-xs text-gray-400">All invoices for the month, attributed by salesperson (Niagawan &ldquo;Delivery&rdquo; name → staff). &ldquo;Unattributed&rdquo; = invoices whose salesperson isn&rsquo;t in the mapping yet. This is total sales, not repair-only — it can differ from the Overview&rsquo;s &ldquo;Top mechanics&rdquo; (repair revenue only).</div>
+              <div className="mt-2 text-xs text-ink-3">All invoices for the month, attributed by salesperson (Niagawan &ldquo;Delivery&rdquo; name → staff). &ldquo;Unattributed&rdquo; = invoices whose salesperson isn&rsquo;t in the mapping yet. This is total sales, not repair-only — it can differ from the Overview&rsquo;s &ldquo;Top mechanics&rdquo; (repair revenue only).</div>
             </div>
           )}
 
           {/* Verdict */}
           {tab === 'overview' && (<>
           <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="rounded-lg border border-gray-200 bg-white p-3">
-              <div className="text-xs font-medium text-gray-500">Net profit (so far) <span className="text-gray-400">(settled days only · full-month costs)</span></div>
-              <div className={`mt-1 text-xl font-semibold ${c.netSoFar < 0 ? 'text-rose-600' : 'text-emerald-700'}`}>{rm(c.netSoFar)}</div>
+            <div className="rounded-card bg-card shadow-card p-3">
+              <div className="text-xs font-medium text-ink-2">Net profit (so far) <span className="text-ink-3">(settled days only · full-month costs)</span></div>
+              <div className={`mt-1 text-xl font-semibold ${c.netSoFar < 0 ? 'text-bad' : 'text-good'}`}>{rm(c.netSoFar)}</div>
             </div>
-            <div className="rounded-lg border border-gray-200 bg-white p-3">
-              <div className="text-xs font-medium text-gray-500">Projected net profit <span className="text-gray-400">(full month, at current pace)</span></div>
-              <div className={`mt-1 text-xl font-semibold ${c.netProjected < 0 ? 'text-rose-600' : 'text-emerald-700'}`}>{rm(c.netProjected)}</div>
+            <div className="rounded-card bg-card shadow-card p-3">
+              <div className="text-xs font-medium text-ink-2">Projected net profit <span className="text-ink-3">(full month, at current pace)</span></div>
+              <div className={`mt-1 text-xl font-semibold ${c.netProjected < 0 ? 'text-bad' : 'text-good'}`}>{rm(c.netProjected)}</div>
             </div>
-            <div className={`rounded-lg border p-3 ${onTargetProjected >= 0 ? 'border-emerald-300 bg-emerald-50' : 'border-rose-300 bg-rose-50'}`}>
-              <div className="text-xs font-medium text-gray-600">Vs target {rm(targetNet)}</div>
-              <div className={`mt-1 text-xl font-semibold ${onTargetProjected >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>{onTargetProjected >= 0 ? '+' : ''}{rm(onTargetProjected)}</div>
+            <div className={`rounded-lg border p-3 ${onTargetProjected >= 0 ? 'border-emerald-300 bg-good-soft' : 'border-rose-300 bg-bad-soft'}`}>
+              <div className="text-xs font-medium text-ink-2">Vs target {rm(targetNet)}</div>
+              <div className={`mt-1 text-xl font-semibold ${onTargetProjected >= 0 ? 'text-good' : 'text-bad'}`}>{onTargetProjected >= 0 ? '+' : ''}{rm(onTargetProjected)}</div>
             </div>
           </div>
 
           {c.pendingDays > 0 && (
-            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <div className="mb-4 rounded-lg border border-amber-200 bg-warn-soft px-3 py-2 text-xs text-warn">
               Not counted yet: <span className="font-semibold">{rm(c.pendingProfit)}</span> profit from {c.pendingDays} day{c.pendingDays === 1 ? '' : 's'} still settling (unpaid, or parts not priced yet). It&rsquo;s added automatically once those days are finalised — same rule as the Sales page.
             </div>
           )}
 
           {/* Sales */}
-          <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
-            <div className="mb-2 text-sm font-semibold text-gray-700">Sales (month to date{c.pendingDays > 0 ? ` · ${c.pendingDays} day(s) still pending` : ''})</div>
+          <div className="mb-4 rounded-card bg-card shadow-card p-4">
+            <div className="mb-2 text-sm font-semibold text-ink-2">Sales (month to date{c.pendingDays > 0 ? ` · ${c.pendingDays} day(s) still pending` : ''})</div>
             <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
-              <div><div className="text-xs text-gray-500">Repair sales</div><div className="font-semibold">{rm(c.repairSales)}</div></div>
-              <div><div className="text-xs text-gray-500">Sold to other shops</div><div className="font-semibold text-gray-600">{rm(c.tradeSales)}</div></div>
-              <div><div className="text-xs text-gray-500">Parts cost</div><div className="font-semibold">{rm(c.totalCogs)}</div></div>
-              <div><div className="text-xs text-gray-500">Gross profit</div><div className="font-semibold">{rm(c.totalProfit)}</div></div>
-              <div><div className="text-xs text-gray-500">Profit margin</div><div className="font-semibold">{c.margin.toFixed(0)}%</div></div>
+              <div><div className="text-xs text-ink-2">Repair sales</div><div className="font-semibold">{rm(c.repairSales)}</div></div>
+              <div><div className="text-xs text-ink-2">Sold to other shops</div><div className="font-semibold text-ink-2">{rm(c.tradeSales)}</div></div>
+              <div><div className="text-xs text-ink-2">Parts cost</div><div className="font-semibold">{rm(c.totalCogs)}</div></div>
+              <div><div className="text-xs text-ink-2">Gross profit</div><div className="font-semibold">{rm(c.totalProfit)}</div></div>
+              <div><div className="text-xs text-ink-2">Profit margin</div><div className="font-semibold">{c.margin.toFixed(0)}%</div></div>
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-3 border-t border-gray-100 pt-3 text-sm sm:grid-cols-5">
-              <div><div className="text-xs text-gray-500">Car count</div><div className="font-semibold">{c.carCount}</div></div>
-              <div><div className="text-xs text-gray-500">Average per car</div><div className="font-semibold">{rm(c.aro)}</div></div>
+            <div className="mt-3 grid grid-cols-2 gap-3 border-t border-line pt-3 text-sm sm:grid-cols-5">
+              <div><div className="text-xs text-ink-2">Car count</div><div className="font-semibold">{c.carCount}</div></div>
+              <div><div className="text-xs text-ink-2">Average per car</div><div className="font-semibold">{rm(c.aro)}</div></div>
               <div className="col-span-2 sm:col-span-3">
-                <div className="text-xs text-gray-500">Top mechanics (repair sales)</div>
+                <div className="text-xs text-ink-2">Top mechanics (repair sales)</div>
                 <div className="mt-0.5 flex flex-wrap gap-1.5">
                   {c.mechanics.slice(0, 5).map((m) => (
-                    <span key={m.name} className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">{m.name}: {rm(m.total)} ({m.jobs})</span>
+                    <span key={m.name} className="rounded-full bg-ink/5 px-2 py-0.5 text-xs text-ink-2">{m.name}: {rm(m.total)} ({m.jobs})</span>
                   ))}
-                  {c.mechanics.length === 0 && <span className="text-xs text-gray-400">per-invoice data fills in after the next sync</span>}
+                  {c.mechanics.length === 0 && <span className="text-xs text-ink-3">per-invoice data fills in after the next sync</span>}
                 </div>
               </div>
             </div>
@@ -333,73 +333,73 @@ export default function PnlPage() {
 
           {/* Payroll (auto) — Overview tab */}
           {tab === 'overview' && (
-            <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
-              <div className="mb-2 text-sm font-semibold text-gray-700">Payroll (auto, from the Payroll module)</div>
-              <div className="flex justify-between text-sm"><span className="text-gray-600">Salaries + bonus/allowance ({pay.length} staff)</span><span className="font-semibold">{rm(c.payrollGross)}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-gray-600">Employer EPF / SOCSO / EIS</span><span className="font-semibold">{rm(c.employer)}</span></div>
-              <div className="mt-2 flex justify-between border-t border-gray-100 pt-2 text-sm font-semibold"><span>Payroll total</span><span>{rm(c.payrollGross + c.employer)}</span></div>
-              {pay.length === 0 && <div className="mt-2 text-xs text-amber-600">No payroll generated for this month yet — costs are incomplete.</div>}
+            <div className="mb-4 rounded-card bg-card shadow-card p-4">
+              <div className="mb-2 text-sm font-semibold text-ink-2">Payroll (auto, from the Payroll module)</div>
+              <div className="flex justify-between text-sm"><span className="text-ink-2">Salaries + bonus/allowance ({pay.length} staff)</span><span className="font-semibold">{rm(c.payrollGross)}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-ink-2">Employer EPF / SOCSO / EIS</span><span className="font-semibold">{rm(c.employer)}</span></div>
+              <div className="mt-2 flex justify-between border-t border-line pt-2 text-sm font-semibold"><span>Payroll total</span><span>{rm(c.payrollGross + c.employer)}</span></div>
+              {pay.length === 0 && <div className="mt-2 text-xs text-warn">No payroll generated for this month yet — costs are incomplete.</div>}
             </div>
           )}
 
           {/* Bills & others (manual) — Operating costs tab */}
           {tab === 'costs' && (
-            <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
+            <div className="mb-4 rounded-card bg-card shadow-card p-4">
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-sm font-semibold text-gray-700">Bills &amp; others (manual)</span>
-                {bills.length === 0 && <button onClick={copyLastMonth} className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50">Copy last month</button>}
+                <span className="text-sm font-semibold text-ink-2">Bills &amp; others (manual)</span>
+                {bills.length === 0 && <button onClick={copyLastMonth} className="rounded border border-line px-2 py-0.5 text-xs text-ink-2 hover:bg-ink/5">Copy last month</button>}
               </div>
               {bills.map((b) => (
                 <div key={b.id} className="flex items-center gap-2 py-0.5 text-sm">
                   <input type="checkbox" checked={!!b.paid} onChange={(e) => updateBillPaid(b.id, e.target.checked)} title="Mark paid — stamps today's date" className="shrink-0 cursor-pointer" />
-                  <span className={`min-w-0 flex-1 truncate ${b.paid ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{b.label}</span>
-                  {b.paid && b.paid_date && <span className="shrink-0 text-[11px] font-medium text-emerald-600">paid {fmtDate(b.paid_date)}</span>}
+                  <span className={`min-w-0 flex-1 truncate ${b.paid ? 'text-ink-3 line-through' : 'text-ink-2'}`}>{b.label}</span>
+                  {b.paid && b.paid_date && <span className="shrink-0 text-[11px] font-medium text-good">paid {fmtDate(b.paid_date)}</span>}
                   <input type="number" step="0.01" defaultValue={n(b.amount)} onBlur={(e) => { const v = Number(e.target.value) || 0; if (v !== n(b.amount)) updateBill(b.id, v); }}
-                    className="w-28 rounded border border-gray-200 px-1.5 py-0.5 text-right text-sm" />
-                  <button onClick={() => deleteBill(b.id)} className="text-xs text-rose-400 hover:text-rose-600">✕</button>
+                    className="w-28 rounded border border-line px-1.5 py-0.5 text-right text-sm" />
+                  <button onClick={() => deleteBill(b.id)} className="text-xs text-bad hover:text-bad">✕</button>
                 </div>
               ))}
               <div className="mt-2 flex items-center gap-2">
-                <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="e.g. SEWA" className="min-w-0 flex-1 rounded border border-gray-300 px-2 py-1 text-sm" />
-                <input value={newAmount} onChange={(e) => setNewAmount(e.target.value)} type="number" step="0.01" placeholder="0.00" className="w-28 rounded border border-gray-300 px-2 py-1 text-right text-sm" />
+                <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="e.g. SEWA" className="min-w-0 flex-1 rounded border border-line px-2 py-1 text-sm" />
+                <input value={newAmount} onChange={(e) => setNewAmount(e.target.value)} type="number" step="0.01" placeholder="0.00" className="w-28 rounded border border-line px-2 py-1 text-right text-sm" />
                 <button onClick={addBill} className="rounded bg-gray-900 px-2.5 py-1 text-sm font-medium text-white hover:bg-gray-700">Add</button>
               </div>
-              <div className="mt-2 flex justify-between border-t border-gray-100 pt-2 text-sm font-semibold"><span>Bills total</span><span>{rm(c.billsTotal)}</span></div>
-              <div className="mt-1 text-xs text-gray-400">Bonus/commission is already inside Payroll — don&rsquo;t add it here again.</div>
+              <div className="mt-2 flex justify-between border-t border-line pt-2 text-sm font-semibold"><span>Bills total</span><span>{rm(c.billsTotal)}</span></div>
+              <div className="mt-1 text-xs text-ink-3">Bonus/commission is already inside Payroll — don&rsquo;t add it here again.</div>
             </div>
           )}
 
           {/* Staff meals — GrabFood, per-receipt breakdown — Operating costs tab */}
           {tab === 'costs' && (
-          <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
+          <div className="mb-4 rounded-card bg-card shadow-card p-4">
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm font-semibold text-gray-700">Staff meals — GrabFood <span className="font-normal text-gray-400">· {mealFood} food{mealDrink > 0 ? ` · ${mealDrink} drink` : ''} · {meals.length} order{meals.length === 1 ? '' : 's'} this month, auto from email receipts</span></span>
+              <span className="text-sm font-semibold text-ink-2">Staff meals — GrabFood <span className="font-normal text-ink-3">· {mealFood} food{mealDrink > 0 ? ` · ${mealDrink} drink` : ''} · {meals.length} order{meals.length === 1 ? '' : 's'} this month, auto from email receipts</span></span>
               <span className="text-sm font-semibold">{rm(c.staffMeals)}</span>
             </div>
             {meals.length === 0 ? (
-              <div className="text-xs text-gray-400">No GrabFood receipts found for this month.</div>
+              <div className="text-xs text-ink-3">No GrabFood receipts found for this month.</div>
             ) : (
-              <div className="max-h-72 overflow-y-auto rounded border border-gray-100">
+              <div className="max-h-72 overflow-y-auto rounded border border-line">
                 <table className="min-w-full text-sm">
-                  <thead className="sticky top-0 bg-gray-50 text-left text-gray-500">
+                  <thead className="sticky top-0 bg-ink/[0.03] text-left text-ink-2">
                     <tr><th className="px-3 py-1.5 font-semibold">Date</th><th className="px-3 py-1.5 text-right font-semibold">Food</th><th className="px-3 py-1.5 text-right font-semibold">Drink</th><th className="px-3 py-1.5 text-right font-semibold">Amount</th></tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100">
+                  <tbody className="divide-y divide-line">
                     {meals.map((mm, i) => {
                       const dr = n(mm.drink_count);
                       const fd = mm.item_count == null ? null : n(mm.item_count) - dr;
                       return (
                         <tr key={i}>
-                          <td className="px-3 py-1.5 text-gray-800">{fmtDate(mm.meal_date)}</td>
-                          <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{fd == null ? '—' : fd}</td>
-                          <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{dr > 0 ? dr : '·'}</td>
-                          <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-gray-700">{rm(n(mm.amount))}</td>
+                          <td className="px-3 py-1.5 text-ink-2">{fmtDate(mm.meal_date)}</td>
+                          <td className="px-3 py-1.5 text-right tabular-nums text-ink-2">{fd == null ? '—' : fd}</td>
+                          <td className="px-3 py-1.5 text-right tabular-nums text-ink-2">{dr > 0 ? dr : '·'}</td>
+                          <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-ink-2">{rm(n(mm.amount))}</td>
                         </tr>
                       );
                     })}
                   </tbody>
                   <tfoot>
-                    <tr className="border-t border-gray-200 font-semibold">
+                    <tr className="border-t border-line font-semibold">
                       <td className="px-3 py-1.5">Total</td>
                       <td className="px-3 py-1.5 text-right tabular-nums">{mealFood}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums">{mealDrink}</td>
@@ -410,41 +410,41 @@ export default function PnlPage() {
               </div>
             )}
             <div className="mt-3 flex items-center justify-between rounded-lg border border-sky-200 bg-sky-50 px-3 py-2">
-              <span className="text-sm font-medium text-sky-900">💳 Top up the meal account</span>
+              <span className="text-sm font-medium text-sky-900">Top up the meal account</span>
               <span className="text-base font-bold text-sky-900">{rm(c.staffMeals)}</span>
             </div>
-            <div className="mt-1 text-[11px] text-gray-400">Re-transfer this month&rsquo;s meal spend to replenish the Grab account.</div>
+            <div className="mt-1 text-[11px] text-ink-3">Re-transfer this month&rsquo;s meal spend to replenish the Grab account.</div>
           </div>
           )}
 
           {/* Total operation cost — Operating costs tab */}
           {tab === 'costs' && (
-            <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
-              <div className="mb-2 text-sm font-semibold text-gray-700">Total operation cost</div>
-              <div className="flex justify-between text-sm"><span className="text-gray-600">Payroll (salaries + employer)</span><span className="font-semibold">{rm(c.payrollGross + c.employer)}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-gray-600">Bills &amp; others (manual)</span><span className="font-semibold">{rm(c.billsTotal)}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-gray-600">Staff meals — GrabFood</span><span className="font-semibold">{rm(c.staffMeals)}</span></div>
-              <div className="mt-2 flex justify-between border-t border-gray-200 pt-2 text-base font-semibold"><span>Total operation cost</span><span>{rm(c.costs)}</span></div>
+            <div className="mb-4 rounded-card bg-card shadow-card p-4">
+              <div className="mb-2 text-sm font-semibold text-ink-2">Total operation cost</div>
+              <div className="flex justify-between text-sm"><span className="text-ink-2">Payroll (salaries + employer)</span><span className="font-semibold">{rm(c.payrollGross + c.employer)}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-ink-2">Bills &amp; others (manual)</span><span className="font-semibold">{rm(c.billsTotal)}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-ink-2">Staff meals — GrabFood</span><span className="font-semibold">{rm(c.staffMeals)}</span></div>
+              <div className="mt-2 flex justify-between border-t border-line pt-2 text-base font-semibold"><span>Total operation cost</span><span>{rm(c.costs)}</span></div>
             </div>
           )}
 
           {/* Summary + settings */}
           {tab === 'overview' && (
-          <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4 text-sm">
+          <div className="mb-4 rounded-card bg-card shadow-card p-4 text-sm">
             <div className="grid grid-cols-1 gap-1 sm:max-w-md">
-              <div className="flex justify-between"><span className="text-gray-600">Total operation cost</span><span className="font-semibold">{rm(c.costs)}</span></div>
-              <div className="flex justify-between"><span className="text-gray-600">Gross profit (so far)</span><span className="font-semibold">{rm(c.totalProfit)}</span></div>
-              <div className="flex justify-between border-t border-gray-100 pt-1"><span className="text-gray-600">Net profit (so far)</span><span className={`font-semibold ${c.netSoFar < 0 ? 'text-rose-600' : 'text-emerald-700'}`}>{rm(c.netSoFar)}</span></div>
-              <div className="flex justify-between"><span className="text-gray-600">Putrajaya share ({ptjPct}% of projected net)</span><span className="font-semibold">{rm(Math.max(0, c.netProjected) * ptjPct / 100)}</span></div>
+              <div className="flex justify-between"><span className="text-ink-2">Total operation cost</span><span className="font-semibold">{rm(c.costs)}</span></div>
+              <div className="flex justify-between"><span className="text-ink-2">Gross profit (so far)</span><span className="font-semibold">{rm(c.totalProfit)}</span></div>
+              <div className="flex justify-between border-t border-line pt-1"><span className="text-ink-2">Net profit (so far)</span><span className={`font-semibold ${c.netSoFar < 0 ? 'text-bad' : 'text-good'}`}>{rm(c.netSoFar)}</span></div>
+              <div className="flex justify-between"><span className="text-ink-2">Putrajaya share ({ptjPct}% of projected net)</span><span className="font-semibold">{rm(Math.max(0, c.netProjected) * ptjPct / 100)}</span></div>
             </div>
-            <div className="mt-3 flex flex-wrap items-center gap-4 border-t border-gray-100 pt-3 text-xs text-gray-500">
+            <div className="mt-3 flex flex-wrap items-center gap-4 border-t border-line pt-3 text-xs text-ink-2">
               <label className="flex items-center gap-1.5">Target net: RM
                 <input type="number" defaultValue={targetNet} onBlur={(e) => { const v = Number(e.target.value) || 0; setTargetNet(v); saveSetting('target_net', v); }}
-                  className="w-24 rounded border border-gray-200 px-1.5 py-0.5 text-right" />
+                  className="w-24 rounded border border-line px-1.5 py-0.5 text-right" />
               </label>
               <label className="flex items-center gap-1.5">Putrajaya share %:
                 <input type="number" defaultValue={ptjPct} onBlur={(e) => { const v = Number(e.target.value) || 0; setPtjPct(v); saveSetting('putrajaya_pct', v); }}
-                  className="w-16 rounded border border-gray-200 px-1.5 py-0.5 text-right" />
+                  className="w-16 rounded border border-line px-1.5 py-0.5 text-right" />
               </label>
             </div>
           </div>
@@ -452,20 +452,20 @@ export default function PnlPage() {
 
           {/* Trade customers */}
           {tab === 'overview' && (
-          <div className="rounded-lg border border-gray-200 bg-white p-4">
-            <div className="mb-1 text-sm font-semibold text-gray-700">Trade customers (other workshops buying stock — excluded from repair KPIs)</div>
+          <div className="rounded-card bg-card shadow-card p-4">
+            <div className="mb-1 text-sm font-semibold text-ink-2">Trade customers (other workshops buying stock — excluded from repair KPIs)</div>
             <div className="flex flex-wrap items-center gap-1.5">
               {trades.map((t) => (
-                <span key={t.id} className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-0.5 text-sm text-gray-700">
+                <span key={t.id} className="inline-flex items-center gap-1 rounded-full bg-ink/5 px-2.5 py-0.5 text-sm text-ink-2">
                   {t.match}
-                  <button onClick={() => removeTrade(t.id)} className="text-gray-400 hover:text-rose-500">✕</button>
+                  <button onClick={() => removeTrade(t.id)} className="text-ink-3 hover:text-bad">✕</button>
                 </span>
               ))}
               <input value={newTrade} onChange={(e) => setNewTrade(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addTrade()}
-                placeholder="add name…" className="w-32 rounded border border-gray-300 px-2 py-0.5 text-sm" />
-              <button onClick={addTrade} className="rounded border border-gray-300 px-2 py-0.5 text-sm text-gray-600 hover:bg-gray-50">Add</button>
+                placeholder="add name…" className="w-32 rounded border border-line px-2 py-0.5 text-sm" />
+              <button onClick={addTrade} className="rounded border border-line px-2 py-0.5 text-sm text-ink-2 hover:bg-ink/5">Add</button>
             </div>
-            <div className="mt-1 text-xs text-gray-400">Invoices whose customer name contains any of these are counted as trade sales (pass-through), with their unpaid total tracked as trade debt.</div>
+            <div className="mt-1 text-xs text-ink-3">Invoices whose customer name contains any of these are counted as trade sales (pass-through), with their unpaid total tracked as trade debt.</div>
           </div>
           )}
         </>

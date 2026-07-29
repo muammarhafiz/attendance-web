@@ -143,13 +143,13 @@ export default function NiagawanSalesPage() {
   }, [rows]);
 
   if (authed === null || isAdmin === null) {
-    return <div className="text-sm text-gray-500">Checking session…</div>;
+    return <div className="text-sm text-ink-2">Checking session…</div>;
   }
   if (authed === false) {
-    return <div className="text-sm text-gray-600">Please sign in to view this page.</div>;
+    return <div className="text-sm text-ink-2">Please sign in to view this page.</div>;
   }
   if (!isAdmin) {
-    return <div className="text-sm text-gray-600">You don&apos;t have access to this page.</div>;
+    return <div className="text-sm text-ink-2">You don&apos;t have access to this page.</div>;
   }
 
   const kpis = latest
@@ -166,24 +166,24 @@ export default function NiagawanSalesPage() {
     <div>
       {/* KPI row — latest day */}
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-ink-2">
           {latest ? `Latest day · ${fmtDay(latest.day)}` : 'Latest day'}
           {latest && (() => {
             const s = dayStatus(latest);
-            if (s.kind === 'final') return <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">✓ final</span>;
-            if (s.kind === 'pending') return <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">⏳ not final</span>;
+            if (s.kind === 'final') return <span className="rounded-full bg-good-soft px-2 py-0.5 text-xs font-medium text-good">✓ final</span>;
+            if (s.kind === 'pending') return <span className="rounded-full bg-warn-soft px-2 py-0.5 text-xs font-medium text-warn">⏳ not final</span>;
             return null;
           })()}
         </h2>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-gray-400">Last synced: {lastSynced}</span>
+          <span className="text-xs text-ink-3">Last synced: {lastSynced}</span>
           <button
             onClick={syncNow}
             disabled={sync === 'running'}
             className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition ${
               sync === 'running'
-                ? 'cursor-not-allowed bg-gray-100 text-gray-400'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
+                ? 'cursor-not-allowed bg-gray-100 text-ink-3'
+                : 'bg-accent text-white hover:opacity-90'
             }`}
           >
             {sync === 'running' ? (
@@ -202,10 +202,10 @@ export default function NiagawanSalesPage() {
         <div
           className={`mb-3 rounded border p-2 text-xs ${
             sync === 'error'
-              ? 'border-rose-200 bg-rose-50 text-rose-700'
+              ? 'border-rose-200 bg-bad-soft text-bad'
               : sync === 'done'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-              : 'border-blue-200 bg-blue-50 text-blue-700'
+              ? 'border-emerald-200 bg-good-soft text-good'
+              : 'border-blue-200 bg-accent-weak text-accent'
           }`}
         >
           {syncMsg}
@@ -214,44 +214,44 @@ export default function NiagawanSalesPage() {
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
         {kpis.map((k) => (
-          <div key={k.label} className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
-            <div className="text-xs font-medium text-gray-500">{k.label}</div>
-            <div className="mt-1 text-lg font-semibold text-gray-900">{k.value}</div>
+          <div key={k.label} className="rounded-card bg-card p-3 shadow-card">
+            <div className="text-xs font-medium text-ink-2">{k.label}</div>
+            <div className="mt-1 text-lg font-semibold text-ink">{k.value}</div>
           </div>
         ))}
         {kpis.length === 0 && (
-          <div className="col-span-2 text-sm text-gray-500 sm:col-span-5">No data yet.</div>
+          <div className="col-span-2 text-sm text-ink-2 sm:col-span-5">No data yet.</div>
         )}
       </div>
 
       {/* Daily table */}
       {err && (
-        <div className="mb-4 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+        <div className="mb-4 rounded border border-amber-200 bg-warn-soft p-3 text-sm text-warn">
           {err}
         </div>
       )}
 
       {loading ? (
-        <div className="text-sm text-gray-500">Loading…</div>
+        <div className="text-sm text-ink-2">Loading…</div>
       ) : rows.length === 0 ? (
-        <div className="text-sm text-gray-500">
+        <div className="text-sm text-ink-2">
           No sales data yet. It will appear here after the nightly sync (or a manual run).
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-gray-200">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead className="bg-gray-50">
+        <div className="overflow-x-auto rounded-lg border border-line">
+          <table className="min-w-full divide-y divide-line text-sm">
+            <thead className="bg-ink/[0.03]">
               <tr className="text-left">
-                <th className="px-3 py-2 font-semibold text-gray-700">Date</th>
-                <th className="px-3 py-2 font-semibold text-gray-700">Status</th>
-                <th className="px-3 py-2 text-right font-semibold text-gray-700">Invoices</th>
-                <th className="px-3 py-2 text-right font-semibold text-gray-700">Sales</th>
-                <th className="px-3 py-2 text-right font-semibold text-gray-700">COGS</th>
-                <th className="px-3 py-2 text-right font-semibold text-gray-700">Profit</th>
-                <th className="px-3 py-2 text-right font-semibold text-gray-700">Margin</th>
+                <th className="px-3 py-2 font-semibold text-ink-2">Date</th>
+                <th className="px-3 py-2 font-semibold text-ink-2">Status</th>
+                <th className="px-3 py-2 text-right font-semibold text-ink-2">Invoices</th>
+                <th className="px-3 py-2 text-right font-semibold text-ink-2">Sales</th>
+                <th className="px-3 py-2 text-right font-semibold text-ink-2">COGS</th>
+                <th className="px-3 py-2 text-right font-semibold text-ink-2">Profit</th>
+                <th className="px-3 py-2 text-right font-semibold text-ink-2">Margin</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200 bg-white">
+            <tbody className="divide-y divide-line bg-card">
               {rows.map((r) => {
                 const sales = n(r.sales);
                 const cogs = n(r.cogs);
@@ -263,26 +263,26 @@ export default function NiagawanSalesPage() {
                 const reason = pending
                   ? [s.zc > 0 ? `${s.zc} item${s.zc === 1 ? '' : 's'} no cost` : '', s.up > 0 ? `${s.up} unpaid` : ''].filter(Boolean).join(' · ')
                   : '';
-                const dim = pending ? 'text-gray-400' : 'text-gray-900';
+                const dim = pending ? 'text-ink-3' : 'text-ink';
                 return (
-                  <tr key={r.day} className={pending ? 'bg-amber-50/40' : ''}>
-                    <td className="px-3 py-2 text-gray-900">{fmtDay(r.day)}</td>
+                  <tr key={r.day} className={pending ? 'bg-warn-soft/40' : ''}>
+                    <td className="px-3 py-2 text-ink">{fmtDay(r.day)}</td>
                     <td className="px-3 py-2">
-                      {s.kind === 'final' && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">✓ final</span>}
+                      {s.kind === 'final' && <span className="rounded-full bg-good-soft px-2 py-0.5 text-xs font-medium text-good">✓ final</span>}
                       {s.kind === 'pending' && (
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700" title="These numbers will still change — the clerk hasn't finished entering costs and/or unpaid invoices will be carried forward at 8pm.">
+                        <span className="rounded-full bg-warn-soft px-2 py-0.5 text-xs font-medium text-warn" title="These numbers will still change — the clerk hasn't finished entering costs and/or unpaid invoices will be carried forward at 8pm.">
                           ⏳ {reason}
                         </span>
                       )}
-                      {s.kind === 'unknown' && <span className="text-xs text-gray-300" title="Will be checked on the next sync.">—</span>}
+                      {s.kind === 'unknown' && <span className="text-xs text-ink-3" title="Will be checked on the next sync.">—</span>}
                     </td>
                     <td className={`px-3 py-2 text-right ${dim}`}>{r.invoices ?? 0}</td>
                     <td className={`px-3 py-2 text-right ${dim}`}>{rm(sales)}</td>
                     <td className={`px-3 py-2 text-right ${dim}`}>{rm(cogs)}</td>
-                    <td className={`px-3 py-2 text-right font-medium ${profit < 0 ? 'text-rose-600' : dim}`}>
+                    <td className={`px-3 py-2 text-right font-medium ${profit < 0 ? 'text-bad' : dim}`}>
                       {rm(profit)}
                     </td>
-                    <td className="px-3 py-2 text-right text-gray-500">{pctTxt(sales, profit)}</td>
+                    <td className="px-3 py-2 text-right text-ink-2">{pctTxt(sales, profit)}</td>
                   </tr>
                 );
               })}

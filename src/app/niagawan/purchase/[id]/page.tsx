@@ -204,7 +204,7 @@ export default function ReviewInvoicePage() {
   // per-supplier suffix/variant codes (line "16260-BZ020" vs product "16260-BZ020-YCW") and
   // space-packed codes, where in_niagawan is true (the NAS uses a broad substring match on code OR
   // description) but a refresh can never produce a token candidate — so we must not tell the owner
-  // to refresh those; the 🔎 picker is the right tool for them and is already offered.
+  // to refresh those; the picker is the right tool for them and is already offered.
   const refreshLinkable = useCallback((it: Item): boolean => {
     const wants = new Set([it.item_code, ...it.codes].map(normCode).filter(Boolean));
     if (!wants.size) return false;
@@ -432,9 +432,9 @@ export default function ReviewInvoicePage() {
     await load();
   }, [id, head, load]);
 
-  if (isAdmin === null || loading) return <div className="text-sm text-gray-500">Loading…</div>;
-  if (!isAdmin) return <div className="text-sm text-gray-600">You don&apos;t have access to this page.</div>;
-  if (!head) return <div className="text-sm text-gray-600">Invoice not found. <button onClick={() => router.push('/niagawan/purchase')} className="text-blue-600 underline">Back</button></div>;
+  if (isAdmin === null || loading) return <div className="text-sm text-ink-3">Loading…</div>;
+  if (!isAdmin) return <div className="text-sm text-ink-2">You don&apos;t have access to this page.</div>;
+  if (!head) return <div className="text-sm text-ink-2">Invoice not found. <button onClick={() => router.push('/niagawan/purchase')} className="text-accent underline">Back</button></div>;
 
   const locked = head.status === 'approved' || head.status === 'creating' || head.status === 'created' || head.status === 'dismissed';
   const showBilled = head.check_status === 'checked';
@@ -443,27 +443,27 @@ export default function ReviewInvoicePage() {
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
-        <button onClick={() => router.push('/niagawan/purchase')} className="text-sm text-gray-500 hover:text-gray-900">← Back to invoices</button>
+        <button onClick={() => router.push('/niagawan/purchase')} className="text-sm text-ink-3 hover:text-ink">← Back to invoices</button>
         <div className="flex items-center gap-2">
           {(head.check_status === 'queued' || head.check_status === 'checking')
-            ? <span className="rounded border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">Checking sales… (~1 min)</span>
-            : <button onClick={runCheck} className="rounded border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">{head.check_status === 'checked' ? '↻ Re-check sales' : 'Check against sales'}</button>}
+            ? <span className="rounded border border-amber-200 bg-warn-soft px-2.5 py-1 text-xs font-medium text-warn">Checking sales… (~1 min)</span>
+            : <button onClick={runCheck} className="rounded border border-line px-2.5 py-1 text-xs font-medium text-ink-2 hover:bg-ink/5">{head.check_status === 'checked' ? '↻ Re-check sales' : 'Check against sales'}</button>}
           {!locked && (catSync === 'idle'
-            ? <button onClick={refreshCatalog} title="Re-sync the product list from Niagawan. Use this if a line shows 'create new' for an item that IS already in Niagawan (e.g. just created there)." className="rounded border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">🔄 Refresh product list</button>
-            : <span className="rounded border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">{catSync === 'running' ? 'Refreshing products… (~1–2 min)' : catSync === 'done' ? 'Products updated ✓' : 'Refresh failed'}</span>)}
-          {head.file_path && <button onClick={viewPdf} className="rounded border border-gray-200 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50">View PDF</button>}
+            ? <button onClick={refreshCatalog} title="Re-sync the product list from Niagawan. Use this if a line shows 'create new' for an item that IS already in Niagawan (e.g. just created there)." className="rounded border border-line px-2.5 py-1 text-xs font-medium text-ink-2 hover:bg-ink/5">Refresh product list</button>
+            : <span className="rounded border border-amber-200 bg-warn-soft px-2.5 py-1 text-xs font-medium text-warn">{catSync === 'running' ? 'Refreshing products… (~1–2 min)' : catSync === 'done' ? 'Products updated ✓' : 'Refresh failed'}</span>)}
+          {head.file_path && <button onClick={viewPdf} className="rounded border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-ink/5">View PDF</button>}
           {(head.status === 'uploaded' || head.status === 'extracted' || head.status === 'error') && (
-            <button onClick={dismissInvoice} title="Hide this invoice (e.g. it's already in Niagawan). Nothing is changed in Niagawan." className="rounded border border-gray-200 px-2.5 py-1 text-xs text-rose-500 hover:bg-rose-50">✕ Dismiss</button>
+            <button onClick={dismissInvoice} title="Hide this invoice (e.g. it's already in Niagawan). Nothing is changed in Niagawan." className="rounded border border-line px-2.5 py-1 text-xs text-bad hover:bg-bad-soft">✕ Dismiss</button>
           )}
           {head.status === 'dismissed' && (
-            <button onClick={restoreInvoice} className="rounded border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50">↩ Restore</button>
+            <button onClick={restoreInvoice} className="rounded border border-line px-2.5 py-1 text-xs font-medium text-ink-2 hover:bg-ink/5">↩ Restore</button>
           )}
-          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{head.status === 'created' && head.niagawan_pi_no ? head.niagawan_pi_no : head.status}</span>
+          <span className="rounded-full bg-ink/5 px-2 py-0.5 text-xs font-medium text-ink-2">{head.status === 'created' && head.niagawan_pi_no ? head.niagawan_pi_no : head.status}</span>
         </div>
       </div>
 
       {catSyncMsg && (
-        <div className={`mb-3 rounded-md border p-2 text-sm ${catSync === 'error' ? 'border-rose-200 bg-rose-50 text-rose-800' : catSync === 'done' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>{catSyncMsg}</div>
+        <div className={`mb-3 rounded-md border p-2 text-sm ${catSync === 'error' ? 'border-rose-200 bg-bad-soft text-bad' : catSync === 'done' ? 'border-emerald-200 bg-good-soft text-good' : 'border-amber-200 bg-warn-soft text-warn'}`}>{catSyncMsg}</div>
       )}
 
       {locked && (
@@ -476,7 +476,7 @@ export default function ReviewInvoicePage() {
 
       {/* Duplicate guard: this supplier invoice ref already exists in Niagawan */}
       {head.dup_pi_no && head.status !== 'created' && (
-        <div className="mb-3 rounded-md border-2 border-rose-400 bg-rose-50 p-3 text-sm text-rose-800">
+        <div className="mb-3 rounded-md border-2 border-rose-400 bg-bad-soft p-3 text-sm text-bad">
           ⚠️ <b>Possible duplicate.</b> This supplier invoice{head.ref_no ? <> (<span className="font-mono">{head.ref_no}</span>)</> : ''} is <b>already in Niagawan</b> as <b className="font-mono">{head.dup_pi_no}</b>. Approving would create a second copy — only approve if this is genuinely a new, separate invoice. (The system will also refuse to create a duplicate.)
         </div>
       )}
@@ -484,14 +484,14 @@ export default function ReviewInvoicePage() {
       {/* Which AI read this — flag clearly when the backup model was used so codes get extra scrutiny */}
       {head.read_model && (
         head.read_model.includes('3.5')
-          ? <div className="mb-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-500">Read by primary AI (<span className="font-mono">{head.read_model}</span>).</div>
-          : <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">⚠️ Read by <b>backup AI</b> (<span className="font-mono">{head.read_model}</span>) because the primary was overloaded. Please <b>double-check the part codes</b> against the PDF before approving.</div>
+          ? <div className="mb-3 rounded-md border border-line bg-ink/[0.03] px-3 py-2 text-xs text-ink-3">Read by primary AI (<span className="font-mono">{head.read_model}</span>).</div>
+          : <div className="mb-3 rounded-md border border-amber-300 bg-warn-soft px-3 py-2 text-sm text-warn">⚠️ Read by <b>backup AI</b> (<span className="font-mono">{head.read_model}</span>) because the primary was overloaded. Please <b>double-check the part codes</b> against the PDF before approving.</div>
       )}
 
       {/* Needs-decision summary: lines whose code matches MORE THAN ONE product in the catalog.
           These block approval until the owner picks the right product (or chooses create-new). */}
       {candsLoaded && unresolvedLines.length > 0 && (
-        <div className="mb-3 rounded-md border-2 border-rose-400 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+        <div className="mb-3 rounded-md border-2 border-rose-400 bg-bad-soft px-3 py-2 text-sm text-bad">
           ⚠ <b>{unresolvedLines.length} line{unresolvedLines.length === 1 ? '' : 's'} need a decision</b> (line{unresolvedLines.length === 1 ? '' : 's'} {unresolvedLines.join(', ')}) — the code matches several products. Pick the right one (or choose <b>create new</b>) in the <b>Product</b> column below. Approving is blocked until then.
         </div>
       )}
@@ -499,8 +499,8 @@ export default function ReviewInvoicePage() {
       {/* Stale-catalog guard: lines that ARE in Niagawan (per the live lookup) but missing from our
           synced product list — they'd default to create-new and risk a duplicate. One click refreshes. */}
       {candsLoaded && staleLines.length > 0 && (
-        <div className="mb-3 rounded-md border-2 border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          ⚠ <b>{staleLines.length} line{staleLines.length === 1 ? '' : 's'} (line{staleLines.length === 1 ? '' : 's'} {staleLines.join(', ')}) {staleLines.length === 1 ? 'is' : 'are'} in Niagawan but missing from your synced product list</b> — {staleLines.length === 1 ? 'it' : 'they'}&rsquo;ll default to <b>create new</b> and risk a duplicate. This usually means the item was created in Niagawan very recently. Press <b>🔄 Refresh product list</b> above{catSync === 'running' ? ' (running now…)' : ''}, then {staleLines.length === 1 ? 'it' : 'they'}&rsquo;ll link automatically. (If a line still shows after refreshing, use <b>🔎 choose existing item</b> on it.)
+        <div className="mb-3 rounded-md border-2 border-amber-400 bg-warn-soft px-3 py-2 text-sm text-warn">
+          ⚠ <b>{staleLines.length} line{staleLines.length === 1 ? '' : 's'} (line{staleLines.length === 1 ? '' : 's'} {staleLines.join(', ')}) {staleLines.length === 1 ? 'is' : 'are'} in Niagawan but missing from your synced product list</b> — {staleLines.length === 1 ? 'it' : 'they'}&rsquo;ll default to <b>create new</b> and risk a duplicate. This usually means the item was created in Niagawan very recently. Press <b>Refresh product list</b> above{catSync === 'running' ? ' (running now…)' : ''}, then {staleLines.length === 1 ? 'it' : 'they'}&rsquo;ll link automatically. (If a line still shows after refreshing, use <b>choose existing item</b> on it.)
         </div>
       )}
 
@@ -509,41 +509,41 @@ export default function ReviewInvoicePage() {
         const bad = items.filter((it) => it.code_verified === false);
         if (bad.length === 0) return null;
         return (
-          <div className="mb-3 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-            ⚠ <b>{bad.length} code{bad.length === 1 ? '' : 's'} not found in the PDF text</b> (lines {bad.map((b) => b.line_no).join(', ')}) — the AI may have misread {bad.length === 1 ? 'it' : 'them'}. They're highlighted red below; please check against the PDF before approving.
+          <div className="mb-3 rounded-md border border-rose-300 bg-bad-soft px-3 py-2 text-sm text-bad">
+            ⚠ <b>{bad.length} code{bad.length === 1 ? '' : 's'} not found in the PDF text</b> (lines {bad.map((b) => b.line_no).join(', ')}) — the AI may have misread {bad.length === 1 ? 'it' : 'them'}. They&rsquo;re highlighted red below; please check against the PDF before approving.
           </div>
         );
       })()}
 
       {/* Header */}
-      <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
+      <div className="mb-4 rounded-card bg-card shadow-card p-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="block">
-            <span className="text-xs font-medium text-gray-500">Supplier</span>
+            <span className="text-xs font-medium text-ink-2">Supplier</span>
             <input disabled={locked} value={head.supplier_name ?? ''} onChange={(e) => setHead({ ...head, supplier_name: e.target.value })}
-              className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-50" />
+              className="mt-1 w-full rounded-md border border-line px-2 py-1.5 text-sm disabled:bg-ink/[0.03]" />
           </label>
           <label className="block">
-            <span className="text-xs font-medium text-gray-500">Supplier invoice ref#</span>
+            <span className="text-xs font-medium text-ink-2">Supplier invoice ref#</span>
             <input disabled={locked} value={head.ref_no ?? ''} onChange={(e) => setHead({ ...head, ref_no: e.target.value })}
-              className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-50" />
+              className="mt-1 w-full rounded-md border border-line px-2 py-1.5 text-sm disabled:bg-ink/[0.03]" />
           </label>
           <label className="block">
-            <span className="text-xs font-medium text-gray-500">Invoice date</span>
+            <span className="text-xs font-medium text-ink-2">Invoice date</span>
             <input disabled={locked} type="date" value={head.invoice_date ?? ''} onChange={(e) => setHead({ ...head, invoice_date: e.target.value })}
-              className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-50" />
+              className="mt-1 w-full rounded-md border border-line px-2 py-1.5 text-sm disabled:bg-ink/[0.03]" />
           </label>
           <label className="block">
-            <span className="text-xs font-medium text-gray-500">Invoice total (from PDF)</span>
+            <span className="text-xs font-medium text-ink-2">Invoice total (from PDF)</span>
             <input disabled={locked} type="number" step="0.01" value={head.total ?? ''} onChange={(e) => setHead({ ...head, total: e.target.value === '' ? null : Number(e.target.value) })}
-              className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-50" />
+              className="mt-1 w-full rounded-md border border-line px-2 py-1.5 text-sm disabled:bg-ink/[0.03]" />
           </label>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-          <span className="text-gray-500">Line items total: <b className="tabular-nums text-gray-800">{rm(computedTotal)}</b></span>
+          <span className="text-ink-2">Line items total: <b className="tabular-nums text-ink">{rm(computedTotal)}</b></span>
           {totalMismatch
-            ? <span className="rounded bg-rose-100 px-1.5 py-0.5 font-medium text-rose-700">⚠ differs from PDF total {rm(head.total ?? 0)} — fix before approving</span>
-            : <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-medium text-emerald-700">✓ matches PDF total</span>}
+            ? <span className="rounded bg-bad-soft px-1.5 py-0.5 font-medium text-bad">⚠ differs from PDF total {rm(head.total ?? 0)} — fix before approving</span>
+            : <span className="rounded bg-good-soft px-1.5 py-0.5 font-medium text-good">✓ matches PDF total</span>}
         </div>
       </div>
 
@@ -552,16 +552,16 @@ export default function ReviewInvoicePage() {
         const nf = items.filter((it) => it.sold_status === 'not_found');
         const ck = items.filter((it) => it.sold_status === 'check');
         if (nf.length === 0 && ck.length === 0)
-          return <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-800">✓ All items were billed on a sale invoice (±7 days of the invoice date).</div>;
+          return <div className="mb-3 rounded-md border border-emerald-200 bg-good-soft p-2 text-sm text-good">✓ All items were billed on a sale invoice (±7 days of the invoice date).</div>;
         return (
           <div className="mb-3 space-y-2">
             {nf.length > 0 && (
-              <div className="rounded-md border border-rose-200 bg-rose-50 p-2 text-sm text-rose-800">
+              <div className="rounded-md border border-rose-200 bg-bad-soft p-2 text-sm text-bad">
                 <b>{nf.length} item{nf.length === 1 ? '' : 's'} not on any sale invoice</b> — possibly bought but not yet billed to a customer: {nf.map((it) => it.item_code).filter(Boolean).join(', ')}
               </div>
             )}
             {ck.length > 0 && (
-              <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-sm text-amber-800">
+              <div className="rounded-md border border-amber-300 bg-warn-soft p-2 text-sm text-warn">
                 <b>{ck.length} item{ck.length === 1 ? '' : 's'} to verify</b> — the code only appears in a sale invoice’s <b>remark/note</b>, not as a billed line item. It might be the real sale (recorded loosely) or a note about a different part — open the listed invoice to confirm: {ck.map((it) => it.item_code).filter(Boolean).join(', ')}
               </div>
             )}
@@ -573,32 +573,32 @@ export default function ReviewInvoicePage() {
           max-w-6xl section column to use the fuller viewport width so it doesn't need
           horizontal scrolling. Capped at 84rem; centered; heading matches the width. */}
       <div style={{ width: 'min(84rem, calc(100vw - 2rem))' }} className="relative left-1/2 mb-2 flex -translate-x-1/2 items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-700">Line items ({items.length}){resolving && <span className="ml-2 font-normal text-amber-600">· looking up Niagawan categories…</span>}</h2>
-        {!locked && <button onClick={addRow} className="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50">+ Add row</button>}
+        <h2 className="text-sm font-semibold text-ink-2">Line items ({items.length}){resolving && <span className="ml-2 font-normal text-warn">· looking up Niagawan categories…</span>}</h2>
+        {!locked && <button onClick={addRow} className="rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-ink/5">+ Add row</button>}
       </div>
-      <div style={{ width: 'min(84rem, calc(100vw - 2rem))' }} className="relative left-1/2 -translate-x-1/2 overflow-x-auto rounded-lg border border-gray-200">
+      <div style={{ width: 'min(84rem, calc(100vw - 2rem))' }} className="relative left-1/2 -translate-x-1/2 overflow-x-auto rounded-lg border border-line">
         <table className="w-full border-collapse text-sm">
-          <thead className="bg-gray-50 text-left">
+          <thead className="bg-ink/[0.03] text-left">
             <tr>
-              <th className="px-2 py-2 font-medium text-gray-600">#</th>
-              <th className="px-2 py-2 font-medium text-gray-600">Item code</th>
-              <th className="px-2 py-2 font-medium text-gray-600">Description</th>
-              <th className="px-2 py-2 text-right font-medium text-gray-600">Qty</th>
-              <th className="px-2 py-2 text-right font-medium text-gray-600">Unit price</th>
-              <th className="px-2 py-2 text-right font-medium text-gray-600">Disc %</th>
-              <th className="px-2 py-2 text-right font-medium text-gray-600">Amount</th>
-              <th className="px-2 py-2 font-medium text-gray-600">Product <span className="font-normal text-gray-400">(link existing · or create new)</span></th>
-              {showBilled && <th className="px-2 py-2 font-medium text-gray-600">Billed?</th>}
+              <th className="px-2 py-2 font-medium text-ink-2">#</th>
+              <th className="px-2 py-2 font-medium text-ink-2">Item code</th>
+              <th className="px-2 py-2 font-medium text-ink-2">Description</th>
+              <th className="px-2 py-2 text-right font-medium text-ink-2">Qty</th>
+              <th className="px-2 py-2 text-right font-medium text-ink-2">Unit price</th>
+              <th className="px-2 py-2 text-right font-medium text-ink-2">Disc %</th>
+              <th className="px-2 py-2 text-right font-medium text-ink-2">Amount</th>
+              <th className="px-2 py-2 font-medium text-ink-2">Product <span className="font-normal text-ink-3">(link existing · or create new)</span></th>
+              {showBilled && <th className="px-2 py-2 font-medium text-ink-2">Billed?</th>}
               {!locked && <th className="px-2 py-2"></th>}
             </tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
-              <tr><td colSpan={(locked ? 8 : 9) + (showBilled ? 1 : 0)} className="px-3 py-6 text-center text-gray-500">No line items.</td></tr>
+              <tr><td colSpan={(locked ? 8 : 9) + (showBilled ? 1 : 0)} className="px-3 py-6 text-center text-ink-3">No line items.</td></tr>
             ) : items.map((it, idx) => {
               return (
-                <tr key={idx} className="border-t border-gray-100 align-top">
-                  <td className="px-2 py-1.5 text-gray-400">{idx + 1}</td>
+                <tr key={idx} className="border-t border-line align-top">
+                  <td className="px-2 py-1.5 text-ink-3">{idx + 1}</td>
                   <td className="px-2 py-1.5">
                     <input disabled={locked} value={it.item_code}
                       onChange={(e) => {
@@ -611,53 +611,53 @@ export default function ReviewInvoicePage() {
                         // false claim about an unverified/changed code.
                         setItem(idx, { item_code: v, codes: v.trim() ? [v.trim()] : [], code_verified: null, sku_id: null, will_create: false, in_niagawan: null, niagawan_matches: null });
                       }}
-                      className={`w-36 rounded border px-1.5 py-1 font-mono text-xs disabled:bg-transparent ${it.code_verified === false ? 'border-rose-400 bg-rose-50' : 'border-gray-200 disabled:border-transparent'}`} />
+                      className={`w-36 rounded border px-1.5 py-1 font-mono text-xs disabled:bg-transparent ${it.code_verified === false ? 'border-rose-400 bg-bad-soft' : 'border-line disabled:border-transparent'}`} />
                     {it.code_verified === false && (
-                      <div className="mt-0.5 max-w-[12rem] text-[10px] font-medium leading-tight text-rose-600" title="This code was NOT found in the invoice's text — the AI may have misread it. Check it against the PDF.">
+                      <div className="mt-0.5 max-w-[12rem] text-[10px] font-medium leading-tight text-bad" title="This code was NOT found in the invoice's text — the AI may have misread it. Check it against the PDF.">
                         ⚠ not found in PDF text — check it
-                        {!locked && <button type="button" onClick={() => setItem(idx, { code_verified: null })} title="I've checked this code against the PDF — it's correct" className="ml-1 rounded border border-rose-300 px-1 text-rose-700 underline hover:bg-rose-100">✓ checked</button>}
+                        {!locked && <button type="button" onClick={() => setItem(idx, { code_verified: null })} title="I've checked this code against the PDF — it's correct" className="ml-1 rounded border border-rose-300 px-1 text-bad underline hover:bg-bad-soft">✓ checked</button>}
                       </div>
                     )}
                     {it.codes.length > 1 && (
-                      <div className="mt-1 max-w-[12rem] font-mono text-[10px] leading-tight text-gray-400" title={'All codes recognised on this line:\n' + it.codes.join('  ')}>
+                      <div className="mt-1 max-w-[12rem] font-mono text-[10px] leading-tight text-ink-3" title={'All codes recognised on this line:\n' + it.codes.join('  ')}>
                         +{it.codes.length - 1} more: {it.codes.slice(1).join(' ')}
                       </div>
                     )}
                   </td>
                   <td className="px-2 py-1.5">
                     <input disabled={locked} value={it.description} onChange={(e) => setItem(idx, { description: e.target.value })}
-                      className="w-full min-w-[14rem] rounded border border-gray-200 px-1.5 py-1 text-xs disabled:bg-transparent disabled:border-transparent" />
+                      className="w-full min-w-[14rem] rounded border border-line px-1.5 py-1 text-xs disabled:bg-transparent disabled:border-transparent" />
                   </td>
                   <td className="px-2 py-1.5 text-right">
                     <input disabled={locked} type="number" step="any" value={it.qty} onChange={(e) => setItem(idx, { qty: Number(e.target.value) })}
-                      className="w-16 rounded border border-gray-200 px-1.5 py-1 text-right text-xs disabled:bg-transparent disabled:border-transparent" />
+                      className="w-16 rounded border border-line px-1.5 py-1 text-right text-xs disabled:bg-transparent disabled:border-transparent" />
                   </td>
                   <td className="px-2 py-1.5 text-right">
                     <input disabled={locked} type="number" step="0.01" value={it.unit_price} onChange={(e) => setItem(idx, { unit_price: Number(e.target.value) })}
-                      className="w-20 rounded border border-gray-200 px-1.5 py-1 text-right text-xs disabled:bg-transparent disabled:border-transparent" />
+                      className="w-20 rounded border border-line px-1.5 py-1 text-right text-xs disabled:bg-transparent disabled:border-transparent" />
                   </td>
                   <td className="px-2 py-1.5 text-right">
                     <input disabled={locked} type="number" step="0.01" value={it.discount} onChange={(e) => setItem(idx, { discount: Number(e.target.value) })}
                       title="Per-line discount %, e.g. 15 for a 15% discount"
-                      className="w-14 rounded border border-gray-200 px-1.5 py-1 text-right text-xs disabled:bg-transparent disabled:border-transparent" />
+                      className="w-14 rounded border border-line px-1.5 py-1 text-right text-xs disabled:bg-transparent disabled:border-transparent" />
                   </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums text-gray-700">{rm(lineAmount(it.qty, it.unit_price, it.discount))}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-ink-2">{rm(lineAmount(it.qty, it.unit_price, it.discount))}</td>
                   <td className="px-2 py-1.5">
-                    {!candsLoaded ? <span className="text-xs text-gray-400">checking…</span> : pickerLine === idx ? (
+                    {!candsLoaded ? <span className="text-xs text-ink-3">checking…</span> : pickerLine === idx ? (
                       <div className="flex w-64 flex-col gap-1">
                         <input autoFocus value={pq} onChange={(e) => searchProducts(e.target.value)} placeholder="search item name or code…"
-                          className="rounded border border-blue-400 px-1.5 py-1 text-xs" />
+                          className="rounded border border-accent px-1.5 py-1 text-xs" />
                         {presults.length > 0 ? (
-                          <div className="max-h-48 overflow-y-auto rounded border border-gray-200">
+                          <div className="max-h-48 overflow-y-auto rounded border border-line">
                             {presults.map((p) => (
                               <button key={p.sku} onClick={() => pickProduct(idx, p)}
-                                className="block w-full border-b border-gray-100 px-1.5 py-1 text-left text-[11px] last:border-0 hover:bg-blue-50">
-                                <span className="font-mono text-gray-500">{p.code || '—'}</span> {p.descp}{p.price ? ` · RM${p.price}` : ''}
+                                className="block w-full border-b border-line px-1.5 py-1 text-left text-[11px] last:border-0 hover:bg-accent-weak">
+                                <span className="font-mono text-ink-3">{p.code || '—'}</span> {p.descp}{p.price ? ` · RM${p.price}` : ''}
                               </button>
                             ))}
                           </div>
-                        ) : pq.trim().length >= 2 ? <span className="text-[10px] text-gray-400">No match — try fewer / different words.</span> : null}
-                        <button onClick={() => { setPickerLine(null); setPq(''); setPresults([]); }} className="text-left text-[10px] text-gray-400 underline">cancel</button>
+                        ) : pq.trim().length >= 2 ? <span className="text-[10px] text-ink-3">No match — try fewer / different words.</span> : null}
+                        <button onClick={() => { setPickerLine(null); setPq(''); setPresults([]); }} className="text-left text-[10px] text-ink-3 underline">cancel</button>
                       </div>
                     ) : (() => {
                       const cands = candsFor(it);
@@ -667,21 +667,21 @@ export default function ReviewInvoicePage() {
                         // OR pick an existing one from the full list (for code-less invoices).
                         return (
                           <div className="flex flex-col gap-1">
-                            <span className="text-[10px] font-medium uppercase tracking-wide text-amber-600">🆕 create new product</span>
+                            <span className="text-[10px] font-medium uppercase tracking-wide text-warn">create new product</span>
                             {it.in_niagawan === true && !it.sku_id && !it.will_create && cands.length === 0 && refreshLinkable(it) && (
-                              <span className="max-w-[11rem] text-[10px] font-medium leading-tight text-amber-700" title="This code exists in Niagawan but isn't in the synced product list yet. Press “🔄 Refresh product list” up top to link it instead of creating a duplicate.">
+                              <span className="max-w-[11rem] text-[10px] font-medium leading-tight text-warn" title="This code exists in Niagawan but isn't in the synced product list yet. Press “Refresh product list” up top to link it instead of creating a duplicate.">
                                 ⚠ in Niagawan, not in synced list — Refresh ↑
                               </span>
                             )}
                             <select disabled={locked} value={cats.includes(it.category) ? it.category : ''} onChange={(e) => setItem(idx, { category: e.target.value })}
-                              className="w-44 rounded border border-amber-300 bg-amber-50 px-1.5 py-1 text-xs disabled:bg-transparent disabled:border-transparent" title="New item — pick the category it will be created in">
+                              className="w-44 rounded border border-amber-300 bg-warn-soft px-1.5 py-1 text-xs disabled:bg-transparent disabled:border-transparent" title="New item — pick the category it will be created in">
                               {!cats.includes(it.category) && <option value="">{it.category || '—'}</option>}
                               {cats.map((c) => <option key={c} value={c}>{c}</option>)}
                             </select>
-                            {!locked && <button onClick={() => openPicker(idx, it)} className="text-left text-[10px] font-medium text-blue-600 underline">🔎 or choose from existing items</button>}
+                            {!locked && <button onClick={() => openPicker(idx, it)} className="text-left text-[10px] font-medium text-accent underline">or choose from existing items</button>}
                             {cands.length > 0 && !locked && (
                               <button onClick={() => setItem(idx, { will_create: false, sku_id: cands.length === 1 ? cands[0].sku : null })}
-                                className="text-left text-[10px] text-blue-500 underline">{cands.length} code match{cands.length > 1 ? 'es' : ''} — link</button>
+                                className="text-left text-[10px] text-accent underline">{cands.length} code match{cands.length > 1 ? 'es' : ''} — link</button>
                             )}
                           </div>
                         );
@@ -690,13 +690,13 @@ export default function ReviewInvoicePage() {
                         const m = cands.find((c) => c.sku === res.sku) || (it.niagawan_matches ?? []).find((c) => c.sku === res.sku) || picked[res.sku];
                         return (
                           <div className="flex flex-col gap-1">
-                            <span className="rounded bg-emerald-50 px-1.5 py-0.5 font-mono text-[11px] text-emerald-700" title="This purchase line will be booked to this exact product">
+                            <span className="rounded bg-good-soft px-1.5 py-0.5 font-mono text-[11px] text-good" title="This purchase line will be booked to this exact product">
                               → {m ? `${m.code} — ${m.descp}` : `sku ${res.sku}`}
                             </span>
                             {!locked && (
                               <div className="flex flex-wrap gap-2">
-                                <button onClick={() => openPicker(idx, it)} className="text-[10px] text-blue-500 underline">change / search</button>
-                                <button onClick={() => setItem(idx, { will_create: true, sku_id: null })} className="text-[10px] text-blue-500 underline">create new instead</button>
+                                <button onClick={() => openPicker(idx, it)} className="text-[10px] text-accent underline">change / search</button>
+                                <button onClick={() => setItem(idx, { will_create: true, sku_id: null })} className="text-[10px] text-accent underline">create new instead</button>
                               </div>
                             )}
                           </div>
@@ -706,15 +706,15 @@ export default function ReviewInvoicePage() {
                       return (
                         <div className="flex flex-col gap-1">
                           <select disabled={locked} value="" onChange={(e) => { if (e.target.value) setItem(idx, { sku_id: e.target.value, will_create: false }); }}
-                            className="w-64 rounded border border-rose-400 bg-rose-50 px-1.5 py-1 text-xs font-medium disabled:bg-transparent"
+                            className="w-64 rounded border border-rose-400 bg-bad-soft px-1.5 py-1 text-xs font-medium disabled:bg-transparent"
                             title="Several products share this code — choose which one this stock belongs to">
                             <option value="">⚠ {cands.length} products share this code — choose…</option>
                             {cands.map((m) => <option key={m.sku} value={m.sku}>{m.code} — {m.descp}{m.price ? ` (RM${m.price})` : ''}</option>)}
                           </select>
                           {!locked && (
                             <div className="flex flex-wrap gap-2">
-                              <button onClick={() => openPicker(idx, it)} className="text-[10px] text-blue-500 underline">🔎 search all items</button>
-                              <button onClick={() => setItem(idx, { will_create: true, sku_id: null })} className="text-[10px] text-blue-500 underline">none — create new</button>
+                              <button onClick={() => openPicker(idx, it)} className="text-[10px] text-accent underline">search all items</button>
+                              <button onClick={() => setItem(idx, { will_create: true, sku_id: null })} className="text-[10px] text-accent underline">none — create new</button>
                             </div>
                           )}
                         </div>
@@ -724,17 +724,17 @@ export default function ReviewInvoicePage() {
                   {showBilled && (
                     <td className="px-2 py-1.5">
                       {it.sold_status === 'found'
-                        ? <span title={it.sold_on || ''} className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">✓ {it.sold_on || 'billed'}</span>
+                        ? <span title={it.sold_on || ''} className="rounded-full bg-good-soft px-2 py-0.5 text-xs font-medium text-good">✓ {it.sold_on || 'billed'}</span>
                         : it.sold_status === 'check'
-                          ? <span title={'Code found only in a sale invoice’s remark/note, not as a billed line item — open it to confirm:\n' + (it.sold_on || '')} className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">⚠ check {it.sold_on || ''}</span>
+                          ? <span title={'Code found only in a sale invoice’s remark/note, not as a billed line item — open it to confirm:\n' + (it.sold_on || '')} className="rounded-full bg-warn-soft px-2 py-0.5 text-xs font-medium text-warn">⚠ check {it.sold_on || ''}</span>
                           : it.sold_status === 'not_found'
-                            ? <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">✗ not billed</span>
-                            : <span className="text-xs text-gray-400">—</span>}
+                            ? <span className="rounded-full bg-bad-soft px-2 py-0.5 text-xs font-medium text-bad">✗ not billed</span>
+                            : <span className="text-xs text-ink-3">—</span>}
                     </td>
                   )}
                   {!locked && (
                     <td className="px-2 py-1.5 text-right">
-                      <button onClick={() => removeRow(idx)} className="rounded px-1.5 py-0.5 text-xs text-rose-500 hover:bg-rose-50">✕</button>
+                      <button onClick={() => removeRow(idx)} className="rounded px-1.5 py-0.5 text-xs text-bad hover:bg-bad-soft">✕</button>
                     </td>
                   )}
                 </tr>
@@ -744,16 +744,16 @@ export default function ReviewInvoicePage() {
         </table>
       </div>
 
-      <p className="mt-2 text-xs text-gray-400">
-        Each line is booked to the product in the <b>Product</b> column. A code match links automatically; if there&rsquo;s no code (or no match) you can <b>🔎 choose an existing item</b> from the list (the search is pre-filled from the description) instead of creating a duplicate — or create a new product in the chosen <b>Category</b>. When several products share a code you pick the right one. The importer uses exactly what you chose here — no re-guessing, no duplicates.
+      <p className="mt-2 text-xs text-ink-3">
+        Each line is booked to the product in the <b>Product</b> column. A code match links automatically; if there&rsquo;s no code (or no match) you can <b>choose an existing item</b> from the list (the search is pre-filled from the description) instead of creating a duplicate — or create a new product in the chosen <b>Category</b>. When several products share a code you pick the right one. The importer uses exactly what you chose here — no re-guessing, no duplicates.
       </p>
 
-      {msg && <div className={`mt-3 rounded-md border p-2 text-sm ${msg.kind === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>{msg.text}</div>}
+      {msg && <div className={`mt-3 rounded-md border p-2 text-sm ${msg.kind === 'ok' ? 'border-emerald-200 bg-good-soft text-good' : 'border-rose-200 bg-bad-soft text-bad'}`}>{msg.text}</div>}
 
       {!locked && (
         <>
           {approveBlockers.length > 0 && (
-            <div className="mt-4 rounded-md border-2 border-rose-400 bg-rose-50 p-3 text-sm text-rose-800">
+            <div className="mt-4 rounded-md border-2 border-rose-400 bg-bad-soft p-3 text-sm text-bad">
               <div className="mb-1 font-semibold">⚠ Fix {approveBlockers.length === 1 ? 'this' : `these ${approveBlockers.length}`} before approving:</div>
               <ul className="ml-4 list-disc space-y-0.5">
                 {approveBlockers.map((b, i) => <li key={i}>{b}</li>)}
@@ -761,15 +761,15 @@ export default function ReviewInvoicePage() {
             </div>
           )}
           <div className="mt-4 flex items-center gap-2">
-            <button onClick={() => save(false)} disabled={busy} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+            <button onClick={() => save(false)} disabled={busy} className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5 disabled:opacity-50">
               {busy ? 'Saving…' : 'Save changes'}
             </button>
             <button onClick={() => save(true)} disabled={busy || !candsLoaded || approveBlockers.length > 0}
               title={!candsLoaded ? 'Checking product matches…' : approveBlockers.length > 0 ? 'Resolve the issues listed above first' : undefined}
-              className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
+              className="rounded-md bg-good px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
               {busy ? 'Working…' : 'Approve → create in Niagawan'}
             </button>
-            {!candsLoaded && <span className="text-xs text-gray-400">checking product matches…</span>}
+            {!candsLoaded && <span className="text-xs text-ink-3">checking product matches…</span>}
           </div>
         </>
       )}
