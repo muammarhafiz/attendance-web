@@ -373,7 +373,7 @@ export default function PayrollRecordsPage() {
           </div>
         </div>
 
-        {finMsg && <div className="mb-3 rounded border border-sky-200 bg-sky-50 p-2 text-sm text-sky-800">{finMsg}</div>}
+        {finMsg && <div className="mb-3 rounded border border-accent/40 bg-accent-weak p-2 text-sm text-accent">{finMsg}</div>}
         {finErr && <div className="mb-3 rounded border border-rose-200 bg-bad-soft p-2 text-sm text-bad">{finErr}</div>}
 
         <div className="grid gap-3">

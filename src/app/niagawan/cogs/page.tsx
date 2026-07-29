@@ -296,7 +296,7 @@ export default function NiagawanCogsPage() {
 
       {/* Backfill panel */}
       {showBackfill && (
-        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3">
+        <div className="mb-4 rounded-lg border border-accent/40 bg-blue-50 p-3">
           <div className="flex flex-wrap items-end gap-3">
             <label className="text-xs text-ink-2">
               From
@@ -312,7 +312,7 @@ export default function NiagawanCogsPage() {
               onClick={runBackfill}
               disabled={bfState === 'running'}
               className={`rounded-md px-3 py-1.5 text-sm font-medium ${
-                bfState === 'running' ? 'cursor-not-allowed bg-gray-200 text-ink-3' : 'bg-accent text-white hover:opacity-90'
+                bfState === 'running' ? 'cursor-not-allowed bg-ink/10 text-ink-3' : 'bg-accent text-white hover:opacity-90'
               }`}
             >
               {bfState === 'running' ? 'Backfilling…' : 'Run backfill'}

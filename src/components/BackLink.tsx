@@ -8,7 +8,7 @@ export default function BackLink({ href = '/workshop', label = 'Back' }: { href?
     <Link
       href={href}
       prefetch={false}
-      className="inline-flex items-center gap-1.5 rounded-full border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 active:bg-gray-100"
+      className="inline-flex items-center gap-1.5 rounded-full border border-line bg-card px-4 py-2 text-sm font-semibold text-ink-2 shadow-sm hover:bg-ink/5 active:bg-ink/5"
     >
       <span aria-hidden className="text-base leading-none">←</span> {label}
     </Link>

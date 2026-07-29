@@ -182,13 +182,13 @@ export default function NiagawanSalesPage() {
             disabled={sync === 'running'}
             className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition ${
               sync === 'running'
-                ? 'cursor-not-allowed bg-gray-100 text-ink-3'
+                ? 'cursor-not-allowed bg-ink/5 text-ink-3'
                 : 'bg-accent text-white hover:opacity-90'
             }`}
           >
             {sync === 'running' ? (
               <>
-                <span className="h-3 w-3 animate-spin rounded-full border-2 border-gray-300 border-t-gray-500" />
+                <span className="h-3 w-3 animate-spin rounded-full border-2 border-line border-t-gray-500" />
                 Syncing…
               </>
             ) : (
@@ -205,7 +205,7 @@ export default function NiagawanSalesPage() {
               ? 'border-rose-200 bg-bad-soft text-bad'
               : sync === 'done'
               ? 'border-emerald-200 bg-good-soft text-good'
-              : 'border-blue-200 bg-accent-weak text-accent'
+              : 'border-accent/40 bg-accent-weak text-accent'
           }`}
         >
           {syncMsg}

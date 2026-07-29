@@ -23,11 +23,11 @@ const STATUS_STYLE: Record<string, string> = {
   uploaded: 'bg-ink/5 text-ink-2',
   extracting: 'bg-warn-soft text-warn',
   extracted: 'bg-accent-weak text-accent',
-  approved: 'bg-indigo-100 text-indigo-700',
+  approved: 'bg-accent-weak text-accent',
   creating: 'bg-warn-soft text-warn',
   created: 'bg-good-soft text-good',
   error: 'bg-bad-soft text-bad',
-  dismissed: 'bg-gray-200 text-ink-2',
+  dismissed: 'bg-ink/10 text-ink-2',
 };
 const fmtD = (d: string | null) => { if (!d) return '—'; const [y, m, dd] = d.split('-'); return `${dd}/${m}/${y}`; };
 const rm = (n: number | null) => (n == null ? '—' : `RM ${Number(n).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);

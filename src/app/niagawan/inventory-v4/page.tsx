@@ -653,7 +653,7 @@ export default function InventoryV4Page() {
                           {order == null ? <span className="text-xs text-ink-3">set avg</span>
                             : order > 0 ? <span className="rounded-full bg-bad px-2 py-0.5 text-xs font-semibold text-white">{order}</span>
                             : <span className="text-xs text-good">ok</span>}
-                          {onOrder > 0 && <div className="text-[10px] text-sky-600">{onOrder} on order</div>}
+                          {onOrder > 0 && <div className="text-[10px] text-accent">{onOrder} on order</div>}
                         </td>
                         <td className="px-3 py-1.5 text-right">
                           <button onClick={() => removeGroupItem(gi.id)} title="Remove from this card" className="rounded px-1 text-xs text-bad opacity-40 transition hover:bg-bad-soft hover:text-bad group-hover:opacity-100">✕</button>
@@ -817,7 +817,7 @@ export default function InventoryV4Page() {
 
         {/* Selection action bar — appears once you tick at least one row */}
         {selected.size > 0 && (
-          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-blue-200 bg-accent-weak px-3 py-2 text-sm">
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-accent/40 bg-accent-weak px-3 py-2 text-sm">
             <span className="font-medium text-accent">{selected.size} selected</span>
             <button onClick={() => setSelected(new Set())} disabled={inserting} className="text-xs text-accent underline hover:text-accent disabled:opacity-50">clear</button>
             {allShownSelected && filtered.length > SHOW_CAP && (

@@ -467,7 +467,7 @@ export default function ReviewInvoicePage() {
       )}
 
       {locked && (
-        <div className="mb-3 rounded-md border border-indigo-200 bg-indigo-50 p-2 text-sm text-indigo-800">
+        <div className="mb-3 rounded-md border border-accent/40 bg-accent-weak p-2 text-sm text-accent">
           {head.status === 'dismissed'
             ? <>This invoice is dismissed (hidden from the list). Press <b>↩ Restore</b> above if you want to process it after all.</>
             : <>This invoice is {head.status}. It can no longer be edited.</>}
