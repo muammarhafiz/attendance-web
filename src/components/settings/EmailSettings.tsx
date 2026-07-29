@@ -56,22 +56,22 @@ export default function EmailSettings() {
     setTimeout(() => setTestMsg(null), 6000);
   };
 
-  if (authed === null || isAdmin === null) return <div className="text-sm text-gray-500">Checking…</div>;
-  if (!authed) return <div className="text-sm text-gray-600">Please sign in.</div>;
-  if (!isAdmin) return <div className="text-sm text-gray-600">This page is for admins only.</div>;
+  if (authed === null || isAdmin === null) return <div className="text-sm text-ink-3">Checking…</div>;
+  if (!authed) return <div className="text-sm text-ink-2">Please sign in.</div>;
+  if (!isAdmin) return <div className="text-sm text-ink-2">This page is for admins only.</div>;
 
   return (
     <div className="max-w-2xl">
-      <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
-        <div className="text-sm font-medium text-gray-800">How email works</div>
-        <p className="mt-1 text-xs text-gray-500">
+      <div className="mb-4 rounded-card bg-card shadow-card p-4">
+        <div className="text-sm font-medium text-ink-2">How email works</div>
+        <p className="mt-1 text-xs text-ink-3">
           All emails are sent from <b>zordaqputrajaya@gmail.com</b>. Alerts go to the owner’s inbox; payslips go to each
           staff member. Scraper failure alerts are always on, so you never miss a real problem.
         </p>
       </div>
 
-      <h2 className="text-sm font-semibold text-gray-700">Email me when… (staff requests)</h2>
-      <p className="mt-1 mb-3 text-xs text-gray-500">
+      <h2 className="text-sm font-semibold text-ink-2">Email me when… (staff requests)</h2>
+      <p className="mt-1 mb-3 text-xs text-ink-3">
         Turn off any you don’t want an email for. You’ll still see them in the app’s notification bell.
       </p>
 
@@ -79,22 +79,22 @@ export default function EmailSettings() {
         {TYPES.map((t) => {
           const on = !!prefs?.[t.key];
           return (
-            <div key={t.key} className="flex items-start justify-between gap-3 rounded-lg border border-gray-200 bg-white p-4">
+            <div key={t.key} className="flex items-start justify-between gap-3 rounded-card bg-card shadow-card p-4">
               <div>
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-gray-900">{t.label}</h3>
-                  {savedKey === t.key && <span className="text-[10px] font-medium text-emerald-600">saved ✓</span>}
+                  <h3 className="text-sm font-semibold text-ink">{t.label}</h3>
+                  {savedKey === t.key && <span className="text-[10px] font-medium text-good">saved ✓</span>}
                 </div>
-                <p className="mt-1 text-xs text-gray-500">{t.desc}</p>
+                <p className="mt-1 text-xs text-ink-3">{t.desc}</p>
               </div>
               <button
                 role="switch"
                 aria-checked={on}
                 disabled={!prefs}
                 onClick={() => toggle(t.key)}
-                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${on ? 'bg-emerald-500' : 'bg-gray-300'} disabled:opacity-50`}
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${on ? 'bg-good' : 'bg-gray-300'} disabled:opacity-50`}
               >
-                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${on ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                <span className={`inline-block h-5 w-5 transform rounded-full bg-card shadow transition ${on ? 'translate-x-5' : 'translate-x-0.5'}`} />
               </button>
             </div>
           );
@@ -109,9 +109,9 @@ export default function EmailSettings() {
         >
           {testing ? 'Sending…' : 'Send test email'}
         </button>
-        <span className="text-xs text-gray-500">Fires a test to the owner inbox to confirm email is working.</span>
+        <span className="text-xs text-ink-3">Fires a test to the owner inbox to confirm email is working.</span>
       </div>
-      {testMsg && <div className={`mt-2 text-sm ${testMsg.ok ? 'text-emerald-700' : 'text-rose-700'}`}>{testMsg.text}</div>}
+      {testMsg && <div className={`mt-2 text-sm ${testMsg.ok ? 'text-good' : 'text-bad'}`}>{testMsg.text}</div>}
     </div>
   );
 }

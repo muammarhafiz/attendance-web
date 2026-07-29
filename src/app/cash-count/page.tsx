@@ -151,9 +151,9 @@ export default function CashCountPage() {
     await loadHistory();
   }, [onHand, loadStatus, loadHistory]);
 
-  if (authed === null || (authed && allowed === null)) return <div className="p-6 text-sm text-gray-500">Checking…</div>;
-  if (!authed) return <div className="p-6 text-sm text-gray-600">Please sign in first.</div>;
-  if (!allowed) return <div className="p-6 text-sm text-gray-600">This page is for supervisors only.</div>;
+  if (authed === null || (authed && allowed === null)) return <div className="p-6 text-sm text-ink-2">Checking…</div>;
+  if (!authed) return <div className="p-6 text-sm text-ink-2">Please sign in first.</div>;
+  if (!allowed) return <div className="p-6 text-sm text-ink-2">This page is for supervisors only.</div>;
 
   const net = cashIn == null ? null : cashIn - (cashOut ?? 0);
   const variance = net == null ? null : total - net;
@@ -174,31 +174,31 @@ export default function CashCountPage() {
   return (
     <div className="mx-auto max-w-md px-5 py-6">
       <BackLink />
-      <h1 className="mt-2 text-2xl font-bold text-gray-900">💵 Cash Book</h1>
+      <h1 className="mt-2 text-2xl font-bold text-ink">💵 Cash Book</h1>
 
       {/* Cash Book | Petty Cash tabs */}
-      <div className="mt-3 flex gap-1 rounded-lg bg-gray-100 p-1 text-sm font-semibold">
-        <button onClick={() => setTab('cashbook')} className={`flex-1 rounded-md px-3 py-1.5 ${tab === 'cashbook' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>Cash Book</button>
-        <button onClick={() => setTab('petty')} className={`flex-1 rounded-md px-3 py-1.5 ${tab === 'petty' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>Petty Cash</button>
+      <div className="mt-3 flex gap-1 rounded-lg bg-ink/5 p-1 text-sm font-semibold">
+        <button onClick={() => setTab('cashbook')} className={`flex-1 rounded-md px-3 py-1.5 ${tab === 'cashbook' ? 'bg-card text-ink shadow-sm' : 'text-ink-2'}`}>Cash Book</button>
+        <button onClick={() => setTab('petty')} className={`flex-1 rounded-md px-3 py-1.5 ${tab === 'petty' ? 'bg-card text-ink shadow-sm' : 'text-ink-2'}`}>Petty Cash</button>
       </div>
 
       {tab === 'cashbook' && (<>
-      <p className="mt-3 text-sm text-gray-500">{new Date(today).toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+      <p className="mt-3 text-sm text-ink-2">{new Date(today).toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
 
       {!saved && !isSummary && (
-        <div className="mt-4 rounded-xl border border-gray-200 bg-white px-4 py-3">
+        <div className="mt-4 rounded-card bg-card shadow-card px-4 py-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-gray-500">Niagawan so far today</span>
-            <button onClick={syncCash} disabled={cashSyncing} className="shrink-0 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-700 disabled:opacity-50">{cashSyncing ? 'Refreshing…' : '🔄 Refresh'}</button>
+            <span className="text-xs font-medium text-ink-2">Niagawan so far today</span>
+            <button onClick={syncCash} disabled={cashSyncing} className="shrink-0 rounded-lg border border-emerald-300 bg-good-soft px-3 py-1.5 text-sm font-semibold text-good disabled:opacity-50">{cashSyncing ? 'Refreshing…' : '🔄 Refresh'}</button>
           </div>
           {cashIn == null ? (
-            <div className="mt-2 text-sm text-gray-400">{cashSyncing ? 'fetching…' : 'not available'}</div>
+            <div className="mt-2 text-sm text-ink-3">{cashSyncing ? 'fetching…' : 'not available'}</div>
           ) : (
             <div className="mt-2 space-y-1.5">
-              <div className="flex justify-between text-sm"><span className="text-gray-600">Cash <span className="text-gray-400">(in − out)</span></span><span className="font-semibold text-gray-900">{rm(net as number)}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-gray-600">QR</span><span className="font-semibold text-gray-900">{qrIn == null ? '—' : rm(qrIn)}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-gray-600">Card</span><span className="font-semibold text-gray-900">{cardIn == null ? '—' : rm(cardIn)}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-gray-600">Transfer</span><span className="font-semibold text-gray-900">{transferIn == null ? '—' : rm(transferIn)}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-ink-2">Cash <span className="text-ink-3">(in − out)</span></span><span className="font-semibold text-ink">{rm(net as number)}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-ink-2">QR</span><span className="font-semibold text-ink">{qrIn == null ? '—' : rm(qrIn)}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-ink-2">Card</span><span className="font-semibold text-ink">{cardIn == null ? '—' : rm(cardIn)}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-ink-2">Transfer</span><span className="font-semibold text-ink">{transferIn == null ? '—' : rm(transferIn)}</span></div>
             </div>
           )}
         </div>
@@ -207,86 +207,86 @@ export default function CashCountPage() {
       {saved ? (
         <div className="mt-8 text-center">
           <div className="text-6xl">{savedEmoji}</div>
-          <h2 className="mt-3 text-xl font-bold text-gray-900">Saved</h2>
-          {anyUnreconciled && <p className="mt-1 text-xs text-amber-600">Some figures had no Niagawan total to compare yet.</p>}
-          <div className="mt-4 space-y-1 rounded-xl border border-gray-200 bg-white p-4 text-left text-sm">
+          <h2 className="mt-3 text-xl font-bold text-ink">Saved</h2>
+          {anyUnreconciled && <p className="mt-1 text-xs text-warn">Some figures had no Niagawan total to compare yet.</p>}
+          <div className="mt-4 space-y-1 rounded-card bg-card shadow-card p-4 text-left text-sm">
             <Row label="Counted cash" value={rm(total)} bold />
             <Row label="Niagawan cash (in − out)" value={net == null ? '—' : rm(net)} />
-            {cashIn != null && <div className="text-right text-xs text-gray-400">in {rm(cashIn)} − out {rm(cashOut ?? 0)}</div>}
-            <div className="mt-1 border-t border-gray-100 pt-2">
+            {cashIn != null && <div className="text-right text-xs text-ink-3">in {rm(cashIn)} − out {rm(cashOut ?? 0)}</div>}
+            <div className="mt-1 border-t border-line pt-2">
               <VarianceRow variance={variance} />
             </div>
             {(cardActual != null || qrActual != null || transferActual != null) && (
-              <div className="mt-2 space-y-1 border-t border-gray-100 pt-2">
+              <div className="mt-2 space-y-1 border-t border-line pt-2">
                 {cardActual != null && <SavedMethodRow label="Card" actual={cardActual} niagawan={cardIn} variance={cardVar} />}
                 {qrActual != null && <SavedMethodRow label="QR" actual={qrActual} niagawan={qrIn} variance={qrVar} />}
                 {transferActual != null && <SavedMethodRow label="Transfer" actual={transferActual} niagawan={transferIn} variance={transferVar} />}
               </div>
             )}
           </div>
-          <button onClick={() => { setSaved(false); setStep(0); }} className="mt-6 w-full rounded-xl bg-gray-100 px-6 py-3 text-base font-semibold text-gray-700">Recount</button>
+          <button onClick={() => { setSaved(false); setStep(0); }} className="mt-6 w-full rounded-xl bg-ink/5 px-6 py-3 text-base font-semibold text-ink-2">Recount</button>
         </div>
       ) : !isSummary ? (
         <div className="mt-6">
-          <div className="text-center text-sm font-medium text-gray-400">Note {step + 1} of {DENOMS.length}</div>
-          <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-6 text-center">
-            <div className="text-sm text-gray-500">How many</div>
-            <div className="my-1 text-4xl font-extrabold text-emerald-700">RM{DENOMS[step]}</div>
-            <div className="text-sm text-gray-500">notes?</div>
+          <div className="text-center text-sm font-medium text-ink-3">Note {step + 1} of {DENOMS.length}</div>
+          <div className="mt-4 rounded-card bg-card shadow-card p-6 text-center">
+            <div className="text-sm text-ink-2">How many</div>
+            <div className="my-1 text-4xl font-extrabold text-good">RM{DENOMS[step]}</div>
+            <div className="text-sm text-ink-2">notes?</div>
             <div className="mt-5 flex items-center justify-center gap-4">
-              <button onClick={() => setCount(DENOMS[step], (counts[DENOMS[step]] || 0) - 1)} className="h-14 w-14 rounded-xl border border-gray-300 text-2xl font-bold text-gray-700">−</button>
+              <button onClick={() => setCount(DENOMS[step], (counts[DENOMS[step]] || 0) - 1)} className="h-14 w-14 rounded-xl border border-line text-2xl font-bold text-ink-2">−</button>
               <input type="number" inputMode="numeric" value={counts[DENOMS[step]] ?? 0}
                 onChange={(e) => { const n = parseInt(e.target.value || '0', 10); setCount(DENOMS[step], Number.isFinite(n) ? n : 0); }}
                 onFocus={(e) => e.target.select()}
-                className="w-28 rounded-xl border border-gray-300 px-2 py-3 text-center text-3xl font-bold" />
-              <button onClick={() => setCount(DENOMS[step], (counts[DENOMS[step]] || 0) + 1)} className="h-14 w-14 rounded-xl border border-gray-300 text-2xl font-bold text-gray-700">+</button>
+                className="w-28 rounded-xl border border-line px-2 py-3 text-center text-3xl font-bold" />
+              <button onClick={() => setCount(DENOMS[step], (counts[DENOMS[step]] || 0) + 1)} className="h-14 w-14 rounded-xl border border-line text-2xl font-bold text-ink-2">+</button>
             </div>
-            <div className="mt-3 text-sm text-gray-500">= {rm((counts[DENOMS[step]] || 0) * DENOMS[step])}</div>
+            <div className="mt-3 text-sm text-ink-2">= {rm((counts[DENOMS[step]] || 0) * DENOMS[step])}</div>
           </div>
 
-          <div className="mt-4 rounded-lg bg-gray-50 px-3 py-2 text-center text-sm text-gray-600">Running total: <span className="font-bold text-gray-900">{rm(total)}</span></div>
+          <div className="mt-4 rounded-lg bg-ink/5 px-3 py-2 text-center text-sm text-ink-2">Running total: <span className="font-bold text-ink">{rm(total)}</span></div>
 
           <div className="mt-5 flex gap-3">
-            {step > 0 && <button onClick={() => setStep(step - 1)} className="flex-1 rounded-xl border border-gray-300 px-4 py-3.5 text-base font-semibold text-gray-700">Back</button>}
-            <button onClick={() => setStep(step + 1)} className="flex-[2] rounded-xl bg-blue-600 px-4 py-3.5 text-base font-bold text-white hover:bg-blue-700">
+            {step > 0 && <button onClick={() => setStep(step - 1)} className="flex-1 rounded-xl border border-line px-4 py-3.5 text-base font-semibold text-ink-2">Back</button>}
+            <button onClick={() => setStep(step + 1)} className="flex-[2] rounded-xl bg-accent px-4 py-3.5 text-base font-bold text-white hover:opacity-90">
               {step === DENOMS.length - 1 ? 'See result' : 'Next'}
             </button>
           </div>
         </div>
       ) : (
         <div className="mt-6">
-          <div className="rounded-xl border border-gray-200 bg-white p-4">
-            <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">Breakdown</div>
+          <div className="rounded-card bg-card shadow-card p-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-ink-3">Breakdown</div>
             {DENOMS.map((d) => (
               <div key={d} className="flex justify-between py-0.5 text-sm">
-                <span className="text-gray-600">RM{d} × {counts[d] || 0}</span>
-                <span className="text-gray-800">{rm((counts[d] || 0) * d)}</span>
+                <span className="text-ink-2">RM{d} × {counts[d] || 0}</span>
+                <span className="text-ink-2">{rm((counts[d] || 0) * d)}</span>
               </div>
             ))}
-            <div className="mt-2 flex justify-between border-t border-gray-100 pt-2 text-base font-bold"><span>Counted total</span><span>{rm(total)}</span></div>
+            <div className="mt-2 flex justify-between border-t border-line pt-2 text-base font-bold"><span>Counted total</span><span>{rm(total)}</span></div>
           </div>
 
-          <div className="mt-3 rounded-xl border border-gray-200 bg-white p-4 text-sm">
+          <div className="mt-3 rounded-card bg-card shadow-card p-4 text-sm">
             <Row label="Niagawan cash (in − out)" value={cashSyncing && cashIn == null ? 'fetching…' : cashIn == null ? 'not available' : rm(net as number)} />
-            {cashIn != null && <div className="text-right text-xs text-gray-400">in {rm(cashIn)} − out {rm(cashOut ?? 0)}</div>}
-            <div className="mt-2 border-t border-gray-100 pt-2"><VarianceRow variance={variance} /></div>
+            {cashIn != null && <div className="text-right text-xs text-ink-3">in {rm(cashIn)} − out {rm(cashOut ?? 0)}</div>}
+            <div className="mt-2 border-t border-line pt-2"><VarianceRow variance={variance} /></div>
           </div>
 
-          <div className="mt-3 rounded-xl border border-gray-200 bg-white p-4">
-            <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">Card / QR / Transfer — enter actual</div>
-            <p className="mt-1 text-xs text-gray-400">From the card-machine settlement slip / app totals. Leave blank to skip.</p>
-            <div className="mt-2 divide-y divide-gray-100">
+          <div className="mt-3 rounded-card bg-card shadow-card p-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-ink-3">Card / QR / Transfer — enter actual</div>
+            <p className="mt-1 text-xs text-ink-3">From the card-machine settlement slip / app totals. Leave blank to skip.</p>
+            <div className="mt-2 divide-y divide-line">
               <MethodRow label="Card" hint="machine total" niagawan={cardIn} actual={cardActual} setActual={setCardActual} variance={cardVar} />
               <MethodRow label="QR" niagawan={qrIn} actual={qrActual} setActual={setQrActual} variance={qrVar} />
               <MethodRow label="Transfer" niagawan={transferIn} actual={transferActual} setActual={setTransferActual} variance={transferVar} />
             </div>
           </div>
 
-          {err && <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{err}</div>}
+          {err && <div className="mt-3 rounded-lg border border-rose-200 bg-bad-soft px-3 py-2 text-sm text-bad">{err}</div>}
 
           <div className="mt-5 flex gap-3">
-            <button onClick={() => setStep(DENOMS.length - 1)} className="flex-1 rounded-xl border border-gray-300 px-4 py-3.5 text-base font-semibold text-gray-700">Back</button>
-            <button onClick={save} className="flex-[2] rounded-xl bg-emerald-600 px-4 py-3.5 text-base font-bold text-white hover:bg-emerald-700">Save count</button>
+            <button onClick={() => setStep(DENOMS.length - 1)} className="flex-1 rounded-xl border border-line px-4 py-3.5 text-base font-semibold text-ink-2">Back</button>
+            <button onClick={save} className="flex-[2] rounded-xl bg-good px-4 py-3.5 text-base font-bold text-white hover:opacity-90">Save count</button>
           </div>
         </div>
       )}
@@ -306,32 +306,32 @@ function RecentCounts({ rows, today, onHand, lastCollectedOn, onCollect, collect
   return (
     <div className="mt-8">
       {/* Cash to bank = counted cash accumulated in the safe since the last reset */}
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Cash to bank</div>
-      <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-3">Cash to bank</div>
+      <div className="mb-4 rounded-xl border border-emerald-200 bg-good-soft px-4 py-3">
         <div className="flex items-baseline justify-between gap-2">
-          <span className="text-sm font-semibold text-gray-700">cash in safe</span>
-          <span className="whitespace-nowrap text-2xl font-extrabold text-gray-900">{onHand == null ? '…' : rm(onHand)}</span>
+          <span className="text-sm font-semibold text-ink-2">cash in safe</span>
+          <span className="whitespace-nowrap text-2xl font-extrabold text-ink">{onHand == null ? '…' : rm(onHand)}</span>
         </div>
-        <p className="mt-1 text-xs text-gray-500">
+        <p className="mt-1 text-xs text-ink-2">
           {lastCollectedOn
             ? <>start count {new Date(lastCollectedOn).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</>
             : <>all counted cash — not reset yet</>}
         </p>
         {isAdmin && (
           <button onClick={onCollect} disabled={collecting || !onHand}
-            className="mt-3 w-full rounded-lg border border-emerald-300 bg-white px-3 py-2.5 text-sm font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
+            className="mt-3 w-full rounded-lg border border-emerald-300 bg-card px-3 py-2.5 text-sm font-bold text-good hover:bg-good-soft disabled:opacity-50">
             {collecting ? 'Saving…' : 'RESET CASH COUNT'}
           </button>
         )}
       </div>
       <div className="mb-2 flex items-baseline justify-between">
-        <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">Recent counts</span>
-        <span className="text-xs text-gray-400">{rows.length} day{rows.length === 1 ? '' : 's'}</span>
+        <span className="text-xs font-semibold uppercase tracking-wide text-ink-3">Recent counts</span>
+        <span className="text-xs text-ink-3">{rows.length} day{rows.length === 1 ? '' : 's'}</span>
       </div>
-      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+      <div className="overflow-hidden rounded-card bg-card shadow-card">
         <div className="max-h-72 overflow-auto">
           <table className="w-full text-sm">
-            <thead className="sticky top-0 z-10 bg-gray-50 text-xs text-gray-500">
+            <thead className="sticky top-0 z-10 bg-ink/5 text-xs text-ink-2">
               <tr>
                 <th className="px-2 py-2 text-left font-medium">Date</th>
                 <th className="px-2 py-2 text-right font-medium">Counted</th>
@@ -339,20 +339,20 @@ function RecentCounts({ rows, today, onHand, lastCollectedOn, onCollect, collect
                 <th className="px-2 py-2 text-right font-medium">+/−</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-line">
               {rows.map((r) => {
                 const net = r.cashIn == null ? null : r.cashIn - r.cashOut;
                 const v = net == null ? null : r.counted - net;
                 const banked = lastCollectedOn != null && r.day <= lastCollectedOn;
                 return (
                   <tr key={r.day} className={banked ? 'opacity-45' : undefined}>
-                    <td className="whitespace-nowrap px-2 py-2 text-left text-gray-700">
+                    <td className="whitespace-nowrap px-2 py-2 text-left text-ink-2">
                       {new Date(r.day).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}
-                      {r.day === today && <span className="ml-1 text-[10px] font-semibold text-emerald-600">today</span>}
-                      {banked && <span className="ml-1 text-[10px] font-semibold text-gray-400">banked</span>}
+                      {r.day === today && <span className="ml-1 text-[10px] font-semibold text-good">today</span>}
+                      {banked && <span className="ml-1 text-[10px] font-semibold text-ink-3">banked</span>}
                     </td>
-                    <td className="whitespace-nowrap px-2 py-2 text-right font-semibold text-gray-900">{rmc(r.counted)}</td>
-                    <td className="whitespace-nowrap px-2 py-2 text-right text-gray-500">{net == null ? '—' : rmc(net)}</td>
+                    <td className="whitespace-nowrap px-2 py-2 text-right font-semibold text-ink">{rmc(r.counted)}</td>
+                    <td className="whitespace-nowrap px-2 py-2 text-right text-ink-2">{net == null ? '—' : rmc(net)}</td>
                     <td className="whitespace-nowrap px-2 py-2 text-right">{varCell(v)}</td>
                   </tr>
                 );
@@ -367,10 +367,10 @@ function RecentCounts({ rows, today, onHand, lastCollectedOn, onCollect, collect
 
 // compact variance for the table rows
 function varCell(v: number | null) {
-  if (v == null) return <span className="text-gray-300">—</span>;
-  if (Math.abs(v) < 0.01) return <span className="font-semibold text-emerald-600">✅</span>;
+  if (v == null) return <span className="text-ink-3">—</span>;
+  if (Math.abs(v) < 0.01) return <span className="font-semibold text-good">✅</span>;
   const short = v < 0;
-  return <span className={`font-semibold ${short ? 'text-rose-600' : 'text-amber-600'}`}>{short ? '−' : '+'}{rmc(Math.abs(v))}</span>;
+  return <span className={`font-semibold ${short ? 'text-bad' : 'text-warn'}`}>{short ? '−' : '+'}{rmc(Math.abs(v))}</span>;
 }
 
 // ---------- Petty Cash tab (imprest float; supervisors log purchases, admin tops up) ----------
@@ -436,71 +436,71 @@ function PettyCash({ isAdmin }: { isAdmin: boolean }) {
 
   return (
     <div className="mt-4">
-      <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+      <div className="rounded-xl border border-emerald-200 bg-good-soft px-4 py-3">
         <div className="flex items-baseline justify-between gap-2">
-          <span className="text-sm font-semibold text-gray-700">cash in tin</span>
-          <span className="whitespace-nowrap text-2xl font-extrabold text-gray-900">{sum ? rm(sum.inTin) : '…'}</span>
+          <span className="text-sm font-semibold text-ink-2">cash in tin</span>
+          <span className="whitespace-nowrap text-2xl font-extrabold text-ink">{sum ? rm(sum.inTin) : '…'}</span>
         </div>
         <div className="mt-1 flex items-baseline justify-between gap-2 text-sm">
-          <span className="text-gray-600">to top up {sum && <span className="text-gray-400">(float {rm(sum.float)})</span>}</span>
-          <span className={`whitespace-nowrap font-bold ${sum && sum.toTop > 0.005 ? 'text-amber-700' : 'text-emerald-700'}`}>{sum ? rm(sum.toTop) : '…'}</span>
+          <span className="text-ink-2">to top up {sum && <span className="text-ink-3">(float {rm(sum.float)})</span>}</span>
+          <span className={`whitespace-nowrap font-bold ${sum && sum.toTop > 0.005 ? 'text-warn' : 'text-good'}`}>{sum ? rm(sum.toTop) : '…'}</span>
         </div>
-        {isAdmin && <button onClick={() => { reset(); setMode('float'); setAmt(sum ? String(sum.float) : ''); }} className="mt-2 text-xs text-blue-500 underline">set float</button>}
+        {isAdmin && <button onClick={() => { reset(); setMode('float'); setAmt(sum ? String(sum.float) : ''); }} className="mt-2 text-xs text-accent underline">set float</button>}
       </div>
 
       <div className="mt-3 flex gap-2">
-        <button onClick={() => { reset(); setMode('purchase'); }} className="flex-1 rounded-xl bg-blue-600 px-3 py-2.5 text-sm font-bold text-white hover:bg-blue-700">＋ Add purchase</button>
-        {isAdmin && <button onClick={() => { reset(); setMode('topup'); }} className="flex-1 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2.5 text-sm font-bold text-emerald-700 hover:bg-emerald-100">＋ Top up</button>}
+        <button onClick={() => { reset(); setMode('purchase'); }} className="flex-1 rounded-xl bg-accent px-3 py-2.5 text-sm font-bold text-white hover:opacity-90">＋ Add purchase</button>
+        {isAdmin && <button onClick={() => { reset(); setMode('topup'); }} className="flex-1 rounded-xl border border-emerald-300 bg-good-soft px-3 py-2.5 text-sm font-bold text-good hover:bg-good-soft">＋ Top up</button>}
       </div>
 
       {mode !== 'none' && (
-        <div className="mt-3 rounded-xl border border-gray-200 bg-white p-4">
-          <div className="text-sm font-semibold text-gray-800">{mode === 'purchase' ? 'New purchase' : mode === 'topup' ? 'Top up the tin' : 'Set float amount'}</div>
-          <label className="mt-2 block text-xs font-medium text-gray-500">Amount (RM)
+        <div className="mt-3 rounded-card bg-card shadow-card p-4">
+          <div className="text-sm font-semibold text-ink-2">{mode === 'purchase' ? 'New purchase' : mode === 'topup' ? 'Top up the tin' : 'Set float amount'}</div>
+          <label className="mt-2 block text-xs font-medium text-ink-2">Amount (RM)
             <input type="number" inputMode="decimal" step="0.01" min="0" value={amt} onChange={(e) => setAmt(e.target.value)} autoFocus onFocus={(e) => e.target.select()}
-              className="mt-0.5 block w-full rounded-lg border border-gray-300 px-3 py-2 text-lg font-semibold" />
+              className="mt-0.5 block w-full rounded-lg border border-line px-3 py-2 text-lg font-semibold" />
           </label>
           {mode !== 'float' && (
-            <label className="mt-2 block text-xs font-medium text-gray-500">{mode === 'purchase' ? 'What for' : 'Note (optional)'}
+            <label className="mt-2 block text-xs font-medium text-ink-2">{mode === 'purchase' ? 'What for' : 'Note (optional)'}
               <input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={mode === 'purchase' ? 'e.g. brake cleaner' : 'optional'}
-                className="mt-0.5 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+                className="mt-0.5 block w-full rounded-lg border border-line px-3 py-2 text-sm" />
             </label>
           )}
           {mode === 'purchase' && (
-            <label className="mt-2 block text-xs font-medium text-gray-500">Receipt photo <span className="font-normal text-gray-400">(optional)</span>
+            <label className="mt-2 block text-xs font-medium text-ink-2">Receipt photo <span className="font-normal text-ink-3">(optional)</span>
               <input type="file" accept="image/*" capture="environment" onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                className="mt-1 block w-full text-sm text-gray-600 file:mr-2 file:rounded-md file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-sm file:font-medium" />
-              {file && <span className="mt-0.5 block text-[11px] text-gray-400">📷 {file.name}</span>}
+                className="mt-1 block w-full text-sm text-ink-2 file:mr-2 file:rounded-md file:border-0 file:bg-ink/5 file:px-3 file:py-1.5 file:text-sm file:font-medium" />
+              {file && <span className="mt-0.5 block text-[11px] text-ink-3">📷 {file.name}</span>}
             </label>
           )}
-          {err && <div className="mt-2 rounded-lg bg-rose-50 px-2 py-1.5 text-xs text-rose-700">{err}</div>}
+          {err && <div className="mt-2 rounded-lg bg-bad-soft px-2 py-1.5 text-xs text-bad">{err}</div>}
           <div className="mt-3 flex gap-2">
-            <button onClick={reset} disabled={busy} className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-600">Cancel</button>
-            <button onClick={submit} disabled={busy} className="flex-[2] rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50">{busy ? 'Saving…' : 'Save'}</button>
+            <button onClick={reset} disabled={busy} className="flex-1 rounded-lg border border-line px-3 py-2 text-sm font-medium text-ink-2">Cancel</button>
+            <button onClick={submit} disabled={busy} className="flex-[2] rounded-lg bg-good px-3 py-2 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50">{busy ? 'Saving…' : 'Save'}</button>
           </div>
         </div>
       )}
 
       <div className="mt-5">
-        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">History</div>
+        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-3">History</div>
         {txns.length === 0 ? (
-          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-center text-sm text-gray-400">No purchases or top-ups yet.</div>
+          <div className="rounded-xl border border-line bg-ink/5 p-4 text-center text-sm text-ink-3">No purchases or top-ups yet.</div>
         ) : (
-          <div className="divide-y divide-gray-100 overflow-hidden rounded-xl border border-gray-200 bg-white">
+          <div className="divide-y divide-line overflow-hidden rounded-card bg-card shadow-card">
             {txns.map((x) => (
               <div key={x.id} className="flex items-center justify-between gap-2 px-3 py-2.5">
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
-                    <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold ${x.kind === 'topup' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{x.kind === 'topup' ? 'top up' : 'buy'}</span>
-                    <span className="truncate text-sm text-gray-800">{x.description || (x.kind === 'topup' ? 'top up' : '—')}</span>
+                    <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold ${x.kind === 'topup' ? 'bg-good-soft text-good' : 'bg-warn-soft text-warn'}`}>{x.kind === 'topup' ? 'top up' : 'buy'}</span>
+                    <span className="truncate text-sm text-ink-2">{x.description || (x.kind === 'topup' ? 'top up' : '—')}</span>
                   </div>
-                  <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-gray-400">
+                  <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-ink-3">
                     <span>{new Date(x.txn_date).toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}</span>
                     {x.created_by && <span>· {x.created_by.split('@')[0]}</span>}
-                    {x.receipt_path && <button onClick={() => viewReceipt(x.receipt_path as string)} className="text-blue-500 underline">· 📷 receipt</button>}
+                    {x.receipt_path && <button onClick={() => viewReceipt(x.receipt_path as string)} className="text-accent underline">· 📷 receipt</button>}
                   </div>
                 </div>
-                <span className={`whitespace-nowrap text-sm font-bold ${x.kind === 'topup' ? 'text-emerald-700' : 'text-gray-900'}`}>{x.kind === 'topup' ? '+' : '−'}{rm(x.amount)}</span>
+                <span className={`whitespace-nowrap text-sm font-bold ${x.kind === 'topup' ? 'text-good' : 'text-ink'}`}>{x.kind === 'topup' ? '+' : '−'}{rm(x.amount)}</span>
               </div>
             ))}
           </div>
@@ -511,15 +511,15 @@ function PettyCash({ isAdmin }: { isAdmin: boolean }) {
 }
 
 function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
-  return <div className="flex justify-between"><span className="text-gray-600">{label}</span><span className={bold ? 'font-bold text-gray-900' : 'text-gray-800'}>{value}</span></div>;
+  return <div className="flex justify-between"><span className="text-ink-2">{label}</span><span className={bold ? 'font-bold text-ink' : 'text-ink-2'}>{value}</span></div>;
 }
 
 function VarianceRow({ variance }: { variance: number | null }) {
-  if (variance == null) return <div className="text-sm text-gray-400">Variance: waiting for Niagawan figure…</div>;
-  if (Math.abs(variance) < 0.01) return <div className="flex justify-between text-sm font-semibold text-emerald-700"><span>✅ Match</span><span>balanced</span></div>;
+  if (variance == null) return <div className="text-sm text-ink-3">Variance: waiting for Niagawan figure…</div>;
+  if (Math.abs(variance) < 0.01) return <div className="flex justify-between text-sm font-semibold text-good"><span>✅ Match</span><span>balanced</span></div>;
   const short = variance < 0;
   return (
-    <div className={`flex justify-between text-sm font-semibold ${short ? 'text-rose-700' : 'text-amber-700'}`}>
+    <div className={`flex justify-between text-sm font-semibold ${short ? 'text-bad' : 'text-warn'}`}>
       <span>{short ? '⚠️ SHORT' : '⚠️ OVER'}</span>
       <span>{short ? '−' : '+'}{rm(Math.abs(variance)).replace('RM ', 'RM ')}</span>
     </div>
@@ -535,15 +535,15 @@ function MethodRow({ label, hint, niagawan, actual, setActual, variance }: {
   return (
     <div className="py-2">
       <div className="flex items-baseline justify-between">
-        <span className="text-sm font-medium text-gray-700">{label}{hint && <span className="ml-1 text-xs font-normal text-gray-400">({hint})</span>}</span>
-        <span className="text-xs text-gray-400">Niagawan {niagawan == null ? '—' : rm(niagawan)}</span>
+        <span className="text-sm font-medium text-ink-2">{label}{hint && <span className="ml-1 text-xs font-normal text-ink-3">({hint})</span>}</span>
+        <span className="text-xs text-ink-3">Niagawan {niagawan == null ? '—' : rm(niagawan)}</span>
       </div>
       <div className="mt-1.5 flex items-center gap-2">
         <input type="number" inputMode="decimal" min={0} step="0.01" placeholder="actual total"
           value={actual ?? ''}
           onChange={(e) => { const n = parseFloat(e.target.value); setActual(e.target.value === '' || !Number.isFinite(n) ? null : Math.max(0, n)); }}
           onFocus={(e) => e.target.select()}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-right text-base font-semibold" />
+          className="w-full rounded-lg border border-line px-3 py-2 text-right text-base font-semibold" />
         <div className="w-24 shrink-0 text-right text-sm">{varCell(variance)}</div>
       </div>
     </div>
@@ -556,7 +556,7 @@ function SavedMethodRow({ label, actual, niagawan, variance }: {
 }) {
   return (
     <div className="flex items-center justify-between text-sm">
-      <span className="text-gray-600">{label} <span className="text-xs text-gray-400">({rm(actual)} vs {niagawan == null ? '—' : rm(niagawan)})</span></span>
+      <span className="text-ink-2">{label} <span className="text-xs text-ink-3">({rm(actual)} vs {niagawan == null ? '—' : rm(niagawan)})</span></span>
       <span>{varCell(variance)}</span>
     </div>
   );

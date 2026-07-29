@@ -100,57 +100,57 @@ export default function AutomationSettings() {
     return [...tasks].sort((a, b) => (order.indexOf(a.key) + 100) - (order.indexOf(b.key) + 100) || a.key.localeCompare(b.key));
   }, [tasks]);
 
-  if (authed === null || isAdmin === null) return <div className="text-sm text-gray-500">Checking session…</div>;
-  if (authed === false) return <div className="text-sm text-gray-600">Please sign in to view this page.</div>;
-  if (!isAdmin) return <div className="text-sm text-gray-600">This page is for admins only.</div>;
+  if (authed === null || isAdmin === null) return <div className="text-sm text-ink-3">Checking session…</div>;
+  if (authed === false) return <div className="text-sm text-ink-2">Please sign in to view this page.</div>;
+  if (!isAdmin) return <div className="text-sm text-ink-2">This page is for admins only.</div>;
 
   return (
     <div>
       <div className="mb-3">
-        <h2 className="text-sm font-semibold text-gray-700">Automation</h2>
-        <p className="mt-1 text-xs text-gray-500">
+        <h2 className="text-sm font-semibold text-ink-2">Automation</h2>
+        <p className="mt-1 text-xs text-ink-3">
           Control the tasks that run by themselves. Turn each on/off and set when it runs. The scheduled engine on the
           NAS reads these settings — changes you make here drive what it does.
         </p>
       </div>
 
       {loading ? (
-        <div className="text-sm text-gray-500">Loading…</div>
+        <div className="text-sm text-ink-3">Loading…</div>
       ) : (
         <div className="space-y-4">
           {ordered.map((t) => {
             const meta = META[t.key] || { title: t.label, desc: '', fields: [] as Array<'period' | 'day' | 'time'> };
             const weekly = t.schedule?.period === 'weekly';
             return (
-              <div key={t.key} className="rounded-lg border border-gray-200 bg-white p-4">
+              <div key={t.key} className="rounded-card bg-card shadow-card p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-semibold text-gray-900">{meta.title}</h3>
-                      {savedKey === t.key && <span className="text-[10px] font-medium text-emerald-600">saved ✓</span>}
+                      <h3 className="text-sm font-semibold text-ink">{meta.title}</h3>
+                      {savedKey === t.key && <span className="text-[10px] font-medium text-good">saved ✓</span>}
                     </div>
-                    <p className="mt-1 max-w-2xl text-xs text-gray-500">{meta.desc}</p>
+                    <p className="mt-1 max-w-2xl text-xs text-ink-3">{meta.desc}</p>
                   </div>
                   {/* on/off switch */}
                   <button
                     role="switch"
                     aria-checked={t.enabled}
                     onClick={() => persist(t.key, { enabled: !t.enabled })}
-                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${t.enabled ? 'bg-emerald-500' : 'bg-gray-300'}`}
+                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${t.enabled ? 'bg-good' : 'bg-gray-300'}`}
                   >
-                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${t.enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                    <span className={`inline-block h-5 w-5 transform rounded-full bg-card shadow transition ${t.enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
                   </button>
                 </div>
 
                 {t.enabled && (
-                  <div className="mt-3 flex flex-wrap items-end gap-3 border-t border-gray-100 pt-3">
+                  <div className="mt-3 flex flex-wrap items-end gap-3 border-t border-line pt-3">
                     {meta.fields.includes('period') && (
-                      <label className="text-xs text-gray-600">
+                      <label className="text-xs text-ink-2">
                         How often
                         <select
                           value={t.schedule?.period || 'weekly'}
                           onChange={(e) => setSchedule(t.key, { period: e.target.value as 'daily' | 'weekly' })}
-                          className="mt-1 block rounded-md border border-gray-300 px-2 py-1 text-sm"
+                          className="mt-1 block rounded-md border border-line px-2 py-1 text-sm"
                         >
                           <option value="daily">Daily (yesterday&rsquo;s sales)</option>
                           <option value="weekly">Weekly (last week&rsquo;s sales)</option>
@@ -158,57 +158,57 @@ export default function AutomationSettings() {
                       </label>
                     )}
                     {meta.fields.includes('day') && weekly && (
-                      <label className="text-xs text-gray-600">
+                      <label className="text-xs text-ink-2">
                         On day
                         <select
                           value={t.schedule?.day || 'monday'}
                           onChange={(e) => setSchedule(t.key, { day: e.target.value })}
-                          className="mt-1 block rounded-md border border-gray-300 px-2 py-1 text-sm capitalize"
+                          className="mt-1 block rounded-md border border-line px-2 py-1 text-sm capitalize"
                         >
                           {DAYS.map((d) => <option key={d} value={d} className="capitalize">{d}</option>)}
                         </select>
                       </label>
                     )}
                     {meta.fields.includes('time') && (
-                      <label className="text-xs text-gray-600">
+                      <label className="text-xs text-ink-2">
                         At time
                         <input
                           type="time"
                           value={t.schedule?.time || '08:00'}
                           onChange={(e) => setSchedule(t.key, { time: e.target.value })}
-                          className="mt-1 block rounded-md border border-gray-300 px-2 py-1 text-sm"
+                          className="mt-1 block rounded-md border border-line px-2 py-1 text-sm"
                         />
                       </label>
                     )}
                     {meta.fields.includes('range') && (
                       <>
-                        <label className="text-xs text-gray-600">
+                        <label className="text-xs text-ink-2">
                           From
                           <input
                             type="time"
                             value={t.schedule?.start || '09:30'}
                             onChange={(e) => setSchedule(t.key, { start: e.target.value })}
-                            className="mt-1 block rounded-md border border-gray-300 px-2 py-1 text-sm"
+                            className="mt-1 block rounded-md border border-line px-2 py-1 text-sm"
                           />
                         </label>
-                        <label className="text-xs text-gray-600">
+                        <label className="text-xs text-ink-2">
                           Until
                           <input
                             type="time"
                             value={t.schedule?.end || '19:00'}
                             onChange={(e) => setSchedule(t.key, { end: e.target.value })}
-                            className="mt-1 block rounded-md border border-gray-300 px-2 py-1 text-sm"
+                            className="mt-1 block rounded-md border border-line px-2 py-1 text-sm"
                           />
                         </label>
                       </>
                     )}
                     {meta.fields.includes('window') && (
-                      <label className="text-xs text-gray-600">
+                      <label className="text-xs text-ink-2">
                         Re-sync window
                         <select
                           value={String(t.schedule?.window_days ?? 0)}
                           onChange={(e) => setSchedule(t.key, { window_days: Number(e.target.value) })}
-                          className="mt-1 block rounded-md border border-gray-300 px-2 py-1 text-sm"
+                          className="mt-1 block rounded-md border border-line px-2 py-1 text-sm"
                         >
                           <option value="0">Auto — yesterday only</option>
                           <option value="7">Last 7 days</option>
@@ -217,7 +217,7 @@ export default function AutomationSettings() {
                         </select>
                       </label>
                     )}
-                    <div className="ml-auto text-xs font-medium text-gray-400">{summarise(t)}</div>
+                    <div className="ml-auto text-xs font-medium text-ink-3">{summarise(t)}</div>
                   </div>
                 )}
               </div>
@@ -226,7 +226,7 @@ export default function AutomationSettings() {
         </div>
       )}
 
-      <p className="mt-4 text-xs text-gray-400">
+      <p className="mt-4 text-xs text-ink-3">
         The NAS automation engine reads these settings on its next run — changes take effect from the next scheduled time.
       </p>
     </div>

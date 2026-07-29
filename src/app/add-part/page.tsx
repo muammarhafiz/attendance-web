@@ -147,9 +147,9 @@ export default function AddPartPage() {
     setEditPrice(false); setPriceOverride(''); setNewItem(null); setScannedCode('');
   }, [picked, chosen, qty, editPrice, priceOverride, newItem]);
 
-  if (authed === null || (authed && allowed === null)) return <div className="p-6 text-sm text-gray-500">Checking…</div>;
-  if (!authed) return <div className="p-6 text-sm text-gray-600">Please sign in first.</div>;
-  if (!allowed) return <div className="p-6 text-sm text-gray-600">This page is for supervisors only.</div>;
+  if (authed === null || (authed && allowed === null)) return <div className="p-6 text-sm text-ink-2">Checking…</div>;
+  if (!authed) return <div className="p-6 text-sm text-ink-2">Please sign in first.</div>;
+  if (!allowed) return <div className="p-6 text-sm text-ink-2">This page is for supervisors only.</div>;
 
   const shown = cars.filter((c) => !filter.trim() || carLabel(c).toUpperCase().includes(filter.trim().toUpperCase()));
 
@@ -162,26 +162,26 @@ export default function AddPartPage() {
         />
       )}
       <BackLink />
-      <h1 className="mt-2 text-2xl font-bold text-gray-900">🔩 Part Arrived</h1>
+      <h1 className="mt-2 text-2xl font-bold text-ink">🔩 Part Arrived</h1>
 
       {/* 1) vehicle */}
       <div className="mt-4">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-gray-700">1. Vehicle {picked ? '✓' : `(${cars.length} in workshop)`}</span>
+          <span className="text-sm font-medium text-ink-2">1. Vehicle {picked ? '✓' : `(${cars.length} in workshop)`}</span>
           {!picked && cars.length > 6 && (
-            <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="search plate…" className="w-32 rounded-lg border border-gray-300 px-2 py-1 text-sm" />
+            <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="search plate…" className="w-32 rounded-lg border border-line px-2 py-1 text-sm" />
           )}
         </div>
         {picked ? (
-          <button onClick={() => setPicked(null)} className="mt-2 flex w-full items-center justify-between rounded-xl border border-blue-600 bg-blue-50 px-3 py-2.5 text-left">
-            <span className="truncate text-sm font-semibold text-blue-900">{carLabel(picked)}</span>
-            <span className="shrink-0 rounded-lg border border-blue-300 px-2 py-1 text-xs font-medium text-blue-600">Change vehicle</span>
+          <button onClick={() => setPicked(null)} className="mt-2 flex w-full items-center justify-between rounded-xl border border-accent bg-accent-weak px-3 py-2.5 text-left">
+            <span className="truncate text-sm font-semibold text-accent">{carLabel(picked)}</span>
+            <span className="shrink-0 rounded-lg border border-accent px-2 py-1 text-xs font-medium text-accent">Change vehicle</span>
           </button>
         ) : (
           <div className="mt-2 grid max-h-56 grid-cols-1 gap-1.5 overflow-y-auto">
-            {shown.length === 0 && <div className="text-sm text-gray-400">No open unpaid invoices.</div>}
+            {shown.length === 0 && <div className="text-sm text-ink-3">No open unpaid invoices.</div>}
             {shown.map((c) => (
-              <button key={c.inv} onClick={() => setPicked(c)} className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left text-sm text-gray-800 hover:border-gray-300">
+              <button key={c.inv} onClick={() => setPicked(c)} className="rounded-card bg-card shadow-card px-3 py-2.5 text-left text-sm text-ink-2 hover:bg-ink/5">
                 <span className="block truncate">{carLabel(c)}</span>
               </button>
             ))}
@@ -191,88 +191,88 @@ export default function AddPartPage() {
 
       {/* 2) part search OR new item */}
       <div className="mt-5">
-        <span className="text-sm font-medium text-gray-700">2. {newItem ? 'New product (will be created in Niagawan)' : 'Search item (code or name)'}</span>
+        <span className="text-sm font-medium text-ink-2">2. {newItem ? 'New product (will be created in Niagawan)' : 'Search item (code or name)'}</span>
         {newItem ? (
           <div className="mt-1 space-y-2">
             <div className="flex items-center gap-2">
-              <span className="shrink-0 text-sm text-gray-600">Barcode</span>
+              <span className="shrink-0 text-sm text-ink-2">Barcode</span>
               <input value={newItem.barcode} onChange={(e) => setNewItem({ ...newItem, barcode: e.target.value })}
                 placeholder="scan or leave blank" autoComplete="off"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm uppercase" />
+                className="w-full rounded-lg border border-line px-3 py-2 font-mono text-sm uppercase" />
             </div>
             <input value={newItem.descp} onChange={(e) => setNewItem({ ...newItem, descp: e.target.value })}
               placeholder="Item name (printed on the invoice)" autoComplete="off" autoFocus={!!newItem.barcode}
-              className="w-full rounded-xl border border-gray-300 px-4 py-3 text-base" />
+              className="w-full rounded-xl border border-line px-4 py-3 text-base" />
             <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-600">Selling price RM</span>
+              <span className="text-sm text-ink-2">Selling price RM</span>
               <input type="number" inputMode="decimal" step="0.01" min="0" value={newItem.price}
                 onChange={(e) => setNewItem({ ...newItem, price: e.target.value })} placeholder="0.00"
-                className="w-32 rounded-lg border border-gray-300 px-2 py-1.5 text-base" />
+                className="w-32 rounded-lg border border-line px-2 py-1.5 text-base" />
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-600">Cost RM</span>
+              <span className="text-sm text-ink-2">Cost RM</span>
               <input type="number" inputMode="decimal" step="0.01" min="0" value={newItem.cost}
                 onChange={(e) => setNewItem({ ...newItem, cost: e.target.value })} placeholder="optional"
-                className="w-32 rounded-lg border border-gray-300 px-2 py-1.5 text-base" />
-              <span className="text-xs text-gray-400">what you paid — for profit tracking</span>
+                className="w-32 rounded-lg border border-line px-2 py-1.5 text-base" />
+              <span className="text-xs text-ink-3">what you paid — for profit tracking</span>
             </div>
             <div className="flex items-center justify-between">
-              <button onClick={() => { setNewItem(null); setScannedCode(''); }} className="text-xs text-gray-500 underline">← back to search</button>
+              <button onClick={() => { setNewItem(null); setScannedCode(''); }} className="text-xs text-ink-2 underline">← back to search</button>
             </div>
-            <p className="text-xs text-gray-400">Creates a real Niagawan product{newItem.barcode ? ' with this barcode' : ''}, priced as above, and adds it to the invoice — so it&apos;s in the catalog and scannable next time.</p>
+            <p className="text-xs text-ink-3">Creates a real Niagawan product{newItem.barcode ? ' with this barcode' : ''}, priced as above, and adds it to the invoice — so it&apos;s in the catalog and scannable next time.</p>
           </div>
         ) : (
           <>
             <input value={q} onChange={(e) => { setScannedCode(''); search(e.target.value); }} placeholder="e.g. MRDB or BRAKE PAD" autoComplete="off"
-              className="mt-1 w-full rounded-xl border border-gray-300 px-4 py-3.5 text-lg uppercase" />
+              className="mt-1 w-full rounded-xl border border-line px-4 py-3.5 text-lg uppercase" />
             {!chosen && (
               <button type="button" onClick={() => setScanning(true)}
-                className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-blue-600 bg-blue-50 px-4 py-3 text-base font-semibold text-blue-700 hover:bg-blue-100">
+                className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-accent bg-accent-weak px-4 py-3 text-base font-semibold text-accent hover:bg-accent-weak">
                 📷 Scan barcode
               </button>
             )}
             {chosen ? (
-              <div className="mt-2 rounded-xl border border-emerald-400 bg-emerald-50 px-3 py-2.5">
+              <div className="mt-2 rounded-xl border border-emerald-400 bg-good-soft px-3 py-2.5">
                 <div className="flex items-center justify-between">
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-semibold text-emerald-900">{chosen.descp}</span>
-                    <span className="font-mono text-xs text-emerald-600">{chosen.code || '—'} · Price {rm(editPrice && priceOverride !== '' ? priceOverride : chosen.price)} · Cost {rm(chosen.cost)}</span>
+                    <span className="font-mono text-xs text-good">{chosen.code || '—'} · Price {rm(editPrice && priceOverride !== '' ? priceOverride : chosen.price)} · Cost {rm(chosen.cost)}</span>
                   </span>
-                  <button onClick={() => { setChosen(null); setQ(''); setEditPrice(false); setPriceOverride(''); }} className="shrink-0 text-xs text-emerald-600 underline">change</button>
+                  <button onClick={() => { setChosen(null); setQ(''); setEditPrice(false); setPriceOverride(''); }} className="shrink-0 text-xs text-good underline">change</button>
                 </div>
                 {editPrice ? (
                   <div className="mt-2 flex items-center gap-2">
-                    <span className="text-xs text-gray-600">Selling price RM</span>
+                    <span className="text-xs text-ink-2">Selling price RM</span>
                     <input type="number" inputMode="decimal" step="0.01" min="0" autoFocus value={priceOverride}
-                      onChange={(e) => setPriceOverride(e.target.value)} className="w-28 rounded-lg border border-gray-300 px-2 py-1 text-sm" />
-                    <button onClick={() => { setEditPrice(false); setPriceOverride(''); }} className="text-xs text-gray-400 underline">cancel</button>
+                      onChange={(e) => setPriceOverride(e.target.value)} className="w-28 rounded-lg border border-line px-2 py-1 text-sm" />
+                    <button onClick={() => { setEditPrice(false); setPriceOverride(''); }} className="text-xs text-ink-3 underline">cancel</button>
                   </div>
                 ) : (
-                  <button onClick={() => { setEditPrice(true); setPriceOverride(String(chosen.price ?? '')); }} className="mt-1.5 text-xs font-medium text-blue-600 underline">change price</button>
+                  <button onClick={() => { setEditPrice(true); setPriceOverride(String(chosen.price ?? '')); }} className="mt-1.5 text-xs font-medium text-accent underline">change price</button>
                 )}
               </div>
             ) : results.length > 0 ? (
               <div className="mt-2 grid max-h-64 grid-cols-1 gap-1.5 overflow-y-auto">
                 {results.map((p) => (
-                  <button key={p.sku} onClick={() => { setChosen(p); setResults([]); setEditPrice(false); setPriceOverride(''); }} className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-left hover:border-gray-300">
-                    <span className="block truncate text-sm text-gray-900">{p.descp || '(no name)'}</span>
-                    <span className="font-mono text-xs text-gray-400">{p.code || '—'} · <span className="text-gray-600">Price {rm(p.price)}</span> · <span className="text-amber-700">Cost {rm(p.cost)}</span></span>
+                  <button key={p.sku} onClick={() => { setChosen(p); setResults([]); setEditPrice(false); setPriceOverride(''); }} className="rounded-card bg-card shadow-card px-3 py-2 text-left hover:bg-ink/5">
+                    <span className="block truncate text-sm text-ink">{p.descp || '(no name)'}</span>
+                    <span className="font-mono text-xs text-ink-3">{p.code || '—'} · <span className="text-ink-2">Price {rm(p.price)}</span> · <span className="text-warn">Cost {rm(p.cost)}</span></span>
                   </button>
                 ))}
               </div>
             ) : q.trim().length >= 2 ? (
-              <div className="mt-2 text-sm text-gray-400">
+              <div className="mt-2 text-sm text-ink-3">
                 {scannedCode ? <>Barcode <span className="font-mono">{scannedCode}</span> isn&apos;t in the system yet.</> : 'No matching item… check the spelling.'}
               </div>
             ) : null}
             {!chosen && (!scannedCode || looksLikeCode(scannedCode)) && (
               <button onClick={() => { setNewItem({ barcode: scannedCode, descp: scannedCode ? '' : q.trim(), price: '', cost: '' }); setQ(''); setResults([]); }}
-                className="mt-2 text-xs font-medium text-blue-600 underline">
+                className="mt-2 text-xs font-medium text-accent underline">
                 {scannedCode ? '➕ Not in the system — create this scanned part' : '➕ Item not in the list — add as a new item'}
               </button>
             )}
             {!chosen && scannedCode && !looksLikeCode(scannedCode) && (
-              <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+              <div className="mt-2 rounded-lg border border-rose-200 bg-bad-soft px-3 py-2 text-xs text-bad">
                 That barcode didn&apos;t read cleanly, so it can&apos;t be used to create a part. Scan it again, or type the code in the box above.
               </div>
             )}
@@ -282,27 +282,27 @@ export default function AddPartPage() {
 
       {/* 3) qty + go */}
       <div className="mt-4 flex items-center gap-3">
-        <span className="text-sm font-medium text-gray-700">Quantity:</span>
-        <button onClick={() => setQty((v) => Math.max(1, v - 1))} className="h-11 w-11 rounded-xl border border-gray-300 text-xl font-bold text-gray-700">−</button>
+        <span className="text-sm font-medium text-ink-2">Quantity:</span>
+        <button onClick={() => setQty((v) => Math.max(1, v - 1))} className="h-11 w-11 rounded-xl border border-line text-xl font-bold text-ink-2">−</button>
         <span className="w-10 text-center text-xl font-bold">{qty}</span>
-        <button onClick={() => setQty((v) => v + 1)} className="h-11 w-11 rounded-xl border border-gray-300 text-xl font-bold text-gray-700">+</button>
+        <button onClick={() => setQty((v) => v + 1)} className="h-11 w-11 rounded-xl border border-line text-xl font-bold text-ink-2">+</button>
       </div>
 
-      {errMsg && <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{errMsg}</div>}
+      {errMsg && <div className="mt-3 rounded-lg border border-rose-200 bg-bad-soft px-3 py-2 text-sm text-bad">{errMsg}</div>}
 
       <button onClick={add} disabled={!picked || (!chosen && !newItem)}
-        className="mt-4 w-full rounded-xl bg-blue-600 px-6 py-4 text-xl font-bold text-white hover:bg-blue-700 disabled:opacity-40">
+        className="mt-4 w-full rounded-xl bg-accent px-6 py-4 text-xl font-bold text-white hover:opacity-90 disabled:opacity-40">
         ADD TO INVOICE
       </button>
 
       {/* queue status */}
       {queue.length > 0 && (
         <div className="mt-5">
-          <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">Status</div>
-          <div className="mt-1.5 overflow-hidden rounded-xl border border-gray-200">
+          <div className="text-xs font-semibold uppercase tracking-wide text-ink-3">Status</div>
+          <div className="mt-1.5 overflow-hidden rounded-card bg-card shadow-card">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-gray-50 text-left text-xs text-gray-500">
+                <tr className="bg-ink/5 text-left text-xs text-ink-2">
                   <th className="px-3 py-2 font-medium">Item</th>
                   <th className="px-2 py-2 font-medium">Qty</th>
                   <th className="px-2 py-2 font-medium">Vehicle</th>
@@ -311,12 +311,12 @@ export default function AddPartPage() {
               </thead>
               <tbody>
                 {queue.map((x) => (
-                  <tr key={x.id} className={`border-t border-gray-100 ${x.status === 'done' ? 'bg-emerald-50/50' : x.status === 'error' ? 'bg-rose-50/50' : ''}`}>
-                    <td className="max-w-[10rem] truncate px-3 py-2 text-gray-800" title={x.item}>{x.item}</td>
-                    <td className="px-2 py-2 text-gray-600">×{x.qty}</td>
-                    <td className="max-w-[7rem] truncate px-2 py-2 text-gray-600" title={x.car}>{x.car}</td>
+                  <tr key={x.id} className={`border-t border-line ${x.status === 'done' ? 'bg-good-soft' : x.status === 'error' ? 'bg-bad-soft' : ''}`}>
+                    <td className="max-w-[10rem] truncate px-3 py-2 text-ink-2" title={x.item}>{x.item}</td>
+                    <td className="px-2 py-2 text-ink-2">×{x.qty}</td>
+                    <td className="max-w-[7rem] truncate px-2 py-2 text-ink-2" title={x.car}>{x.car}</td>
                     <td className="px-3 py-2 text-right" title={x.result ?? ''}>
-                      {x.status === 'done' ? '✅' : x.status === 'error' ? <span className="text-xs text-rose-600">⚠️ failed</span> : '⏳'}
+                      {x.status === 'done' ? '✅' : x.status === 'error' ? <span className="text-xs text-bad">⚠️ failed</span> : '⏳'}
                     </td>
                   </tr>
                 ))}

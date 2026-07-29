@@ -81,40 +81,40 @@ export default function BankReconPage() {
     setBusy(false);
   }, []);
 
-  if (owner === null) return <div className="mx-auto max-w-3xl px-4 py-6 text-sm text-gray-400">Checking…</div>;
-  if (!owner) return <div className="mx-auto max-w-3xl px-4 py-6 text-sm text-gray-600">This page is for the owner.</div>;
+  if (owner === null) return <div className="mx-auto max-w-3xl px-4 py-6 text-sm text-ink-3">Checking…</div>;
+  if (!owner) return <div className="mx-auto max-w-3xl px-4 py-6 text-sm text-ink-2">This page is for the owner.</div>;
 
   const recon = res?.recon;
   const L = res ? LABELS[res.kind] : LABELS.bank;
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6">
-      <h1 className="text-2xl font-bold text-gray-900">🏦 Bank reconciliation</h1>
-      <p className="mt-1 text-sm text-gray-500">Upload your <strong>Maybank statement (PDF)</strong> to check transfers, or your <strong>DuitNow QR report (CSV)</strong> to check QR — each is matched to what Niagawan recorded, by date &amp; amount.</p>
+      <h1 className="text-2xl font-bold text-ink">🏦 Bank reconciliation</h1>
+      <p className="mt-1 text-sm text-ink-2">Upload your <strong>Maybank statement (PDF)</strong> to check transfers, or your <strong>DuitNow QR report (CSV)</strong> to check QR — each is matched to what Niagawan recorded, by date &amp; amount.</p>
 
-      <div className="mt-4 rounded-xl border border-gray-200 bg-white p-4">
+      <div className="mt-4 rounded-card bg-card shadow-card p-4">
         <label className="flex cursor-pointer items-center gap-3">
           <span className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-700">Choose PDF or CSV</span>
           <input type="file" accept="application/pdf,.pdf,text/csv,.csv" className="hidden"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.currentTarget.value = ''; }} />
-          <span className="text-sm text-gray-500">{fileName || 'No file chosen'}</span>
+          <span className="text-sm text-ink-2">{fileName || 'No file chosen'}</span>
         </label>
-        <p className="mt-2 text-[11px] text-gray-400">🔒 The file is read to reconcile it and then discarded — it is never stored.</p>
+        <p className="mt-2 text-[11px] text-ink-3">🔒 The file is read to reconcile it and then discarded — it is never stored.</p>
       </div>
 
-      {busy && <div className="mt-4 text-sm text-gray-500">Reading file…</div>}
-      {err && <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{err}</div>}
+      {busy && <div className="mt-4 text-sm text-ink-2">Reading file…</div>}
+      {err && <div className="mt-4 rounded-lg border border-rose-200 bg-bad-soft p-3 text-sm text-bad">{err}</div>}
 
       {res && recon && !busy && (
         <>
           <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
             {res.verified
-              ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-700">Verified ✓ {L.verified}</span>
-              : <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-700">⚠ Could not fully verify — read the figures with care</span>}
-            <span className="text-gray-400">{res.summary}</span>
+              ? <span className="rounded-full bg-good-soft px-2 py-0.5 font-medium text-good">Verified ✓ {L.verified}</span>
+              : <span className="rounded-full bg-warn-soft px-2 py-0.5 font-medium text-warn">⚠ Could not fully verify — read the figures with care</span>}
+            <span className="text-ink-3">{res.summary}</span>
           </div>
           {res.synced.days < res.synced.span && (
-            <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+            <div className="mt-2 rounded-lg border border-amber-200 bg-warn-soft p-3 text-xs text-warn">
               Niagawan is only synced for {res.synced.days} of the {res.synced.span} days in this period — some &ldquo;{L.notRecv.toLowerCase()}&rdquo; rows below may just be un-synced days.
             </div>
           )}
@@ -138,18 +138,18 @@ export default function BankReconPage() {
           )}
 
           <div className="mt-4">
-            <button onClick={() => setShowMatched((s) => !s)} className="text-xs font-medium text-gray-500 underline hover:text-gray-700">
+            <button onClick={() => setShowMatched((s) => !s)} className="text-xs font-medium text-ink-2 underline hover:text-ink-2">
               {showMatched ? 'Hide' : 'Show'} {recon.matched.length} received ✓
             </button>
             {showMatched && (
-              <div className="mt-2 divide-y divide-gray-50 rounded-lg border border-gray-100">
+              <div className="mt-2 divide-y divide-line rounded-lg border border-line">
                 {recon.matched.map((r, i) => (
                   <div key={i} className="flex items-center justify-between gap-2 px-2 py-1.5 text-xs">
                     <div className="min-w-0">
-                      <div className="truncate text-gray-700">{r.descp || 'Payment'}</div>
-                      <div className="mt-0.5 text-[11px] text-gray-400">Niagawan {fmtDay(r.day)} · {L.other} {r.bankDate ? fmtDay(r.bankDate) : '—'}</div>
+                      <div className="truncate text-ink-2">{r.descp || 'Payment'}</div>
+                      <div className="mt-0.5 text-[11px] text-ink-3">Niagawan {fmtDay(r.day)} · {L.other} {r.bankDate ? fmtDay(r.bankDate) : '—'}</div>
                     </div>
-                    <span className="shrink-0 font-medium text-emerald-700">{rm(r.amount)} ✓</span>
+                    <span className="shrink-0 font-medium text-good">{rm(r.amount)} ✓</span>
                   </div>
                 ))}
               </div>
@@ -162,32 +162,32 @@ export default function BankReconPage() {
 }
 
 function Stat({ label, value, tone }: { label: string; value: number; tone: 'ok' | 'bad' | 'warn' }) {
-  const c = tone === 'bad' ? 'text-rose-600' : tone === 'warn' ? 'text-amber-600' : 'text-emerald-600';
+  const c = tone === 'bad' ? 'text-bad' : tone === 'warn' ? 'text-warn' : 'text-good';
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-3 text-center">
+    <div className="rounded-card bg-card shadow-card p-3 text-center">
       <div className={`text-2xl font-bold ${c}`}>{value}</div>
-      <div className="mt-0.5 text-[11px] text-gray-500">{label}</div>
+      <div className="mt-0.5 text-[11px] text-ink-2">{label}</div>
     </div>
   );
 }
 
 function Section({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   return (
-    <div className="mt-4 rounded-xl border border-gray-200 bg-white p-4">
-      <h2 className="text-sm font-semibold text-gray-800">{title}</h2>
-      <p className="mb-2 mt-0.5 text-[11px] text-gray-400">{subtitle}</p>
-      <div className="divide-y divide-gray-50">{children}</div>
+    <div className="mt-4 rounded-card bg-card shadow-card p-4">
+      <h2 className="text-sm font-semibold text-ink-2">{title}</h2>
+      <p className="mb-2 mt-0.5 text-[11px] text-ink-3">{subtitle}</p>
+      <div className="divide-y divide-line">{children}</div>
     </div>
   );
 }
 
 function Row({ left, main, amount, tone }: { left: string; main: string; amount: number; tone: 'bad' | 'warn' }) {
-  const c = tone === 'bad' ? 'text-rose-600' : 'text-amber-600';
+  const c = tone === 'bad' ? 'text-bad' : 'text-warn';
   return (
     <div className="flex items-center justify-between gap-2 py-1.5 text-xs">
       <div className="min-w-0">
-        <div className="truncate text-gray-700">{main}</div>
-        <div className="mt-0.5 text-[11px] text-gray-400">{left}</div>
+        <div className="truncate text-ink-2">{main}</div>
+        <div className="mt-0.5 text-[11px] text-ink-3">{left}</div>
       </div>
       <span className={`shrink-0 font-semibold ${c}`}>{rm(amount)}</span>
     </div>
@@ -195,5 +195,5 @@ function Row({ left, main, amount, tone }: { left: string; main: string; amount:
 }
 
 function Empty({ text }: { text: string }) {
-  return <div className="py-1 text-sm text-emerald-700">{text}</div>;
+  return <div className="py-1 text-sm text-good">{text}</div>;
 }
