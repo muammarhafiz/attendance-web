@@ -81,6 +81,21 @@ export default function NavBar() {
       return next;
     });
   }, []);
+  // Theme: explicit data-theme (set pre-paint from localStorage) wins; otherwise follow the OS.
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  useEffect(() => {
+    const explicit = document.documentElement.getAttribute('data-theme');
+    if (explicit === 'dark' || explicit === 'light') setTheme(explicit);
+    else setTheme(window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  }, []);
+  const toggleTheme = useCallback(() => {
+    setTheme((v) => {
+      const next = v === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      try { localStorage.setItem('theme', next); } catch {}
+      return next;
+    });
+  }, []);
   const toggleArea = useCallback((label: string) => {
     setExpanded((prev) => { const n = new Set(prev); if (n.has(label)) n.delete(label); else n.add(label); return n; });
   }, []);
@@ -401,8 +416,17 @@ export default function NavBar() {
           ))}
         </nav>
 
-        {/* Footer — account */}
+        {/* Footer — theme toggle + account */}
         <div className="border-t border-line p-3">
+          <button onClick={toggleTheme} aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            className="mb-2 flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium text-ink-2 transition hover:bg-ink/5">
+            <span className="text-ink-3">
+              {theme === 'dark'
+                ? (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4" /></svg>)
+                : (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" /></svg>)}
+            </span>
+            <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+          </button>
           {email ? (
             <div className="flex items-center gap-2">
               <span className="min-w-0 flex-1 truncate text-xs text-ink-3" title={email}>{email}</span>

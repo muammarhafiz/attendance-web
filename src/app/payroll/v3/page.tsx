@@ -306,7 +306,7 @@ export default function PayrollV3Page() {
       <div className="mb-4 rounded-card bg-card p-4 shadow-card">
         <div className="flex flex-wrap items-center gap-2">
           {(status === null || status === 'OPEN') && (
-            <button onClick={generate} disabled={!!busy} className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50">
+            <button onClick={generate} disabled={!!busy} className="rounded-md bg-btn px-3 py-2 text-sm font-medium text-btn-ink hover:opacity-90 disabled:opacity-50">
               {busy === 'Generate' ? 'Generating…' : status === null ? 'Generate payroll from attendance' : 'Rebuild from attendance'}
             </button>
           )}
@@ -339,7 +339,7 @@ export default function PayrollV3Page() {
           <span className="text-xs font-medium text-ink-2">Unpaid-leave daily rate</span>
           {(['26', '25'] as const).map((d) => (
             <button key={d} onClick={() => setUnpaidDivisor(d)} disabled={!!busy}
-              className={`rounded-md border px-2.5 py-1 text-xs font-semibold transition disabled:opacity-50 ${divisor === d ? 'border-gray-900 bg-gray-900 text-white' : 'border-line text-ink-2 hover:bg-ink/5'}`}>
+              className={`rounded-md border px-2.5 py-1 text-xs font-semibold transition disabled:opacity-50 ${divisor === d ? 'border-btn bg-btn text-btn-ink' : 'border-line text-ink-2 hover:bg-ink/5'}`}>
               ÷{d}
             </button>
           ))}
@@ -488,7 +488,7 @@ export default function PayrollV3Page() {
                   {addCode === 'CUSTOM' && <input value={customCode} onChange={(e) => setCustomCode(e.target.value.replace(/[^A-Za-z0-9_]/g, ''))} placeholder="CODE" className="w-24 rounded-md border px-2 py-1.5 text-sm" />}
                   <input value={addLabel} onChange={(e) => setAddLabel(e.target.value)} placeholder="Label" className="flex-1 rounded-md border px-2 py-1.5 text-sm" />
                   <input value={addAmt} onChange={(e) => setAddAmt(e.target.value)} placeholder="0.00" className="w-24 rounded-md border px-2 py-1.5 text-right text-sm tabular-nums" />
-                  <button onClick={addItem} disabled={mWorking} className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-black disabled:opacity-50">Add</button>
+                  <button onClick={addItem} disabled={mWorking} className="rounded-md bg-btn px-3 py-1.5 text-sm font-medium text-btn-ink hover:opacity-90 disabled:opacity-50">Add</button>
                 </div>
               </div>
             )}

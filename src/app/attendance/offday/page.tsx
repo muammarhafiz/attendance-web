@@ -176,7 +176,7 @@ export default function AttendanceOffdayPage() {
           </label>
         </div>
         <div className="mt-3 flex items-center gap-3">
-          <button onClick={apply} disabled={busy} className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50">
+          <button onClick={apply} disabled={busy} className="rounded-md bg-btn px-4 py-2 text-sm font-medium text-btn-ink hover:opacity-90 disabled:opacity-50">
             {busy ? 'Saving…' : 'Set'}
           </button>
           <span className="text-xs text-ink-3">Tip: for a government holiday, pick &quot;Public holiday&quot; + All staff.</span>

@@ -105,7 +105,7 @@ export default function EmailSettings() {
         <button
           onClick={sendTest}
           disabled={testing}
-          className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-50"
+          className="rounded-md bg-btn px-3 py-2 text-sm font-medium text-btn-ink hover:opacity-90 disabled:opacity-50"
         >
           {testing ? 'Sending…' : 'Send test email'}
         </button>

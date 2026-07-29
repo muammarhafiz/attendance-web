@@ -18,14 +18,20 @@ export const metadata: Metadata = {
   appleWebApp: { capable: true, title: 'Zordaq', statusBarStyle: 'default' },
 };
 
-export const viewport: Viewport = { themeColor: '#0f172a' };
+export const viewport: Viewport = {
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#f5f5f7' },
+    { media: '(prefers-color-scheme: dark)', color: '#000000' },
+  ],
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={inter.variable} suppressHydrationWarning>
       <body className="min-h-screen antialiased">
-        {/* Restore the sidebar-collapsed preference before paint (avoids a flash on reload). */}
-        <script dangerouslySetInnerHTML={{ __html: "try{if(localStorage.getItem('nav_collapsed')==='1')document.documentElement.setAttribute('data-nav-collapsed','1')}catch(e){}" }} />
+        {/* Restore the theme + sidebar-collapsed preferences before paint (avoids a flash on reload).
+            No stored theme → no data-theme attr → the prefers-color-scheme media query follows the OS. */}
+        <script dangerouslySetInnerHTML={{ __html: "try{var t=localStorage.getItem('theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);if(localStorage.getItem('nav_collapsed')==='1')document.documentElement.setAttribute('data-nav-collapsed','1')}catch(e){}" }} />
         <PwaRegister />
         <NavBar />
         {/* Clear the fixed sidebar (desktop) and the mobile top bar; app-main lets the collapse CSS drop the padding. */}

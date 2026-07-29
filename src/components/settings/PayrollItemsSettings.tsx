@@ -197,7 +197,7 @@ export default function PayrollItemsSettings() {
         <h2 className="text-lg font-semibold">Payroll Items</h2>
         <span className="text-sm text-ink-2">Define the earning &amp; deduction types used across payroll.</span>
         <button onClick={() => setEditing(blankForm('REMUNERATION'))}
-          className="ml-auto rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-black">+ Payroll Item</button>
+          className="ml-auto rounded-md bg-btn px-3 py-2 text-sm font-medium text-btn-ink hover:opacity-90">+ Payroll Item</button>
       </div>
 
       {msg && <div className={`mb-3 rounded-md border p-2 text-sm ${msg.kind === 'ok' ? 'border-emerald-200 bg-good-soft text-good' : 'border-rose-200 bg-bad-soft text-bad'}`}>{msg.text}</div>}
@@ -336,7 +336,7 @@ export default function PayrollItemsSettings() {
             </div>
             <div className="flex justify-end gap-2 border-t px-4 py-3">
               <button onClick={() => setEditing(null)} className="rounded-md border px-3 py-1.5 text-sm hover:bg-ink/5">Cancel</button>
-              <button onClick={save} disabled={saving} className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-black disabled:opacity-50">{saving ? 'Saving…' : 'Save'}</button>
+              <button onClick={save} disabled={saving} className="rounded-md bg-btn px-3 py-1.5 text-sm font-medium text-btn-ink hover:opacity-90 disabled:opacity-50">{saving ? 'Saving…' : 'Save'}</button>
             </div>
           </div>
         </div>
