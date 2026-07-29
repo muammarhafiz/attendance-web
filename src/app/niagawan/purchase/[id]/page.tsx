@@ -204,7 +204,7 @@ export default function ReviewInvoicePage() {
   // per-supplier suffix/variant codes (line "16260-BZ020" vs product "16260-BZ020-YCW") and
   // space-packed codes, where in_niagawan is true (the NAS uses a broad substring match on code OR
   // description) but a refresh can never produce a token candidate — so we must not tell the owner
-  // to refresh those; the 🔎 picker is the right tool for them and is already offered.
+  // to refresh those; the picker is the right tool for them and is already offered.
   const refreshLinkable = useCallback((it: Item): boolean => {
     const wants = new Set([it.item_code, ...it.codes].map(normCode).filter(Boolean));
     if (!wants.size) return false;
@@ -449,7 +449,7 @@ export default function ReviewInvoicePage() {
             ? <span className="rounded border border-amber-200 bg-warn-soft px-2.5 py-1 text-xs font-medium text-warn">Checking sales… (~1 min)</span>
             : <button onClick={runCheck} className="rounded border border-line px-2.5 py-1 text-xs font-medium text-ink-2 hover:bg-ink/5">{head.check_status === 'checked' ? '↻ Re-check sales' : 'Check against sales'}</button>}
           {!locked && (catSync === 'idle'
-            ? <button onClick={refreshCatalog} title="Re-sync the product list from Niagawan. Use this if a line shows 'create new' for an item that IS already in Niagawan (e.g. just created there)." className="rounded border border-line px-2.5 py-1 text-xs font-medium text-ink-2 hover:bg-ink/5">🔄 Refresh product list</button>
+            ? <button onClick={refreshCatalog} title="Re-sync the product list from Niagawan. Use this if a line shows 'create new' for an item that IS already in Niagawan (e.g. just created there)." className="rounded border border-line px-2.5 py-1 text-xs font-medium text-ink-2 hover:bg-ink/5">Refresh product list</button>
             : <span className="rounded border border-amber-200 bg-warn-soft px-2.5 py-1 text-xs font-medium text-warn">{catSync === 'running' ? 'Refreshing products… (~1–2 min)' : catSync === 'done' ? 'Products updated ✓' : 'Refresh failed'}</span>)}
           {head.file_path && <button onClick={viewPdf} className="rounded border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-ink/5">View PDF</button>}
           {(head.status === 'uploaded' || head.status === 'extracted' || head.status === 'error') && (
@@ -500,7 +500,7 @@ export default function ReviewInvoicePage() {
           synced product list — they'd default to create-new and risk a duplicate. One click refreshes. */}
       {candsLoaded && staleLines.length > 0 && (
         <div className="mb-3 rounded-md border-2 border-amber-400 bg-warn-soft px-3 py-2 text-sm text-warn">
-          ⚠ <b>{staleLines.length} line{staleLines.length === 1 ? '' : 's'} (line{staleLines.length === 1 ? '' : 's'} {staleLines.join(', ')}) {staleLines.length === 1 ? 'is' : 'are'} in Niagawan but missing from your synced product list</b> — {staleLines.length === 1 ? 'it' : 'they'}&rsquo;ll default to <b>create new</b> and risk a duplicate. This usually means the item was created in Niagawan very recently. Press <b>🔄 Refresh product list</b> above{catSync === 'running' ? ' (running now…)' : ''}, then {staleLines.length === 1 ? 'it' : 'they'}&rsquo;ll link automatically. (If a line still shows after refreshing, use <b>🔎 choose existing item</b> on it.)
+          ⚠ <b>{staleLines.length} line{staleLines.length === 1 ? '' : 's'} (line{staleLines.length === 1 ? '' : 's'} {staleLines.join(', ')}) {staleLines.length === 1 ? 'is' : 'are'} in Niagawan but missing from your synced product list</b> — {staleLines.length === 1 ? 'it' : 'they'}&rsquo;ll default to <b>create new</b> and risk a duplicate. This usually means the item was created in Niagawan very recently. Press <b>Refresh product list</b> above{catSync === 'running' ? ' (running now…)' : ''}, then {staleLines.length === 1 ? 'it' : 'they'}&rsquo;ll link automatically. (If a line still shows after refreshing, use <b>choose existing item</b> on it.)
         </div>
       )}
 
@@ -510,7 +510,7 @@ export default function ReviewInvoicePage() {
         if (bad.length === 0) return null;
         return (
           <div className="mb-3 rounded-md border border-rose-300 bg-bad-soft px-3 py-2 text-sm text-bad">
-            ⚠ <b>{bad.length} code{bad.length === 1 ? '' : 's'} not found in the PDF text</b> (lines {bad.map((b) => b.line_no).join(', ')}) — the AI may have misread {bad.length === 1 ? 'it' : 'them'}. They're highlighted red below; please check against the PDF before approving.
+            ⚠ <b>{bad.length} code{bad.length === 1 ? '' : 's'} not found in the PDF text</b> (lines {bad.map((b) => b.line_no).join(', ')}) — the AI may have misread {bad.length === 1 ? 'it' : 'them'}. They&rsquo;re highlighted red below; please check against the PDF before approving.
           </div>
         );
       })()}
@@ -667,9 +667,9 @@ export default function ReviewInvoicePage() {
                         // OR pick an existing one from the full list (for code-less invoices).
                         return (
                           <div className="flex flex-col gap-1">
-                            <span className="text-[10px] font-medium uppercase tracking-wide text-warn">🆕 create new product</span>
+                            <span className="text-[10px] font-medium uppercase tracking-wide text-warn">create new product</span>
                             {it.in_niagawan === true && !it.sku_id && !it.will_create && cands.length === 0 && refreshLinkable(it) && (
-                              <span className="max-w-[11rem] text-[10px] font-medium leading-tight text-warn" title="This code exists in Niagawan but isn't in the synced product list yet. Press “🔄 Refresh product list” up top to link it instead of creating a duplicate.">
+                              <span className="max-w-[11rem] text-[10px] font-medium leading-tight text-warn" title="This code exists in Niagawan but isn't in the synced product list yet. Press “Refresh product list” up top to link it instead of creating a duplicate.">
                                 ⚠ in Niagawan, not in synced list — Refresh ↑
                               </span>
                             )}
@@ -678,7 +678,7 @@ export default function ReviewInvoicePage() {
                               {!cats.includes(it.category) && <option value="">{it.category || '—'}</option>}
                               {cats.map((c) => <option key={c} value={c}>{c}</option>)}
                             </select>
-                            {!locked && <button onClick={() => openPicker(idx, it)} className="text-left text-[10px] font-medium text-accent underline">🔎 or choose from existing items</button>}
+                            {!locked && <button onClick={() => openPicker(idx, it)} className="text-left text-[10px] font-medium text-accent underline">or choose from existing items</button>}
                             {cands.length > 0 && !locked && (
                               <button onClick={() => setItem(idx, { will_create: false, sku_id: cands.length === 1 ? cands[0].sku : null })}
                                 className="text-left text-[10px] text-accent underline">{cands.length} code match{cands.length > 1 ? 'es' : ''} — link</button>
@@ -713,7 +713,7 @@ export default function ReviewInvoicePage() {
                           </select>
                           {!locked && (
                             <div className="flex flex-wrap gap-2">
-                              <button onClick={() => openPicker(idx, it)} className="text-[10px] text-accent underline">🔎 search all items</button>
+                              <button onClick={() => openPicker(idx, it)} className="text-[10px] text-accent underline">search all items</button>
                               <button onClick={() => setItem(idx, { will_create: true, sku_id: null })} className="text-[10px] text-accent underline">none — create new</button>
                             </div>
                           )}
@@ -745,7 +745,7 @@ export default function ReviewInvoicePage() {
       </div>
 
       <p className="mt-2 text-xs text-ink-3">
-        Each line is booked to the product in the <b>Product</b> column. A code match links automatically; if there&rsquo;s no code (or no match) you can <b>🔎 choose an existing item</b> from the list (the search is pre-filled from the description) instead of creating a duplicate — or create a new product in the chosen <b>Category</b>. When several products share a code you pick the right one. The importer uses exactly what you chose here — no re-guessing, no duplicates.
+        Each line is booked to the product in the <b>Product</b> column. A code match links automatically; if there&rsquo;s no code (or no match) you can <b>choose an existing item</b> from the list (the search is pre-filled from the description) instead of creating a duplicate — or create a new product in the chosen <b>Category</b>. When several products share a code you pick the right one. The importer uses exactly what you chose here — no re-guessing, no duplicates.
       </p>
 
       {msg && <div className={`mt-3 rounded-md border p-2 text-sm ${msg.kind === 'ok' ? 'border-emerald-200 bg-good-soft text-good' : 'border-rose-200 bg-bad-soft text-bad'}`}>{msg.text}</div>}

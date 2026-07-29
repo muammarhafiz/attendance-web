@@ -410,7 +410,7 @@ export default function PnlPage() {
               </div>
             )}
             <div className="mt-3 flex items-center justify-between rounded-lg border border-sky-200 bg-sky-50 px-3 py-2">
-              <span className="text-sm font-medium text-sky-900">💳 Top up the meal account</span>
+              <span className="text-sm font-medium text-sky-900">Top up the meal account</span>
               <span className="text-base font-bold text-sky-900">{rm(c.staffMeals)}</span>
             </div>
             <div className="mt-1 text-[11px] text-ink-3">Re-transfer this month&rsquo;s meal spend to replenish the Grab account.</div>

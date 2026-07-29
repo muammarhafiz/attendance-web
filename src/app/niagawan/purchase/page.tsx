@@ -154,8 +154,8 @@ export default function PurchaseInvoicePage() {
           setMsg({
             kind: 'ok',
             text: saved
-              ? `📧 Email checked — ${saved} invoice(s) saved to the “Supplier Invoices” folder in Drive (details emailed).${unknown ? ` ${unknown} PDF(s) from unknown senders were skipped.` : ''}`
-              : `📧 Email checked — no new supplier invoices found.${unknown ? ` ${unknown} PDF(s) from unknown senders were skipped (see email).` : ''}`,
+              ? `Email checked — ${saved} invoice(s) saved to the “Supplier Invoices” folder in Drive (details emailed).${unknown ? ` ${unknown} PDF(s) from unknown senders were skipped.` : ''}`
+              : `Email checked — no new supplier invoices found.${unknown ? ` ${unknown} PDF(s) from unknown senders were skipped (see email).` : ''}`,
           });
         } else {
           setMsg({ kind: 'err', text: 'Email check failed — make sure the v2 mailbox script is deployed (see email/NAS log).' });
@@ -252,7 +252,7 @@ export default function PurchaseInvoicePage() {
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <label className="inline-flex cursor-pointer items-center rounded-md border border-line bg-card px-3 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5">
-            📎 Choose PDF
+            Choose PDF
             <input type="file" accept="application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="hidden" />
           </label>
           <span className="min-w-0 flex-1 truncate text-xs text-ink-2">{file ? file.name : 'No file chosen'}</span>
@@ -261,7 +261,7 @@ export default function PurchaseInvoicePage() {
           </button>
           <button onClick={checkEmail} disabled={mailCheck === 'running'} title="Pull supplier invoices now — scans the workshop email AND your watched supplier folders (PDFs dropped into them)"
             className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5 disabled:opacity-50">
-            {mailCheck === 'running' ? 'Checking…' : '📧 Check email & folders now'}
+            {mailCheck === 'running' ? 'Checking…' : 'Check email & folders now'}
           </button>
         </div>
         {msg && <div className={`mt-2 rounded-md border p-2 text-sm ${msg.kind === 'ok' ? 'border-line bg-good-soft text-good' : 'border-line bg-bad-soft text-bad'}`}>{msg.text}</div>}
@@ -270,7 +270,7 @@ export default function PurchaseInvoicePage() {
       {/* Auto-import suppliers — self-service list the mailbox reads to recognise senders */}
       <div className="mb-4 rounded-card bg-card shadow-card">
         <button onClick={() => setShowSuppliers((v) => !v)} className="flex w-full items-center justify-between px-4 py-3 text-left">
-          <span className="text-sm font-medium text-ink-2">📥 Auto-import suppliers <span className="text-ink-3">({suppliers.length})</span></span>
+          <span className="text-sm font-medium text-ink-2">Auto-import suppliers <span className="text-ink-3">({suppliers.length})</span></span>
           <span className="text-xs text-ink-3">{showSuppliers ? 'hide' : 'manage'}</span>
         </button>
         {showSuppliers && (
@@ -306,7 +306,7 @@ export default function PurchaseInvoicePage() {
             </div>
             {folders.length === 0 && (
               <p className="mt-1 text-[11px] text-warn">
-                Folder list is empty — it fills in after the next email check (runs every 15 min, or click &ldquo;📧 Check email now&rdquo; above), then pick a folder.
+                Folder list is empty — it fills in after the next email check (runs every 15 min, or click &ldquo;Check email now&rdquo; above), then pick a folder.
               </p>
             )}
             <div className="mt-3 space-y-1.5">

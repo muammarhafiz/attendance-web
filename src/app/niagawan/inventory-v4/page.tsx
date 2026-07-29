@@ -494,11 +494,11 @@ export default function InventoryV4Page() {
           </button>
           <button onClick={calcAverage} disabled={avgState === 'running'} title="Scan the last 3 months of sales and fill Avg/mo (takes a few minutes)"
             className="rounded-md border border-accent bg-accent-weak px-2.5 py-1.5 text-sm font-semibold text-accent hover:bg-accent/25 disabled:opacity-50">
-            {avgState === 'running' ? 'Calculating…' : avgState === 'done' ? '✓ done' : avgState === 'error' ? '⚠ failed' : '📊 Calculate average'}
+            {avgState === 'running' ? 'Calculating…' : avgState === 'done' ? '✓ done' : avgState === 'error' ? '⚠ failed' : 'Calculate average'}
           </button>
           <button onClick={refreshSuppliers} disabled={supState === 'running'} title="Pull the latest supplier list from Niagawan (after creating a new supplier there)"
             className="rounded-md border border-line px-2.5 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5 disabled:opacity-50">
-            {supState === 'running' ? 'Refreshing…' : supState === 'done' ? '✓ suppliers' : supState === 'error' ? '⚠ failed' : '🔄 Refresh suppliers'}
+            {supState === 'running' ? 'Refreshing…' : supState === 'done' ? '✓ suppliers' : supState === 'error' ? '⚠ failed' : 'Refresh suppliers'}
           </button>
         </div>
       </div>
@@ -509,7 +509,6 @@ export default function InventoryV4Page() {
       {newItems.length > 0 && (
         <div className="mb-5 rounded-lg border border-emerald-200 bg-good-soft">
           <button onClick={() => setShowNew((v) => !v)} className="flex w-full items-center gap-2 px-4 py-2.5 text-left">
-            <span className="text-base leading-none">🆕</span>
             <span className="text-sm font-semibold text-good">New in Niagawan</span>
             <span className="rounded-full bg-good px-1.5 py-0.5 text-xs font-semibold text-white">{newItems.length}</span>
             <span className="hidden text-xs font-normal text-good/70 sm:inline">items created in Niagawan, not tracked yet</span>
@@ -900,7 +899,7 @@ export default function InventoryV4Page() {
       </div>
 
       <p className="mt-2 text-xs text-ink-3">
-        Avg/mo auto-fills from 📊 Calculate average (scans the last 3 months of sales){avgAsOf ? ` · updated ${new Date(avgAsOf).toLocaleDateString('en-MY', { day: '2-digit', month: 'short' })}` : ''}; type over any oil to override, Keep-level defaults to avg×3. “Generate PO →” on a card stages a draft; approve it and the NAS creates the PO in Niagawan.
+        Avg/mo auto-fills from Calculate average (scans the last 3 months of sales){avgAsOf ? ` · updated ${new Date(avgAsOf).toLocaleDateString('en-MY', { day: '2-digit', month: 'short' })}` : ''}; type over any oil to override, Keep-level defaults to avg×3. “Generate PO →” on a card stages a draft; approve it and the NAS creates the PO in Niagawan.
       </p>
     </div>
   );
