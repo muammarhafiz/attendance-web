@@ -59,7 +59,19 @@ export default function NavBar() {
   const [bellOpen, setBellOpen] = useState(false);
   const [seenAt, setSeenAt] = useState<string>('');
   const [open, setOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false); // desktop-only: sidebar hidden to reclaim width
   useEffect(() => { setSeenAt(localStorage.getItem('notif_seen_at') || ''); }, []);
+  // The <html> class is applied pre-paint by an inline script in layout.tsx (no flash on reload);
+  // mirror it into state so the toggle button reflects the current mode.
+  useEffect(() => { setCollapsed(document.documentElement.hasAttribute('data-nav-collapsed')); }, []);
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed((v) => {
+      const next = !v;
+      document.documentElement.toggleAttribute('data-nav-collapsed', next);
+      try { localStorage.setItem('nav_collapsed', next ? '1' : '0'); } catch {}
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     let unsub: { unsubscribe: () => void } | null = null;
@@ -248,12 +260,20 @@ export default function NavBar() {
         {email && canBell && <div className="ml-auto">{bellButton}</div>}
       </header>
 
+      {/* Show-sidebar button — desktop only, appears when the sidebar is collapsed */}
+      {collapsed && (
+        <button onClick={toggleCollapsed} aria-label="Show sidebar" title="Show sidebar"
+          className="no-print fixed left-3 top-3 z-50 hidden h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white/95 text-slate-600 shadow-sm backdrop-blur transition hover:bg-slate-100 lg:inline-flex">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+        </button>
+      )}
+
       {/* Backdrop for the mobile drawer */}
       {open && <button className="no-print fixed inset-0 z-40 bg-slate-900/20 lg:hidden" aria-label="Close menu" onClick={() => setOpen(false)} />}
 
       {/* Sidebar — fixed on desktop, slide-in drawer on mobile */}
       <aside
-        className={`no-print fixed left-0 top-0 z-50 flex h-screen w-64 max-w-[85vw] flex-col border-r border-slate-200 bg-white transition-transform lg:z-30 lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}
+        className={`app-sidebar no-print fixed left-0 top-0 z-50 flex h-screen w-64 max-w-[85vw] flex-col border-r border-slate-200 bg-white transition-transform lg:z-30 lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}
       >
         {/* Brand + desktop bell */}
         <div className="flex items-center gap-2 px-4 py-3">
@@ -261,7 +281,12 @@ export default function NavBar() {
             <Image src="/zordaq-auto.png" alt="ZORDAQ Auto Service" width={717} height={1174} priority className="h-9 w-auto" />
             <span className="truncate text-sm font-extrabold tracking-tight text-slate-900">Zordaq Auto Services</span>
           </Link>
-          {email && canBell && <div className="ml-auto hidden lg:block">{bellButton}</div>}
+          <div className="ml-auto hidden items-center gap-0.5 lg:flex">
+            {email && canBell && bellButton}
+            <button onClick={toggleCollapsed} aria-label="Hide sidebar" title="Hide sidebar" className="inline-flex h-9 w-9 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-800">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 6l-6 6 6 6" /></svg>
+            </button>
+          </div>
         </div>
 
         {/* Grouped links */}

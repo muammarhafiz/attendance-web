@@ -87,3 +87,17 @@ body {
   .no-print { display: none !important; }
   body { background: #fff; }
 }
+
+/* Collapsible desktop sidebar. The toggle (in NavBar) adds/removes `.nav-collapsed`
+   on <html> and persists it; here we slide the fixed sidebar off-screen and drop the
+   content's left padding so wide pages reclaim the full width. Desktop only — on mobile
+   the sidebar is already a hamburger drawer, so this has no effect. */
+@media (min-width: 1024px) {
+  .app-sidebar { transition: transform 0.2s ease; }
+  .app-main { transition: padding-left 0.2s ease; }
+  html[data-nav-collapsed] .app-sidebar { transform: translateX(-100%); }
+  html[data-nav-collapsed] .app-main { padding-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-sidebar, .app-main { transition: none; }
+}
