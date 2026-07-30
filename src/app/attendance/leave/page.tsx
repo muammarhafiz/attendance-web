@@ -12,6 +12,7 @@ type Req = {
   status: 'pending' | 'approved' | 'rejected' | string;
   review_note: string | null;
   created_at: string;
+  file_path: string | null;
 };
 
 const fmtD = (d: string) => { const [y, m, dd] = d.split('-'); return `${dd}/${m}/${y}`; };
@@ -90,6 +91,12 @@ export default function OffdayRequestsPage() {
     setSavingEdit(false);
   }, [editingId, eFrom, eTo, eReason, load]);
 
+  const viewAttachment = useCallback(async (path: string | null) => {
+    if (!path) return;
+    const { data, error } = await supabase.storage.from('mc').createSignedUrl(path, 300);
+    if (!error && data?.signedUrl) window.open(data.signedUrl, '_blank', 'noopener');
+  }, []);
+
   const decide = useCallback(async (id: string, approve: boolean) => {
     const note = window.prompt(approve
       ? 'Note for the staff (required) — e.g. "OK, approved":'
@@ -166,6 +173,9 @@ export default function OffdayRequestsPage() {
                     {r.review_note && <div className="mt-0.5 text-xs text-ink-3">{r.review_note}</div>}
                   </div>
                   <div className="flex items-center gap-2">
+                    {r.file_path && (
+                      <button onClick={() => viewAttachment(r.file_path)} className="rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-ink/5">View photo</button>
+                    )}
                     {r.status === 'pending' ? (
                       <>
                         <button onClick={() => startEdit(r)} disabled={busy === r.id} className="rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50">Edit</button>
