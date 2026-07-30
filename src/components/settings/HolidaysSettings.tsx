@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-type Holiday = { id: string; holiday_date: string; name: string; is_substitute: boolean };
+type Holiday = { id: string; holiday_date: string; name: string; is_substitute: boolean; is_compulsory: boolean };
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -20,11 +20,12 @@ export default function HolidaysSettings() {
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [newDate, setNewDate] = useState('');
   const [newName, setNewName] = useState('');
+  const [newCompulsory, setNewCompulsory] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     const { data } = await supabase.from('public_holidays')
-      .select('id,holiday_date,name,is_substitute')
+      .select('id,holiday_date,name,is_substitute,is_compulsory')
       .gte('holiday_date', `${year}-01-01`).lte('holiday_date', `${year}-12-31`)
       .order('holiday_date', { ascending: true }).order('name', { ascending: true });
     setRows((data ?? []) as Holiday[]);
@@ -42,8 +43,8 @@ export default function HolidaysSettings() {
 
   const add = () => {
     if (!newDate || !newName.trim()) { setMsg({ kind: 'err', text: 'Enter a date and a name.' }); return; }
-    run(() => supabase.rpc('add_holiday', { p_date: newDate, p_name: newName.trim() }), 'Holiday added ✓')
-      .then(() => { setNewDate(''); setNewName(''); });
+    run(() => supabase.rpc('add_holiday', { p_date: newDate, p_name: newName.trim(), p_compulsory: newCompulsory }), 'Holiday added ✓')
+      .then(() => { setNewDate(''); setNewName(''); setNewCompulsory(false); });
   };
   const remove = (h: Holiday) => {
     if (!window.confirm(`Remove "${h.name}" on ${fmtD(h.holiday_date)}?`)) return;
@@ -60,7 +61,8 @@ export default function HolidaysSettings() {
           These dates are auto-marked as <b>PH</b> on the attendance record for every tracked staff member — a paid day,
           no leave spent. Fixed dates (New Year, FT Day, Labour Day, Merdeka, Malaysia Day, Christmas) repeat every year;
           the moving ones (Raya, CNY, Deepavali, Thaipusam, Wesak, Agong) are gazetted yearly and loaded once. If a holiday
-          falls on a Sunday, a substitute weekday is added automatically.
+          falls on a Sunday, a substitute weekday is added automatically. The 5 <b>★ Compulsory</b> holidays (Merdeka,
+          Agong&rsquo;s Birthday, Federal Territory Day, Labour Day, Malaysia Day) cannot be swapped for another day.
         </p>
       </div>
 
@@ -91,6 +93,7 @@ export default function HolidaysSettings() {
                   <span className="tabular-nums text-ink-2">{fmtD(h.holiday_date)}</span>
                   <span className="mx-2 text-ink-3">·</span>
                   {h.name}
+                  {h.is_compulsory && <span className="ml-2 rounded-full bg-ink/10 px-2 py-0.5 text-[10px] font-semibold text-ink">★ Compulsory</span>}
                   {h.is_substitute && <span className="ml-2 rounded-full bg-accent-weak px-2 py-0.5 text-[10px] font-medium text-accent">substitute</span>}
                   {sunday && !h.is_substitute && <span className="ml-2 rounded-full bg-warn-soft px-2 py-0.5 text-[10px] font-medium text-warn">Sunday → shifted</span>}
                 </div>
@@ -109,6 +112,10 @@ export default function HolidaysSettings() {
           </label>
           <label className="min-w-[180px] flex-1 text-xs text-ink-2">Name
             <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. Hari Raya Aidilfitri" className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
+          </label>
+          <label className="flex items-center gap-1.5 pb-2 text-xs text-ink-2" title="One of the 5 holidays that can't be swapped for another day">
+            <input type="checkbox" checked={newCompulsory} onChange={(e) => setNewCompulsory(e.target.checked)} className="h-4 w-4 rounded border-line" />
+            Compulsory
           </label>
           <button onClick={add} disabled={busy} className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">Add</button>
         </div>
