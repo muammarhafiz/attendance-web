@@ -281,6 +281,7 @@ export default function NavBar() {
           { href: '/attendance/halfday-req', label: 'Half-day requests', badge: counts.halfday },
           { href: '/attendance/advance', label: 'Advance', badge: counts.advance },
           { href: '/attendance/mc', label: 'MC', badge: counts.mc },
+          ...(access.owner ? [{ href: '/attendance/preview', label: 'Preview as staff' }] : []),
         ] } as NavItem] : []),
         ...(access.employees ? [{ label: 'Employees', href: '/employees', icon: 'users' } as NavItem] : []),
         ...(access.payroll ? [{ label: 'Payroll', icon: 'wallet', children: [

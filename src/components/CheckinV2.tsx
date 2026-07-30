@@ -98,8 +98,10 @@ function haversineM(aLat: number, aLon: number, bLat: number, bLon: number): num
   return Math.round(R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s)));
 }
 
-export default function CheckinV2({ embedded = false }: { embedded?: boolean } = {}) {
+export default function CheckinV2({ embedded = false, previewEmail }: { embedded?: boolean; previewEmail?: string } = {}) {
   const router = useRouter();
+  const isPreview = previewEmail != null;   // owner viewing a staff member's page (read-only)
+  const readOnly = isPreview;               // no writes / no check-in while previewing
   const [email, setEmail] = useState<string | null | undefined>(undefined);
   const [tab, setTab] = useState<'record' | 'requests' | 'details'>('record');
   const [cfg, setCfg] = useState<{ lat: number; lon: number; radius: number } | null>(null);
@@ -162,10 +164,11 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
   }, []);
 
   useEffect(() => {
+    if (isPreview) { setEmail(previewEmail ?? null); return; }   // preview: act as the chosen staff
     supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null));
     const { data } = supabase.auth.onAuthStateChange((_e, s) => setEmail(s?.user?.email ?? null));
     return () => data.subscription.unsubscribe();
-  }, []);
+  }, [isPreview, previewEmail]);
 
   useEffect(() => {
     supabase.from('config').select('workshop_lat,workshop_lon,radius_m').eq('id', 1).maybeSingle()
@@ -188,9 +191,11 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
   }, [email]);
 
   const loadStatus = useCallback(async () => {
-    const { data, error } = await supabase.rpc('my_attendance_today');
+    const { data, error } = isPreview
+      ? await supabase.rpc('admin_attendance_today', { p_email: previewEmail })
+      : await supabase.rpc('my_attendance_today');
     if (!error) setStatus((data ?? {}) as Status);
-  }, []);
+  }, [isPreview, previewEmail]);
 
   useEffect(() => { if (email) loadStatus(); }, [email, loadStatus]);
 
@@ -225,7 +230,7 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
   useEffect(() => { if (email) loadDocNeeded(); }, [email, loadDocNeeded]);
 
   const uploadDoc = async (id: string, file: File | null) => {
-    if (!file || !email) return;
+    if (readOnly || !file || !email) return;
     setDocBusy(id);
     try {
       const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
@@ -255,12 +260,12 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
   const loadAdv = useCallback(async () => {
     if (!email) return;
     const [{ data: lim }, { data: rows }] = await Promise.all([
-      supabase.rpc('my_advance_limit'),
+      isPreview ? supabase.rpc('admin_advance_limit', { p_email: previewEmail }) : supabase.rpc('my_advance_limit'),
       supabase.from('advance_requests').select('id,amount,reason,status,review_note,credit_by,requested_at').ilike('staff_email', email).order('requested_at', { ascending: false }).limit(6),
     ]);
     if (lim) setAdvLimit(lim as AdvLimit);
     setMyAdv((rows ?? []) as AdvReq[]);
-  }, [email]);
+  }, [email, isPreview, previewEmail]);
 
   useEffect(() => { if (email) loadAdv(); }, [email, loadAdv]);
 
@@ -268,9 +273,11 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
     if (!email) return;
     const kl = new Date(Date.now() + 8 * 3600e3);                 // KL "now"
     const t = new Date(Date.UTC(kl.getUTCFullYear(), kl.getUTCMonth() - perfOffset, 1));
-    const { data } = await supabase.rpc('my_attendance_summary', { p_year: t.getUTCFullYear(), p_month: t.getUTCMonth() + 1 });
+    const { data } = isPreview
+      ? await supabase.rpc('admin_attendance_summary', { p_email: previewEmail, p_year: t.getUTCFullYear(), p_month: t.getUTCMonth() + 1 })
+      : await supabase.rpc('my_attendance_summary', { p_year: t.getUTCFullYear(), p_month: t.getUTCMonth() + 1 });
     if (data) setPerf(data as Perf);
-  }, [email, perfOffset]);
+  }, [email, perfOffset, isPreview, previewEmail]);
 
   useEffect(() => { if (email) loadPerf(); }, [email, loadPerf]);
 
@@ -285,58 +292,77 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
   const loadSales = useCallback(async () => {
     if (!email) return;
     const { y, m } = perfYM();
-    const { data } = await supabase.rpc('my_sales', { p_year: y, p_month: m });
+    const { data } = isPreview
+      ? await supabase.rpc('admin_my_sales', { p_email: previewEmail, p_year: y, p_month: m })
+      : await supabase.rpc('my_sales', { p_year: y, p_month: m });
     const row = (Array.isArray(data) ? data[0] : data) as SalesInfo | undefined;
     setSales(row ? { year: Number(row.year), month: Number(row.month), total: Number(row.total), invoices: Number(row.invoices) } : { year: y, month: m, total: 0, invoices: 0 });
-  }, [email, perfYM]);
+  }, [email, perfYM, isPreview, previewEmail]);
   useEffect(() => { if (email) loadSales(); }, [email, loadSales]);
 
   // Team sales leaderboard — visible to all staff (sales are not private); same month as My sales.
   const loadBoard = useCallback(async () => {
     if (!email) return;
     const { y, m } = perfYM();
-    const { data } = await supabase.rpc('staff_sales_board', { p_year: y, p_month: m });
+    const { data } = isPreview
+      ? await supabase.rpc('admin_sales_board', { p_email: previewEmail, p_year: y, p_month: m })
+      : await supabase.rpc('staff_sales_board', { p_year: y, p_month: m });
     const rows = ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
       staff_name: String(r.staff_name), total: Number(r.total), invoices: Number(r.invoices), is_me: Boolean(r.is_me),
     }));
     rows.sort((a, b) => b.total - a.total);
     setBoard(rows);
-  }, [email, perfYM]);
+  }, [email, perfYM, isPreview, previewEmail]);
   useEffect(() => { if (email) loadBoard(); }, [email, loadBoard]);
 
   // My day-by-day attendance for the same month — self-scoped; only fetched when expanded.
   const loadDaily = useCallback(async () => {
     if (!email) return;
     const { y, m } = perfYM();
-    const { data } = await supabase.rpc('my_attendance_month', { p_year: y, p_month: m });
+    const { data } = isPreview
+      ? await supabase.rpc('admin_attendance_month', { p_email: previewEmail, p_year: y, p_month: m })
+      : await supabase.rpc('my_attendance_month', { p_year: y, p_month: m });
     setDaily(((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
       day: String(r.day), status: String(r.status), check_in_kl: (r.check_in_kl as string) ?? null,
       check_out_kl: (r.check_out_kl as string) ?? null, late_min: (r.late_min as number) ?? null, half: (r.half as string) ?? null,
     })));
-  }, [email, perfYM]);
+  }, [email, perfYM, isPreview, previewEmail]);
   useEffect(() => { if (email && showDaily) loadDaily(); }, [email, showDaily, loadDaily]);
 
   // My finalized payslip months — self-scoped.
   const loadPayslips = useCallback(async () => {
     if (!email) return;
-    const { data } = await supabase.rpc('my_payslips');
+    const { data } = isPreview
+      ? await supabase.rpc('admin_payslips', { p_email: previewEmail })
+      : await supabase.rpc('my_payslips');
     setPayslips(((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
       year: Number(r.year), month: Number(r.month), net_pay: Number(r.net_pay), locked_at: (r.locked_at as string) ?? null,
     })));
-  }, [email]);
+  }, [email, isPreview, previewEmail]);
   useEffect(() => { if (email) loadPayslips(); }, [email, loadPayslips]);
 
   // My own personal details — self-scoped via the my_profile() RPC.
   const loadProfile = useCallback(async () => {
     if (!email) return;
+    if (isPreview) {
+      // Owner reads the target's staff row directly (staff RLS allows is_admin()).
+      const { data } = await supabase.from('staff')
+        .select('full_name,name,nationality,nric,dob,gender,race,ability_status,marital_status,phone,address,emergency_name,emergency_phone,emergency_relationship,salary_payment_method,bank_name,bank_account_name,bank_account_no,epf_no,socso_no,eis_no,position,start_date')
+        .eq('email', previewEmail).maybeSingle();
+      const form = toProfileForm(data as Record<string, unknown> | null);
+      setProfile(form);
+      setPf(form);
+      return;
+    }
     const { data } = await supabase.rpc('my_profile');
     const form = toProfileForm(data as Record<string, unknown> | null);
     setProfile(form);
     setPf(form);
-  }, [email]);
+  }, [email, isPreview, previewEmail]);
   useEffect(() => { if (email) loadProfile(); }, [email, loadProfile]);
 
   const saveProfile = async () => {
+    if (readOnly) return;
     setProfileBusy(true); setProfileMsg(null);
     const { data, error } = await supabase.rpc('update_my_profile', {
       p_full_name: pf.full_name,
@@ -373,6 +399,7 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
   };
 
   const downloadPayslip = useCallback(async (p: Payslip) => {
+    if (readOnly) return;   // the payslip route is self-scoped; disabled in preview
     const key = `${p.year}-${p.month}`;
     setSlipBusy(key);
     try {
@@ -383,10 +410,10 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
       if (!res.ok || !j?.url) throw new Error(j?.error || 'Could not get your payslip.');
       window.open(j.url, '_blank', 'noopener');
     } catch (e) { alert(e instanceof Error ? e.message : String(e)); } finally { setSlipBusy(null); }
-  }, []);
+  }, [readOnly]);
 
-  // Not signed in → send to the branded login page.
-  useEffect(() => { if (email === null) router.replace('/login'); }, [email, router]);
+  // Not signed in → send to the branded login page. (Skipped while previewing.)
+  useEffect(() => { if (!isPreview && email === null) router.replace('/login'); }, [email, router, isPreview]);
 
   const getLocation = useCallback(() => {
     if (!('geolocation' in navigator)) { setGeoErr('This device does not support GPS.'); return; }
@@ -398,7 +425,7 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
     );
   }, []);
 
-  useEffect(() => { getLocation(); }, [getLocation]);
+  useEffect(() => { if (!isPreview) getLocation(); }, [getLocation, isPreview]);
 
   const distance = useMemo(() => {
     if (!geo || !cfg) return null;
@@ -411,6 +438,7 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
 
   const doCheck = useCallback(
     async (kind: 'in' | 'out') => {
+      if (readOnly) return;
       if (!geo) { setMsg({ kind: 'err', text: 'Waiting for your GPS location — tap "Refresh location".' }); return; }
       setBusy(kind); setMsg(null);
       const fn = kind === 'in' ? 'checkin_v2' : 'checkout_v2';
@@ -419,11 +447,11 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
       else { setMsg({ kind: 'ok', text: kind === 'in' ? 'Checked in ✓' : 'Checked out ✓' }); await loadStatus(); }
       setBusy(null);
     },
-    [geo, loadStatus]
+    [geo, loadStatus, readOnly]
   );
 
   const submitMc = async () => {
-    if (!email) return;
+    if (readOnly || !email) return;
     if (!mcFrom || !mcTo) { setMcMsg({ kind: 'err', text: 'Pick the MC start and end dates.' }); return; }
     if (mcFrom > mcTo) { setMcMsg({ kind: 'err', text: 'The "From" date is after the "To" date.' }); return; }
     if (!mcFile) { setMcMsg({ kind: 'err', text: 'Attach the MC certificate (photo or PDF).' }); return; }
@@ -446,7 +474,7 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
 
   // One submit for the unified card — routes by the selected Type to the right table.
   const submitReq = async () => {
-    if (!email) return;
+    if (readOnly || !email) return;
     if (!reqSup) { setReqMsg({ kind: 'err', text: 'Select the supervisor you spoke to.' }); return; }
     const supName = supervisors.find((s) => s.email === reqSup)?.name || reqSup;
     const reason = reqReason.trim();
@@ -500,7 +528,7 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
   };
 
   const submitAdv = async () => {
-    if (!email) return;
+    if (readOnly || !email) return;
     const amt = Number(advAmount);
     if (!amt || amt <= 0) { setAdvMsg({ kind: 'err', text: 'Enter an amount.' }); return; }
     setAdvBusy(true); setAdvMsg(null);
@@ -534,6 +562,12 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
         </div>
       )}
 
+      {isPreview && (
+        <div className="mb-4 flex items-center gap-2 rounded-card bg-accent-weak px-4 py-2.5 text-sm font-medium text-accent">
+          <Icon name="user" size={15} /> Preview — read only. This is exactly what this staff sees on their phone; nothing here can be submitted.
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(300px,360px)_1fr] lg:items-start">
         {/* LEFT — the hero: clock, status, location, and the check-in action, all in one card */}
         <div>
@@ -559,7 +593,9 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
               )}
 
               <div className="mt-3">
-                {geoErr ? (
+                {isPreview ? (
+                  <div className="text-xs text-ink-3">Preview — check-in is disabled here.</div>
+                ) : geoErr ? (
                   <div className="text-sm text-bad">{geoErr}</div>
                 ) : !geo ? (
                   <div className="text-sm text-ink-2">Getting your GPS…</div>
@@ -580,11 +616,11 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-3">
-              <button onClick={() => doCheck('in')} disabled={busy !== null || checkedIn || !geo}
+              <button onClick={() => doCheck('in')} disabled={readOnly || busy !== null || checkedIn || !geo}
                 className="rounded-2xl bg-good py-4 text-base font-semibold text-white shadow-sm transition hover:opacity-90 disabled:opacity-40">
                 {busy === 'in' ? 'Checking in…' : 'Check in'}
               </button>
-              <button onClick={() => doCheck('out')} disabled={busy !== null || !checkedIn || checkedOut || !geo}
+              <button onClick={() => doCheck('out')} disabled={readOnly || busy !== null || !checkedIn || checkedOut || !geo}
                 className="rounded-2xl bg-accent py-4 text-base font-semibold text-white shadow-sm transition hover:opacity-90 disabled:opacity-40">
                 {busy === 'out' ? 'Checking out…' : 'Check out'}
               </button>
@@ -596,7 +632,7 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
               </div>
             )}
           </div>
-          <p className="mt-2 px-1 text-xs text-ink-3">Your location is checked on the server when you tap the button.</p>
+          {!isPreview && <p className="mt-2 px-1 text-xs text-ink-3">Your location is checked on the server when you tap the button.</p>}
         </div>
 
         {/* RIGHT — everything else behind a segmented control */}
@@ -689,7 +725,7 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
                     <div className="flex items-center gap-2 text-sm font-semibold text-ink"><span className="text-ink-2"><Icon name="receipt" size={16} /></span> Last month&rsquo;s payslip</div>
                     <div className="mt-2 flex items-center justify-between gap-2">
                       <div className="text-sm text-ink-2">{new Date(p.year, p.month - 1, 1).toLocaleDateString('en-MY', { month: 'long', year: 'numeric' })}</div>
-                      <button onClick={() => downloadPayslip(p)} disabled={slipBusy === key}
+                      <button onClick={() => downloadPayslip(p)} disabled={readOnly || slipBusy === key}
                         className="shrink-0 rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent-weak disabled:opacity-50">
                         {slipBusy === key ? '…' : 'Download'}
                       </button>
@@ -712,7 +748,7 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
                       <div key={d.id} className="rounded-md bg-card p-3">
                         <div className="text-sm font-medium text-ink">Proof for {fmtDate(d.day)}{d.label ? ` (${d.label})` : ''}</div>
                         {d.note && <div className="text-xs text-ink-3">{d.note}</div>}
-                        <input type="file" accept="image/*,application/pdf" disabled={docBusy === d.id} onChange={(e) => uploadDoc(d.id, e.target.files?.[0] ?? null)} className="mt-1.5 block w-full text-sm text-ink-2 file:mr-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white disabled:opacity-50" />
+                        <input type="file" accept="image/*,application/pdf" disabled={readOnly || docBusy === d.id} onChange={(e) => uploadDoc(d.id, e.target.files?.[0] ?? null)} className="mt-1.5 block w-full text-sm text-ink-2 file:mr-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white disabled:opacity-50" />
                         {docBusy === d.id && <div className="mt-1 text-xs text-ink-3">Uploading…</div>}
                       </div>
                     ))}
@@ -773,7 +809,7 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
                       </label>
                     )}
                     {reqFile && reqType !== 'half' && <div className="text-xs text-good">Attached: {reqFile.name}</div>}
-                    <button onClick={submitReq} disabled={reqBusy || !reqSup} className="w-full rounded-lg bg-accent py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+                    <button onClick={submitReq} disabled={readOnly || reqBusy || !reqSup} className="w-full rounded-lg bg-accent py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
                       {reqBusy ? 'Sending…' : reqType === 'off' ? 'Request off day' : reqType === 'em' ? 'Report absence' : 'Request half day'}
                     </button>
                     {reqMsg && (
@@ -877,7 +913,7 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
                         <label className="block text-xs text-ink-2">Reason (optional)
                           <input value={advReason} onChange={(e) => setAdvReason(e.target.value)} placeholder="e.g. medical bill" className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
                         </label>
-                        <button onClick={submitAdv} disabled={advBusy} className="w-full rounded-lg bg-accent py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">{advBusy ? 'Sending…' : 'Request advance'}</button>
+                        <button onClick={submitAdv} disabled={readOnly || advBusy} className="w-full rounded-lg bg-accent py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">{advBusy ? 'Sending…' : 'Request advance'}</button>
                       </>
                     )}
                     {advMsg && <div className={`rounded-md border border-line p-2 text-sm ${advMsg.kind === 'ok' ? 'bg-good-soft text-good' : 'bg-bad-soft text-bad'}`}>{advMsg.text}</div>}
@@ -937,7 +973,7 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
                     <label className="block text-xs text-ink-2">Note (optional)
                       <input value={mcNote} onChange={(e) => setMcNote(e.target.value)} placeholder="e.g. clinic name" className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
                     </label>
-                    <button onClick={submitMc} disabled={mcBusy} className="w-full rounded-lg bg-accent py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+                    <button onClick={submitMc} disabled={readOnly || mcBusy} className="w-full rounded-lg bg-accent py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
                       {mcBusy ? 'Submitting…' : 'Submit MC'}
                     </button>
                     {mcMsg && (
@@ -954,7 +990,7 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
             <div className="rounded-card bg-card p-4 shadow-card">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 text-sm font-semibold text-ink"><span className="text-ink-2"><Icon name="user" size={16} /></span> My details</div>
-                {!editProfile && (
+                {!editProfile && !readOnly && (
                   <button onClick={() => { setPf(profile); setProfileMsg(null); setEditProfile(true); }}
                     className="shrink-0 rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent-weak">
                     Edit
