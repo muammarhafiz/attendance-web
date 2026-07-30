@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-type Holiday = { id: string; holiday_date: string; name: string; is_substitute: boolean; is_compulsory: boolean };
+type Holiday = { id: string; holiday_date: string; name: string; is_substitute: boolean; is_compulsory: boolean; handling: string; swap_to_date: string | null };
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -21,11 +21,12 @@ export default function HolidaysSettings() {
   const [newDate, setNewDate] = useState('');
   const [newName, setNewName] = useState('');
   const [newCompulsory, setNewCompulsory] = useState(false);
+  const [swapId, setSwapId] = useState<string | null>(null); // row currently choosing a swap-to date
 
   const load = useCallback(async () => {
     setLoading(true);
     const { data } = await supabase.from('public_holidays')
-      .select('id,holiday_date,name,is_substitute,is_compulsory')
+      .select('id,holiday_date,name,is_substitute,is_compulsory,handling,swap_to_date')
       .gte('holiday_date', `${year}-01-01`).lte('holiday_date', `${year}-12-31`)
       .order('holiday_date', { ascending: true }).order('name', { ascending: true });
     setRows((data ?? []) as Holiday[]);
@@ -52,6 +53,11 @@ export default function HolidaysSettings() {
   };
   const prefill = () => run(() => supabase.rpc('prefill_fixed_holidays', { p_year: year }), 'Fixed dates added ✓');
   const substitutes = () => run(() => supabase.rpc('add_sunday_substitutes', { p_year: year }), 'Substitute days regenerated ✓');
+  const setHandling = (h: Holiday, handling: string, swap: string | null) =>
+    run(() => supabase.rpc('set_holiday_handling', { p_id: h.id, p_handling: handling, p_swap_to: swap }),
+      handling === 'open' ? 'Set to Open — staff who work it get extra pay ✓' : handling === 'swap' ? 'Holiday swapped ✓' : 'Set to Close ✓')
+      .then(() => setSwapId(null));
+  const onHandling = (h: Holiday, v: string) => { if (v === 'swap') { setSwapId(h.id); return; } setHandling(h, v, null); };
 
   return (
     <div className="max-w-2xl">
@@ -63,6 +69,8 @@ export default function HolidaysSettings() {
           the moving ones (Raya, CNY, Deepavali, Thaipusam, Wesak, Agong) are gazetted yearly and loaded once. If a holiday
           falls on a Sunday, a substitute weekday is added automatically. The 5 <b>★ Compulsory</b> holidays (Merdeka,
           Agong&rsquo;s Birthday, Federal Territory Day, Labour Day, Malaysia Day) cannot be swapped for another day.
+          For each day pick <b>Close</b> (paid, no work), <b>Open</b> (staff who work it get the extra public-holiday pay,
+          added automatically at payroll), or <b>Swap</b> it to another date.
         </p>
       </div>
 
@@ -86,19 +94,39 @@ export default function HolidaysSettings() {
           <div className="p-4 text-sm text-ink-3">No holidays for {year}. Use “Prefill fixed dates”, then add the gazetted moving dates.</div>
         ) : rows.map((h) => {
           const sunday = parseD(h.holiday_date).getDay() === 0;
+          const showSwap = h.handling === 'swap' || swapId === h.id;
           return (
-            <div key={h.id} className="flex items-center justify-between gap-3 p-3">
-              <div className="min-w-0">
-                <div className="text-sm text-ink">
-                  <span className="tabular-nums text-ink-2">{fmtD(h.holiday_date)}</span>
-                  <span className="mx-2 text-ink-3">·</span>
-                  {h.name}
-                  {h.is_compulsory && <span className="ml-2 rounded-full bg-ink/10 px-2 py-0.5 text-[10px] font-semibold text-ink">★ Compulsory</span>}
-                  {h.is_substitute && <span className="ml-2 rounded-full bg-accent-weak px-2 py-0.5 text-[10px] font-medium text-accent">substitute</span>}
-                  {sunday && !h.is_substitute && <span className="ml-2 rounded-full bg-warn-soft px-2 py-0.5 text-[10px] font-medium text-warn">Sunday → shifted</span>}
+            <div key={h.id} className="p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm text-ink">
+                    <span className="tabular-nums text-ink-2">{fmtD(h.holiday_date)}</span>
+                    <span className="mx-2 text-ink-3">·</span>
+                    {h.name}
+                    {h.is_compulsory && <span className="ml-2 rounded-full bg-ink/10 px-2 py-0.5 text-[10px] font-semibold text-ink">★ Compulsory</span>}
+                    {h.is_substitute && <span className="ml-2 rounded-full bg-accent-weak px-2 py-0.5 text-[10px] font-medium text-accent">substitute</span>}
+                    {sunday && !h.is_substitute && <span className="ml-2 rounded-full bg-warn-soft px-2 py-0.5 text-[10px] font-medium text-warn">Sunday → shifted</span>}
+                  </div>
                 </div>
+                <button onClick={() => remove(h)} disabled={busy} className="shrink-0 rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50">Remove</button>
               </div>
-              <button onClick={() => remove(h)} disabled={busy} className="shrink-0 rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50">Remove</button>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="text-xs text-ink-3">On this day:</span>
+                <select value={swapId === h.id ? 'swap' : h.handling} disabled={busy}
+                  onChange={(e) => onHandling(h, e.target.value)}
+                  className="rounded-md border border-line px-2 py-1 text-xs">
+                  <option value="close">Close · paid, no work</option>
+                  <option value="open">Open · pay extra</option>
+                  <option value="swap" disabled={h.is_compulsory}>Swap to another day…{h.is_compulsory ? ' (not allowed)' : ''}</option>
+                </select>
+                {showSwap && (
+                  <input type="date" defaultValue={h.swap_to_date ?? ''} disabled={busy}
+                    onChange={(e) => { if (e.target.value) setHandling(h, 'swap', e.target.value); }}
+                    className="rounded-md border border-line px-2 py-1 text-xs" />
+                )}
+                {h.handling === 'open' && swapId !== h.id && <span className="text-[11px] font-medium text-good">staff who work get extra pay</span>}
+                {h.handling === 'swap' && h.swap_to_date && swapId !== h.id && <span className="text-[11px] font-medium text-accent">→ moved to {fmtD(h.swap_to_date)}</span>}
+              </div>
             </div>
           );
         })}
