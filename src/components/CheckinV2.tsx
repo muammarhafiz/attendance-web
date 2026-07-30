@@ -116,32 +116,20 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
   const [mcNote, setMcNote] = useState('');
   const [mcBusy, setMcBusy] = useState(false);
   const [mcMsg, setMcMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
-  const [showOff, setShowOff] = useState(false);
-  const [offFrom, setOffFrom] = useState('');
-  const [offTo, setOffTo] = useState('');
-  const [offReason, setOffReason] = useState('');
-  const [offBusy, setOffBusy] = useState(false);
-  const [offMsg, setOffMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
-  const [myOff, setMyOff] = useState<OffReq[]>([]);
+  // Unified "Request time off" card — one form, pick the Type first (Off day / Emergency / Half day).
+  const [showReq, setShowReq] = useState(false);
+  const [reqType, setReqType] = useState<'off' | 'em' | 'half'>('off');
+  const [reqSup, setReqSup] = useState('');            // supervisor the staff asked / informed (email)
+  const [reqFrom, setReqFrom] = useState('');          // off-day / half-day start
+  const [reqTo, setReqTo] = useState('');              // off-day / half-day end
+  const [reqHalf, setReqHalf] = useState<'AM' | 'PM'>('PM');
+  const [reqReason, setReqReason] = useState('');
+  const [reqFile, setReqFile] = useState<File | null>(null);
+  const [reqBusy, setReqBusy] = useState(false);
+  const [reqMsg, setReqMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [supervisors, setSupervisors] = useState<{ email: string; name: string | null }[]>([]);
-  const [offSupervisor, setOffSupervisor] = useState(''); // email of the supervisor the staff verbally asked first
-  const [offFile, setOffFile] = useState<File | null>(null); // optional supporting photo/PDF (e.g. funeral cert)
-  // Emergency / last-minute absence — no advance-notice rule, no approval; the office records the day.
-  const [showEm, setShowEm] = useState(false);
-  const [emDate, setEmDate] = useState(() => klDatePlus(0));
-  const [emReason, setEmReason] = useState('');
-  const [emInformed, setEmInformed] = useState('');
-  const [emFile, setEmFile] = useState<File | null>(null);
-  const [emBusy, setEmBusy] = useState(false);
-  const [emMsg, setEmMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [myOff, setMyOff] = useState<OffReq[]>([]);
   const [myEm, setMyEm] = useState<EmReq[]>([]);
-  const [showHalf, setShowHalf] = useState(false);
-  const [halfFrom, setHalfFrom] = useState('');
-  const [halfTo, setHalfTo] = useState('');
-  const [halfWhich, setHalfWhich] = useState<'AM' | 'PM'>('PM');
-  const [halfReason, setHalfReason] = useState('');
-  const [halfBusy, setHalfBusy] = useState(false);
-  const [halfMsg, setHalfMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [myHalf, setMyHalf] = useState<HalfReq[]>([]);
   const [showAdv, setShowAdv] = useState(false);
   const [advAmount, setAdvAmount] = useState('');
@@ -425,80 +413,59 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
     } finally { setMcBusy(false); }
   };
 
-  const submitOff = async () => {
+  // One submit for the unified card — routes by the selected Type to the right table.
+  const submitReq = async () => {
     if (!email) return;
-    if (!offSupervisor) { setOffMsg({ kind: 'err', text: 'Choose the supervisor you already asked before requesting.' }); return; }
-    if (!offFrom || !offTo) { setOffMsg({ kind: 'err', text: 'Pick the start and end dates.' }); return; }
-    if (offFrom > offTo) { setOffMsg({ kind: 'err', text: 'The "From" date is after the "To" date.' }); return; }
-    if (offFrom < klDatePlus(2)) { setOffMsg({ kind: 'err', text: 'Off-day requests must be made at least 2 days in advance.' }); return; }
-    setOffBusy(true); setOffMsg(null);
+    if (!reqSup) { setReqMsg({ kind: 'err', text: 'Select the supervisor you spoke to.' }); return; }
+    const supName = supervisors.find((s) => s.email === reqSup)?.name || reqSup;
+    const reason = reqReason.trim();
+    setReqBusy(true); setReqMsg(null);
     try {
-      // Optional supporting photo/PDF (e.g. funeral certificate) → mc storage bucket.
+      // Optional supporting photo/PDF (off day + emergency) → mc storage bucket.
       let filePath: string | null = null;
-      if (offFile) {
-        const ext = (offFile.name.split('.').pop() || 'jpg').toLowerCase();
-        const path = `${email}/offday_${Date.now()}.${ext}`;
-        const up = await supabase.storage.from('mc').upload(path, offFile, { upsert: false });
+      if (reqFile && reqType !== 'half') {
+        const ext = (reqFile.name.split('.').pop() || 'jpg').toLowerCase();
+        const path = `${email}/req_${Date.now()}.${ext}`;
+        const up = await supabase.storage.from('mc').upload(path, reqFile, { upsert: false });
         if (up.error) throw up.error;
         filePath = path;
       }
-      // Record which supervisor was asked (stored in the request reason so the approver sees it).
-      const askedName = supervisors.find((s) => s.email === offSupervisor)?.name || offSupervisor;
-      const composedReason = `Asked: ${askedName}${offReason.trim() ? ` · ${offReason.trim()}` : ''}`;
-      const { error } = await supabase.from('offday_requests').insert({
-        staff_email: email, date_from: offFrom, date_to: offTo, reason: composedReason, file_path: filePath,
-      });
-      if (error) throw error;
-      setOffMsg({ kind: 'ok', text: 'Off-day request sent ✓ — waiting for approval.' });
-      setOffFrom(''); setOffTo(''); setOffReason(''); setOffSupervisor(''); setOffFile(null); loadOff();
-    } catch (e: unknown) {
-      setOffMsg({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
-    } finally {
-      setOffBusy(false);
-    }
-  };
-
-  const submitEm = async () => {
-    if (!email) return;
-    if (!emInformed) { setEmMsg({ kind: 'err', text: 'Choose who you informed.' }); return; }
-    if (!emDate) { setEmMsg({ kind: 'err', text: 'Pick which day you were absent.' }); return; }
-    if (!emReason.trim()) { setEmMsg({ kind: 'err', text: 'Tell the office the reason.' }); return; }
-    setEmBusy(true); setEmMsg(null);
-    try {
-      let filePath: string | null = null;
-      if (emFile) {
-        const ext = (emFile.name.split('.').pop() || 'jpg').toLowerCase();
-        const path = `${email}/emergency_${Date.now()}.${ext}`;
-        const up = await supabase.storage.from('mc').upload(path, emFile, { upsert: false });
-        if (up.error) throw up.error;
-        filePath = path;
+      if (reqType === 'off') {
+        if (!reqFrom || !reqTo) throw new Error('Pick the start and end dates.');
+        if (reqFrom > reqTo) throw new Error('The "From" date is after the "To" date.');
+        if (reqFrom < klDatePlus(2)) throw new Error('An off day must be requested at least 2 days in advance.');
+        const { error } = await supabase.from('offday_requests').insert({
+          staff_email: email, date_from: reqFrom, date_to: reqTo, reason: reason || null, informed_supervisor: supName, file_path: filePath,
+        });
+        if (error) throw error;
+        setReqMsg({ kind: 'ok', text: 'Off-day request sent ✓ — waiting for approval.' });
+        loadOff();
+      } else if (reqType === 'half') {
+        if (!reqFrom || !reqTo) throw new Error('Pick the start and end dates.');
+        if (reqFrom > reqTo) throw new Error('The "From" date is after the "To" date.');
+        if (reqFrom < klDatePlus(0)) throw new Error('The date can’t be in the past.');
+        const { error } = await supabase.from('halfday_requests').insert({
+          staff_email: email, date_from: reqFrom, date_to: reqTo, half: reqHalf, reason: reason || null, informed_supervisor: supName,
+        });
+        if (error) throw error;
+        setReqMsg({ kind: 'ok', text: 'Half-day request sent ✓ — waiting for approval.' });
+        loadHalf();
+      } else {
+        // emergency — for today; no approval, the office records the day
+        if (!reason) throw new Error('Tell the office the reason.');
+        const { error } = await supabase.from('emergency_absences').insert({
+          staff_email: email, absent_date: klDatePlus(0), reason, informed_supervisor: supName, file_path: filePath,
+        });
+        if (error) throw error;
+        setReqMsg({ kind: 'ok', text: 'Reported ✓ — the office will record your absence.' });
+        loadEm();
       }
-      const informedName = supervisors.find((s) => s.email === emInformed)?.name || emInformed;
-      const { error } = await supabase.from('emergency_absences').insert({
-        staff_email: email, absent_date: emDate, reason: emReason.trim(), informed_supervisor: informedName, file_path: filePath,
-      });
-      if (error) throw error;
-      setEmMsg({ kind: 'ok', text: 'Reported ✓ — the office will record your absence.' });
-      setEmReason(''); setEmInformed(''); setEmFile(null); loadEm();
+      setReqFrom(''); setReqTo(''); setReqReason(''); setReqSup(''); setReqFile(null); setReqHalf('PM');
     } catch (e: unknown) {
-      setEmMsg({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
+      setReqMsg({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
     } finally {
-      setEmBusy(false);
+      setReqBusy(false);
     }
-  };
-
-  const submitHalf = async () => {
-    if (!email) return;
-    if (!halfFrom || !halfTo) { setHalfMsg({ kind: 'err', text: 'Pick the start and end dates.' }); return; }
-    if (halfFrom > halfTo) { setHalfMsg({ kind: 'err', text: 'The "From" date is after the "To" date.' }); return; }
-    if (halfFrom < klDatePlus(2)) { setHalfMsg({ kind: 'err', text: 'Half-day requests must be made at least 2 days in advance.' }); return; }
-    setHalfBusy(true); setHalfMsg(null);
-    const { error } = await supabase.from('halfday_requests').insert({
-      staff_email: email, date_from: halfFrom, date_to: halfTo, half: halfWhich, reason: halfReason || null,
-    });
-    if (error) setHalfMsg({ kind: 'err', text: error.message });
-    else { setHalfMsg({ kind: 'ok', text: 'Half-day request sent ✓ — waiting for approval.' }); setHalfFrom(''); setHalfTo(''); setHalfReason(''); loadHalf(); }
-    setHalfBusy(false);
   };
 
   const submitAdv = async () => {
@@ -705,41 +672,64 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
           {/* REQUESTS */}
           {tab === 'requests' && (
             <div>
-              {/* Request off day */}
+              {/* Request time off — one card; pick the Type first (Off day / Emergency / Half day) */}
               <div className="mb-3 rounded-card bg-card p-4 shadow-card">
-                <button onClick={() => setShowOff((v) => !v)} className="flex w-full items-center gap-2 text-sm font-medium text-ink">
-                  <span className="text-ink-2"><Icon name="sun" size={16} /></span><span>Request off day (leave)</span><span className="ml-auto text-ink-3">{showOff ? '−' : '+'}</span>
+                <button onClick={() => setShowReq((v) => !v)} className="flex w-full items-center gap-2 text-sm font-medium text-ink">
+                  <span className="text-ink-2"><Icon name="sun" size={16} /></span><span>Request time off</span><span className="ml-auto text-ink-3">{showReq ? '−' : '+'}</span>
                 </button>
-                {showOff && (
+                {showReq && (
                   <div className="mt-3 space-y-2">
-                    <div className="rounded-md bg-warn-soft px-3 py-2 text-xs text-warn">Confirm with a supervisor in person first, then select them below.</div>
-                    <label className="block text-xs text-ink-2">Supervisor you asked <span className="text-bad">*</span>
-                      <select value={offSupervisor} onChange={(e) => setOffSupervisor(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm">
+                    <label className="block text-xs text-ink-2">Type <span className="text-bad">*</span>
+                      <select value={reqType} onChange={(e) => { setReqType(e.target.value as 'off' | 'em' | 'half'); setReqMsg(null); }} className="mt-0.5 block w-full rounded-md border border-accent bg-accent-weak px-2 py-1.5 text-sm font-semibold text-accent">
+                        <option value="off">Off day</option>
+                        <option value="em">Emergency leave</option>
+                        <option value="half">Half day</option>
+                      </select>
+                    </label>
+                    <div className="rounded-md bg-warn-soft px-3 py-2 text-xs text-warn">
+                      {reqType === 'off' ? 'Plan ahead — the date must be at least 2 days from today. Confirm with a supervisor first.'
+                        : reqType === 'em' ? 'For a sudden absence today — inform your supervisor first; the office records the day.'
+                        : 'Morning or afternoon off — the date can be today. Confirm with a supervisor first.'}
+                    </div>
+                    <label className="block text-xs text-ink-2">Supervisor you informed <span className="text-bad">*</span>
+                      <select value={reqSup} onChange={(e) => setReqSup(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm">
                         <option value="">Select a supervisor…</option>
                         {supervisors.map((s) => <option key={s.email} value={s.email}>{s.name ?? s.email}</option>)}
                       </select>
                       {supervisors.length === 0 && <span className="mt-1 block text-xs text-ink-3">No supervisors are set up yet — ask the office.</span>}
                     </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <label className="text-xs text-ink-2">From
-                        <input type="date" value={offFrom} min={klDatePlus(2)} onChange={(e) => setOffFrom(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
-                      </label>
-                      <label className="text-xs text-ink-2">To
-                        <input type="date" value={offTo} min={offFrom || klDatePlus(2)} onChange={(e) => setOffTo(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
-                      </label>
-                    </div>
-                    <label className="block text-xs text-ink-2">Reason (optional)
-                      <input value={offReason} onChange={(e) => setOffReason(e.target.value)} placeholder="e.g. family matters" className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
+                    {reqType === 'half' && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <button onClick={() => setReqHalf('AM')} className={`rounded-md border px-2 py-1.5 text-xs font-medium ${reqHalf === 'AM' ? 'border-line bg-accent-weak text-accent' : 'border-line text-ink-2'}`}>Morning · 9:30–1:30</button>
+                        <button onClick={() => setReqHalf('PM')} className={`rounded-md border px-2 py-1.5 text-xs font-medium ${reqHalf === 'PM' ? 'border-line bg-accent-weak text-accent' : 'border-line text-ink-2'}`}>Afternoon · 1:30–6:00</button>
+                      </div>
+                    )}
+                    {reqType === 'em' ? (
+                      <div className="rounded-md border border-line bg-ink/[0.03] px-3 py-2 text-xs text-ink-2">For today — {fmtDate(klDatePlus(0))}</div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="text-xs text-ink-2">From
+                          <input type="date" value={reqFrom} min={reqType === 'off' ? klDatePlus(2) : klDatePlus(0)} onChange={(e) => setReqFrom(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
+                        </label>
+                        <label className="text-xs text-ink-2">To
+                          <input type="date" value={reqTo} min={reqFrom || (reqType === 'off' ? klDatePlus(2) : klDatePlus(0))} onChange={(e) => setReqTo(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
+                        </label>
+                      </div>
+                    )}
+                    <label className="block text-xs text-ink-2">{reqType === 'em' ? 'Reason ' : 'Reason (optional)'}{reqType === 'em' && <span className="text-bad">*</span>}
+                      <input value={reqReason} onChange={(e) => setReqReason(e.target.value)} placeholder={reqType === 'em' ? 'e.g. sick, family emergency, accident' : 'e.g. family matters'} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
                     </label>
-                    <label className="block text-xs text-ink-2">Attach a photo / PDF (optional) — e.g. funeral certificate
-                      <input type="file" accept="image/*,application/pdf" onChange={(e) => setOffFile(e.target.files?.[0] ?? null)} className="mt-0.5 block w-full text-sm text-ink-2 file:mr-3 file:rounded-md file:border-0 file:bg-ink/5 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-ink-2" />
-                    </label>
-                    {offFile && <div className="text-xs text-good">Attached: {offFile.name}</div>}
-                    <button onClick={submitOff} disabled={offBusy || !offSupervisor} className="w-full rounded-lg bg-accent py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
-                      {offBusy ? 'Sending…' : 'Request off day'}
+                    {reqType !== 'half' && (
+                      <label className="block text-xs text-ink-2">Attach a photo / PDF (optional) — e.g. MC, funeral certificate
+                        <input type="file" accept="image/*,application/pdf" onChange={(e) => setReqFile(e.target.files?.[0] ?? null)} className="mt-0.5 block w-full text-sm text-ink-2 file:mr-3 file:rounded-md file:border-0 file:bg-ink/5 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-ink-2" />
+                      </label>
+                    )}
+                    {reqFile && reqType !== 'half' && <div className="text-xs text-good">Attached: {reqFile.name}</div>}
+                    <button onClick={submitReq} disabled={reqBusy || !reqSup} className="w-full rounded-lg bg-accent py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+                      {reqBusy ? 'Sending…' : reqType === 'off' ? 'Request off day' : reqType === 'em' ? 'Report absence' : 'Request half day'}
                     </button>
-                    {offMsg && (
-                      <div className={`rounded-md border border-line p-2 text-sm ${offMsg.kind === 'ok' ? 'bg-good-soft text-good' : 'bg-bad-soft text-bad'}`}>{offMsg.text}</div>
+                    {reqMsg && (
+                      <div className={`rounded-md border border-line p-2 text-sm ${reqMsg.kind === 'ok' ? 'bg-good-soft text-good' : 'bg-bad-soft text-bad'}`}>{reqMsg.text}</div>
                     )}
                   </div>
                 )}
@@ -771,41 +761,6 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
                 </div>
               )}
 
-              {/* Report emergency / last-minute absence — no 2-day rule, no approval; office records the day */}
-              <div className="mb-3 rounded-card bg-card p-4 shadow-card">
-                <button onClick={() => setShowEm((v) => !v)} className="flex w-full items-center gap-2 text-sm font-medium text-ink">
-                  <span className="text-ink-2"><Icon name="bell" size={16} /></span><span>Report emergency / last-minute absence</span><span className="ml-auto text-ink-3">{showEm ? '−' : '+'}</span>
-                </button>
-                {showEm && (
-                  <div className="mt-3 space-y-2">
-                    <div className="rounded-md bg-warn-soft px-3 py-2 text-xs text-warn">For a sudden absence you couldn&rsquo;t request 2 days ahead. Inform your supervisor first, then log it here so the office can record the day.</div>
-                    <label className="block text-xs text-ink-2">Supervisor you informed <span className="text-bad">*</span>
-                      <select value={emInformed} onChange={(e) => setEmInformed(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm">
-                        <option value="">Select a supervisor…</option>
-                        {supervisors.map((s) => <option key={s.email} value={s.email}>{s.name ?? s.email}</option>)}
-                      </select>
-                      {supervisors.length === 0 && <span className="mt-1 block text-xs text-ink-3">No supervisors are set up yet — ask the office.</span>}
-                    </label>
-                    <label className="block text-xs text-ink-2">Which day? <span className="text-bad">*</span>
-                      <input type="date" value={emDate} onChange={(e) => setEmDate(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
-                    </label>
-                    <label className="block text-xs text-ink-2">Reason <span className="text-bad">*</span>
-                      <input value={emReason} onChange={(e) => setEmReason(e.target.value)} placeholder="e.g. sick, family emergency, accident" className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
-                    </label>
-                    <label className="block text-xs text-ink-2">Attach a photo / PDF (optional) — e.g. MC, if you have it
-                      <input type="file" accept="image/*,application/pdf" onChange={(e) => setEmFile(e.target.files?.[0] ?? null)} className="mt-0.5 block w-full text-sm text-ink-2 file:mr-3 file:rounded-md file:border-0 file:bg-ink/5 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-ink-2" />
-                    </label>
-                    {emFile && <div className="text-xs text-good">Attached: {emFile.name}</div>}
-                    <button onClick={submitEm} disabled={emBusy || !emInformed} className="w-full rounded-lg bg-accent py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
-                      {emBusy ? 'Sending…' : 'Report absence'}
-                    </button>
-                    {emMsg && (
-                      <div className={`rounded-md border border-line p-2 text-sm ${emMsg.kind === 'ok' ? 'bg-good-soft text-good' : 'bg-bad-soft text-bad'}`}>{emMsg.text}</div>
-                    )}
-                  </div>
-                )}
-              </div>
-
               {/* My emergency reports */}
               {myEm.length > 0 && (
                 <div className="mb-3 rounded-card bg-card p-4 shadow-card">
@@ -823,38 +778,6 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
                   </div>
                 </div>
               )}
-
-              {/* Request half day */}
-              <div className="mb-3 rounded-card bg-card p-4 shadow-card">
-                <button onClick={() => setShowHalf((v) => !v)} className="flex w-full items-center gap-2 text-sm font-medium text-ink">
-                  <span className="text-ink-2"><Icon name="clock" size={16} /></span><span>Request half day</span><span className="ml-auto text-ink-3">{showHalf ? '−' : '+'}</span>
-                </button>
-                {showHalf && (
-                  <div className="mt-3 space-y-2">
-                    <div className="grid grid-cols-2 gap-2">
-                      <button onClick={() => setHalfWhich('AM')} className={`rounded-md border px-2 py-1.5 text-xs font-medium ${halfWhich === 'AM' ? 'border-line bg-accent-weak text-accent' : 'border-line text-ink-2'}`}>Morning · 9:30–1:30</button>
-                      <button onClick={() => setHalfWhich('PM')} className={`rounded-md border px-2 py-1.5 text-xs font-medium ${halfWhich === 'PM' ? 'border-line bg-accent-weak text-accent' : 'border-line text-ink-2'}`}>Afternoon · 1:30–6:00</button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <label className="text-xs text-ink-2">From
-                        <input type="date" value={halfFrom} min={klDatePlus(2)} onChange={(e) => setHalfFrom(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
-                      </label>
-                      <label className="text-xs text-ink-2">To
-                        <input type="date" value={halfTo} min={halfFrom || klDatePlus(2)} onChange={(e) => setHalfTo(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
-                      </label>
-                    </div>
-                    <label className="block text-xs text-ink-2">Reason (optional)
-                      <input value={halfReason} onChange={(e) => setHalfReason(e.target.value)} placeholder="e.g. clinic appointment" className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
-                    </label>
-                    <button onClick={submitHalf} disabled={halfBusy} className="w-full rounded-lg bg-accent py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
-                      {halfBusy ? 'Sending…' : 'Request half day'}
-                    </button>
-                    {halfMsg && (
-                      <div className={`rounded-md border border-line p-2 text-sm ${halfMsg.kind === 'ok' ? 'bg-good-soft text-good' : 'bg-bad-soft text-bad'}`}>{halfMsg.text}</div>
-                    )}
-                  </div>
-                )}
-              </div>
 
               {/* My half-day requests */}
               {myHalf.length > 0 && (
