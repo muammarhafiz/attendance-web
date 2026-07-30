@@ -712,10 +712,10 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
                 </button>
                 {showOff && (
                   <div className="mt-3 space-y-2">
-                    <div className="rounded-md bg-warn-soft px-3 py-2 text-xs text-warn">Ask a supervisor in person first, then choose who you asked below.</div>
-                    <label className="block text-xs text-ink-2">Which supervisor did you ask? <span className="text-bad">*</span>
+                    <div className="rounded-md bg-warn-soft px-3 py-2 text-xs text-warn">Confirm with a supervisor in person first, then select them below.</div>
+                    <label className="block text-xs text-ink-2">Supervisor you asked <span className="text-bad">*</span>
                       <select value={offSupervisor} onChange={(e) => setOffSupervisor(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm">
-                        <option value="">Select the supervisor you asked…</option>
+                        <option value="">Select a supervisor…</option>
                         {supervisors.map((s) => <option key={s.email} value={s.email}>{s.name ?? s.email}</option>)}
                       </select>
                       {supervisors.length === 0 && <span className="mt-1 block text-xs text-ink-3">No supervisors are set up yet — ask the office.</span>}
@@ -778,10 +778,10 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
                 </button>
                 {showEm && (
                   <div className="mt-3 space-y-2">
-                    <div className="rounded-md bg-warn-soft px-3 py-2 text-xs text-warn">For a sudden absence you couldn&rsquo;t request 2 days ahead. Call your supervisor first, then log it here so the office can record the day.</div>
-                    <label className="block text-xs text-ink-2">Who did you inform? <span className="text-bad">*</span>
+                    <div className="rounded-md bg-warn-soft px-3 py-2 text-xs text-warn">For a sudden absence you couldn&rsquo;t request 2 days ahead. Inform your supervisor first, then log it here so the office can record the day.</div>
+                    <label className="block text-xs text-ink-2">Supervisor you informed <span className="text-bad">*</span>
                       <select value={emInformed} onChange={(e) => setEmInformed(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm">
-                        <option value="">Select who you told…</option>
+                        <option value="">Select a supervisor…</option>
                         {supervisors.map((s) => <option key={s.email} value={s.email}>{s.name ?? s.email}</option>)}
                       </select>
                       {supervisors.length === 0 && <span className="mt-1 block text-xs text-ink-3">No supervisors are set up yet — ask the office.</span>}
