@@ -12,8 +12,11 @@ type NavChild = { href: string; label: string; match?: string; badge?: number };
 type NavItem = { href?: string; label: string; match?: string; badge?: number; icon: IconName; children?: NavChild[] };
 type NavGroup = { label: string; items: NavItem[] };
 type NotifItem = { type: string; id: string; who: string; detail: string; when: string; href: string };
-const NOTIF_ICON: Record<string, string> = { offday: '🌴', halfday: '🕧', advance: '💵', mc: '📄', po: '📦', pinv: '📥', pinv_created: '✅', not_checkin: '⏰', stuckcar: '🚗', debt: '🧾', lowstock: '📉' };
-const NOTIF_LABEL: Record<string, string> = { offday: 'off-day request', halfday: 'half-day request', advance: 'advance request', mc: 'MC', po: 'purchase order', pinv: 'purchase invoice', pinv_created: 'created in Niagawan ✓', not_checkin: 'not checked in', stuckcar: 'in shop > 3 days', debt: 'newly overdue', lowstock: 'to restock' };
+const NOTIF_ICON: Record<string, string> = { offday: '🌴', halfday: '🕧', advance: '💵', mc: '📄', po: '📦', pinv: '📥', pinv_created: '✅', not_checkin: '⏰', stuckcar: '🚗', debt: '🧾', lowstock: '📉',
+  // staff-facing outcomes (their own request was decided)
+  offday_result: '🌴', halfday_result: '🕧', mc_result: '📄', advance_result: '💵' };
+const NOTIF_LABEL: Record<string, string> = { offday: 'off-day request', halfday: 'half-day request', advance: 'advance request', mc: 'MC', po: 'purchase order', pinv: 'purchase invoice', pinv_created: 'created in Niagawan ✓', not_checkin: 'not checked in', stuckcar: 'in shop > 3 days', debt: 'newly overdue', lowstock: 'to restock',
+  offday_result: 'off-day request', halfday_result: 'half-day request', mc_result: 'MC', advance_result: 'advance' };
 // Request types the owner can approve/reject right in the bell (each has approve_*/reject_* RPCs).
 const ACTIONABLE = new Set(['offday', 'halfday', 'advance', 'mc']);
 function relTime(iso: string): string {
@@ -129,10 +132,11 @@ export default function NavBar() {
   }, []);
 
   // Owner sees the full feed; Office/Manager (month_end) see ONLY the "PI created in Niagawan" items.
-  const canBell = !!access.owner || !!access.month_end;
+  // Any signed-in user gets the bell: approvers see pending approvals, staff see their own decided requests.
+  const showBell = !!email;
 
   const reloadFeed = useCallback(async () => {
-    if (!canBell) { setCounts({ mc: 0, offday: 0, halfday: 0, advance: 0, po: 0, pinv: 0, pinv_created: 0 }); setItems([]); return; }
+    if (!showBell) { setCounts({ mc: 0, offday: 0, halfday: 0, advance: 0, po: 0, pinv: 0, pinv_created: 0 }); setItems([]); return; }
     // Don't hit the DB from a hidden/backgrounded tab; we refresh on focus (listeners below).
     if (typeof document !== 'undefined' && document.hidden) return;
     const { data } = await supabase.rpc('notification_feed'); // one round-trip: counts + items
@@ -140,17 +144,17 @@ export default function NavBar() {
     const c = d.counts ?? {};
     setCounts({ mc: c.mc ?? 0, offday: c.offday ?? 0, halfday: c.halfday ?? 0, advance: c.advance ?? 0, po: c.po ?? 0, pinv: c.pinv ?? 0, pinv_created: c.pinv_created ?? 0 });
     setItems(Array.isArray(d.items) ? (d.items as NotifItem[]) : []);
-  }, [canBell]);
+  }, [showBell]);
 
   useEffect(() => {
-    if (!canBell) { setCounts({ mc: 0, offday: 0, halfday: 0, advance: 0, po: 0, pinv: 0, pinv_created: 0 }); setItems([]); return; }
+    if (!showBell) { setCounts({ mc: 0, offday: 0, halfday: 0, advance: 0, po: 0, pinv: 0, pinv_created: 0 }); setItems([]); return; }
     reloadFeed();
     const id = setInterval(reloadFeed, 60000);
     const onVisible = () => { if (typeof document === 'undefined' || !document.hidden) reloadFeed(); };
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onVisible);
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('focus', onVisible); };
-  }, [canBell, reloadFeed]);
+  }, [showBell, reloadFeed]);
 
   // Count of "not final" sales days (unpaid or zero-cost) → badge on the Sales tab. Available to
   // anyone with Niagawan access (independent of the bell); refreshes on focus.
@@ -337,13 +341,13 @@ export default function NavBar() {
           className="relative inline-flex h-10 w-10 items-center justify-center rounded-md text-ink-2 hover:bg-ink/5"
         >
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
-          {canBell && pendingTotal > 0 && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-bad" />}
+          {showBell && (pendingTotal > 0 || unseen > 0) && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-bad" />}
         </button>
         <Link href="/" prefetch={false} className="flex min-w-0 items-center gap-2" aria-label="ZORDAQ Auto Service — Home">
           <Image src="/zordaq-auto.png" alt="ZORDAQ Auto Service" width={717} height={1174} priority className="h-8 w-auto" />
           <span className="truncate text-sm font-extrabold tracking-tight text-ink">Zordaq Auto Services</span>
         </Link>
-        {email && canBell && <div className="ml-auto">{bellButton}</div>}
+        {email && showBell && <div className="ml-auto">{bellButton}</div>}
       </header>
 
       {/* Show-sidebar button — desktop only, appears when the sidebar is collapsed */}
@@ -368,7 +372,7 @@ export default function NavBar() {
             <span className="truncate text-sm font-extrabold tracking-tight text-ink">Zordaq Auto Services</span>
           </Link>
           <div className="ml-auto hidden items-center gap-0.5 lg:flex">
-            {email && canBell && bellButton}
+            {email && showBell && bellButton}
             <button onClick={toggleCollapsed} aria-label="Hide sidebar" title="Hide sidebar" className="inline-flex h-9 w-9 items-center justify-center rounded-md text-ink-3 transition hover:bg-ink/5 hover:text-ink">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 6l-6 6 6 6" /></svg>
             </button>
@@ -457,7 +461,7 @@ export default function NavBar() {
       </aside>
 
       {/* Notifications dropdown — anchored under the top bar (mobile) / beside the sidebar (desktop) */}
-      {email && canBell && bellOpen && (
+      {email && showBell && bellOpen && (
         <>
           <button className="no-print fixed inset-0 z-40 cursor-default" aria-label="Close notifications" onClick={() => setBellOpen(false)} />
           <div className="no-print fixed right-3 top-16 z-50 w-80 max-w-[88vw] overflow-hidden rounded-lg border border-line bg-card shadow-lg lg:left-[268px] lg:right-auto lg:top-14">
