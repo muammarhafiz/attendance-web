@@ -25,6 +25,11 @@ export default function OffdayRequestsPage() {
   const [loading, setLoading] = useState(false);
   const [staffF, setStaffF] = useState('ALL');
   const [statusF, setStatusF] = useState('all');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [eFrom, setEFrom] = useState('');
+  const [eTo, setETo] = useState('');
+  const [eReason, setEReason] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -62,6 +67,28 @@ export default function OffdayRequestsPage() {
       .sort((a, b) => rank(a.status) - rank(b.status) || b.created_at.localeCompare(a.created_at))
       .filter((r) => (staffF === 'ALL' || r.staff_email === staffF) && (statusF === 'all' || r.status === statusF));
   }, [reqs, staffF, statusF]);
+
+  const startEdit = useCallback((r: Req) => {
+    setEditingId(r.id); setEFrom(r.date_from); setETo(r.date_to); setEReason(r.reason ?? '');
+  }, []);
+  const cancelEdit = useCallback(() => { setEditingId(null); }, []);
+  const saveEdit = useCallback(async () => {
+    if (!editingId) return;
+    if (!eFrom || !eTo) { alert('Pick both dates.'); return; }
+    if (eFrom > eTo) { alert('The From date is after the To date.'); return; }
+    setSavingEdit(true);
+    const { data: sess } = await supabase.auth.getSession();
+    const token = sess.session?.access_token;
+    const res = await fetch('/api/offday/edit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ id: editingId, date_from: eFrom, date_to: eTo, reason: eReason.trim() || null }),
+    });
+    const j = await res.json().catch(() => ({} as { error?: string }));
+    if (!res.ok) alert(j.error || 'Could not save the change.');
+    else { setEditingId(null); await load(); }
+    setSavingEdit(false);
+  }, [editingId, eFrom, eTo, eReason, load]);
 
   const decide = useCallback(async (id: string, approve: boolean) => {
     const note = window.prompt(approve
@@ -106,32 +133,55 @@ export default function OffdayRequestsPage() {
         <div className="space-y-2">
           {filtered.map((r) => (
             <div key={r.id} className={`rounded-card p-3 shadow-card ${r.status === 'pending' ? 'bg-warn-soft' : 'bg-card'}`}>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <div className="text-sm font-medium text-ink">
-                    {names.get(r.staff_email.toLowerCase()) ?? r.staff_email}
-                    <span className="ml-2 text-xs font-normal text-ink-2">
-                      {fmtD(r.date_from)}{r.date_to !== r.date_from ? ` – ${fmtD(r.date_to)}` : ''}
-                    </span>
+              {editingId === r.id ? (
+                <div className="space-y-2">
+                  <div className="text-sm font-medium text-ink">{names.get(r.staff_email.toLowerCase()) ?? r.staff_email} <span className="text-xs font-normal text-ink-3">— editing request</span></div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="text-xs text-ink-2">From
+                      <input type="date" value={eFrom} onChange={(e) => setEFrom(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
+                    </label>
+                    <label className="text-xs text-ink-2">To
+                      <input type="date" value={eTo} min={eFrom} onChange={(e) => setETo(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
+                    </label>
                   </div>
-                  {r.reason && <div className="text-xs text-ink-2">{r.reason}</div>}
-                  {r.review_note && <div className="mt-0.5 text-xs text-ink-3">{r.review_note}</div>}
+                  <label className="block text-xs text-ink-2">Reason
+                    <input value={eReason} onChange={(e) => setEReason(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
+                  </label>
+                  <div className="flex gap-2">
+                    <button onClick={saveEdit} disabled={savingEdit} className="rounded-md bg-good px-3 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50">{savingEdit ? 'Saving…' : 'Save changes'}</button>
+                    <button onClick={cancelEdit} disabled={savingEdit} className="rounded-md border border-line px-3 py-1 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50">Cancel</button>
+                  </div>
+                  <p className="text-[11px] text-ink-3">Change the dates if the staff agreed to a different day, then Approve.</p>
                 </div>
-                <div className="flex items-center gap-2">
-                  {r.status === 'pending' ? (
-                    <>
-                      <button onClick={() => decide(r.id, true)} disabled={busy === r.id} className="rounded-md bg-good px-2.5 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50">
-                        {busy === r.id ? '…' : 'Approve'}
-                      </button>
-                      <button onClick={() => decide(r.id, false)} disabled={busy === r.id} className="rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50">Reject</button>
-                    </>
-                  ) : (
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${r.status === 'approved' ? 'bg-good-soft text-good' : 'bg-bad-soft text-bad'}`}>
-                      {r.status === 'approved' ? 'Approved ✓' : 'Rejected'}
-                    </span>
-                  )}
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-medium text-ink">
+                      {names.get(r.staff_email.toLowerCase()) ?? r.staff_email}
+                      <span className="ml-2 text-xs font-normal text-ink-2">
+                        {fmtD(r.date_from)}{r.date_to !== r.date_from ? ` – ${fmtD(r.date_to)}` : ''}
+                      </span>
+                    </div>
+                    {r.reason && <div className="text-xs text-ink-2">{r.reason}</div>}
+                    {r.review_note && <div className="mt-0.5 text-xs text-ink-3">{r.review_note}</div>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {r.status === 'pending' ? (
+                      <>
+                        <button onClick={() => startEdit(r)} disabled={busy === r.id} className="rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50">Edit</button>
+                        <button onClick={() => decide(r.id, true)} disabled={busy === r.id} className="rounded-md bg-good px-2.5 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50">
+                          {busy === r.id ? '…' : 'Approve'}
+                        </button>
+                        <button onClick={() => decide(r.id, false)} disabled={busy === r.id} className="rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50">Reject</button>
+                      </>
+                    ) : (
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${r.status === 'approved' ? 'bg-good-soft text-good' : 'bg-bad-soft text-bad'}`}>
+                        {r.status === 'approved' ? 'Approved ✓' : 'Rejected'}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           ))}
         </div>
