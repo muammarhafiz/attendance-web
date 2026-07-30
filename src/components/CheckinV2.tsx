@@ -22,7 +22,7 @@ function fmtTime(t: string | null | undefined): string {
   return `${h}:${mm} ${ampm}`;
 }
 
-type OffReq = { id: string; date_from: string; date_to: string; reason: string | null; status: string; review_note: string | null; created_at: string };
+type OffReq = { id: string; date_from: string; date_to: string; reason: string | null; status: string; review_note: string | null; created_at: string; file_path: string | null };
 type HalfReq = { id: string; date_from: string; date_to: string; half: string; reason: string | null; status: string; review_note: string | null; created_at: string };
 
 // 'YYYY-MM-DD' -> '15 Jun'
@@ -124,6 +124,7 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
   const [myOff, setMyOff] = useState<OffReq[]>([]);
   const [supervisors, setSupervisors] = useState<{ email: string; name: string | null }[]>([]);
   const [offSupervisor, setOffSupervisor] = useState(''); // email of the supervisor the staff verbally asked first
+  const [offFile, setOffFile] = useState<File | null>(null); // optional supporting photo/PDF (e.g. funeral cert)
   const [showHalf, setShowHalf] = useState(false);
   const [halfFrom, setHalfFrom] = useState('');
   const [halfTo, setHalfTo] = useState('');
@@ -195,7 +196,7 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
   const loadOff = useCallback(async () => {
     if (!email) return;
     const { data } = await supabase.from('offday_requests')
-      .select('id,date_from,date_to,reason,status,review_note,created_at')
+      .select('id,date_from,date_to,reason,status,review_note,created_at,file_path')
       .eq('staff_email', email).order('created_at', { ascending: false }).limit(8);
     setMyOff((data ?? []) as OffReq[]);
   }, [email]);
@@ -411,15 +412,30 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
     if (offFrom > offTo) { setOffMsg({ kind: 'err', text: 'The "From" date is after the "To" date.' }); return; }
     if (offFrom < klDatePlus(2)) { setOffMsg({ kind: 'err', text: 'Off-day requests must be made at least 2 days in advance.' }); return; }
     setOffBusy(true); setOffMsg(null);
-    // Record which supervisor was asked (stored in the request reason so the approver sees it).
-    const askedName = supervisors.find((s) => s.email === offSupervisor)?.name || offSupervisor;
-    const composedReason = `Asked: ${askedName}${offReason.trim() ? ` · ${offReason.trim()}` : ''}`;
-    const { error } = await supabase.from('offday_requests').insert({
-      staff_email: email, date_from: offFrom, date_to: offTo, reason: composedReason,
-    });
-    if (error) setOffMsg({ kind: 'err', text: error.message });
-    else { setOffMsg({ kind: 'ok', text: 'Off-day request sent ✓ — waiting for approval.' }); setOffFrom(''); setOffTo(''); setOffReason(''); setOffSupervisor(''); loadOff(); }
-    setOffBusy(false);
+    try {
+      // Optional supporting photo/PDF (e.g. funeral certificate) → mc storage bucket.
+      let filePath: string | null = null;
+      if (offFile) {
+        const ext = (offFile.name.split('.').pop() || 'jpg').toLowerCase();
+        const path = `${email}/offday_${Date.now()}.${ext}`;
+        const up = await supabase.storage.from('mc').upload(path, offFile, { upsert: false });
+        if (up.error) throw up.error;
+        filePath = path;
+      }
+      // Record which supervisor was asked (stored in the request reason so the approver sees it).
+      const askedName = supervisors.find((s) => s.email === offSupervisor)?.name || offSupervisor;
+      const composedReason = `Asked: ${askedName}${offReason.trim() ? ` · ${offReason.trim()}` : ''}`;
+      const { error } = await supabase.from('offday_requests').insert({
+        staff_email: email, date_from: offFrom, date_to: offTo, reason: composedReason, file_path: filePath,
+      });
+      if (error) throw error;
+      setOffMsg({ kind: 'ok', text: 'Off-day request sent ✓ — waiting for approval.' });
+      setOffFrom(''); setOffTo(''); setOffReason(''); setOffSupervisor(''); setOffFile(null); loadOff();
+    } catch (e: unknown) {
+      setOffMsg({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setOffBusy(false);
+    }
   };
 
   const submitHalf = async () => {
@@ -666,6 +682,10 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
                     <label className="block text-xs text-ink-2">Reason (optional)
                       <input value={offReason} onChange={(e) => setOffReason(e.target.value)} placeholder="e.g. family matters" className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
                     </label>
+                    <label className="block text-xs text-ink-2">Attach a photo / PDF (optional) — e.g. funeral certificate
+                      <input type="file" accept="image/*,application/pdf" onChange={(e) => setOffFile(e.target.files?.[0] ?? null)} className="mt-0.5 block w-full text-sm text-ink-2 file:mr-3 file:rounded-md file:border-0 file:bg-ink/5 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-ink-2" />
+                    </label>
+                    {offFile && <div className="text-xs text-good">Attached: {offFile.name}</div>}
                     <button onClick={submitOff} disabled={offBusy || !offSupervisor} className="w-full rounded-lg bg-accent py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
                       {offBusy ? 'Sending…' : 'Request off day'}
                     </button>
@@ -687,6 +707,7 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
                           <div className="min-w-0">
                             <div className="text-ink-2">{r.date_from === r.date_to ? fmtDate(r.date_from) : `${fmtDate(r.date_from)} – ${fmtDate(r.date_to)}`}</div>
                             {r.reason && <div className="truncate text-xs text-ink-3">{r.reason}</div>}
+                            {r.file_path && <div className="text-xs text-ink-3">Photo attached ✓</div>}
                           </div>
                           <span className={offStatusChip(r.status)}>{offStatusLabel(r.status)}</span>
                         </div>
