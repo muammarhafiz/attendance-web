@@ -990,9 +990,11 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
             <div className="rounded-card bg-card p-4 shadow-card">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 text-sm font-semibold text-ink"><span className="text-ink-2"><Icon name="user" size={16} /></span> My details</div>
-                {!editProfile && !readOnly && (
-                  <button onClick={() => { setPf(profile); setProfileMsg(null); setEditProfile(true); }}
-                    className="shrink-0 rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent-weak">
+                {!editProfile && (
+                  <button onClick={readOnly ? undefined : () => { setPf(profile); setProfileMsg(null); setEditProfile(true); }}
+                    disabled={readOnly}
+                    title={readOnly ? 'Staff edit this from their own login' : undefined}
+                    className="shrink-0 rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent-weak disabled:opacity-40">
                     Edit
                   </button>
                 )}
