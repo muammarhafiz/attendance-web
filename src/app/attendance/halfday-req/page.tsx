@@ -13,6 +13,7 @@ type Req = {
   status: 'pending' | 'approved' | 'rejected' | string;
   review_note: string | null;
   created_at: string;
+  informed_supervisor: string | null;
 };
 
 const fmtD = (d: string) => { const [y, m, dd] = d.split('-'); return `${dd}/${m}/${y}`; };
@@ -118,6 +119,7 @@ export default function HalfdayRequestsPage() {
                     </span>
                   </div>
                   {r.reason && <div className="text-xs text-ink-2">{r.reason}</div>}
+                  {r.informed_supervisor && <div className="text-xs text-ink-3">Informed: {r.informed_supervisor}</div>}
                   {r.review_note && <div className="mt-0.5 text-xs text-ink-3">{r.review_note}</div>}
                 </div>
                 <div className="flex items-center gap-2">
