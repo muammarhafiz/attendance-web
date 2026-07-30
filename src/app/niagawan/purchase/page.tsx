@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -32,12 +32,25 @@ const STATUS_STYLE: Record<string, string> = {
 const fmtD = (d: string | null) => { if (!d) return '—'; const [y, m, dd] = d.split('-'); return `${dd}/${m}/${y}`; };
 const rm = (n: number | null) => (n == null ? '—' : `RM ${Number(n).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 
+// Sortable columns for the invoice list. `get` returns the raw value; nulls always sort last.
+type SortCol = { key: string; label: string; get: (r: Pinv) => string | number | null; type: 'text' | 'num' | 'date'; align?: 'right' };
+const COLS: SortCol[] = [
+  { key: 'created_at', label: 'Uploaded', get: (r) => r.created_at, type: 'date' },
+  { key: 'supplier_name', label: 'Supplier', get: (r) => r.supplier_name, type: 'text' },
+  { key: 'ref_no', label: 'Ref#', get: (r) => r.ref_no, type: 'text' },
+  { key: 'invoice_date', label: 'Date', get: (r) => r.invoice_date, type: 'date' },
+  { key: 'total', label: 'Total', get: (r) => r.total, type: 'num', align: 'right' },
+  { key: 'status', label: 'Status', get: (r) => r.status, type: 'text' },
+];
+
 export default function PurchaseInvoicePage() {
   const router = useRouter();
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [rows, setRows] = useState<Pinv[]>([]);
   const [loading, setLoading] = useState(false);
+  const [sortKey, setSortKey] = useState<string>('created_at');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [readingId, setReadingId] = useState<string | null>(null);
@@ -238,6 +251,26 @@ export default function PurchaseInvoicePage() {
     await loadSuppliers();
   }, [loadSuppliers]);
 
+  const toggleSort = (key: string) => {
+    if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortKey(key); setSortDir('asc'); }
+  };
+  const sortedRows = useMemo(() => {
+    const col = COLS.find((c) => c.key === sortKey);
+    if (!col) return rows;
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      const av = col.get(a), bv = col.get(b);
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;   // nulls last, regardless of direction
+      if (bv == null) return -1;
+      const cmp = col.type === 'num' ? Number(av) - Number(bv)
+        : col.type === 'date' ? String(av).localeCompare(String(bv))
+        : String(av).localeCompare(String(bv), undefined, { numeric: true });
+      return cmp * dir;
+    });
+  }, [rows, sortKey, sortDir]);
+
   if (authed === null || isAdmin === null) return <div className="text-sm text-ink-2">Checking…</div>;
   if (!authed) return <div className="text-sm text-ink-2">Please sign in.</div>;
   if (!isAdmin) return <div className="text-sm text-ink-2">You don&apos;t have access to this page.</div>;
@@ -381,19 +414,29 @@ export default function PurchaseInvoicePage() {
         <table className="w-full border-collapse text-sm">
           <thead className="bg-ink/[0.03] text-left">
             <tr>
-              <th className="px-3 py-2 font-medium text-ink-2">Uploaded</th>
-              <th className="px-3 py-2 font-medium text-ink-2">Supplier</th>
-              <th className="px-3 py-2 font-medium text-ink-2">Ref#</th>
-              <th className="px-3 py-2 font-medium text-ink-2">Date</th>
-              <th className="px-3 py-2 text-right font-medium text-ink-2">Total</th>
-              <th className="px-3 py-2 font-medium text-ink-2">Status</th>
+              {COLS.map((c) => {
+                const active = sortKey === c.key;
+                return (
+                  <th key={c.key} aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                    className={`px-3 py-2 font-medium text-ink-2 ${c.align === 'right' ? 'text-right' : ''}`}>
+                    <button onClick={() => toggleSort(c.key)} title={`Sort by ${c.label}`}
+                      className={`group inline-flex items-center gap-1 transition ${active ? 'text-ink' : 'hover:text-ink'}`}>
+                      <span>{c.label}</span>
+                      <svg className={`h-3 w-3 shrink-0 transition-opacity ${active ? 'text-ink-2 opacity-100' : 'opacity-0 group-hover:opacity-40'}`}
+                        viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        {active && sortDir === 'asc' ? <path d="M6 15l6-6 6 6" /> : <path d="M6 9l6 6 6-6" />}
+                      </svg>
+                    </button>
+                  </th>
+                );
+              })}
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? (
+            {sortedRows.length === 0 ? (
               <tr><td colSpan={7} className="px-3 py-6 text-center text-ink-2">No invoices uploaded yet.</td></tr>
-            ) : rows.map((r) => (
+            ) : sortedRows.map((r) => (
               <tr key={r.id} className="border-t border-line">
                 <td className="px-3 py-2 text-ink-2">{new Date(r.created_at).toLocaleDateString('en-MY')}</td>
                 <td className="px-3 py-2 text-ink">
