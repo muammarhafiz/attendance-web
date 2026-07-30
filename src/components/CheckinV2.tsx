@@ -122,6 +122,8 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
   const [offBusy, setOffBusy] = useState(false);
   const [offMsg, setOffMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [myOff, setMyOff] = useState<OffReq[]>([]);
+  const [supervisors, setSupervisors] = useState<{ email: string; name: string | null }[]>([]);
+  const [offSupervisor, setOffSupervisor] = useState(''); // email of the supervisor the staff verbally asked first
   const [showHalf, setShowHalf] = useState(false);
   const [halfFrom, setHalfFrom] = useState('');
   const [halfTo, setHalfTo] = useState('');
@@ -167,6 +169,21 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
     supabase.from('config').select('workshop_lat,workshop_lon,radius_m').eq('id', 1).maybeSingle()
       .then(({ data }) => { if (data) setCfg({ lat: data.workshop_lat, lon: data.workshop_lon, radius: data.radius_m }); });
   }, []);
+
+  // Supervisors a staff must have verbally asked before requesting an off day (staff.position = 'Supervisor').
+  // Via an API route: regular staff can't SELECT the staff table directly under RLS.
+  useEffect(() => {
+    if (!email) return;
+    (async () => {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (!token) return;
+      const res = await fetch('/api/supervisors', { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) return;
+      const j = await res.json();
+      setSupervisors((j.supervisors ?? []) as { email: string; name: string | null }[]);
+    })();
+  }, [email]);
 
   const loadStatus = useCallback(async () => {
     const { data, error } = await supabase.rpc('my_attendance_today');
@@ -389,15 +406,19 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
 
   const submitOff = async () => {
     if (!email) return;
+    if (!offSupervisor) { setOffMsg({ kind: 'err', text: 'Choose the supervisor you already asked before requesting.' }); return; }
     if (!offFrom || !offTo) { setOffMsg({ kind: 'err', text: 'Pick the start and end dates.' }); return; }
     if (offFrom > offTo) { setOffMsg({ kind: 'err', text: 'The "From" date is after the "To" date.' }); return; }
     if (offFrom < klDatePlus(2)) { setOffMsg({ kind: 'err', text: 'Off-day requests must be made at least 2 days in advance.' }); return; }
     setOffBusy(true); setOffMsg(null);
+    // Record which supervisor was asked (stored in the request reason so the approver sees it).
+    const askedName = supervisors.find((s) => s.email === offSupervisor)?.name || offSupervisor;
+    const composedReason = `Asked: ${askedName}${offReason.trim() ? ` · ${offReason.trim()}` : ''}`;
     const { error } = await supabase.from('offday_requests').insert({
-      staff_email: email, date_from: offFrom, date_to: offTo, reason: offReason || null,
+      staff_email: email, date_from: offFrom, date_to: offTo, reason: composedReason,
     });
     if (error) setOffMsg({ kind: 'err', text: error.message });
-    else { setOffMsg({ kind: 'ok', text: 'Off-day request sent ✓ — waiting for approval.' }); setOffFrom(''); setOffTo(''); setOffReason(''); loadOff(); }
+    else { setOffMsg({ kind: 'ok', text: 'Off-day request sent ✓ — waiting for approval.' }); setOffFrom(''); setOffTo(''); setOffReason(''); setOffSupervisor(''); loadOff(); }
     setOffBusy(false);
   };
 
@@ -626,6 +647,14 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
                 </button>
                 {showOff && (
                   <div className="mt-3 space-y-2">
+                    <div className="rounded-md bg-warn-soft px-3 py-2 text-xs text-warn">Ask a supervisor in person first, then choose who you asked below.</div>
+                    <label className="block text-xs text-ink-2">Which supervisor did you ask? <span className="text-bad">*</span>
+                      <select value={offSupervisor} onChange={(e) => setOffSupervisor(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm">
+                        <option value="">Select the supervisor you asked…</option>
+                        {supervisors.map((s) => <option key={s.email} value={s.email}>{s.name ?? s.email}</option>)}
+                      </select>
+                      {supervisors.length === 0 && <span className="mt-1 block text-xs text-ink-3">No supervisors are set up yet — ask the office.</span>}
+                    </label>
                     <div className="grid grid-cols-2 gap-2">
                       <label className="text-xs text-ink-2">From
                         <input type="date" value={offFrom} min={klDatePlus(2)} onChange={(e) => setOffFrom(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
@@ -637,7 +666,7 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
                     <label className="block text-xs text-ink-2">Reason (optional)
                       <input value={offReason} onChange={(e) => setOffReason(e.target.value)} placeholder="e.g. family matters" className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
                     </label>
-                    <button onClick={submitOff} disabled={offBusy} className="w-full rounded-lg bg-accent py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+                    <button onClick={submitOff} disabled={offBusy || !offSupervisor} className="w-full rounded-lg bg-accent py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
                       {offBusy ? 'Sending…' : 'Request off day'}
                     </button>
                     {offMsg && (
