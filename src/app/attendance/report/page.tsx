@@ -44,11 +44,15 @@ export default function AttendanceReportPage() {
   const [eOut, setEOut] = useState('');
   const [eNote, setENote] = useState('');
   const [saving, setSaving] = useState(false);
+  const [me, setMe] = useState('');
+  const [requireProof, setRequireProof] = useState(false); // ask the staff to upload proof for this day
+  const [docReqs, setDocReqs] = useState<{ id: string; day: string; doc_path: string | null }[]>([]);
 
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getSession();
       setAuthed(!!data.session);
+      setMe(data.session?.user?.email ?? '');
       if (data.session) {
         const { data: ok } = await supabase.rpc('can_access', { p_feature: 'attendance' });
         setIsAdmin(ok === true);
@@ -66,6 +70,20 @@ export default function AttendanceReportPage() {
   useEffect(() => {
     if (isAdmin) load();
   }, [isAdmin, load]);
+
+  // Proof requests for the staff being viewed → show status per day + let the manager view uploads.
+  const loadDocReqs = useCallback(async () => {
+    if (staffFilter === 'ALL') { setDocReqs([]); return; }
+    const { data } = await supabase.from('attendance_doc_requests').select('id,day,doc_path').eq('staff_email', staffFilter);
+    setDocReqs((data ?? []) as { id: string; day: string; doc_path: string | null }[]);
+  }, [staffFilter]);
+  useEffect(() => { if (isAdmin) loadDocReqs(); }, [isAdmin, loadDocReqs]);
+  const docByDay = useMemo(() => { const m = new Map<string, { id: string; doc_path: string | null }>(); docReqs.forEach((d) => m.set(d.day, d)); return m; }, [docReqs]);
+  const viewDoc = useCallback(async (path: string | null) => {
+    if (!path) return;
+    const { data } = await supabase.storage.from('mc').createSignedUrl(path, 300);
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank', 'noopener');
+  }, []);
 
   // Deep-link from the month-end fix-absent card: /attendance/report?staff=<email> preselects that staff.
   useEffect(() => {
@@ -107,6 +125,7 @@ export default function AttendanceReportPage() {
     setEIn(r.check_in_kl ?? '');
     setEOut(r.check_out_kl ?? '');
     setENote('');
+    setRequireProof(false);
   }, []);
 
   const saveEdit = useCallback(async (email: string, day: string) => {
@@ -136,12 +155,18 @@ export default function AttendanceReportPage() {
         }
       }
       await supabase.rpc('attendance_v2_recompute', { p_from: day, p_to: day });
+      if (requireProof && eStatus !== 'WORKING') {
+        const label = eStatus === 'HALF_AM' || eStatus === 'HALF_PM' ? 'HALF' : eStatus;
+        await supabase.from('attendance_doc_requests').insert({ staff_email: email, day, label, note: eNote || null, required_by: me || null });
+      }
+      setRequireProof(false);
       setEditDay(null);
       await load();
+      await loadDocReqs();
     } finally {
       setSaving(false);
     }
-  }, [eStatus, eIn, eOut, eNote, load]);
+  }, [eStatus, eIn, eOut, eNote, requireProof, me, load, loadDocReqs]);
 
   const prevMonth = () => { const d = new Date(year, month - 2, 1); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); };
   const nextMonth = () => { const d = new Date(year, month, 1); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); };
@@ -284,6 +309,9 @@ export default function AttendanceReportPage() {
                       {r.status === 'PH' && <span className="text-accent">Public holiday</span>}
                       {r.status === 'MC' && <span className="text-accent">MC</span>}
                       {r.half && <span className="ml-1 rounded-full bg-accent-weak px-1.5 py-0.5 text-xs font-medium text-accent" title={r.half === 'AM' ? 'Half day · morning (9:30–1:30)' : 'Half day · afternoon (1:30–6:00)'}>½ {r.half}</span>}
+                      {docByDay.get(r.day) && (docByDay.get(r.day)!.doc_path
+                        ? <button onClick={() => viewDoc(docByDay.get(r.day)!.doc_path)} className="ml-1 rounded-full bg-good-soft px-1.5 py-0.5 text-xs font-medium text-good hover:opacity-80 print:hidden">proof ✓</button>
+                        : <span className="ml-1 rounded-full bg-warn-soft px-1.5 py-0.5 text-xs font-medium text-warn print:hidden">proof pending</span>)}
                     </td>
                     <td className="px-3 py-2 text-ink-2">{fmt12(r.check_in_kl)}</td>
                     <td className="px-3 py-2 text-ink-2">{fmt12(r.check_out_kl)}</td>
@@ -326,6 +354,11 @@ export default function AttendanceReportPage() {
                           <label className="text-xs text-ink-2">Note
                             <input value={eNote} onChange={(e) => setENote(e.target.value)} placeholder="optional" className="mt-0.5 block rounded-md border border-line px-2 py-1 text-sm" />
                           </label>
+                          {eStatus !== 'WORKING' && (
+                            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-ink-2">
+                              <input type="checkbox" checked={requireProof} onChange={(e) => setRequireProof(e.target.checked)} className="h-3.5 w-3.5" /> Require proof from staff
+                            </label>
+                          )}
                           <button
                             onClick={() => saveEdit(r.staff_email, r.day)}
                             disabled={saving}
