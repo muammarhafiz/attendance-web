@@ -23,6 +23,7 @@ function fmtTime(t: string | null | undefined): string {
 }
 
 type OffReq = { id: string; date_from: string; date_to: string; reason: string | null; status: string; review_note: string | null; created_at: string; file_path: string | null };
+type EmReq = { id: string; absent_date: string; reason: string; status: string; file_path: string | null; created_at: string };
 type HalfReq = { id: string; date_from: string; date_to: string; half: string; reason: string | null; status: string; review_note: string | null; created_at: string };
 
 // 'YYYY-MM-DD' -> '15 Jun'
@@ -125,6 +126,15 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
   const [supervisors, setSupervisors] = useState<{ email: string; name: string | null }[]>([]);
   const [offSupervisor, setOffSupervisor] = useState(''); // email of the supervisor the staff verbally asked first
   const [offFile, setOffFile] = useState<File | null>(null); // optional supporting photo/PDF (e.g. funeral cert)
+  // Emergency / last-minute absence — no advance-notice rule, no approval; the office records the day.
+  const [showEm, setShowEm] = useState(false);
+  const [emDate, setEmDate] = useState(() => klDatePlus(0));
+  const [emReason, setEmReason] = useState('');
+  const [emInformed, setEmInformed] = useState('');
+  const [emFile, setEmFile] = useState<File | null>(null);
+  const [emBusy, setEmBusy] = useState(false);
+  const [emMsg, setEmMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [myEm, setMyEm] = useState<EmReq[]>([]);
   const [showHalf, setShowHalf] = useState(false);
   const [halfFrom, setHalfFrom] = useState('');
   const [halfTo, setHalfTo] = useState('');
@@ -202,6 +212,16 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
   }, [email]);
 
   useEffect(() => { if (email) loadOff(); }, [email, loadOff]);
+
+  const loadEm = useCallback(async () => {
+    if (!email) return;
+    const { data } = await supabase.from('emergency_absences')
+      .select('id,absent_date,reason,status,file_path,created_at')
+      .eq('staff_email', email).order('created_at', { ascending: false }).limit(6);
+    setMyEm((data ?? []) as EmReq[]);
+  }, [email]);
+
+  useEffect(() => { if (email) loadEm(); }, [email, loadEm]);
 
   const loadHalf = useCallback(async () => {
     if (!email) return;
@@ -435,6 +455,35 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
       setOffMsg({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
     } finally {
       setOffBusy(false);
+    }
+  };
+
+  const submitEm = async () => {
+    if (!email) return;
+    if (!emInformed) { setEmMsg({ kind: 'err', text: 'Choose who you informed.' }); return; }
+    if (!emDate) { setEmMsg({ kind: 'err', text: 'Pick which day you were absent.' }); return; }
+    if (!emReason.trim()) { setEmMsg({ kind: 'err', text: 'Tell the office the reason.' }); return; }
+    setEmBusy(true); setEmMsg(null);
+    try {
+      let filePath: string | null = null;
+      if (emFile) {
+        const ext = (emFile.name.split('.').pop() || 'jpg').toLowerCase();
+        const path = `${email}/emergency_${Date.now()}.${ext}`;
+        const up = await supabase.storage.from('mc').upload(path, emFile, { upsert: false });
+        if (up.error) throw up.error;
+        filePath = path;
+      }
+      const informedName = supervisors.find((s) => s.email === emInformed)?.name || emInformed;
+      const { error } = await supabase.from('emergency_absences').insert({
+        staff_email: email, absent_date: emDate, reason: emReason.trim(), informed_supervisor: informedName, file_path: filePath,
+      });
+      if (error) throw error;
+      setEmMsg({ kind: 'ok', text: 'Reported ✓ — the office will record your absence.' });
+      setEmReason(''); setEmInformed(''); setEmFile(null); loadEm();
+    } catch (e: unknown) {
+      setEmMsg({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setEmBusy(false);
     }
   };
 
@@ -716,6 +765,59 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
                             {(r.status || '').toLowerCase() === 'rejected' ? 'Reason: ' : 'Note: '}{r.review_note}
                           </div>
                         )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Report emergency / last-minute absence — no 2-day rule, no approval; office records the day */}
+              <div className="mb-3 rounded-card bg-card p-4 shadow-card">
+                <button onClick={() => setShowEm((v) => !v)} className="flex w-full items-center gap-2 text-sm font-medium text-ink">
+                  <span className="text-ink-2"><Icon name="bell" size={16} /></span><span>Report emergency / last-minute absence</span><span className="ml-auto text-ink-3">{showEm ? '−' : '+'}</span>
+                </button>
+                {showEm && (
+                  <div className="mt-3 space-y-2">
+                    <div className="rounded-md bg-warn-soft px-3 py-2 text-xs text-warn">For a sudden absence you couldn&rsquo;t request 2 days ahead. Call your supervisor first, then log it here so the office can record the day.</div>
+                    <label className="block text-xs text-ink-2">Who did you inform? <span className="text-bad">*</span>
+                      <select value={emInformed} onChange={(e) => setEmInformed(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm">
+                        <option value="">Select who you told…</option>
+                        {supervisors.map((s) => <option key={s.email} value={s.email}>{s.name ?? s.email}</option>)}
+                      </select>
+                      {supervisors.length === 0 && <span className="mt-1 block text-xs text-ink-3">No supervisors are set up yet — ask the office.</span>}
+                    </label>
+                    <label className="block text-xs text-ink-2">Which day? <span className="text-bad">*</span>
+                      <input type="date" value={emDate} onChange={(e) => setEmDate(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
+                    </label>
+                    <label className="block text-xs text-ink-2">Reason <span className="text-bad">*</span>
+                      <input value={emReason} onChange={(e) => setEmReason(e.target.value)} placeholder="e.g. sick, family emergency, accident" className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
+                    </label>
+                    <label className="block text-xs text-ink-2">Attach a photo / PDF (optional) — e.g. MC, if you have it
+                      <input type="file" accept="image/*,application/pdf" onChange={(e) => setEmFile(e.target.files?.[0] ?? null)} className="mt-0.5 block w-full text-sm text-ink-2 file:mr-3 file:rounded-md file:border-0 file:bg-ink/5 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-ink-2" />
+                    </label>
+                    {emFile && <div className="text-xs text-good">Attached: {emFile.name}</div>}
+                    <button onClick={submitEm} disabled={emBusy || !emInformed} className="w-full rounded-lg bg-accent py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+                      {emBusy ? 'Sending…' : 'Report absence'}
+                    </button>
+                    {emMsg && (
+                      <div className={`rounded-md border border-line p-2 text-sm ${emMsg.kind === 'ok' ? 'bg-good-soft text-good' : 'bg-bad-soft text-bad'}`}>{emMsg.text}</div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* My emergency reports */}
+              {myEm.length > 0 && (
+                <div className="mb-3 rounded-card bg-card p-4 shadow-card">
+                  <div className="flex items-center gap-2 text-sm font-medium text-ink"><span className="text-ink-2"><Icon name="bell" size={16} /></span> My emergency reports</div>
+                  <div className="mt-2 space-y-1.5">
+                    {myEm.map((r) => (
+                      <div key={r.id} className="flex items-center justify-between gap-2 text-sm">
+                        <div className="min-w-0">
+                          <div className="text-ink-2">{fmtDate(r.absent_date)}</div>
+                          <div className="truncate text-xs text-ink-3">{r.reason}{r.file_path ? ' · photo ✓' : ''}</div>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${r.status === 'handled' ? 'bg-good-soft text-good' : 'bg-warn-soft text-warn'}`}>{r.status === 'handled' ? 'Recorded' : 'Sent'}</span>
                       </div>
                     ))}
                   </div>

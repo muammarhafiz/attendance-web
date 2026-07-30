@@ -69,6 +69,7 @@ export default function NavBar() {
   const [collapsed, setCollapsed] = useState(false); // desktop-only: sidebar hidden to reclaim width
   const [expanded, setExpanded] = useState<Set<string>>(new Set()); // which expandable areas are open
   const [salesPending, setSalesPending] = useState(0); // count of not-final sales days (Sales badge)
+  const [emergencyNew, setEmergencyNew] = useState(0); // count of new emergency-absence reports (Attendance badge)
   useEffect(() => { setSeenAt(localStorage.getItem('notif_seen_at') || ''); }, []);
   // The <html> class is applied pre-paint by an inline script in layout.tsx (no flash on reload);
   // mirror it into state so the toggle button reflects the current mode.
@@ -167,6 +168,21 @@ export default function NavBar() {
     return () => { window.removeEventListener('focus', onVisible); document.removeEventListener('visibilitychange', onVisible); };
   }, [loadSalesPending]);
 
+  // Count of NEW emergency-absence reports → badge on the Attendance area. Attendance approvers only.
+  const loadEmergencyNew = useCallback(async () => {
+    if (!access.attendance) { setEmergencyNew(0); return; }
+    if (typeof document !== 'undefined' && document.hidden) return;
+    const { count } = await supabase.from('emergency_absences').select('id', { count: 'exact', head: true }).eq('status', 'new');
+    setEmergencyNew(count || 0);
+  }, [access.attendance]);
+  useEffect(() => {
+    loadEmergencyNew();
+    const onVis = () => { if (typeof document === 'undefined' || !document.hidden) loadEmergencyNew(); };
+    window.addEventListener('focus', onVis);
+    document.addEventListener('visibilitychange', onVis);
+    return () => { window.removeEventListener('focus', onVis); document.removeEventListener('visibilitychange', onVis); };
+  }, [loadEmergencyNew]);
+
   // Approve / reject a staff request right from the bell (same RPCs the pages use).
   const act = useCallback(async (item: NotifItem, action: 'approve' | 'reject') => {
     let params: Record<string, unknown>;
@@ -229,7 +245,7 @@ export default function NavBar() {
   // Grouped navigation. Each item shows only if the signed-in person's position grants that feature.
   // Areas (Niagawan / Attendance / Payroll) hold their sub-tabs as `children`; the rest are leaves.
   const navGroups: NavGroup[] = useMemo(() => {
-    const reqBadge = counts.mc + counts.offday + counts.halfday + counts.advance;
+    const reqBadge = counts.mc + counts.offday + counts.halfday + counts.advance + emergencyNew;
     const niagawanChildren: NavChild[] = access.niagawan
       ? [
           { href: '/niagawan/sales', label: 'Sales', badge: salesPending },
@@ -261,6 +277,7 @@ export default function NavBar() {
           { href: '/attendance/report', label: 'Report' },
           { href: '/attendance/offday', label: 'Off-day' },
           { href: '/attendance/leave', label: 'Off-day requests', badge: counts.offday },
+          { href: '/attendance/emergency', label: 'Emergency absence', badge: emergencyNew },
           { href: '/attendance/halfday-req', label: 'Half-day requests', badge: counts.halfday },
           { href: '/attendance/advance', label: 'Advance', badge: counts.advance },
           { href: '/attendance/mc', label: 'MC', badge: counts.mc },
@@ -280,7 +297,7 @@ export default function NavBar() {
       ] },
     ];
     return groups.filter((g) => g.items.length > 0);
-  }, [access, canBoard, counts, salesPending]);
+  }, [access, canBoard, counts, salesPending, emergencyNew]);
 
   // Auto-open the area that contains the current route (so you always see where you are).
   useEffect(() => {
