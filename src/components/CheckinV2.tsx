@@ -24,6 +24,7 @@ function fmtTime(t: string | null | undefined): string {
 
 type OffReq = { id: string; date_from: string; date_to: string; reason: string | null; status: string; review_note: string | null; created_at: string; file_path: string | null };
 type EmReq = { id: string; absent_date: string; reason: string; status: string; file_path: string | null; created_at: string };
+type DocNeed = { id: string; day: string; label: string | null; note: string | null; doc_path: string | null; created_at: string };
 type HalfReq = { id: string; date_from: string; date_to: string; half: string; reason: string | null; status: string; review_note: string | null; created_at: string };
 
 // 'YYYY-MM-DD' -> '15 Jun'
@@ -131,6 +132,8 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
   const [myOff, setMyOff] = useState<OffReq[]>([]);
   const [myEm, setMyEm] = useState<EmReq[]>([]);
   const [myHalf, setMyHalf] = useState<HalfReq[]>([]);
+  const [docNeeded, setDocNeeded] = useState<DocNeed[]>([]); // proof the office asked this staff to upload
+  const [docBusy, setDocBusy] = useState<string | null>(null);
   const [showAdv, setShowAdv] = useState(false);
   const [advAmount, setAdvAmount] = useState('');
   const [advReason, setAdvReason] = useState('');
@@ -210,6 +213,34 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
   }, [email]);
 
   useEffect(() => { if (email) loadEm(); }, [email, loadEm]);
+
+  // Proof the office asked this staff to upload for a recorded day (attendance_doc_requests).
+  const loadDocNeeded = useCallback(async () => {
+    if (!email) return;
+    const { data } = await supabase.from('attendance_doc_requests')
+      .select('id,day,label,note,doc_path,created_at')
+      .eq('staff_email', email).is('doc_path', null).order('day', { ascending: false });
+    setDocNeeded((data ?? []) as DocNeed[]);
+  }, [email]);
+  useEffect(() => { if (email) loadDocNeeded(); }, [email, loadDocNeeded]);
+
+  const uploadDoc = async (id: string, file: File | null) => {
+    if (!file || !email) return;
+    setDocBusy(id);
+    try {
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const path = `${email}/doc_${id}.${ext}`;
+      const up = await supabase.storage.from('mc').upload(path, file, { upsert: true });
+      if (up.error) throw up.error;
+      const { error } = await supabase.from('attendance_doc_requests').update({ doc_path: path, uploaded_at: new Date().toISOString() }).eq('id', id);
+      if (error) throw error;
+      await loadDocNeeded();
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDocBusy(null);
+    }
+  };
 
   const loadHalf = useCallback(async () => {
     if (!email) return;
@@ -672,6 +703,23 @@ export default function CheckinV2({ embedded = false }: { embedded?: boolean } =
           {/* REQUESTS */}
           {tab === 'requests' && (
             <div>
+              {/* Documents the office asked this staff to upload for a recorded day */}
+              {docNeeded.length > 0 && (
+                <div className="mb-3 rounded-card bg-warn-soft p-4">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-warn"><span className="text-warn"><Icon name="file" size={16} /></span> Documents needed</div>
+                  <div className="mt-2 space-y-2">
+                    {docNeeded.map((d) => (
+                      <div key={d.id} className="rounded-md bg-card p-3">
+                        <div className="text-sm font-medium text-ink">Proof for {fmtDate(d.day)}{d.label ? ` (${d.label})` : ''}</div>
+                        {d.note && <div className="text-xs text-ink-3">{d.note}</div>}
+                        <input type="file" accept="image/*,application/pdf" disabled={docBusy === d.id} onChange={(e) => uploadDoc(d.id, e.target.files?.[0] ?? null)} className="mt-1.5 block w-full text-sm text-ink-2 file:mr-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white disabled:opacity-50" />
+                        {docBusy === d.id && <div className="mt-1 text-xs text-ink-3">Uploading…</div>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Request time off — one card; pick the Type first (Off day / Emergency / Half day) */}
               <div className="mb-3 rounded-card bg-card p-4 shadow-card">
                 <button onClick={() => setShowReq((v) => !v)} className="flex w-full items-center gap-2 text-sm font-medium text-ink">

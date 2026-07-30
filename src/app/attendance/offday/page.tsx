@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabaseClient';
 
 type Staff = { email: string; name: string | null };
 type DSRow = { day: string; staff_email: string; status: string; note: string | null };
+type DocReq = { id: string; staff_email: string; day: string; label: string | null; note: string | null; doc_path: string | null; required_by: string | null; created_at: string; uploaded_at: string | null };
 
 const isoToday = () => {
   const p = new Intl.DateTimeFormat('en-CA', {
@@ -41,11 +42,15 @@ export default function AttendanceOffdayPage() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [existing, setExisting] = useState<DSRow[]>([]);
+  const [me, setMe] = useState('');
+  const [requireProof, setRequireProof] = useState(false); // ask the staff to upload proof for this day
+  const [docReqs, setDocReqs] = useState<DocReq[]>([]);
 
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getSession();
       setAuthed(!!data.session);
+      setMe(data.session?.user?.email ?? '');
       if (data.session) {
         const { data: ok } = await supabase.rpc('can_access', { p_feature: 'attendance' });
         setIsAdmin(ok === true);
@@ -82,9 +87,19 @@ export default function AttendanceOffdayPage() {
     setExisting(merged);
   }, [from]);
 
+  const loadDocReqs = useCallback(async () => {
+    const { data } = await supabase.from('attendance_doc_requests').select('*').order('created_at', { ascending: false }).limit(50);
+    setDocReqs((data ?? []) as DocReq[]);
+  }, []);
+  const viewDoc = useCallback(async (path: string | null) => {
+    if (!path) return;
+    const { data } = await supabase.storage.from('mc').createSignedUrl(path, 300);
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank', 'noopener');
+  }, []);
+
   useEffect(() => {
-    if (isAdmin) { loadStaff(); loadExisting(); }
-  }, [isAdmin, loadStaff, loadExisting]);
+    if (isAdmin) { loadStaff(); loadExisting(); loadDocReqs(); }
+  }, [isAdmin, loadStaff, loadExisting, loadDocReqs]);
 
   function eachDay(a: string, b: string): string[] {
     const out: string[] = [];
@@ -119,15 +134,20 @@ export default function AttendanceOffdayPage() {
         }
       }
       await supabase.rpc('attendance_v2_recompute', { p_from: from, p_to: to });
-      setMsg({ kind: 'ok', text: `Set ${STATUS_LABEL[status] ?? status} for ${days.length} day(s).` });
-      setNote('');
-      await loadExisting();
+      if (requireProof && who !== 'ALL') {
+        await supabase.from('attendance_doc_requests').insert(
+          days.map((d) => ({ staff_email: who, day: d, label: status, note: note || null, required_by: me || null }))
+        );
+      }
+      setMsg({ kind: 'ok', text: `Set ${STATUS_LABEL[status] ?? status} for ${days.length} day(s).${requireProof && who !== 'ALL' ? ' — proof requested from the staff.' : ''}` });
+      setNote(''); setRequireProof(false);
+      await loadExisting(); await loadDocReqs();
     } catch (e: any) {
       setMsg({ kind: 'err', text: e.message ?? String(e) });
     } finally {
       setBusy(false);
     }
-  }, [from, to, who, status, note, loadExisting]);
+  }, [from, to, who, status, note, requireProof, me, loadExisting, loadDocReqs]);
 
   const clearOne = useCallback(async (r: DSRow) => {
     setBusy(true); setMsg(null);
@@ -175,6 +195,12 @@ export default function AttendanceOffdayPage() {
             <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Hari Raya, Medical leave" className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
           </label>
         </div>
+        {who !== 'ALL' && (
+          <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm text-ink-2">
+            <input type="checkbox" checked={requireProof} onChange={(e) => setRequireProof(e.target.checked)} className="h-4 w-4" />
+            Require the staff to upload proof for this day
+          </label>
+        )}
         <div className="mt-3 flex items-center gap-3">
           <button onClick={apply} disabled={busy} className="rounded-md bg-btn px-4 py-2 text-sm font-medium text-btn-ink hover:opacity-90 disabled:opacity-50">
             {busy ? 'Saving…' : 'Set'}
@@ -217,6 +243,31 @@ export default function AttendanceOffdayPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {docReqs.length > 0 && (
+        <div className="mt-6">
+          <h2 className="mb-2 text-sm font-semibold text-ink-2">Proof requested from staff</h2>
+          <div className="space-y-2">
+            {docReqs.map((r) => (
+              <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-card bg-card p-3 shadow-card">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-ink">
+                    {nameByEmail.get(r.staff_email) ?? r.staff_email}
+                    <span className="ml-2 text-xs font-normal text-ink-2">{r.day.slice(8)}/{r.day.slice(5, 7)}/{r.day.slice(0, 4)}</span>
+                    {r.label && <span className="ml-2 rounded-full bg-accent-weak px-2 py-0.5 text-xs font-medium text-accent">{STATUS_LABEL[r.label] ?? r.label}</span>}
+                  </div>
+                  {r.note && <div className="text-xs text-ink-3">{r.note}</div>}
+                </div>
+                {r.doc_path ? (
+                  <button onClick={() => viewDoc(r.doc_path)} className="shrink-0 rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-ink/5">View proof</button>
+                ) : (
+                  <span className="shrink-0 rounded-full bg-warn-soft px-2 py-0.5 text-xs font-medium text-warn">Waiting for upload</span>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
