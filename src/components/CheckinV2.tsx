@@ -118,16 +118,9 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
   const [busy, setBusy] = useState<null | 'in' | 'out'>(null);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [now, setNow] = useState<Date | null>(null);
-  const [showMc, setShowMc] = useState(false);
-  const [mcFrom, setMcFrom] = useState('');
-  const [mcTo, setMcTo] = useState('');
-  const [mcFile, setMcFile] = useState<File | null>(null);
-  const [mcNote, setMcNote] = useState('');
-  const [mcBusy, setMcBusy] = useState(false);
-  const [mcMsg, setMcMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   // Unified "Request time off" card — one form, pick the Type first (Off day / Emergency / Half day).
   const [showReq, setShowReq] = useState(false);
-  const [reqType, setReqType] = useState<'off' | 'em' | 'half'>('off');
+  const [reqType, setReqType] = useState<'off' | 'em' | 'half' | 'mc'>('off');
   const [reqSup, setReqSup] = useState('');            // supervisor the staff asked / informed (email)
   const [reqFrom, setReqFrom] = useState('');          // off-day / half-day start
   const [reqTo, setReqTo] = useState('');              // off-day / half-day end
@@ -491,41 +484,20 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
     [geo, loadStatus, readOnly]
   );
 
-  const submitMc = async () => {
-    if (readOnly || !email) return;
-    if (!mcFrom || !mcTo) { setMcMsg({ kind: 'err', text: 'Pick the MC start and end dates.' }); return; }
-    if (mcFrom > mcTo) { setMcMsg({ kind: 'err', text: 'The "From" date is after the "To" date.' }); return; }
-    if (!mcFile) { setMcMsg({ kind: 'err', text: 'Attach the MC certificate (photo or PDF).' }); return; }
-    setMcBusy(true); setMcMsg(null);
-    try {
-      const ext = (mcFile.name.split('.').pop() || 'jpg').toLowerCase();
-      const path = `${email}/${Date.now()}.${ext}`;
-      const up = await supabase.storage.from('mc').upload(path, mcFile, { upsert: false });
-      if (up.error) throw up.error;
-      const { error } = await supabase.from('mc_requests').insert({
-        staff_email: email, date_from: mcFrom, date_to: mcTo, file_path: path, note: mcNote || null,
-      });
-      if (error) throw error;
-      setMcMsg({ kind: 'ok', text: 'MC submitted ✓ — waiting for approval.' });
-      setMcFrom(''); setMcTo(''); setMcFile(null); setMcNote('');
-    } catch (e: unknown) {
-      setMcMsg({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
-    } finally { setMcBusy(false); }
-  };
-
   // One submit for the unified card — routes by the selected Type to the right table.
   const submitReq = async () => {
     if (readOnly || !email) return;
-    if (!reqSup) { setReqMsg({ kind: 'err', text: 'Select the supervisor you spoke to.' }); return; }
+    if (reqType !== 'mc' && !reqSup) { setReqMsg({ kind: 'err', text: 'Select the supervisor you spoke to.' }); return; }
     const supName = supervisors.find((s) => s.email === reqSup)?.name || reqSup;
     const reason = reqReason.trim();
     setReqBusy(true); setReqMsg(null);
     try {
-      // Optional supporting photo/PDF (off day + emergency) → mc storage bucket.
+      // Supporting file: optional photo/PDF for off day + emergency; required certificate for MC.
+      if (reqType === 'mc' && !reqFile) throw new Error('Attach the MC certificate (photo or PDF).');
       let filePath: string | null = null;
       if (reqFile && reqType !== 'half') {
         const ext = (reqFile.name.split('.').pop() || 'jpg').toLowerCase();
-        const path = `${email}/req_${Date.now()}.${ext}`;
+        const path = `${email}/${reqType === 'mc' ? 'mc' : 'req'}_${Date.now()}.${ext}`;
         const up = await supabase.storage.from('mc').upload(path, reqFile, { upsert: false });
         if (up.error) throw up.error;
         filePath = path;
@@ -550,6 +522,14 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
         if (error) throw error;
         setReqMsg({ kind: 'ok', text: 'Half-day request sent ✓ — waiting for approval.' });
         loadHalf();
+      } else if (reqType === 'mc') {
+        if (!reqFrom || !reqTo) throw new Error('Pick the MC start and end dates.');
+        if (reqFrom > reqTo) throw new Error('The "From" date is after the "To" date.');
+        const { error } = await supabase.from('mc_requests').insert({
+          staff_email: email, date_from: reqFrom, date_to: reqTo, file_path: filePath, note: reason || null,
+        });
+        if (error) throw error;
+        setReqMsg({ kind: 'ok', text: 'MC submitted ✓ — waiting for approval.' });
       } else {
         // emergency — for today; no approval, the office records the day
         if (!reason) throw new Error('Tell the office the reason.');
@@ -830,24 +810,28 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
                 {showReq && (
                   <div className="mt-3 space-y-2">
                     <label className="block text-xs text-ink-2">Type <span className="text-bad">*</span>
-                      <select value={reqType} onChange={(e) => { setReqType(e.target.value as 'off' | 'em' | 'half'); setReqMsg(null); }} className="mt-0.5 block w-full rounded-md border border-accent bg-accent-weak px-2 py-1.5 text-sm font-semibold text-accent">
-                        <option value="off">Off day</option>
-                        <option value="em">Emergency leave</option>
-                        <option value="half">Half day</option>
+                      <select value={reqType} onChange={(e) => { setReqType(e.target.value as 'off' | 'em' | 'half' | 'mc'); setReqMsg(null); }} className="mt-0.5 block w-full rounded-md border border-accent bg-accent-weak px-2 py-1.5 text-sm font-semibold text-accent">
+                        <option value="off">Off day (Annual Leave)</option>
+                        <option value="em">Emergency leave (Annual Leave)</option>
+                        <option value="half">Half day (Annual Leave)</option>
+                        <option value="mc">MC (Sick Leave)</option>
                       </select>
                     </label>
                     <div className="rounded-md bg-warn-soft px-3 py-2 text-xs text-warn">
                       {reqType === 'off' ? 'Plan ahead — the date must be at least 2 days from today. Confirm with a supervisor first.'
                         : reqType === 'em' ? 'For a sudden absence today — inform your supervisor first; the office records the day.'
+                        : reqType === 'mc' ? 'Attach your medical certificate. Dates can be in the past. No supervisor needed.'
                         : 'Morning or afternoon off — the date can be today. Confirm with a supervisor first.'}
                     </div>
-                    <label className="block text-xs text-ink-2">Supervisor you informed <span className="text-bad">*</span>
-                      <select value={reqSup} onChange={(e) => setReqSup(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm">
-                        <option value="">Select a supervisor…</option>
-                        {supervisors.map((s) => <option key={s.email} value={s.email}>{s.name ?? s.email}</option>)}
-                      </select>
-                      {supervisors.length === 0 && <span className="mt-1 block text-xs text-ink-3">No supervisors are set up yet — ask the office.</span>}
-                    </label>
+                    {reqType !== 'mc' && (
+                      <label className="block text-xs text-ink-2">Supervisor you informed <span className="text-bad">*</span>
+                        <select value={reqSup} onChange={(e) => setReqSup(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm">
+                          <option value="">Select a supervisor…</option>
+                          {supervisors.map((s) => <option key={s.email} value={s.email}>{s.name ?? s.email}</option>)}
+                        </select>
+                        {supervisors.length === 0 && <span className="mt-1 block text-xs text-ink-3">No supervisors are set up yet — ask the office.</span>}
+                      </label>
+                    )}
                     {reqType === 'half' && (
                       <div className="grid grid-cols-2 gap-2">
                         <button onClick={() => setReqHalf('AM')} className={`rounded-md border px-2 py-1.5 text-xs font-medium ${reqHalf === 'AM' ? 'border-line bg-accent-weak text-accent' : 'border-line text-ink-2'}`}>Morning · 9:30–1:30</button>
@@ -859,24 +843,24 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
                     ) : (
                       <div className="grid grid-cols-2 gap-2">
                         <label className="text-xs text-ink-2">From
-                          <input type="date" value={reqFrom} min={reqType === 'off' ? klDatePlus(2) : klDatePlus(0)} onChange={(e) => setReqFrom(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
+                          <input type="date" value={reqFrom} min={reqType === 'off' ? klDatePlus(2) : reqType === 'half' ? klDatePlus(0) : undefined} onChange={(e) => setReqFrom(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
                         </label>
                         <label className="text-xs text-ink-2">To
-                          <input type="date" value={reqTo} min={reqFrom || (reqType === 'off' ? klDatePlus(2) : klDatePlus(0))} onChange={(e) => setReqTo(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
+                          <input type="date" value={reqTo} min={reqFrom || (reqType === 'off' ? klDatePlus(2) : reqType === 'half' ? klDatePlus(0) : undefined)} onChange={(e) => setReqTo(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
                         </label>
                       </div>
                     )}
-                    <label className="block text-xs text-ink-2">{reqType === 'em' ? 'Reason ' : 'Reason (optional)'}{reqType === 'em' && <span className="text-bad">*</span>}
-                      <input value={reqReason} onChange={(e) => setReqReason(e.target.value)} placeholder={reqType === 'em' ? 'e.g. sick, family emergency, accident' : 'e.g. family matters'} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
+                    <label className="block text-xs text-ink-2">{reqType === 'em' ? 'Reason ' : reqType === 'mc' ? 'Note (optional)' : 'Reason (optional)'}{reqType === 'em' && <span className="text-bad">*</span>}
+                      <input value={reqReason} onChange={(e) => setReqReason(e.target.value)} placeholder={reqType === 'em' ? 'e.g. sick, family emergency, accident' : reqType === 'mc' ? 'e.g. clinic name' : 'e.g. family matters'} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
                     </label>
                     {reqType !== 'half' && (
-                      <label className="block text-xs text-ink-2">Attach a photo / PDF (optional) — e.g. MC, funeral certificate
+                      <label className="block text-xs text-ink-2">{reqType === 'mc' ? <>MC certificate (photo / PDF) <span className="text-bad">*</span></> : 'Attach a photo / PDF (optional) — e.g. MC, funeral certificate'}
                         <input type="file" accept="image/*,application/pdf" onChange={(e) => setReqFile(e.target.files?.[0] ?? null)} className="mt-0.5 block w-full text-sm text-ink-2 file:mr-3 file:rounded-md file:border-0 file:bg-ink/5 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-ink-2" />
                       </label>
                     )}
                     {reqFile && reqType !== 'half' && <div className="text-xs text-good">Attached: {reqFile.name}</div>}
-                    <button onClick={submitReq} disabled={readOnly || reqBusy || !reqSup} className="w-full rounded-lg bg-accent py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
-                      {reqBusy ? 'Sending…' : reqType === 'off' ? 'Request off day' : reqType === 'em' ? 'Report absence' : 'Request half day'}
+                    <button onClick={submitReq} disabled={readOnly || reqBusy || (reqType !== 'mc' && !reqSup)} className="w-full rounded-lg bg-accent py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+                      {reqBusy ? 'Sending…' : reqType === 'off' ? 'Request off day' : reqType === 'em' ? 'Report absence' : reqType === 'mc' ? 'Submit MC' : 'Request half day'}
                     </button>
                     {reqMsg && (
                       <div className={`rounded-md border border-line p-2 text-sm ${reqMsg.kind === 'ok' ? 'bg-good-soft text-good' : 'bg-bad-soft text-bad'}`}>{reqMsg.text}</div>
@@ -1012,42 +996,6 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
                 </div>
               )}
 
-              {/* Submit MC */}
-              <div className="mb-3 rounded-card bg-card p-4 shadow-card">
-                <button onClick={() => setShowMc((v) => !v)} className="flex w-full items-center gap-2 text-sm font-medium text-ink">
-                  <span className="text-ink-2"><Icon name="file" size={16} /></span><span>Submit MC (medical certificate)</span><span className="ml-auto text-ink-3">{showMc ? '−' : '+'}</span>
-                </button>
-                {showMc && (
-                  <div className="mt-3 space-y-2">
-                    <div className="grid grid-cols-2 gap-2">
-                      <label className="text-xs text-ink-2">From
-                        <input type="date" value={mcFrom} onChange={(e) => setMcFrom(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
-                      </label>
-                      <label className="text-xs text-ink-2">To
-                        <input type="date" value={mcTo} onChange={(e) => setMcTo(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
-                      </label>
-                    </div>
-                    <div className="text-xs text-ink-2">Certificate (photo or PDF)
-                      <div className="mt-1 flex items-center gap-2">
-                        <label className="inline-flex cursor-pointer items-center rounded-md border border-line bg-card px-3 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5">
-                          Choose file
-                          <input type="file" accept="image/*,application/pdf" onChange={(e) => setMcFile(e.target.files?.[0] ?? null)} className="hidden" />
-                        </label>
-                        <span className="min-w-0 flex-1 truncate text-xs text-ink-2">{mcFile ? mcFile.name : 'No file chosen'}</span>
-                      </div>
-                    </div>
-                    <label className="block text-xs text-ink-2">Note (optional)
-                      <input value={mcNote} onChange={(e) => setMcNote(e.target.value)} placeholder="e.g. clinic name" className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
-                    </label>
-                    <button onClick={submitMc} disabled={readOnly || mcBusy} className="w-full rounded-lg bg-accent py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
-                      {mcBusy ? 'Submitting…' : 'Submit MC'}
-                    </button>
-                    {mcMsg && (
-                      <div className={`rounded-md border border-line p-2 text-sm ${mcMsg.kind === 'ok' ? 'bg-good-soft text-good' : 'bg-bad-soft text-bad'}`}>{mcMsg.text}</div>
-                    )}
-                  </div>
-                )}
-              </div>
             </div>
           )}
 
