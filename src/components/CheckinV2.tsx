@@ -52,6 +52,11 @@ type Payslip = { year: number; month: number; net_pay: number; locked_at: string
 type SalesInfo = { year: number; month: number; total: number; invoices: number };
 type BoardRow = { staff_name: string; total: number; invoices: number; is_me: boolean };
 type LeaveBal = { year: number; annual_ent: number; annual_used: number; emergency_used: number; annual_left: number; mc_ent: number; mc_used: number; mc_left: number; unpaid: number };
+type Holi = { id: string; holiday_date: string; name: string; is_substitute: boolean; handling: string; swap_to_date: string | null };
+const _DOWK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const _MONK = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// 'YYYY-MM-DD' -> 'Mon 31 Aug' (parsed local to avoid a UTC day-shift)
+function fmtHolDay(iso: string): string { const [y, m, d] = iso.split('-').map(Number); return `${_DOWK[new Date(y, m - 1, d).getDay()]} ${d} ${_MONK[m - 1]}`; }
 
 // Staff's own editable personal details (from my_profile / update_my_profile RPCs).
 // All held as strings for the form; position/start_date are read-only (management-set).
@@ -104,7 +109,7 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
   const isPreview = previewEmail != null;   // owner viewing a staff member's page (read-only)
   const readOnly = isPreview;               // no writes / no check-in while previewing
   const [email, setEmail] = useState<string | null | undefined>(undefined);
-  const [tab, setTab] = useState<'record' | 'requests' | 'details'>('record');
+  const [tab, setTab] = useState<'record' | 'requests' | 'details' | 'holidays'>('record');
   const [cfg, setCfg] = useState<{ lat: number; lon: number; radius: number } | null>(null);
   const [geo, setGeo] = useState<{ lat: number; lon: number; acc: number } | null>(null);
   const [geoErr, setGeoErr] = useState<string | null>(null);
@@ -158,6 +163,7 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileMsg, setProfileMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [leave, setLeave] = useState<LeaveBal | null>(null); // my annual + sick balances
+  const [holidays, setHolidays] = useState<Holi[]>([]);       // public holidays for the year (from Settings)
 
   useEffect(() => {
     setNow(new Date());
@@ -381,6 +387,21 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
   }, [email, isPreview, previewEmail]);
   useEffect(() => { if (email) loadLeave(); }, [email, loadLeave]);
 
+  // Public holidays for the current year — read live from the same table Settings manages.
+  const loadHolidays = useCallback(async () => {
+    const yr = new Date(Date.now() + 8 * 3600e3).getUTCFullYear();
+    const { data } = await supabase.from('public_holidays')
+      .select('id,holiday_date,name,is_substitute,handling,swap_to_date')
+      .gte('holiday_date', `${yr}-01-01`).lte('holiday_date', `${yr}-12-31`)
+      .order('holiday_date', { ascending: true });
+    setHolidays((data ?? []) as Holi[]);
+  }, []);
+  useEffect(() => { if (email && tab === 'holidays') loadHolidays(); }, [email, tab, loadHolidays]);
+  const holByDate = useMemo(() => {
+    const eff = (h: Holi) => (h.handling === 'swap' && h.swap_to_date ? h.swap_to_date : h.holiday_date);
+    return [...holidays].sort((a, b) => eff(a).localeCompare(eff(b)));
+  }, [holidays]);
+
   const saveProfile = async () => {
     if (readOnly) return;
     setProfileBusy(true); setProfileMsg(null);
@@ -569,7 +590,7 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
     : '';
   const monthLabel = sales ? new Date(sales.year, sales.month - 1, 1).toLocaleDateString('en-MY', { month: 'short', year: 'numeric' }) : '';
 
-  const segClass = (k: 'record' | 'requests' | 'details') =>
+  const segClass = (k: 'record' | 'requests' | 'details' | 'holidays') =>
     `flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${tab === k ? 'bg-card text-ink shadow-sm' : 'text-ink-2 hover:text-ink'}`;
 
   return (
@@ -661,6 +682,7 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
             <button role="tab" aria-selected={tab === 'record'} onClick={() => setTab('record')} className={segClass('record')}>My record</button>
             <button role="tab" aria-selected={tab === 'requests'} onClick={() => setTab('requests')} className={segClass('requests')}>Requests</button>
             <button role="tab" aria-selected={tab === 'details'} onClick={() => setTab('details')} className={segClass('details')}>My details</button>
+            <button role="tab" aria-selected={tab === 'holidays'} onClick={() => setTab('holidays')} className={segClass('holidays')}>Holidays</button>
           </div>
 
           {/* MY RECORD */}
@@ -1129,6 +1151,35 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
 
               {profileMsg && (
                 <div className={`mt-3 rounded-md border border-line p-2 text-sm ${profileMsg.kind === 'ok' ? 'bg-good-soft text-good' : 'bg-bad-soft text-bad'}`}>{profileMsg.text}</div>
+              )}
+            </div>
+          )}
+
+          {/* HOLIDAYS — the year's public holidays; managed in Settings, read live here */}
+          {tab === 'holidays' && (
+            <div className="rounded-card bg-card p-4 shadow-card">
+              <div className="flex items-center gap-2 text-sm font-semibold text-ink"><span className="text-ink-2"><Icon name="calendar" size={16} /></span> Public holidays <span className="text-xs font-normal text-ink-3">· {new Date(Date.now() + 8 * 3600e3).getUTCFullYear()}</span></div>
+              <p className="mt-1 text-xs text-ink-3"><span className="font-medium text-good">Closed</span> = you&rsquo;re off, paid. <span className="font-medium text-warn">Open</span> = shop working that day.</p>
+              {holByDate.length === 0 ? (
+                <div className="mt-3 text-xs text-ink-3">No public holidays set yet.</div>
+              ) : (
+                <div className="mt-3 divide-y divide-line">
+                  {holByDate.map((h) => {
+                    const eff = h.handling === 'swap' && h.swap_to_date ? h.swap_to_date : h.holiday_date;
+                    const past = eff < klDatePlus(0);
+                    const chip = h.handling === 'open' ? 'bg-warn-soft text-warn' : h.handling === 'swap' ? 'bg-accent-weak text-accent' : 'bg-good-soft text-good';
+                    const label = h.handling === 'open' ? 'Open' : h.handling === 'swap' ? 'Moved' : 'Closed';
+                    return (
+                      <div key={h.id} className={`flex items-center justify-between gap-2 py-2 ${past ? 'opacity-45' : ''}`}>
+                        <div className="min-w-0">
+                          <div className="text-sm text-ink"><span className="tabular-nums text-ink-2">{fmtHolDay(eff)}</span> · {h.name}</div>
+                          {h.handling === 'swap' && h.swap_to_date && <div className="text-[11px] text-ink-3">moved from {fmtHolDay(h.holiday_date)}</div>}
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${chip}`}>{label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
           )}
