@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-const POSITIONS = ['Owner', 'Manager', 'Office', 'Supervisor', 'Mechanic', 'Mechanic 2', 'Mechanic 3', 'Temporary', 'Trainer'];
+const POSITIONS = ['Owner', 'Manager', 'Office', 'Supervisor', 'Mechanic', 'Mechanic 2', 'Mechanic 3', 'Part-time', 'Temporary', 'Trainer'];
 
 type Feature = { key: string; label: string; ownerOnly?: boolean; note?: string };
 const FEATURES: Feature[] = [
