@@ -14,6 +14,7 @@ type Pinv = {
   total: number | null;
   niagawan_pi_no: string | null;
   created_at: string;
+  updated_at: string | null;
 };
 
 type MailSupplier = { id: string; name: string; match_terms: string[]; enabled: boolean; note: string | null; folder_id: string | null; folder_name: string | null };
@@ -31,6 +32,14 @@ const STATUS_STYLE: Record<string, string> = {
 };
 const fmtD = (d: string | null) => { if (!d) return '—'; const [y, m, dd] = d.split('-'); return `${dd}/${m}/${y}`; };
 const rm = (n: number | null) => (n == null ? '—' : `RM ${Number(n).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+
+// A read that started but never finished (crashed / timed out) leaves the row stuck in
+// 'extracting'. A real read finishes in well under a minute, so past this window we treat it
+// as stopped — otherwise the row counts toward the "to review" badge forever with no button
+// to clear it (the phantom-badge bug). Stale rows get a Retry + Dismiss so the owner can act.
+const STALE_READ_MS = 3 * 60 * 1000;
+const isStuckExtracting = (r: Pinv) =>
+  r.status === 'extracting' && !!r.updated_at && Date.now() - new Date(r.updated_at).getTime() > STALE_READ_MS;
 
 // Sortable columns for the invoice list. `get` returns the raw value; nulls always sort last.
 type SortCol = { key: string; label: string; get: (r: Pinv) => string | number | null; type: 'text' | 'num' | 'date'; align?: 'right' };
@@ -454,15 +463,15 @@ export default function PurchaseInvoicePage() {
                 <td className="px-3 py-2 text-ink-2">{fmtD(r.invoice_date)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{rm(r.total)}</td>
                 <td className="px-3 py-2">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[r.status] ?? 'bg-ink/5 text-ink-2'}`}>
-                    {r.status === 'created' && r.niagawan_pi_no ? r.niagawan_pi_no : r.status}
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${isStuckExtracting(r) ? STATUS_STYLE.error : (STATUS_STYLE[r.status] ?? 'bg-ink/5 text-ink-2')}`}>
+                    {r.status === 'created' && r.niagawan_pi_no ? r.niagawan_pi_no : (isStuckExtracting(r) ? 'read stopped' : r.status)}
                   </span>
                 </td>
                 <td className="px-3 py-2 text-right">
                   <div className="flex items-center justify-end gap-1.5">
-                    {(r.status === 'uploaded' || r.status === 'error') && (
+                    {(r.status === 'uploaded' || r.status === 'error' || isStuckExtracting(r)) && (
                       <button onClick={() => readInvoice(r.id)} disabled={readingId === r.id} className="rounded bg-accent px-2 py-0.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">
-                        {readingId === r.id ? 'Reading…' : 'Read'}
+                        {readingId === r.id ? 'Reading…' : (r.status === 'uploaded' ? 'Read' : 'Retry')}
                       </button>
                     )}
                     {(r.status === 'extracted' || r.status === 'approved' || r.status === 'creating' || r.status === 'created') && (
@@ -476,7 +485,7 @@ export default function PurchaseInvoicePage() {
                       </button>
                     )}
                     {r.file_path && <button onClick={() => viewPdf(r.file_path)} className="rounded border border-line px-2 py-0.5 text-xs text-ink-2 hover:bg-ink/5">View PDF</button>}
-                    {(r.status === 'uploaded' || r.status === 'extracted' || r.status === 'error') && (
+                    {(r.status === 'uploaded' || r.status === 'extracted' || r.status === 'error' || isStuckExtracting(r)) && (
                       <button onClick={() => dismiss(r)} title="Hide this invoice (e.g. it's already in Niagawan). Nothing is changed in Niagawan." className="rounded border border-line px-2 py-0.5 text-xs text-bad hover:bg-bad-soft">
                         ✕ Dismiss
                       </button>
