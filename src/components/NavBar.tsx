@@ -287,8 +287,10 @@ export default function NavBar() {
           { href: '/attendance/report', label: 'Report' },
           { href: '/attendance/balances', label: 'Leave balances' },
           { href: '/attendance/requests', label: 'Requests', badge: counts.offday + counts.halfday + counts.advance + counts.mc + emergencyNew },
-          { href: '/attendance/offday', label: 'Off-day' },
-          ...(access.owner ? [{ href: '/attendance/preview', label: 'Preview as staff' }] : []),
+          ...(access.owner ? [
+            { href: '/attendance/holidays', label: 'Holidays' },
+            { href: '/attendance/preview', label: 'Preview as staff' },
+          ] : []),
         ] } as NavItem] : []),
         ...(access.employees ? [{ label: 'Employees', href: '/employees', icon: 'users' } as NavItem] : []),
         ...(access.payroll ? [{ label: 'Payroll', icon: 'wallet', children: [
