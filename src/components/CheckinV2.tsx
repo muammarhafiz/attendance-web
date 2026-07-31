@@ -135,6 +135,8 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
   const [myHalf, setMyHalf] = useState<HalfReq[]>([]);
   const [docNeeded, setDocNeeded] = useState<DocNeed[]>([]); // proof the office asked this staff to upload
   const [docBusy, setDocBusy] = useState<string | null>(null);
+  const [mcPending, setMcPending] = useState<{ id: string; date_from: string; date_to: string; note: string | null }[]>([]); // MC awaiting its certificate
+  const [mcCertBusy, setMcCertBusy] = useState<string | null>(null);
   const [showAdv, setShowAdv] = useState(false);
   const [advAmount, setAdvAmount] = useState('');
   const [advReason, setAdvReason] = useState('');
@@ -245,6 +247,34 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
       alert(e instanceof Error ? e.message : String(e));
     } finally {
       setDocBusy(null);
+    }
+  };
+
+  // MC requests still missing a certificate — surfaced like "Documents needed" so staff upload it later.
+  const loadMcPending = useCallback(async () => {
+    if (!email) return;
+    const { data } = await supabase.from('mc_requests')
+      .select('id,date_from,date_to,note')
+      .eq('staff_email', email).is('file_path', null).neq('status', 'rejected').order('created_at', { ascending: false });
+    setMcPending((data ?? []) as { id: string; date_from: string; date_to: string; note: string | null }[]);
+  }, [email]);
+  useEffect(() => { if (email) loadMcPending(); }, [email, loadMcPending]);
+
+  const uploadMcCert = async (id: string, file: File | null) => {
+    if (readOnly || !file || !email) return;
+    setMcCertBusy(id);
+    try {
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const path = `${email}/mc_${id}.${ext}`;
+      const up = await supabase.storage.from('mc').upload(path, file, { upsert: true });
+      if (up.error) throw up.error;
+      const { error } = await supabase.rpc('attach_mc_cert', { p_id: id, p_path: path });
+      if (error) throw error;
+      await loadMcPending();
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMcCertBusy(null);
     }
   };
 
@@ -492,8 +522,7 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
     const reason = reqReason.trim();
     setReqBusy(true); setReqMsg(null);
     try {
-      // Supporting file: optional photo/PDF for off day + emergency; required certificate for MC.
-      if (reqType === 'mc' && !reqFile) throw new Error('Attach the MC certificate (photo or PDF).');
+      // Supporting file: optional photo/PDF for off day + emergency; the MC cert is optional now (upload later).
       let filePath: string | null = null;
       if (reqFile && reqType !== 'half') {
         const ext = (reqFile.name.split('.').pop() || 'jpg').toLowerCase();
@@ -529,7 +558,8 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
           staff_email: email, date_from: reqFrom, date_to: reqTo, file_path: filePath, note: reason || null,
         });
         if (error) throw error;
-        setReqMsg({ kind: 'ok', text: 'MC submitted ✓ — waiting for approval.' });
+        setReqMsg({ kind: 'ok', text: filePath ? 'MC submitted ✓ — waiting for approval.' : 'MC logged ✓ — upload your certificate below when you have it.' });
+        loadMcPending();
       } else {
         // emergency — for today; no approval, the office records the day
         if (!reason) throw new Error('Tell the office the reason.');
@@ -802,6 +832,23 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
                 </div>
               )}
 
+              {/* MC awaiting its certificate — upload it later, shown like Documents needed */}
+              {mcPending.length > 0 && (
+                <div className="mb-3 rounded-card bg-warn-soft p-4">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-warn"><span className="text-warn"><Icon name="file" size={16} /></span> MC certificate needed</div>
+                  <div className="mt-2 space-y-2">
+                    {mcPending.map((m) => (
+                      <div key={m.id} className="rounded-md bg-card p-3">
+                        <div className="text-sm font-medium text-ink">MC for {m.date_from === m.date_to ? fmtDate(m.date_from) : `${fmtDate(m.date_from)} – ${fmtDate(m.date_to)}`}</div>
+                        {m.note && <div className="text-xs text-ink-3">{m.note}</div>}
+                        <input type="file" accept="image/*,application/pdf" disabled={readOnly || mcCertBusy === m.id} onChange={(e) => uploadMcCert(m.id, e.target.files?.[0] ?? null)} className="mt-1.5 block w-full text-sm text-ink-2 file:mr-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white disabled:opacity-50" />
+                        {mcCertBusy === m.id && <div className="mt-1 text-xs text-ink-3">Uploading…</div>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Request time off — one card; pick the Type first (Off day / Emergency / Half day) */}
               <div className="mb-3 rounded-card bg-card p-4 shadow-card">
                 <button onClick={() => setShowReq((v) => !v)} className="flex w-full items-center gap-2 text-sm font-medium text-ink">
@@ -820,7 +867,7 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
                     <div className="rounded-md bg-warn-soft px-3 py-2 text-xs text-warn">
                       {reqType === 'off' ? 'Plan ahead — the date must be at least 2 days from today. Confirm with a supervisor first.'
                         : reqType === 'em' ? 'For a sudden absence today — inform your supervisor first; the office records the day.'
-                        : reqType === 'mc' ? 'Attach your medical certificate. Dates can be in the past. No supervisor needed.'
+                        : reqType === 'mc' ? 'Log it now — you can upload the medical certificate later. Dates can be in the past. No supervisor needed.'
                         : 'Morning or afternoon off — the date can be today. Confirm with a supervisor first.'}
                     </div>
                     {reqType !== 'mc' && (
@@ -854,7 +901,7 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
                       <input value={reqReason} onChange={(e) => setReqReason(e.target.value)} placeholder={reqType === 'em' ? 'e.g. sick, family emergency, accident' : reqType === 'mc' ? 'e.g. clinic name' : 'e.g. family matters'} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
                     </label>
                     {reqType !== 'half' && (
-                      <label className="block text-xs text-ink-2">{reqType === 'mc' ? <>MC certificate (photo / PDF) <span className="text-bad">*</span></> : 'Attach a photo / PDF (optional) — e.g. MC, funeral certificate'}
+                      <label className="block text-xs text-ink-2">{reqType === 'mc' ? <>MC certificate (photo / PDF) <span className="text-ink-3">— optional now, you can upload it later</span></> : 'Attach a photo / PDF (optional) — e.g. MC, funeral certificate'}
                         <input type="file" accept="image/*,application/pdf" onChange={(e) => setReqFile(e.target.files?.[0] ?? null)} className="mt-0.5 block w-full text-sm text-ink-2 file:mr-3 file:rounded-md file:border-0 file:bg-ink/5 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-ink-2" />
                       </label>
                     )}
