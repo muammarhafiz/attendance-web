@@ -4,12 +4,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-type PrefKey = 'notify_staff_decision' | 'notify_holiday_reminders';
+type PrefKey = 'notify_staff_decision' | 'notify_staff_uploads' | 'notify_holiday_reminders';
 const TOGGLES: { key: PrefKey; title: string; desc: string }[] = [
   {
     key: 'notify_staff_decision',
     title: 'Tell staff when their request is decided',
     desc: 'When you approve or reject an off-day, half-day, MC, or advance request, the staff member sees the outcome in their own notification bell.',
+  },
+  {
+    key: 'notify_staff_uploads',
+    title: 'Remind staff to upload documents',
+    desc: 'A bell reminder for a staff member when they have a pending MC certificate or requested proof they haven’t uploaded yet.',
   },
   {
     key: 'notify_holiday_reminders',
@@ -29,7 +34,7 @@ export default function StaffBellToggle() {
 
   const load = useCallback(async () => {
     const { data } = await supabase.from('notification_prefs')
-      .select('notify_staff_decision,notify_holiday_reminders').eq('id', 1).single();
+      .select('notify_staff_decision,notify_staff_uploads,notify_holiday_reminders').eq('id', 1).single();
     if (data) setPrefs(data as Record<PrefKey, boolean>);
   }, []);
   useEffect(() => { if (isAdmin) load(); }, [isAdmin, load]);
