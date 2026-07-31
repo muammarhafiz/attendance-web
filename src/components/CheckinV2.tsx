@@ -51,6 +51,7 @@ type DayRow = { day: string; status: string; check_in_kl: string | null; check_o
 type Payslip = { year: number; month: number; net_pay: number; locked_at: string | null };
 type SalesInfo = { year: number; month: number; total: number; invoices: number };
 type BoardRow = { staff_name: string; total: number; invoices: number; is_me: boolean };
+type LeaveBal = { year: number; annual_ent: number; annual_used: number; emergency_used: number; annual_left: number; mc_ent: number; mc_used: number; mc_left: number; unpaid: number };
 
 // Staff's own editable personal details (from my_profile / update_my_profile RPCs).
 // All held as strings for the form; position/start_date are read-only (management-set).
@@ -156,6 +157,7 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
   const [editProfile, setEditProfile] = useState(false);
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileMsg, setProfileMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [leave, setLeave] = useState<LeaveBal | null>(null); // my annual + sick balances
 
   useEffect(() => {
     setNow(new Date());
@@ -360,6 +362,24 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
     setPf(form);
   }, [email, isPreview, previewEmail]);
   useEffect(() => { if (email) loadProfile(); }, [email, loadProfile]);
+
+  // My leave balances (annual + sick). In preview, read the chosen staff's row from leave_balances.
+  const loadLeave = useCallback(async () => {
+    if (!email) return;
+    const yr = new Date(Date.now() + 8 * 3600e3).getUTCFullYear();
+    if (isPreview) {
+      const { data } = await supabase.rpc('leave_balances', { p_year: yr });
+      const row = ((data ?? []) as Array<Record<string, unknown>>).find((r) => String(r.email).toLowerCase() === (previewEmail ?? '').toLowerCase());
+      setLeave(row ? {
+        year: yr, annual_ent: Number(row.annual_ent), annual_used: Number(row.annual_used), emergency_used: Number(row.emergency_used),
+        annual_left: Number(row.annual_left), mc_ent: Number(row.mc_ent), mc_used: Number(row.mc_used), mc_left: Number(row.mc_left), unpaid: Number(row.unpaid),
+      } : null);
+    } else {
+      const { data } = await supabase.rpc('my_leave_balance');
+      setLeave((data ?? null) as LeaveBal | null);
+    }
+  }, [email, isPreview, previewEmail]);
+  useEffect(() => { if (email) loadLeave(); }, [email, loadLeave]);
 
   const saveProfile = async () => {
     if (readOnly) return;
@@ -646,6 +666,30 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
           {/* MY RECORD */}
           {tab === 'record' && (
             <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+              {/* My leave — annual + sick balances (Employment Act entitlement by tenure) */}
+              {leave && (
+                <div className="rounded-card bg-card p-4 shadow-card">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-ink"><span className="text-ink-2"><Icon name="calendar" size={16} /></span> My leave <span className="text-xs font-normal text-ink-3">· {leave.year}</span></div>
+                  <div className="mt-3">
+                    <div className="flex items-baseline justify-between text-sm">
+                      <span className="text-ink-2">Annual leave</span>
+                      <span><span className="font-semibold text-ink">{leave.annual_left}</span><span className="text-ink-3"> of {leave.annual_ent} left</span></span>
+                    </div>
+                    <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-ink/10"><div className={`h-full rounded-full ${leave.annual_left === 0 ? 'bg-bad' : 'bg-good'}`} style={{ width: `${leave.annual_ent > 0 ? Math.min(100, Math.round((leave.annual_used / leave.annual_ent) * 100)) : 0}%` }} /></div>
+                    <div className="mt-1 text-[11px] text-ink-3">{leave.annual_used} used{leave.emergency_used > 0 ? ` · incl. ${leave.emergency_used} emergency` : ''}</div>
+                  </div>
+                  <div className="mt-3">
+                    <div className="flex items-baseline justify-between text-sm">
+                      <span className="text-ink-2">Sick leave (MC)</span>
+                      <span><span className="font-semibold text-ink">{leave.mc_left}</span><span className="text-ink-3"> of {leave.mc_ent} left</span></span>
+                    </div>
+                    <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-ink/10"><div className={`h-full rounded-full ${leave.mc_left === 0 ? 'bg-bad' : 'bg-accent'}`} style={{ width: `${leave.mc_ent > 0 ? Math.min(100, Math.round((leave.mc_used / leave.mc_ent) * 100)) : 0}%` }} /></div>
+                    <div className="mt-1 text-[11px] text-ink-3">{leave.mc_used} used of {leave.mc_ent}</div>
+                  </div>
+                  {leave.unpaid > 0 && <div className="mt-3 rounded-md bg-bad-soft px-2 py-1 text-xs text-bad">{leave.unpaid} day{leave.unpaid === 1 ? '' : 's'} over annual leave → unpaid</div>}
+                  <div className="mt-3 border-t border-line pt-2 text-[11px] text-ink-3">Emergency leave comes out of annual. Rest days &amp; public holidays don&rsquo;t count.</div>
+                </div>
+              )}
               {/* Attendance performance this month — late/absent highlighted */}
               {perf && (
                 <div className="rounded-card bg-card p-4 shadow-card">
