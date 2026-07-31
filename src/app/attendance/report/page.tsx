@@ -47,6 +47,8 @@ export default function AttendanceReportPage() {
   const [me, setMe] = useState('');
   const [requireProof, setRequireProof] = useState(false); // ask the staff to upload proof for this day
   const [docReqs, setDocReqs] = useState<{ id: string; day: string; doc_path: string | null }[]>([]);
+  const [paidOverride, setPaidOverride] = useState(false); // editor: "pay anyway" for an OFFDAY/MC day
+  const [paidMap, setPaidMap] = useState<Map<string, boolean>>(new Map()); // day -> paid_override for the viewed staff
 
   useEffect(() => {
     (async () => {
@@ -79,6 +81,20 @@ export default function AttendanceReportPage() {
   }, [staffFilter]);
   useEffect(() => { if (isAdmin) loadDocReqs(); }, [isAdmin, loadDocReqs]);
   const docByDay = useMemo(() => { const m = new Map<string, { id: string; doc_path: string | null }>(); docReqs.forEach((d) => m.set(d.day, d)); return m; }, [docReqs]);
+
+  // paid_override per day for the viewed staff — so the editor can show/preserve the "pay anyway" flag.
+  const loadPaid = useCallback(async () => {
+    if (staffFilter === 'ALL') { setPaidMap(new Map()); return; }
+    const mm = String(month).padStart(2, '0');
+    const start = `${year}-${mm}-01`;
+    const endD = new Date(year, month, 1);
+    const end = `${endD.getFullYear()}-${String(endD.getMonth() + 1).padStart(2, '0')}-01`;
+    const { data } = await supabase.from('day_status').select('day,paid_override').eq('staff_email', staffFilter).gte('day', start).lt('day', end);
+    const m = new Map<string, boolean>();
+    (data ?? []).forEach((d: { day: string; paid_override: boolean | null }) => m.set(d.day, !!d.paid_override));
+    setPaidMap(m);
+  }, [staffFilter, year, month]);
+  useEffect(() => { if (isAdmin) loadPaid(); }, [isAdmin, loadPaid]);
   const viewDoc = useCallback(async (path: string | null) => {
     if (!path) return;
     const { data } = await supabase.storage.from('mc').createSignedUrl(path, 300);
@@ -126,7 +142,8 @@ export default function AttendanceReportPage() {
     setEOut(r.check_out_kl ?? '');
     setENote('');
     setRequireProof(false);
-  }, []);
+    setPaidOverride(paidMap.get(r.day) ?? false);
+  }, [paidMap]);
 
   const saveEdit = useCallback(async (email: string, day: string) => {
     setSaving(true);
@@ -152,6 +169,10 @@ export default function AttendanceReportPage() {
         } else {
           // OFFDAY / MC / ABSENT
           await supabase.rpc('set_day_status', { p_email: email, p_day: day, p_status: eStatus, p_note: eNote || null });
+          // For leave days, carry the "pay anyway" flag so an over-quota day isn't docked as unpaid.
+          if (eStatus === 'OFFDAY' || eStatus === 'MC') {
+            await supabase.rpc('set_day_pay', { p_email: email, p_day: day, p_paid: paidOverride });
+          }
         }
       }
       await supabase.rpc('attendance_v2_recompute', { p_from: day, p_to: day });
@@ -163,10 +184,11 @@ export default function AttendanceReportPage() {
       setEditDay(null);
       await load();
       await loadDocReqs();
+      await loadPaid();
     } finally {
       setSaving(false);
     }
-  }, [eStatus, eIn, eOut, eNote, requireProof, me, load, loadDocReqs]);
+  }, [eStatus, eIn, eOut, eNote, requireProof, paidOverride, me, load, loadDocReqs, loadPaid]);
 
   const prevMonth = () => { const d = new Date(year, month - 2, 1); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); };
   const nextMonth = () => { const d = new Date(year, month, 1); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); };
@@ -309,6 +331,7 @@ export default function AttendanceReportPage() {
                       {r.status === 'PH' && <span className="text-accent">Public holiday</span>}
                       {r.status === 'MC' && <span className="text-accent">MC</span>}
                       {r.half && <span className="ml-1 rounded-full bg-accent-weak px-1.5 py-0.5 text-xs font-medium text-accent" title={r.half === 'AM' ? 'Half day · morning (9:30–1:30)' : 'Half day · afternoon (1:30–6:00)'}>½ {r.half}</span>}
+                      {(r.status === 'OFFDAY' || r.status === 'MC') && paidMap.get(r.day) && <span className="ml-1 rounded-full bg-good-soft px-1.5 py-0.5 text-xs font-medium text-good" title="Paid anyway — not docked as unpaid">paid</span>}
                       {docByDay.get(r.day) && (docByDay.get(r.day)!.doc_path
                         ? <button onClick={() => viewDoc(docByDay.get(r.day)!.doc_path)} className="ml-1 rounded-full bg-good-soft px-1.5 py-0.5 text-xs font-medium text-good hover:opacity-80 print:hidden">proof ✓</button>
                         : <span className="ml-1 rounded-full bg-warn-soft px-1.5 py-0.5 text-xs font-medium text-warn print:hidden">proof pending</span>)}
@@ -357,6 +380,11 @@ export default function AttendanceReportPage() {
                           {eStatus !== 'WORKING' && (
                             <label className="flex cursor-pointer items-center gap-1.5 text-xs text-ink-2">
                               <input type="checkbox" checked={requireProof} onChange={(e) => setRequireProof(e.target.checked)} className="h-3.5 w-3.5" /> Require proof from staff
+                            </label>
+                          )}
+                          {(eStatus === 'OFFDAY' || eStatus === 'MC') && (
+                            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-ink-2" title="Pay this day even if the staff is over their leave quota (don't dock it as unpaid).">
+                              <input type="checkbox" checked={paidOverride} onChange={(e) => setPaidOverride(e.target.checked)} className="h-3.5 w-3.5" /> Pay anyway (don&apos;t dock)
                             </label>
                           )}
                           <button
