@@ -16,10 +16,13 @@ const NOTIF_ICON: Record<string, string> = { offday: '🌴', halfday: '🕧', ad
   // staff-facing outcomes (their own request was decided)
   offday_result: '🌴', halfday_result: '🕧', mc_result: '📄', advance_result: '💵',
   // holiday reminders (owner/office/manager)
-  holiday_decide: '🗓️', holiday_load: '📅' };
+  holiday_decide: '🗓️', holiday_load: '📅',
+  // staff upload reminders
+  mc_cert: '📄', doc_needed: '📎' };
 const NOTIF_LABEL: Record<string, string> = { offday: 'off-day request', halfday: 'half-day request', advance: 'advance request', mc: 'MC', po: 'purchase order', pinv: 'purchase invoice', pinv_created: 'created in Niagawan ✓', not_checkin: 'not checked in', stuckcar: 'in shop > 3 days', debt: 'newly overdue', lowstock: 'to restock',
   offday_result: 'off-day request', halfday_result: 'half-day request', mc_result: 'MC', advance_result: 'advance',
-  holiday_decide: 'public holiday', holiday_load: 'to load' };
+  holiday_decide: 'public holiday', holiday_load: 'to load',
+  mc_cert: 'to upload', doc_needed: 'to upload' };
 // Request types the owner can approve/reject right in the bell (each has approve_*/reject_* RPCs).
 const ACTIONABLE = new Set(['offday', 'halfday', 'advance', 'mc']);
 function relTime(iso: string): string {
