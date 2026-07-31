@@ -282,6 +282,7 @@ export default function NavBar() {
         ...(access.attendance ? [{ label: 'Attendance', icon: 'calendar', badge: reqBadge, children: [
           { href: '/attendance/today', label: 'Today' },
           { href: '/attendance/report', label: 'Report' },
+          { href: '/attendance/balances', label: 'Leave balances' },
           { href: '/attendance/offday', label: 'Off-day' },
           { href: '/attendance/leave', label: 'Off-day requests', badge: counts.offday },
           { href: '/attendance/emergency', label: 'Emergency absence', badge: emergencyNew },
