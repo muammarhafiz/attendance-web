@@ -870,6 +870,14 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
                         : reqType === 'mc' ? 'Log it now — you can upload the medical certificate later. Dates can be in the past. No supervisor needed.'
                         : 'Morning or afternoon off — the date can be today. Confirm with a supervisor first.'}
                     </div>
+                    {leave && (reqType === 'mc'
+                      ? (leave.mc_left <= 0
+                          ? <div className="rounded-md bg-bad-soft px-3 py-2 text-xs text-bad">You&rsquo;ve used all {leave.mc_ent} paid MC days this year — extra sick days may be <b>unpaid</b>.</div>
+                          : <div className="text-xs text-ink-3">Paid MC left: <b className="text-ink-2">{leave.mc_left}</b> of {leave.mc_ent}</div>)
+                      : (leave.annual_left <= 0
+                          ? <div className="rounded-md bg-bad-soft px-3 py-2 text-xs text-bad">You&rsquo;ve used all {leave.annual_ent} annual-leave days this year — this may be <b>unpaid</b> (the office decides).</div>
+                          : <div className="text-xs text-ink-3">Annual leave left: <b className="text-ink-2">{leave.annual_left}</b> of {leave.annual_ent}</div>)
+                    )}
                     {reqType !== 'mc' && (
                       <label className="block text-xs text-ink-2">Supervisor you informed <span className="text-bad">*</span>
                         <select value={reqSup} onChange={(e) => setReqSup(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm">

@@ -32,6 +32,7 @@ export default function OffdayRequestsPage() {
   const [eTo, setETo] = useState('');
   const [eReason, setEReason] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
+  const [over, setOver] = useState<Set<string>>(new Set()); // staff with no annual leave left this year
 
   useEffect(() => {
     (async () => {
@@ -44,14 +45,19 @@ export default function OffdayRequestsPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: r }, { data: s }] = await Promise.all([
+    const yr = new Date(Date.now() + 8 * 3600e3).getUTCFullYear();
+    const [{ data: r }, { data: s }, { data: bal }] = await Promise.all([
       supabase.from('offday_requests').select('*').order('created_at', { ascending: false }),
       supabase.from('staff').select('email,name'),
+      supabase.rpc('leave_balances', { p_year: yr }),
     ]);
     setReqs((r ?? []) as Req[]);
     const m = new Map<string, string>();
     (s ?? []).forEach((x: { email: string; name: string | null }) => m.set(x.email.toLowerCase(), x.name ?? x.email));
     setNames(m);
+    const ov = new Set<string>();
+    ((bal ?? []) as Array<{ email: string; annual_left: number }>).forEach((b) => { if (Number(b.annual_left) <= 0) ov.add(String(b.email).toLowerCase()); });
+    setOver(ov);
     setLoading(false);
   }, []);
 
@@ -104,11 +110,19 @@ export default function OffdayRequestsPage() {
       : 'Reason for rejecting (required) — e.g. "2 staff already off that date":');
     if (note === null) return;                       // cancelled
     if (!note.trim()) { alert('A reason is required.'); return; }
+    let payAnyway = false;
+    if (approve) {
+      const req = reqs.find((x) => x.id === id);
+      if (req && over.has(req.staff_email.toLowerCase())) {
+        payAnyway = window.confirm('This staff has no annual leave left.\n\nOK = pay this off day anyway (goodwill).\nCancel = follow the law (unpaid over quota).');
+      }
+    }
     setBusy(id);
-    const { error } = await supabase.rpc(approve ? 'approve_offday' : 'reject_offday', { p_id: id, p_note: note.trim() });
+    const { error } = await supabase.rpc(approve ? 'approve_offday' : 'reject_offday',
+      approve ? { p_id: id, p_note: note.trim(), p_pay_anyway: payAnyway } : { p_id: id, p_note: note.trim() });
     if (error) alert(error.message); else await load();
     setBusy(null);
-  }, [load]);
+  }, [load, reqs, over]);
 
   if (authed === null || isAdmin === null) return <div className="text-sm text-ink-2">Checking…</div>;
   if (!authed) return <div className="text-sm text-ink-2">Please sign in.</div>;
@@ -166,6 +180,7 @@ export default function OffdayRequestsPage() {
                   <div>
                     <div className="text-sm font-medium text-ink">
                       {names.get(r.staff_email.toLowerCase()) ?? r.staff_email}
+                      {r.status === 'pending' && over.has(r.staff_email.toLowerCase()) && <span className="ml-2 rounded-full bg-bad-soft px-2 py-0.5 text-[10px] font-medium text-bad">no AL left</span>}
                       <span className="ml-2 text-xs font-normal text-ink-2">
                         {fmtD(r.date_from)}{r.date_to !== r.date_from ? ` – ${fmtD(r.date_to)}` : ''}
                       </span>
