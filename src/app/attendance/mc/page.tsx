@@ -76,9 +76,10 @@ export default function McReviewPage() {
   }, []);
 
   const decide = useCallback(async (id: string, approve: boolean) => {
+    if (!approve && !window.confirm('Reject this MC request?')) return;
     setBusy(id);
     const { error } = await supabase.rpc(approve ? 'approve_mc' : 'reject_mc', { p_id: id });
-    if (!error) await load();
+    if (error) alert(error.message); else await load();
     setBusy(null);
   }, [load]);
 
