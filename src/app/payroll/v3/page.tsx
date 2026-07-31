@@ -62,6 +62,7 @@ export default function PayrollV3Page() {
   const [busy, setBusy] = useState<string>('');
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [divisor, setDivisor] = useState<string>('26'); // unpaid-leave daily-rate divisor (26 or 25)
+  const [deductUnpaidLeave, setDeductUnpaidLeave] = useState(false); // master switch: dock over-quota AL/MC days
   const [itemTypes, setItemTypes] = useState<{ code: string; name: string; kind: 'EARN' | 'DEDUCT' }[]>([]);
 
   useEffect(() => {
@@ -91,11 +92,17 @@ export default function PayrollV3Page() {
 
   useEffect(() => { if (isAdmin) refresh(); }, [isAdmin, refresh]);
 
-  // Unpaid-leave daily-rate divisor — a global payroll setting (default 26 = EA-1955 ordinary rate of pay).
+  // Global payroll settings: the unpaid-leave daily-rate divisor (default 26 = EA-1955 ordinary rate of
+  // pay) and the master switch for deducting over-quota annual-leave / MC days (default off).
   useEffect(() => {
     if (!isAdmin) return;
-    supabase.schema('pay_v2').from('payroll_settings').select('value').eq('key', 'unpaid_divisor').maybeSingle()
-      .then(({ data }) => { const v = (data as { value?: string } | null)?.value; if (v) setDivisor(String(v)); });
+    supabase.schema('pay_v2').from('payroll_settings').select('key,value').in('key', ['unpaid_divisor', 'deduct_unpaid_leave'])
+      .then(({ data }) => {
+        const rows = (data as { key: string; value: string }[] | null) ?? [];
+        const div = rows.find((r) => r.key === 'unpaid_divisor')?.value; if (div) setDivisor(String(div));
+        const dl = rows.find((r) => r.key === 'deduct_unpaid_leave')?.value;
+        setDeductUnpaidLeave(['on', 'true', '1', 'yes'].includes(String(dl ?? '').toLowerCase()));
+      });
   }, [isAdmin]);
 
   // Add-item dropdown options come from the Payroll Items catalog (Settings tab), not a hard-coded list.
@@ -126,6 +133,19 @@ export default function PayrollV3Page() {
       .update({ value: v, updated_at: new Date().toISOString() }).eq('key', 'unpaid_divisor');
     if (error) { setDivisor(divisor); setMsg({ kind: 'err', text: `Couldn't save: ${error.message}` }); }
     else setMsg({ kind: 'ok', text: `Unpaid-leave daily rate set to monthly ÷ ${v}. Re-Generate the month to apply it.` });
+  };
+
+  // Master switch: whether payroll docks over-quota annual-leave / MC days. Off by default; nothing is
+  // deducted until it is turned on and the month is re-Generated.
+  const toggleDeductUnpaidLeave = async () => {
+    const next = !deductUnpaidLeave;
+    setDeductUnpaidLeave(next);
+    const { error } = await supabase.schema('pay_v2').from('payroll_settings')
+      .update({ value: next ? 'on' : 'off', updated_at: new Date().toISOString() }).eq('key', 'deduct_unpaid_leave');
+    if (error) { setDeductUnpaidLeave(!next); setMsg({ kind: 'err', text: `Couldn't save: ${error.message}` }); }
+    else setMsg({ kind: 'ok', text: next
+      ? 'Over-quota leave WILL now be deducted. Re-Generate the month to apply it.'
+      : 'Over-quota leave deduction turned off. Re-Generate the month to clear it.' });
   };
 
   const finalize = async () => {
@@ -344,6 +364,20 @@ export default function PayrollV3Page() {
             </button>
           ))}
           <span className="text-[11px] text-ink-3">monthly salary ÷ {divisor} per day{divisor === '26' ? ' · EA-1955 standard' : ''} · re-Generate to apply</span>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium text-ink-2">Deduct over-quota leave</span>
+          <button
+            role="switch" aria-checked={deductUnpaidLeave} disabled={!!busy}
+            onClick={toggleDeductUnpaidLeave}
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition disabled:opacity-50 ${deductUnpaidLeave ? 'bg-good' : 'bg-ink/15'}`}>
+            <span className={`inline-block h-5 w-5 transform rounded-full bg-card shadow transition ${deductUnpaidLeave ? 'translate-x-5' : 'translate-x-0.5'}`} />
+          </button>
+          <span className="text-[11px] text-ink-3">
+            {deductUnpaidLeave
+              ? `ON — annual-leave / MC days beyond the yearly quota are docked (÷${divisor} per day). Re-Generate to apply.`
+              : 'OFF — over-quota leave is shown on Balances but not docked. Turn on when ready for real payroll.'}
+          </span>
         </div>
         {msg && <div className={`mt-2 rounded-md border p-2 text-sm ${msg.kind === 'ok' ? 'border-emerald-200 bg-good-soft text-good' : 'border-rose-200 bg-bad-soft text-bad'}`}>{msg.text}</div>}
       </div>
