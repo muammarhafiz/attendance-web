@@ -11,9 +11,8 @@ import EmailSettings from '@/components/settings/EmailSettings';
 import NotificationsSettings from '@/components/settings/NotificationsSettings';
 import AutomationOverview from '@/components/settings/AutomationOverview';
 import AccessSettings from '@/components/settings/AccessSettings';
-import HolidaysSettings from '@/components/settings/HolidaysSettings';
 
-type TabKey = 'access' | 'system' | 'automation' | 'payroll' | 'attendance' | 'workshop' | 'holidays' | 'email' | 'notifications';
+type TabKey = 'access' | 'system' | 'automation' | 'payroll' | 'attendance' | 'workshop' | 'email' | 'notifications';
 type Tab = { key: TabKey; label: string; req: 'owner' | 'access_admin' | 'month_end' };
 
 // 'access' = Owner + Manager; 'notifications' = Owner + Manager + Office (their own phone push); rest Owner-only.
@@ -24,7 +23,6 @@ const ALL_TABS: Tab[] = [
   { key: 'payroll', label: 'Payroll items', req: 'owner' },
   { key: 'attendance', label: 'Attendance', req: 'owner' },
   { key: 'workshop', label: 'Workshop', req: 'owner' },
-  { key: 'holidays', label: 'Holidays', req: 'owner' },
   { key: 'email', label: 'Email', req: 'owner' },
   { key: 'notifications', label: 'Notifications', req: 'month_end' },
 ];
@@ -86,7 +84,6 @@ export default function SettingsPage() {
       {tab === 'payroll' && <PayrollItemsSettings />}
       {tab === 'attendance' && <AttendanceSettings />}
       {tab === 'workshop' && <WorkshopSettings />}
-      {tab === 'holidays' && <HolidaysSettings />}
       {tab === 'email' && <EmailSettings />}
       {tab === 'notifications' && <NotificationsSettings />}
     </div>
