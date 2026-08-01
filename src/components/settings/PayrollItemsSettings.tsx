@@ -113,6 +113,10 @@ export default function PayrollItemsSettings() {
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [editing, setEditing] = useState<Partial<ItemType> | null>(null);
   const [saving, setSaving] = useState(false);
+  // Punctuality allowance settings (pay_v2.payroll_settings key/value).
+  const [pEnabled, setPEnabled] = useState(false);
+  const [pAmount, setPAmount] = useState('150');
+  const [pMaxLate, setPMaxLate] = useState('4');
 
   useEffect(() => {
     (async () => {
@@ -133,6 +137,37 @@ export default function PayrollItemsSettings() {
   }, []);
 
   useEffect(() => { if (isAdmin) load(); }, [isAdmin, load]);
+
+  const loadPunc = useCallback(async () => {
+    const { data } = await supabase.schema('pay_v2').from('payroll_settings')
+      .select('key,value').in('key', ['punctuality_enabled', 'punctuality_amount', 'punctuality_max_late']);
+    const rows = (data ?? []) as { key: string; value: string }[];
+    const g = (k: string) => rows.find((r) => r.key === k)?.value;
+    setPEnabled(['on', 'true', '1', 'yes'].includes(String(g('punctuality_enabled') ?? '').toLowerCase()));
+    if (g('punctuality_amount')) setPAmount(String(g('punctuality_amount')));
+    if (g('punctuality_max_late')) setPMaxLate(String(g('punctuality_max_late')));
+  }, []);
+  useEffect(() => { if (isAdmin) loadPunc(); }, [isAdmin, loadPunc]);
+
+  const savePuncKey = async (key: string, value: string) => {
+    const { error } = await supabase.schema('pay_v2').from('payroll_settings')
+      .update({ value, updated_at: new Date().toISOString() }).eq('key', key);
+    if (error) { setMsg({ kind: 'err', text: error.message }); return false; }
+    return true;
+  };
+  const togglePunc = async () => {
+    const next = !pEnabled; setPEnabled(next);
+    if (await savePuncKey('punctuality_enabled', next ? 'on' : 'off'))
+      setMsg({ kind: 'ok', text: next ? 'Punctuality allowance ON — re-Generate a month to apply it.' : 'Punctuality allowance turned off.' });
+    else setPEnabled(!next);
+  };
+  const savePuncNumbers = async () => {
+    const amt = String(Math.max(0, Math.round((Number(pAmount) || 0) * 100) / 100));
+    const max = String(Math.max(0, Math.floor(Number(pMaxLate) || 0)));
+    const ok1 = await savePuncKey('punctuality_amount', amt);
+    const ok2 = await savePuncKey('punctuality_max_late', max);
+    if (ok1 && ok2) { setPAmount(amt); setPMaxLate(max); setMsg({ kind: 'ok', text: 'Punctuality allowance saved — re-Generate a month to apply it.' }); }
+  };
 
   const grouped = useMemo(() => {
     const m: Record<string, ItemType[]> = {};
@@ -193,6 +228,40 @@ export default function PayrollItemsSettings() {
 
   return (
     <div>
+      {/* Punctuality allowance */}
+      <div className="mb-6 rounded-card bg-card shadow-card p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold">Punctuality allowance</h2>
+            <p className="mt-1 max-w-xl text-sm text-ink-2">
+              A monthly attendance bonus that staff <b>forfeit if they&apos;re late too often</b>. It counts as wages, so
+              EPF/SOCSO/EIS apply. Off by default — turn it on and re-Generate a month to apply it.
+            </p>
+          </div>
+          <button role="switch" aria-checked={pEnabled} onClick={togglePunc}
+            className={`relative mt-1 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${pEnabled ? 'bg-good' : 'bg-ink/15'}`}>
+            <span className={`inline-block h-5 w-5 transform rounded-full bg-card shadow transition ${pEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+          </button>
+        </div>
+        {pEnabled && (
+          <div className="mt-3 flex flex-wrap items-end gap-4 border-t border-line pt-3">
+            <label className="text-xs font-medium text-ink-2">Amount (RM / month)
+              <input type="number" min="0" value={pAmount} onChange={(e) => setPAmount(e.target.value)}
+                className="mt-0.5 block w-32 rounded-md border border-line px-2 py-1.5 text-right text-sm tabular-nums" />
+            </label>
+            <label className="text-xs font-medium text-ink-2">Lose it if late more than…
+              <div className="mt-0.5 flex items-center gap-1.5">
+                <input type="number" min="0" value={pMaxLate} onChange={(e) => setPMaxLate(e.target.value)}
+                  className="w-20 rounded-md border border-line px-2 py-1.5 text-right text-sm tabular-nums" />
+                <span className="text-sm text-ink-2">times a month</span>
+              </div>
+            </label>
+            <button onClick={savePuncNumbers} className="rounded-md bg-btn px-3 py-1.5 text-sm font-medium text-btn-ink hover:opacity-90">Save</button>
+            <span className="text-[11px] text-ink-3">Every late day counts (no grace).</span>
+          </div>
+        )}
+      </div>
+
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <h2 className="text-lg font-semibold">Payroll Items</h2>
         <span className="text-sm text-ink-2">Define the earning &amp; deduction types used across payroll.</span>
