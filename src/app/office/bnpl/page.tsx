@@ -12,7 +12,7 @@ type Sale = { day: string; method: string; invoice_no: string | null; vehicle: s
 type Payout = {
   payout_id: string; payout_date: string | null;
   gross_total: number | string; payout_total: number | string; fee_total: number | string; txn_count: number;
-  bank_confirmed: boolean; confirmed_by: string | null; confirmed_at: string | null; note: string | null;
+  bank_confirmed: boolean; confirmed_by: string | null; confirmed_at: string | null; note: string | null; status: string | null;
 };
 type Overview = {
   range: { from: string; to: string };
@@ -20,7 +20,7 @@ type Overview = {
   sales: Sale[];
   sales_total: { count: number; gross: number | string; est_fee: number | string; est_net: number | string };
   payouts: Payout[];
-  payouts_total: { count: number; gross: number | string; payout: number | string; fee: number | string; confirmed_count: number; unconfirmed_count: number; unconfirmed_amount: number | string };
+  payouts_total: { count: number; payout: number | string; confirmed_count: number; unconfirmed_count: number; unconfirmed_amount: number | string };
   fees_all_time: number | string;
 };
 
@@ -138,7 +138,7 @@ export default function BnplPage() {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Stat label="Paid out (period)" value={rm(pt?.payout)} sub={`${pt?.count ?? 0} payout${pt?.count === 1 ? '' : 's'}`} />
             <Stat label="Awaiting bank check" value={rm(pt?.unconfirmed_amount)} sub={`${pt?.unconfirmed_count ?? 0} to confirm`} tone={(pt?.unconfirmed_count ?? 0) > 0 ? 'warn' : 'good'} />
-            <Stat label="ATOME fees (period)" value={rm(pt?.fee)} sub="from settlements" />
+            <Stat label="ATOME fees (period)" value={rm(st?.est_fee)} sub="estimated on sales" />
             <Stat label="Fees all-time" value={rm(d.fees_all_time)} sub="for the P&L" />
           </div>
 
@@ -168,7 +168,7 @@ export default function BnplPage() {
                             : <span className="rounded-full bg-warn-soft px-2 py-0.5 text-[11px] font-medium text-warn">to check</span>}
                         </div>
                         <div className="mt-0.5 text-[12px] text-ink-3">
-                          {p.txn_count} sale{p.txn_count === 1 ? '' : 's'} · fee {rm(p.fee_total)} · gross {rm(p.gross_total)}
+                          {p.txn_count} settled{p.status ? ` · ${p.status}` : ''}
                           <span className="ml-1 font-mono">· {p.payout_id}</span>
                         </div>
                         {p.bank_confirmed && p.confirmed_by && (
