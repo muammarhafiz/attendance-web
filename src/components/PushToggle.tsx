@@ -134,7 +134,7 @@ export default function PushToggle() {
 
       {/* This device */}
       {needsInstall ? (
-        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <div className="mt-3 rounded-lg border border-warn/30 bg-warn-soft px-3 py-2 text-sm text-warn">
           <span className="font-medium">On iPhone/iPad:</span> tap the <span className="font-medium">Share</span> button →
           <span className="font-medium"> Add to Home Screen</span>, then open <span className="font-medium">Zordaq</span> from that icon and come back here to turn it on.
         </div>
@@ -143,14 +143,14 @@ export default function PushToggle() {
       ) : (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {!subscribed ? (
-            <button onClick={enable} disabled={busy} className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
+            <button onClick={enable} disabled={busy} className="rounded-md bg-good px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
               {busy ? 'Working…' : '🔔 Turn on for this phone'}
             </button>
           ) : (
             <>
-              <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1.5 text-sm font-medium text-emerald-700">✓ On for this phone</span>
+              <span className="inline-flex items-center gap-1 rounded-md bg-good-soft px-2.5 py-1.5 text-sm font-medium text-good">✓ On for this phone</span>
               <button onClick={sendTest} disabled={busy} className="rounded-md border border-line px-3 py-2 text-sm font-medium text-ink-2 hover:bg-ink/5 disabled:opacity-50">Send test</button>
-              <button onClick={disable} disabled={busy} className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-50">Turn off</button>
+              <button onClick={disable} disabled={busy} className="rounded-md border border-bad/30 bg-bad-soft px-3 py-2 text-sm font-medium text-bad hover:opacity-90 disabled:opacity-50">Turn off</button>
             </>
           )}
         </div>
@@ -169,10 +169,10 @@ export default function PushToggle() {
               <li key={dv.endpoint} className="flex items-center justify-between gap-2 py-1.5 text-sm">
                 <div className="min-w-0">
                   <span className="text-ink-2">{deviceLabel(dv.ua, dv.host)}</span>
-                  {dv.endpoint === currentEndpoint && <span className="ml-1.5 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">this phone</span>}
+                  {dv.endpoint === currentEndpoint && <span className="ml-1.5 rounded bg-good-soft px-1.5 py-0.5 text-[10px] font-semibold text-good">this phone</span>}
                   <span className="ml-1.5 text-[11px] text-ink-3">added {fmtWhen(dv.created)}</span>
                 </div>
-                <button onClick={() => removeDevice(dv.endpoint)} disabled={busy} className="shrink-0 text-xs text-ink-3 hover:text-rose-600 disabled:opacity-50">Remove</button>
+                <button onClick={() => removeDevice(dv.endpoint)} disabled={busy} className="shrink-0 text-xs text-ink-3 hover:text-bad disabled:opacity-50">Remove</button>
               </li>
             ))}
           </ul>

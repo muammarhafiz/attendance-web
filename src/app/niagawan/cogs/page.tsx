@@ -286,7 +286,7 @@ export default function NiagawanCogsPage() {
           )}
           <button
             onClick={() => setShowBackfill((s) => !s)}
-            className="text-xs font-medium text-accent underline hover:text-blue-800"
+            className="text-xs font-medium text-accent underline hover:opacity-80"
           >
             Backfill…
           </button>
@@ -296,7 +296,7 @@ export default function NiagawanCogsPage() {
 
       {/* Backfill panel */}
       {showBackfill && (
-        <div className="mb-4 rounded-lg border border-accent/40 bg-blue-50 p-3">
+        <div className="mb-4 rounded-lg border border-accent/40 bg-accent-weak p-3">
           <div className="flex flex-wrap items-end gap-3">
             <label className="text-xs text-ink-2">
               From

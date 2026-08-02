@@ -235,7 +235,7 @@ export default function AddPartPage() {
               <div className="mt-2 rounded-xl border border-emerald-400 bg-good-soft px-3 py-2.5">
                 <div className="flex items-center justify-between">
                   <span className="min-w-0">
-                    <span className="block truncate text-sm font-semibold text-emerald-900">{chosen.descp}</span>
+                    <span className="block truncate text-sm font-semibold text-ink">{chosen.descp}</span>
                     <span className="font-mono text-xs text-good">{chosen.code || '—'} · Price {rm(editPrice && priceOverride !== '' ? priceOverride : chosen.price)} · Cost {rm(chosen.cost)}</span>
                   </span>
                   <button onClick={() => { setChosen(null); setQ(''); setEditPrice(false); setPriceOverride(''); }} className="shrink-0 text-xs text-good underline">change</button>
