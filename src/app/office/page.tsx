@@ -158,6 +158,7 @@ function OfficeHome({ d, reload }: { d: Home; reload: () => void }) {
       <p className="mb-2 text-sm text-ink-2"><span className="text-bad">Red</span> needs doing, <span className="text-good">green</span> is done. Use the arrows to change the day.</p>
       <div className="space-y-3">
         <DailyStatusCard />
+        <BigCard href="/office/bnpl" icon="wallet" title="BNPL payments" summary="ATOME & other BNPL — check each payout landed in the bank." />
         <BigCard href="/office/weekly" icon="clipboard" title="Weekly" alert={weeklyAlert} summary={weeklySummary} />
         <MonthlyStatusCard d={d} />
       </div>
