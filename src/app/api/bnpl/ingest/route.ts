@@ -78,6 +78,9 @@ export async function POST(req: Request) {
     const headers = new Set(headerRow.map((h) => String(h ?? '').trim()));
     const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false }) as Row[];
 
+    // TEMP diagnostic: capture what actually arrived so we can learn the emailed report's format.
+    try { await admin.from('bnpl_debug').insert({ name: file.name, size: buf.length, headers: headerRow, row0: rows[0] ?? null }); } catch { /* ignore */ }
+
     // This importer wants the SETTLEMENT / payout report (it carries Payout ID + Payout Amount).
     // The transaction report has the itemised fees but no payout linkage, so we can't reconcile with it.
     if (!headers.has('Payout ID') || !headers.has('Payout Amount')) {
