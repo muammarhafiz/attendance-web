@@ -128,14 +128,33 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, file: file.name, kind: 'settlement', result: data });
     }
 
-    // Anything else (e.g. the transaction report, which has fees but no Payout ID) can't be reconciled.
-    const looksTxn = headers.has('MDR Fee') || headers.has('Transaction Status');
+    // The portal TRANSACTION report (Transaction ID + fees + Transaction Status, no Payout ID) —
+    // per-sale settlement status. Populates the sales-side detail (no payout-batch linkage).
+    if (hasTxnId && headers.has('Transaction Status') && headers.has('Amount Receivable')) {
+      const norm = rows
+        .map((r) => ({
+          transaction_id: str(r['Transaction ID']),
+          order_id: str(r['Atome Order ID']),
+          transaction_type: str(r['Transaction Type']),
+          transaction_date: parseDMY(r['Transaction Time'] ?? r['Transaction Date']),
+          gross_amount: parseNum(r['Transaction Amount']),
+          net_amount: parseNum(r['Amount Receivable']),
+          currency: str(r['Currency']),
+          outlet_id: str(r['Outlet ID']),
+          status: str(r['Transaction Status']),
+          payment_plan: str(r["Customer's Payment Plan"]),
+          remarks: str(r['Remarks']),
+        }))
+        .filter((r) => r.transaction_id);
+      if (norm.length === 0) return NextResponse.json({ error: 'No transaction rows found in the file.' }, { status: 400 });
+      const { data, error } = await client.rpc('bnpl_ingest_transactions', { p_provider: provider, p_rows: norm });
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ ok: true, file: file.name, kind: 'transactions', result: data });
+    }
+
+    // Unknown layout.
     return NextResponse.json(
-      {
-        error: looksTxn
-          ? 'That looks like the ATOME transaction report. Please use the settlement / payout report (it has a "Payout ID" column).'
-          : 'This doesn’t look like an ATOME settlement/payout report — no "Payout ID" column found.',
-      },
+      { error: 'This doesn’t look like an ATOME report — expected a Payout ID or Transaction ID column.' },
       { status: 400 }
     );
   } catch (e: unknown) {
