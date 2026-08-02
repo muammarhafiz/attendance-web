@@ -328,9 +328,9 @@ export default function WorkshopBoardPage() {
       </div>
 
       <div className="mb-4 flex gap-1 border-b border-line">
-        <button onClick={() => setTab('board')} className={`-mb-px rounded-t-md px-3 py-2 text-sm font-medium ${tab === 'board' ? 'border-b-2 border-slate-900 text-ink' : 'text-ink-2 hover:text-ink-2'}`}>Board</button>
-        <button onClick={() => setTab('oil')} className={`-mb-px rounded-t-md px-3 py-2 text-sm font-medium ${tab === 'oil' ? 'border-b-2 border-slate-900 text-ink' : 'text-ink-2 hover:text-ink-2'}`}>🛢️ Oil finder</button>
-        <button onClick={() => setTab('bnpl')} className={`-mb-px rounded-t-md px-3 py-2 text-sm font-medium ${tab === 'bnpl' ? 'border-b-2 border-slate-900 text-ink' : 'text-ink-2 hover:text-ink-2'}`}>🧮 BNPL fee</button>
+        <button onClick={() => setTab('board')} className={`-mb-px rounded-t-md px-3 py-2 text-sm font-medium ${tab === 'board' ? 'border-b-2 border-ink text-ink' : 'text-ink-2 hover:text-ink-2'}`}>Board</button>
+        <button onClick={() => setTab('oil')} className={`-mb-px rounded-t-md px-3 py-2 text-sm font-medium ${tab === 'oil' ? 'border-b-2 border-ink text-ink' : 'text-ink-2 hover:text-ink-2'}`}>🛢️ Oil finder</button>
+        <button onClick={() => setTab('bnpl')} className={`-mb-px rounded-t-md px-3 py-2 text-sm font-medium ${tab === 'bnpl' ? 'border-b-2 border-ink text-ink' : 'text-ink-2 hover:text-ink-2'}`}>🧮 BNPL fee</button>
       </div>
 
       {tab === 'oil' && <OilFinder />}

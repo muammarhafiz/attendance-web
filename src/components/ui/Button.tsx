@@ -15,10 +15,10 @@ export default function Button({ variant='primary', size='md', className, childr
     md: 'h-10 px-4 text-sm'
   };
   const variants = {
-    primary: 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500',
-    secondary: 'bg-ink/5 text-ink hover:bg-gray-200 focus:ring-gray-400',
+    primary: 'bg-accent text-white hover:opacity-90 focus:ring-accent',
+    secondary: 'bg-ink/5 text-ink hover:bg-ink/10 focus:ring-line',
     ghost: 'bg-transparent text-ink-2 hover:bg-ink/5 focus:ring-line',
-    danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500',
+    danger: 'bg-bad text-white hover:opacity-90 focus:ring-bad',
   };
   return (
     <button className={clsx(base, sizes[size], variants[variant], className)} {...rest}>

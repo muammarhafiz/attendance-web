@@ -70,7 +70,7 @@ export default function SettingsPage() {
             key={t.key}
             onClick={() => setTab(t.key)}
             className={`-mb-px rounded-t-md px-3 py-2 text-sm font-medium transition ${
-              tab === t.key ? 'border-b-2 border-gray-900 text-ink' : 'text-ink-2 hover:text-ink'
+              tab === t.key ? 'border-b-2 border-ink text-ink' : 'text-ink-2 hover:text-ink'
             }`}
           >
             {t.label}

@@ -14,8 +14,8 @@ const TYPES = [
 ];
 const TYPE_LABEL: Record<string, string> = { mineral: 'Mineral', semi: 'Semi', fully: 'Fully', diesel: 'Diesel', other: 'Other' };
 const TYPE_CLASS: Record<string, string> = {
-  mineral: 'bg-amber-50 text-amber-700', semi: 'bg-blue-50 text-blue-700',
-  fully: 'bg-emerald-50 text-emerald-700', diesel: 'bg-ink/5 text-ink-2', other: 'bg-ink/5 text-ink-2',
+  mineral: 'bg-warn-soft text-warn', semi: 'bg-accent-weak text-accent',
+  fully: 'bg-good-soft text-good', diesel: 'bg-ink/5 text-ink-2', other: 'bg-ink/5 text-ink-2',
 };
 const CAP_ORDER = ['1L', '3L', '3.5L', '4L', '5L', '7L', '20L'];
 
@@ -102,7 +102,7 @@ export default function OilFinder() {
               <div className="mt-0.5 flex items-center gap-1.5 text-xs">
                 <span className={`rounded px-1.5 py-0.5 font-medium ${TYPE_CLASS[o.oil_type] ?? TYPE_CLASS.other}`}>{TYPE_LABEL[o.oil_type] ?? o.oil_type}</span>
                 {o.capacity && <span className="rounded bg-ink/5 px-1.5 py-0.5 text-ink-2">{o.capacity}</span>}
-                <span className={o.stock > 0 ? 'text-emerald-600' : 'text-ink-3'}>{o.stock > 0 ? `${o.stock} in stock` : 'out of stock'}</span>
+                <span className={o.stock > 0 ? 'text-good' : 'text-ink-3'}>{o.stock > 0 ? `${o.stock} in stock` : 'out of stock'}</span>
               </div>
             </div>
             <div className="shrink-0 text-right">
