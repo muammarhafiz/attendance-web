@@ -447,16 +447,16 @@ export default function ReviewInvoicePage() {
         <div className="flex items-center gap-2">
           {(head.check_status === 'queued' || head.check_status === 'checking')
             ? <span className="rounded border border-amber-200 bg-warn-soft px-2.5 py-1 text-xs font-medium text-warn">Checking sales… (~1 min)</span>
-            : <button onClick={runCheck} className="rounded border border-line px-2.5 py-1 text-xs font-medium text-ink-2 hover:bg-ink/5">{head.check_status === 'checked' ? '↻ Re-check sales' : 'Check against sales'}</button>}
+            : <button onClick={runCheck} className="rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5">{head.check_status === 'checked' ? '↻ Re-check sales' : 'Check against sales'}</button>}
           {!locked && (catSync === 'idle'
-            ? <button onClick={refreshCatalog} title="Re-sync the product list from Niagawan. Use this if a line shows 'create new' for an item that IS already in Niagawan (e.g. just created there)." className="rounded border border-line px-2.5 py-1 text-xs font-medium text-ink-2 hover:bg-ink/5">Refresh product list</button>
+            ? <button onClick={refreshCatalog} title="Re-sync the product list from Niagawan. Use this if a line shows 'create new' for an item that IS already in Niagawan (e.g. just created there)." className="rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5">Refresh product list</button>
             : <span className="rounded border border-amber-200 bg-warn-soft px-2.5 py-1 text-xs font-medium text-warn">{catSync === 'running' ? 'Refreshing products… (~1–2 min)' : catSync === 'done' ? 'Products updated ✓' : 'Refresh failed'}</span>)}
-          {head.file_path && <button onClick={viewPdf} className="rounded border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-ink/5">View PDF</button>}
+          {head.file_path && <button onClick={viewPdf} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">View PDF</button>}
           {(head.status === 'uploaded' || head.status === 'extracted' || head.status === 'error') && (
-            <button onClick={dismissInvoice} title="Hide this invoice (e.g. it's already in Niagawan). Nothing is changed in Niagawan." className="rounded border border-line px-2.5 py-1 text-xs text-bad hover:bg-bad-soft">✕ Dismiss</button>
+            <button onClick={dismissInvoice} title="Hide this invoice (e.g. it's already in Niagawan). Nothing is changed in Niagawan." className="rounded-lg border border-line px-3 py-1.5 text-sm text-bad hover:bg-bad-soft">✕ Dismiss</button>
           )}
           {head.status === 'dismissed' && (
-            <button onClick={restoreInvoice} className="rounded border border-line px-2.5 py-1 text-xs font-medium text-ink-2 hover:bg-ink/5">↩ Restore</button>
+            <button onClick={restoreInvoice} className="rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5">↩ Restore</button>
           )}
           <span className="rounded-full bg-ink/5 px-2 py-0.5 text-xs font-medium text-ink-2">{head.status === 'created' && head.niagawan_pi_no ? head.niagawan_pi_no : head.status}</span>
         </div>
@@ -521,22 +521,22 @@ export default function ReviewInvoicePage() {
           <label className="block">
             <span className="text-xs font-medium text-ink-2">Supplier</span>
             <input disabled={locked} value={head.supplier_name ?? ''} onChange={(e) => setHead({ ...head, supplier_name: e.target.value })}
-              className="mt-1 w-full rounded-md border border-line px-2 py-1.5 text-sm disabled:bg-ink/[0.03]" />
+              className="mt-1 w-full rounded-lg border border-line px-2 py-1 text-sm disabled:bg-ink/[0.03]" />
           </label>
           <label className="block">
             <span className="text-xs font-medium text-ink-2">Supplier invoice ref#</span>
             <input disabled={locked} value={head.ref_no ?? ''} onChange={(e) => setHead({ ...head, ref_no: e.target.value })}
-              className="mt-1 w-full rounded-md border border-line px-2 py-1.5 text-sm disabled:bg-ink/[0.03]" />
+              className="mt-1 w-full rounded-lg border border-line px-2 py-1 text-sm disabled:bg-ink/[0.03]" />
           </label>
           <label className="block">
             <span className="text-xs font-medium text-ink-2">Invoice date</span>
             <input disabled={locked} type="date" value={head.invoice_date ?? ''} onChange={(e) => setHead({ ...head, invoice_date: e.target.value })}
-              className="mt-1 w-full rounded-md border border-line px-2 py-1.5 text-sm disabled:bg-ink/[0.03]" />
+              className="mt-1 w-full rounded-lg border border-line px-2 py-1 text-sm disabled:bg-ink/[0.03]" />
           </label>
           <label className="block">
             <span className="text-xs font-medium text-ink-2">Invoice total (from PDF)</span>
             <input disabled={locked} type="number" step="0.01" value={head.total ?? ''} onChange={(e) => setHead({ ...head, total: e.target.value === '' ? null : Number(e.target.value) })}
-              className="mt-1 w-full rounded-md border border-line px-2 py-1.5 text-sm disabled:bg-ink/[0.03]" />
+              className="mt-1 w-full rounded-lg border border-line px-2 py-1 text-sm disabled:bg-ink/[0.03]" />
           </label>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
@@ -574,9 +574,9 @@ export default function ReviewInvoicePage() {
           horizontal scrolling. Capped at 84rem; centered; heading matches the width. */}
       <div style={{ width: 'min(84rem, calc(100vw - 2rem))' }} className="relative left-1/2 mb-2 flex -translate-x-1/2 items-center justify-between">
         <h2 className="text-sm font-semibold text-ink-2">Line items ({items.length}){resolving && <span className="ml-2 font-normal text-warn">· looking up Niagawan categories…</span>}</h2>
-        {!locked && <button onClick={addRow} className="rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-ink/5">+ Add row</button>}
+        {!locked && <button onClick={addRow} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">+ Add row</button>}
       </div>
-      <div style={{ width: 'min(84rem, calc(100vw - 2rem))' }} className="relative left-1/2 -translate-x-1/2 overflow-x-auto rounded-lg border border-line">
+      <div style={{ width: 'min(84rem, calc(100vw - 2rem))' }} className="relative left-1/2 -translate-x-1/2 overflow-x-auto rounded-card bg-card shadow-card">
         <table className="w-full border-collapse text-sm">
           <thead className="bg-ink/[0.03] text-left">
             <tr>
@@ -611,7 +611,7 @@ export default function ReviewInvoicePage() {
                         // false claim about an unverified/changed code.
                         setItem(idx, { item_code: v, codes: v.trim() ? [v.trim()] : [], code_verified: null, sku_id: null, will_create: false, in_niagawan: null, niagawan_matches: null });
                       }}
-                      className={`w-36 rounded border px-1.5 py-1 font-mono text-xs disabled:bg-transparent ${it.code_verified === false ? 'border-rose-400 bg-bad-soft' : 'border-line disabled:border-transparent'}`} />
+                      className={`w-36 rounded-lg border px-1.5 py-1 font-mono text-xs disabled:bg-transparent ${it.code_verified === false ? 'border-rose-400 bg-bad-soft' : 'border-line disabled:border-transparent'}`} />
                     {it.code_verified === false && (
                       <div className="mt-0.5 max-w-[12rem] text-[10px] font-medium leading-tight text-bad" title="This code was NOT found in the invoice's text — the AI may have misread it. Check it against the PDF.">
                         ⚠ not found in PDF text — check it
@@ -626,27 +626,27 @@ export default function ReviewInvoicePage() {
                   </td>
                   <td className="px-2 py-1.5">
                     <input disabled={locked} value={it.description} onChange={(e) => setItem(idx, { description: e.target.value })}
-                      className="w-full min-w-[14rem] rounded border border-line px-1.5 py-1 text-xs disabled:bg-transparent disabled:border-transparent" />
+                      className="w-full min-w-[14rem] rounded-lg border border-line px-1.5 py-1 text-xs disabled:bg-transparent disabled:border-transparent" />
                   </td>
                   <td className="px-2 py-1.5 text-right">
                     <input disabled={locked} type="number" step="any" value={it.qty} onChange={(e) => setItem(idx, { qty: Number(e.target.value) })}
-                      className="w-16 rounded border border-line px-1.5 py-1 text-right text-xs disabled:bg-transparent disabled:border-transparent" />
+                      className="w-16 rounded-lg border border-line px-1.5 py-1 text-right text-xs disabled:bg-transparent disabled:border-transparent" />
                   </td>
                   <td className="px-2 py-1.5 text-right">
                     <input disabled={locked} type="number" step="0.01" value={it.unit_price} onChange={(e) => setItem(idx, { unit_price: Number(e.target.value) })}
-                      className="w-20 rounded border border-line px-1.5 py-1 text-right text-xs disabled:bg-transparent disabled:border-transparent" />
+                      className="w-20 rounded-lg border border-line px-1.5 py-1 text-right text-xs disabled:bg-transparent disabled:border-transparent" />
                   </td>
                   <td className="px-2 py-1.5 text-right">
                     <input disabled={locked} type="number" step="0.01" value={it.discount} onChange={(e) => setItem(idx, { discount: Number(e.target.value) })}
                       title="Per-line discount %, e.g. 15 for a 15% discount"
-                      className="w-14 rounded border border-line px-1.5 py-1 text-right text-xs disabled:bg-transparent disabled:border-transparent" />
+                      className="w-14 rounded-lg border border-line px-1.5 py-1 text-right text-xs disabled:bg-transparent disabled:border-transparent" />
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-ink-2">{rm(lineAmount(it.qty, it.unit_price, it.discount))}</td>
                   <td className="px-2 py-1.5">
                     {!candsLoaded ? <span className="text-xs text-ink-3">checking…</span> : pickerLine === idx ? (
                       <div className="flex w-64 flex-col gap-1">
                         <input autoFocus value={pq} onChange={(e) => searchProducts(e.target.value)} placeholder="search item name or code…"
-                          className="rounded border border-accent px-1.5 py-1 text-xs" />
+                          className="rounded-lg border border-accent px-1.5 py-1 text-xs" />
                         {presults.length > 0 ? (
                           <div className="max-h-48 overflow-y-auto rounded border border-line">
                             {presults.map((p) => (
@@ -674,7 +674,7 @@ export default function ReviewInvoicePage() {
                               </span>
                             )}
                             <select disabled={locked} value={cats.includes(it.category) ? it.category : ''} onChange={(e) => setItem(idx, { category: e.target.value })}
-                              className="w-44 rounded border border-amber-300 bg-warn-soft px-1.5 py-1 text-xs disabled:bg-transparent disabled:border-transparent" title="New item — pick the category it will be created in">
+                              className="w-44 rounded-lg border border-amber-300 bg-warn-soft px-1.5 py-1 text-xs disabled:bg-transparent disabled:border-transparent" title="New item — pick the category it will be created in">
                               {!cats.includes(it.category) && <option value="">{it.category || '—'}</option>}
                               {cats.map((c) => <option key={c} value={c}>{c}</option>)}
                             </select>
@@ -706,7 +706,7 @@ export default function ReviewInvoicePage() {
                       return (
                         <div className="flex flex-col gap-1">
                           <select disabled={locked} value="" onChange={(e) => { if (e.target.value) setItem(idx, { sku_id: e.target.value, will_create: false }); }}
-                            className="w-64 rounded border border-rose-400 bg-bad-soft px-1.5 py-1 text-xs font-medium disabled:bg-transparent"
+                            className="w-64 rounded-lg border border-rose-400 bg-bad-soft px-1.5 py-1 text-xs font-medium disabled:bg-transparent"
                             title="Several products share this code — choose which one this stock belongs to">
                             <option value="">⚠ {cands.length} products share this code — choose…</option>
                             {cands.map((m) => <option key={m.sku} value={m.sku}>{m.code} — {m.descp}{m.price ? ` (RM${m.price})` : ''}</option>)}
@@ -761,12 +761,12 @@ export default function ReviewInvoicePage() {
             </div>
           )}
           <div className="mt-4 flex items-center gap-2">
-            <button onClick={() => save(false)} disabled={busy} className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5 disabled:opacity-50">
+            <button onClick={() => save(false)} disabled={busy} className="rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5 disabled:opacity-50">
               {busy ? 'Saving…' : 'Save changes'}
             </button>
             <button onClick={() => save(true)} disabled={busy || !candsLoaded || approveBlockers.length > 0}
               title={!candsLoaded ? 'Checking product matches…' : approveBlockers.length > 0 ? 'Resolve the issues listed above first' : undefined}
-              className="rounded-md bg-good px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+              className="rounded-lg bg-good px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
               {busy ? 'Working…' : 'Approve → create in Niagawan'}
             </button>
             {!candsLoaded && <span className="text-xs text-ink-3">checking product matches…</span>}

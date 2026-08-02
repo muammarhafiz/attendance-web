@@ -63,7 +63,7 @@ export function OfficeShell({ title, back, backHref = '/office', backLabel = '�
     <div className="mx-auto max-w-2xl px-4 py-6">
       {back && <Link href={backHref} className="text-sm text-accent hover:underline">{backLabel}</Link>}
       <div className={`${back ? 'mt-2 ' : ''}mb-4 flex items-baseline justify-between`}>
-        <h1 className="text-2xl font-bold text-ink">{title}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">{title}</h1>
         {onRefresh && <button onClick={onRefresh} className="text-xs text-ink-3 hover:text-ink-2">refresh</button>}
       </div>
       {children}
@@ -72,8 +72,8 @@ export function OfficeShell({ title, back, backHref = '/office', backLabel = '�
 }
 
 export function Gate({ allowed, loading, d, children }: { allowed: boolean | null; loading: boolean; d: Home | null; children: React.ReactNode }) {
-  if (allowed === null) return <div className="p-6 text-sm text-ink-2">Checking…</div>;
-  if (!allowed) return <div className="p-6 text-sm text-ink-2">This page is for the office clerk, managers and the owner.</div>;
+  if (allowed === null) return <div className="px-4 py-6 text-sm text-ink-3">Checking…</div>;
+  if (!allowed) return <div className="px-4 py-6 text-sm text-ink-2">This page is for the office clerk, managers and the owner.</div>;
   if (loading || !d) return <div className="mx-auto max-w-2xl px-4 py-6 text-sm text-ink-3">Loading…</div>;
   return <>{children}</>;
 }
@@ -307,7 +307,7 @@ function RecheckButton({ day, onDone }: { day: string; onDone?: () => void }) {
   return (
     <div className="mt-3 flex items-center gap-2 border-t border-line pt-2">
       <button onClick={recheck} disabled={busy}
-        className="rounded-md border border-line px-2.5 py-1 text-xs font-medium text-ink-2 transition hover:bg-ink/5 disabled:opacity-50">
+        className="rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-ink-2 transition hover:bg-ink/5 disabled:opacity-50">
         {busy ? 'Re-checking…' : '↻ Re-check with Niagawan'}
       </button>
       {msg && <span className={`text-[11px] ${msg.startsWith('Updated') ? 'text-good' : 'text-ink-2'}`}>{msg}</span>}

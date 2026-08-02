@@ -261,7 +261,7 @@ export default function NiagawanCogsPage() {
   }, [bfState, bfFrom, bfTo, loadZeros]);
 
   if (authed === null || isAdmin === null) {
-    return <div className="text-sm text-ink-2">Checking session…</div>;
+    return <div className="text-sm text-ink-3">Checking session…</div>;
   }
   if (authed === false) return <div className="text-sm text-ink-2">Please sign in to view this page.</div>;
   if (!isAdmin) return <div className="text-sm text-ink-2">You don&apos;t have access to this page.</div>;
@@ -275,7 +275,7 @@ export default function NiagawanCogsPage() {
             <select
               value={day}
               onChange={(e) => setDay(e.target.value)}
-              className="rounded-md border border-line px-2 py-1 text-sm"
+              className="rounded-lg border border-line px-2 py-1 text-sm"
             >
               {days.map((d) => (
                 <option key={d} value={d}>
@@ -301,17 +301,17 @@ export default function NiagawanCogsPage() {
             <label className="text-xs text-ink-2">
               From
               <input type="date" value={bfFrom} onChange={(e) => setBfFrom(e.target.value)}
-                className="mt-1 block rounded-md border border-line px-2 py-1 text-sm" />
+                className="mt-1 block rounded-lg border border-line px-2 py-1 text-sm" />
             </label>
             <label className="text-xs text-ink-2">
               To
               <input type="date" value={bfTo} onChange={(e) => setBfTo(e.target.value)}
-                className="mt-1 block rounded-md border border-line px-2 py-1 text-sm" />
+                className="mt-1 block rounded-lg border border-line px-2 py-1 text-sm" />
             </label>
             <button
               onClick={runBackfill}
               disabled={bfState === 'running'}
-              className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+              className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
                 bfState === 'running' ? 'cursor-not-allowed bg-ink/10 text-ink-3' : 'bg-accent text-white hover:opacity-90'
               }`}
             >
@@ -336,19 +336,19 @@ export default function NiagawanCogsPage() {
       </div>
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-card bg-card p-3 shadow-card">
+        <div className="rounded-card bg-card p-4 shadow-card">
           <div className="text-xs font-medium text-ink-2">Parts to chase</div>
           <div className="mt-1 text-lg font-semibold text-ink">{stats.parts}</div>
         </div>
-        <div className="rounded-card bg-card p-3 shadow-card">
+        <div className="rounded-card bg-card p-4 shadow-card">
           <div className="text-xs font-medium text-ink-2">Invoices affected</div>
           <div className="mt-1 text-lg font-semibold text-ink">{stats.invoices}</div>
         </div>
-        <div className="rounded-card bg-card p-3 shadow-card">
+        <div className="rounded-card bg-card p-4 shadow-card">
           <div className="text-xs font-medium text-ink-2">Sales with no cost</div>
           <div className="mt-1 text-lg font-semibold text-ink">{rm(stats.value)}</div>
         </div>
-        <div className="rounded-card bg-card p-3 shadow-card">
+        <div className="rounded-card bg-card p-4 shadow-card">
           <div className="text-xs font-medium text-ink-2">Hidden (rules)</div>
           <div className="mt-1 text-lg font-semibold text-ink-3">{stats.hidden}</div>
         </div>
@@ -357,14 +357,14 @@ export default function NiagawanCogsPage() {
       {err && <div className="mb-4 rounded border border-amber-200 bg-warn-soft p-3 text-sm text-warn">{err}</div>}
 
       {loading ? (
-        <div className="text-sm text-ink-2">Loading…</div>
+        <div className="text-sm text-ink-3">Loading…</div>
       ) : kept.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-line bg-card p-6 text-sm text-ink-2">
+        <div className="rounded-lg border border-dashed border-line p-4 text-center text-sm text-ink-3">
           Nothing to chase for {day ? fmtDay(day) : 'this day'} — every part has a cost (or is covered by an ignore
           rule).
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-line">
+        <div className="overflow-x-auto rounded-card bg-card shadow-card">
           <table className="min-w-full divide-y divide-line text-sm">
             <thead className="bg-ink/[0.03]">
               <tr className="text-left">
@@ -387,7 +387,7 @@ export default function NiagawanCogsPage() {
                       onClick={() => ignoreRow(r)}
                       disabled={busy === r.id}
                       title={r.code ? `Hide all items with code ${r.code}` : `Hide items named "${r.item}"`}
-                      className="rounded-md border border-line px-2 py-1 text-xs text-ink-2 transition hover:bg-ink/5 hover:text-ink-2 disabled:opacity-50"
+                      className="rounded-lg border border-line px-2 py-1.5 text-sm text-ink-2 transition hover:bg-ink/5 hover:text-ink-2 disabled:opacity-50"
                     >
                       {busy === r.id ? '…' : 'Ignore'}
                     </button>
@@ -409,7 +409,7 @@ export default function NiagawanCogsPage() {
             {showHidden ? 'Hide' : 'Show'} {hidden.length} line(s) hidden by ignore rules
           </button>
           {showHidden && (
-            <div className="mt-2 overflow-x-auto rounded-lg border border-line">
+            <div className="mt-2 overflow-x-auto rounded-card bg-card shadow-card">
               <table className="min-w-full divide-y divide-line text-sm">
                 <tbody className="divide-y divide-line bg-ink/[0.03]">
                   {hidden.map((r) => (
@@ -436,7 +436,7 @@ export default function NiagawanCogsPage() {
           {showRules ? 'Hide' : 'Manage'} ignore rules ({rules.length})
         </button>
         {showRules && (
-          <div className="mt-2 rounded-card bg-card p-3 shadow-card">
+          <div className="mt-2 rounded-card bg-card p-4 shadow-card">
             <p className="mb-3 text-xs text-ink-2">
               Rules decide what to hide (labour, services, notes). Add one below, edit/delete existing ones, or click
               “Ignore” on a row above.
@@ -447,7 +447,7 @@ export default function NiagawanCogsPage() {
               <label className="text-xs text-ink-2">
                 Match type
                 <select value={newType} onChange={(e) => setNewType(e.target.value)}
-                  className="mt-1 block rounded-md border border-line px-2 py-1 text-xs">
+                  className="mt-1 block rounded-lg border border-line px-2 py-1 text-xs">
                   {MATCH_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </label>
@@ -455,16 +455,16 @@ export default function NiagawanCogsPage() {
                 Value
                 <input value={newValue} onChange={(e) => setNewValue(e.target.value)}
                   placeholder={newType === 'price_max' ? '0' : 'e.g. LB-LABOUR'}
-                  className="mt-1 block rounded-md border border-line px-2 py-1 text-xs" />
+                  className="mt-1 block rounded-lg border border-line px-2 py-1 text-xs" />
               </label>
               <label className="text-xs text-ink-2">
                 Notes
                 <input value={newNotes} onChange={(e) => setNewNotes(e.target.value)}
                   placeholder="optional"
-                  className="mt-1 block rounded-md border border-line px-2 py-1 text-xs" />
+                  className="mt-1 block rounded-lg border border-line px-2 py-1 text-xs" />
               </label>
               <button onClick={addRule} disabled={!newValue.trim()}
-                className="rounded-md bg-btn px-3 py-1.5 text-xs font-medium text-btn-ink hover:opacity-90 disabled:opacity-40">
+                className="rounded-lg bg-btn px-3 py-1.5 text-xs font-semibold text-btn-ink hover:opacity-90 disabled:opacity-40">
                 Add rule
               </button>
             </div>
@@ -485,25 +485,25 @@ export default function NiagawanCogsPage() {
                       <tr key={r.id} className="bg-warn-soft">
                         <td className="px-2 py-1">
                           <select value={editType} onChange={(e) => setEditType(e.target.value)}
-                            className="rounded border border-line px-1 py-0.5">
+                            className="rounded-lg border border-line px-1 py-0.5 text-sm">
                             {MATCH_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                           </select>
                         </td>
                         <td className="px-2 py-1">
                           <input value={editValue} onChange={(e) => setEditValue(e.target.value)}
-                            className="w-full rounded border border-line px-1 py-0.5" />
+                            className="w-full rounded-lg border border-line px-1 py-0.5 text-sm" />
                         </td>
                         <td className="px-2 py-1">
                           <input value={editNotes} onChange={(e) => setEditNotes(e.target.value)}
-                            className="w-full rounded border border-line px-1 py-0.5" />
+                            className="w-full rounded-lg border border-line px-1 py-0.5 text-sm" />
                         </td>
                         <td className="whitespace-nowrap px-2 py-1 text-right">
                           <button onClick={saveEdit}
-                            className="mr-1 rounded-md border border-emerald-200 px-2 py-0.5 text-good hover:bg-good-soft">
+                            className="mr-1 rounded-lg border border-emerald-200 px-2 py-0.5 text-good hover:bg-good-soft">
                             Save
                           </button>
                           <button onClick={() => setEditId(null)}
-                            className="rounded-md border border-line px-2 py-0.5 text-ink-2 hover:bg-ink/5">
+                            className="rounded-lg border border-line px-2 py-0.5 text-ink-2 hover:bg-ink/5">
                             Cancel
                           </button>
                         </td>
@@ -515,11 +515,11 @@ export default function NiagawanCogsPage() {
                         <td className="px-2 py-1 text-ink-2">{r.notes || ''}</td>
                         <td className="whitespace-nowrap px-2 py-1 text-right">
                           <button onClick={() => startEdit(r)}
-                            className="mr-1 rounded-md border border-line px-2 py-0.5 text-ink-2 hover:bg-ink/5">
+                            className="mr-1 rounded-lg border border-line px-2 py-0.5 text-ink-2 hover:bg-ink/5">
                             Edit
                           </button>
                           <button onClick={() => deleteRule(r.id)}
-                            className="rounded-md border border-line px-2 py-0.5 text-bad hover:bg-bad-soft">
+                            className="rounded-lg border border-line px-2 py-0.5 text-bad hover:bg-bad-soft">
                             Delete
                           </button>
                         </td>

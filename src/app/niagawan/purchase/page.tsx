@@ -280,7 +280,7 @@ export default function PurchaseInvoicePage() {
     });
   }, [rows, sortKey, sortDir]);
 
-  if (authed === null || isAdmin === null) return <div className="text-sm text-ink-2">Checking…</div>;
+  if (authed === null || isAdmin === null) return <div className="text-sm text-ink-3">Checking…</div>;
   if (!authed) return <div className="text-sm text-ink-2">Please sign in.</div>;
   if (!isAdmin) return <div className="text-sm text-ink-2">You don&apos;t have access to this page.</div>;
 
@@ -293,16 +293,16 @@ export default function PurchaseInvoicePage() {
           Upload the PDF → click <b>Read</b> so the system extracts it → <b>Review</b> &amp; fix → approve to create it in Niagawan.
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <label className="inline-flex cursor-pointer items-center rounded-md border border-line bg-card px-3 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5">
+          <label className="inline-flex cursor-pointer items-center rounded-lg border border-line bg-card px-3 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5">
             Choose PDF
             <input type="file" accept="application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="hidden" />
           </label>
           <span className="min-w-0 flex-1 truncate text-xs text-ink-2">{file ? file.name : 'No file chosen'}</span>
-          <button onClick={upload} disabled={busy || !file} className="rounded-md bg-accent px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+          <button onClick={upload} disabled={busy || !file} className="rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
             {busy ? 'Uploading…' : 'Upload'}
           </button>
           <button onClick={checkEmail} disabled={mailCheck === 'running'} title="Pull supplier invoices now — scans the workshop email AND your watched supplier folders (PDFs dropped into them)"
-            className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5 disabled:opacity-50">
+            className="rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5 disabled:opacity-50">
             {mailCheck === 'running' ? 'Checking…' : 'Check email & folders now'}
           </button>
         </div>
@@ -326,23 +326,23 @@ export default function PurchaseInvoicePage() {
               <label className="block">
                 <span className="block text-xs font-medium text-ink-2">Supplier name</span>
                 <input value={supName} onChange={(e) => setSupName(e.target.value)} placeholder="e.g. Tat Seng"
-                  className="mt-0.5 w-40 rounded-md border border-line px-2 py-1.5 text-sm" />
+                  className="mt-0.5 w-40 rounded-lg border border-line px-2 py-1 text-sm" />
               </label>
               <label className="block min-w-0 flex-1">
                 <span className="block text-xs font-medium text-ink-2">Recognise by (comma-separated)</span>
                 <input value={supTerms} onChange={(e) => setSupTerms(e.target.value)} placeholder="e.g. tat seng, tatseng"
-                  className="mt-0.5 w-full rounded-md border border-line px-2 py-1.5 text-sm" />
+                  className="mt-0.5 w-full rounded-lg border border-line px-2 py-1 text-sm" />
               </label>
               <label className="block">
                 <span className="block text-xs font-medium text-ink-2">Folder (save + watch) *</span>
                 <select value={supFolder} onChange={(e) => setSupFolder(e.target.value)}
-                  className="mt-0.5 w-48 rounded-md border border-line bg-card px-2 py-1.5 text-sm">
+                  className="mt-0.5 w-48 rounded-lg border border-line bg-card px-2 py-1 text-sm">
                   <option value="">— pick folder —</option>
                   {folders.map((f) => <option key={f.folder_id} value={f.folder_id}>{f.name}</option>)}
                 </select>
               </label>
               <button onClick={addSupplier} disabled={supBusy}
-                className="rounded-md bg-accent px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+                className="rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
                 {supBusy ? 'Adding…' : 'Add'}
               </button>
             </div>
@@ -363,7 +363,7 @@ export default function PurchaseInvoicePage() {
                   <div className="flex items-center gap-2">
                     <select value={s.folder_id ?? ''} onChange={(e) => setSupplierFolder(s, e.target.value)}
                       title="Folder where invoices save & are watched"
-                      className={`rounded-md border px-2 py-0.5 text-xs ${s.folder_id ? 'border-line bg-card text-ink-2' : 'border-line bg-warn-soft text-warn'}`}>
+                      className={`rounded-lg border px-2 py-0.5 text-xs ${s.folder_id ? 'border-line bg-card text-ink-2' : 'border-line bg-warn-soft text-warn'}`}>
                       <option value="">⚠ pick folder</option>
                       {folders.map((f) => <option key={f.folder_id} value={f.folder_id}>{f.name}</option>)}
                     </select>
@@ -416,10 +416,10 @@ export default function PurchaseInvoicePage() {
             <input type="checkbox" checked={showDismissed} onChange={(e) => setShowDismissed(e.target.checked)} className="h-3.5 w-3.5" />
             Show dismissed
           </label>
-          <button onClick={load} disabled={loading} className="rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50">{loading ? '…' : 'Refresh'}</button>
+          <button onClick={load} disabled={loading} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">{loading ? '…' : 'Refresh'}</button>
         </div>
       </div>
-      <div className="overflow-x-auto rounded-lg border border-line">
+      <div className="overflow-x-auto rounded-card bg-card shadow-card">
         <table className="w-full border-collapse text-sm">
           <thead className="bg-ink/[0.03] text-left">
             <tr>

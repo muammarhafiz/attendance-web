@@ -194,7 +194,7 @@ export default function PnlPage() {
   const prevMonth = () => { const d = new Date(year, month - 2, 1); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); };
   const nextMonth = () => { const d = new Date(year, month, 1); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); };
 
-  if (isAdmin === null) return <div className="text-sm text-ink-2">Checking…</div>;
+  if (isAdmin === null) return <div className="text-sm text-ink-3">Checking…</div>;
   if (!isAdmin) return <div className="text-sm text-ink-2">You don&apos;t have access to this page.</div>;
 
   const c = calc;
@@ -213,16 +213,16 @@ export default function PnlPage() {
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <h2 className="text-lg font-semibold text-ink">Profit &amp; Loss</h2>
+        <h2 className="text-xl font-semibold tracking-tight text-ink">Profit &amp; Loss</h2>
         <div className="ml-auto flex items-center gap-2">
-          <button onClick={prevMonth} className="rounded-md border px-2.5 py-1.5 text-sm hover:bg-ink/5">◀</button>
+          <button onClick={prevMonth} className="rounded-lg border px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">◀</button>
           <span className="min-w-[130px] text-center text-sm font-semibold">{MONTHS[month - 1]} {year}</span>
-          <button onClick={nextMonth} className="rounded-md border px-2.5 py-1.5 text-sm hover:bg-ink/5">▶</button>
+          <button onClick={nextMonth} className="rounded-lg border px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">▶</button>
         </div>
       </div>
 
       {err && <div className="mb-3 rounded-md border border-rose-200 bg-bad-soft p-2 text-sm text-bad">{err}</div>}
-      {loading ? <div className="text-sm text-ink-2">Loading…</div> : (
+      {loading ? <div className="text-sm text-ink-3">Loading…</div> : (
         <>
           {/* Tabs */}
           <div className="mb-4 flex gap-1 border-b border-line">
@@ -285,15 +285,15 @@ export default function PnlPage() {
           {/* Verdict */}
           {tab === 'overview' && (<>
           <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="rounded-card bg-card shadow-card p-3">
+            <div className="rounded-card bg-card shadow-card p-4">
               <div className="text-xs font-medium text-ink-2">Net profit (so far) <span className="text-ink-3">(settled days only · full-month costs)</span></div>
               <div className={`mt-1 text-xl font-semibold ${c.netSoFar < 0 ? 'text-bad' : 'text-good'}`}>{rm(c.netSoFar)}</div>
             </div>
-            <div className="rounded-card bg-card shadow-card p-3">
+            <div className="rounded-card bg-card shadow-card p-4">
               <div className="text-xs font-medium text-ink-2">Projected net profit <span className="text-ink-3">(full month, at current pace)</span></div>
               <div className={`mt-1 text-xl font-semibold ${c.netProjected < 0 ? 'text-bad' : 'text-good'}`}>{rm(c.netProjected)}</div>
             </div>
-            <div className={`rounded-lg border p-3 ${onTargetProjected >= 0 ? 'border-emerald-300 bg-good-soft' : 'border-rose-300 bg-bad-soft'}`}>
+            <div className={`rounded-lg border p-4 ${onTargetProjected >= 0 ? 'border-emerald-300 bg-good-soft' : 'border-rose-300 bg-bad-soft'}`}>
               <div className="text-xs font-medium text-ink-2">Vs target {rm(targetNet)}</div>
               <div className={`mt-1 text-xl font-semibold ${onTargetProjected >= 0 ? 'text-good' : 'text-bad'}`}>{onTargetProjected >= 0 ? '+' : ''}{rm(onTargetProjected)}</div>
             </div>
@@ -347,7 +347,7 @@ export default function PnlPage() {
             <div className="mb-4 rounded-card bg-card shadow-card p-4">
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-sm font-semibold text-ink-2">Bills &amp; others (manual)</span>
-                {bills.length === 0 && <button onClick={copyLastMonth} className="rounded border border-line px-2 py-0.5 text-xs text-ink-2 hover:bg-ink/5">Copy last month</button>}
+                {bills.length === 0 && <button onClick={copyLastMonth} className="rounded-lg border border-line px-2 py-0.5 text-sm text-ink-2 hover:bg-ink/5">Copy last month</button>}
               </div>
               {bills.map((b) => (
                 <div key={b.id} className="flex items-center gap-2 py-0.5 text-sm">
@@ -355,14 +355,14 @@ export default function PnlPage() {
                   <span className={`min-w-0 flex-1 truncate ${b.paid ? 'text-ink-3 line-through' : 'text-ink-2'}`}>{b.label}</span>
                   {b.paid && b.paid_date && <span className="shrink-0 text-[11px] font-medium text-good">paid {fmtDate(b.paid_date)}</span>}
                   <input type="number" step="0.01" defaultValue={n(b.amount)} onBlur={(e) => { const v = Number(e.target.value) || 0; if (v !== n(b.amount)) updateBill(b.id, v); }}
-                    className="w-28 rounded border border-line px-1.5 py-0.5 text-right text-sm" />
+                    className="w-28 rounded-lg border border-line px-1.5 py-0.5 text-right text-sm" />
                   <button onClick={() => deleteBill(b.id)} className="text-xs text-bad hover:text-bad">✕</button>
                 </div>
               ))}
               <div className="mt-2 flex items-center gap-2">
-                <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="e.g. SEWA" className="min-w-0 flex-1 rounded border border-line px-2 py-1 text-sm" />
-                <input value={newAmount} onChange={(e) => setNewAmount(e.target.value)} type="number" step="0.01" placeholder="0.00" className="w-28 rounded border border-line px-2 py-1 text-right text-sm" />
-                <button onClick={addBill} className="rounded bg-btn px-2.5 py-1 text-sm font-medium text-btn-ink hover:opacity-90">Add</button>
+                <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="e.g. SEWA" className="min-w-0 flex-1 rounded-lg border border-line px-2 py-1 text-sm" />
+                <input value={newAmount} onChange={(e) => setNewAmount(e.target.value)} type="number" step="0.01" placeholder="0.00" className="w-28 rounded-lg border border-line px-2 py-1 text-right text-sm" />
+                <button onClick={addBill} className="rounded-lg bg-btn px-2.5 py-1 text-sm font-semibold text-btn-ink hover:opacity-90">Add</button>
               </div>
               <div className="mt-2 flex justify-between border-t border-line pt-2 text-sm font-semibold"><span>Bills total</span><span>{rm(c.billsTotal)}</span></div>
               <div className="mt-1 text-xs text-ink-3">Bonus/commission is already inside Payroll — don&rsquo;t add it here again.</div>
@@ -440,11 +440,11 @@ export default function PnlPage() {
             <div className="mt-3 flex flex-wrap items-center gap-4 border-t border-line pt-3 text-xs text-ink-2">
               <label className="flex items-center gap-1.5">Target net: RM
                 <input type="number" defaultValue={targetNet} onBlur={(e) => { const v = Number(e.target.value) || 0; setTargetNet(v); saveSetting('target_net', v); }}
-                  className="w-24 rounded border border-line px-1.5 py-0.5 text-right" />
+                  className="w-24 rounded-lg border border-line px-1.5 py-0.5 text-right text-sm" />
               </label>
               <label className="flex items-center gap-1.5">Putrajaya share %:
                 <input type="number" defaultValue={ptjPct} onBlur={(e) => { const v = Number(e.target.value) || 0; setPtjPct(v); saveSetting('putrajaya_pct', v); }}
-                  className="w-16 rounded border border-line px-1.5 py-0.5 text-right" />
+                  className="w-16 rounded-lg border border-line px-1.5 py-0.5 text-right text-sm" />
               </label>
             </div>
           </div>
@@ -462,8 +462,8 @@ export default function PnlPage() {
                 </span>
               ))}
               <input value={newTrade} onChange={(e) => setNewTrade(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addTrade()}
-                placeholder="add name…" className="w-32 rounded border border-line px-2 py-0.5 text-sm" />
-              <button onClick={addTrade} className="rounded border border-line px-2 py-0.5 text-sm text-ink-2 hover:bg-ink/5">Add</button>
+                placeholder="add name…" className="w-32 rounded-lg border border-line px-2 py-0.5 text-sm" />
+              <button onClick={addTrade} className="rounded-lg border border-line px-2 py-0.5 text-sm text-ink-2 hover:bg-ink/5">Add</button>
             </div>
             <div className="mt-1 text-xs text-ink-3">Invoices whose customer name contains any of these are counted as trade sales (pass-through), with their unpaid total tracked as trade debt.</div>
           </div>

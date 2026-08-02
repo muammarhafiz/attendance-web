@@ -37,20 +37,20 @@ export default function LeaveBalancesPage() {
   }, [year]);
   useEffect(() => { if (ok) load(); }, [ok, load]);
 
-  if (authed === null || ok === null) return <div className="mx-auto max-w-5xl px-4 py-6 text-sm text-ink-3">Checking…</div>;
-  if (!authed) return <div className="mx-auto max-w-5xl px-4 py-6 text-sm text-ink-2">Please sign in.</div>;
-  if (!ok) return <div className="mx-auto max-w-5xl px-4 py-6 text-sm text-ink-2">You don&apos;t have access to this page.</div>;
+  if (authed === null || ok === null) return <div className="text-sm text-ink-3">Checking…</div>;
+  if (!authed) return <div className="text-sm text-ink-2">Please sign in.</div>;
+  if (!ok) return <div className="text-sm text-ink-2">You don&apos;t have access to this page.</div>;
 
   const missing = rows.filter((r) => !r.start_date).length;
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-6">
+    <>
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <h1 className="text-xl font-semibold tracking-tight text-ink">Leave balances</h1>
         <div className="ml-auto flex items-center gap-1">
-          <button onClick={() => setYear((y) => y - 1)} className="rounded-md border border-line px-2 py-1 text-sm text-ink-2 hover:bg-ink/5">‹</button>
+          <button onClick={() => setYear((y) => y - 1)} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">‹</button>
           <span className="min-w-[56px] text-center text-sm font-semibold text-ink tabular-nums">{year}</span>
-          <button onClick={() => setYear((y) => y + 1)} disabled={year >= nowYear} className="rounded-md border border-line px-2 py-1 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-30">›</button>
+          <button onClick={() => setYear((y) => y + 1)} disabled={year >= nowYear} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-30">›</button>
         </div>
       </div>
 
@@ -110,6 +110,6 @@ export default function LeaveBalancesPage() {
           </tbody>
         </table>
       </div>
-    </div>
+    </>
   );
 }

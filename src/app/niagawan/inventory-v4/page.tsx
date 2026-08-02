@@ -476,34 +476,34 @@ export default function InventoryV4Page() {
     await loadNewItems();
   }, [loadNewItems]);
 
-  if (isAdmin === null) return <div className="text-sm text-ink-2">Checking…</div>;
+  if (isAdmin === null) return <div className="text-sm text-ink-3">Checking…</div>;
   if (!isAdmin) return <div className="text-sm text-ink-2">You don&apos;t have access to this page.</div>;
 
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <div>
-          <div className="text-lg font-semibold text-ink">Inventory v4 — keep-level restock</div>
+          <h2 className="text-xl font-semibold tracking-tight text-ink">Inventory v4 — keep-level restock</h2>
           <div className="text-xs text-ink-2">Order = keep-level − stock − already-on-order, rounded up to cartons. Names/codes follow Niagawan live.</div>
         </div>
         <div className="ml-auto flex items-center gap-2">
           {balanceAsOf && <span className="text-xs text-ink-3">stock as of {new Date(balanceAsOf).toLocaleString('en-MY', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kuala_Lumpur' })}</span>}
           <button onClick={updateBalances} disabled={refreshState === 'running'}
-            className="rounded-md border border-line px-2.5 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5 disabled:opacity-50">
+            className="rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5 disabled:opacity-50">
             {refreshState === 'running' ? 'Updating balances…' : refreshState === 'done' ? '✓ updated' : refreshState === 'error' ? '⚠ failed' : '↻ Update balances'}
           </button>
           <button onClick={calcAverage} disabled={avgState === 'running'} title="Scan the last 3 months of sales and fill Avg/mo (takes a few minutes)"
-            className="rounded-md border border-accent bg-accent-weak px-2.5 py-1.5 text-sm font-semibold text-accent hover:bg-accent/25 disabled:opacity-50">
+            className="rounded-lg border border-accent bg-accent-weak px-3 py-1.5 text-sm font-semibold text-accent hover:bg-accent/25 disabled:opacity-50">
             {avgState === 'running' ? 'Calculating…' : avgState === 'done' ? '✓ done' : avgState === 'error' ? '⚠ failed' : 'Calculate average'}
           </button>
           <button onClick={refreshSuppliers} disabled={supState === 'running'} title="Pull the latest supplier list from Niagawan (after creating a new supplier there)"
-            className="rounded-md border border-line px-2.5 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5 disabled:opacity-50">
+            className="rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5 disabled:opacity-50">
             {supState === 'running' ? 'Refreshing…' : supState === 'done' ? '✓ suppliers' : supState === 'error' ? '⚠ failed' : 'Refresh suppliers'}
           </button>
         </div>
       </div>
 
-      {loading && <div className="text-sm text-ink-2">Loading…</div>}
+      {loading && <div className="text-sm text-ink-3">Loading…</div>}
 
       {/* NEW ITEMS — products created in Niagawan, not tracked in any card yet. Add to a card or dismiss. */}
       {newItems.length > 0 && (
@@ -546,12 +546,12 @@ export default function InventoryV4Page() {
                           disabled={newBusy === it.sku || groups.length === 0}
                           onChange={(e) => { const g = Number(e.target.value); if (g) addNewToCard(it, g); }}
                           title={groups.length === 0 ? 'Add a card first' : 'Add this item to a card'}
-                          className="mr-1 rounded-md border border-emerald-300 bg-card px-1.5 py-1 text-xs text-good disabled:opacity-50">
+                          className="mr-1 rounded-lg border border-emerald-300 bg-card px-1.5 py-1 text-xs text-good disabled:opacity-50">
                           <option value="">Add to card…</option>
                           {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
                         </select>
                         <button onClick={() => dismissNew(it.sku)} disabled={newBusy === it.sku}
-                          className="rounded-md border border-line px-2 py-1 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50">Dismiss</button>
+                          className="rounded-lg border border-line px-2 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">Dismiss</button>
                       </td>
                     </tr>
                     );
@@ -584,7 +584,7 @@ export default function InventoryV4Page() {
                 <select
                   value={g.creditor_id ?? ''}
                   onChange={(e) => setGroupSupplier(g.id, e.target.value)}
-                  className={`rounded-md border px-2 py-1 text-xs ${g.creditor_id ? 'border-line text-ink-2' : 'border-amber-300 bg-warn-soft text-warn'}`}
+                  className={`rounded-lg border px-2 py-1 text-xs ${g.creditor_id ? 'border-line text-ink-2' : 'border-amber-300 bg-warn-soft text-warn'}`}
                 >
                   <option value="">— choose supplier —</option>
                   {g.creditor_id && !suppliers.some((s) => s.creditor_id === g.creditor_id) && (
@@ -594,12 +594,12 @@ export default function InventoryV4Page() {
                     <option key={s.creditor_id} value={s.creditor_id}>{s.name}</option>
                   ))}
                 </select>
-                <button onClick={() => deleteGroup(g.id, g.name)} title="Remove this group card" className="rounded border border-line px-2 py-0.5 text-xs text-bad hover:bg-bad-soft">✕ delete</button>
+                <button onClick={() => deleteGroup(g.id, g.name)} title="Remove this group card" className="rounded-lg border border-line px-2 py-0.5 text-sm text-bad hover:bg-bad-soft">✕ delete</button>
               </div>
               <div className="flex items-center gap-2">
                 {need > 0 && <span className="rounded-full bg-bad px-2 py-0.5 text-xs font-semibold text-white">{need} to order</span>}
                 {need > 0 && <button onClick={() => stageCardPO(g)} disabled={busyPo === -g.id}
-                  className="rounded-md bg-good px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">
+                  className="rounded-lg bg-good px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">
                   {busyPo === -g.id ? 'Staging…' : 'Generate PO →'}</button>}
               </div>
             </div>
@@ -640,14 +640,14 @@ export default function InventoryV4Page() {
                             value={gi.avg_monthly == null ? '' : gi.avg_monthly}
                             onChange={(e) => setItemLocal(gi.id, { avg_monthly: e.target.value === '' ? null : Number(e.target.value) })}
                             onBlur={(e) => { const v = e.target.value === '' ? null : Math.max(0, Number(e.target.value) || 0); setItemLocal(gi.id, { avg_monthly: v }); persist(gi.id, 'avg_monthly', v); }}
-                            placeholder={feedAvg != null ? String(feedAvg) : '—'} className="w-16 rounded border border-line px-1.5 py-0.5 text-center text-xs" />
+                            placeholder={feedAvg != null ? String(feedAvg) : '—'} className="w-16 rounded-lg border border-line px-1.5 py-0.5 text-center text-xs" />
                         </td>
                         <td className="px-3 py-1.5 text-center">
                           <input type="number" min={0} step="1" inputMode="numeric"
                             value={gi.keep_level == null ? '' : gi.keep_level}
                             onChange={(e) => setItemLocal(gi.id, { keep_level: e.target.value === '' ? null : Number(e.target.value) })}
                             onBlur={(e) => { const v = e.target.value === '' ? null : Math.max(0, Math.floor(Number(e.target.value) || 0)); setItemLocal(gi.id, { keep_level: v }); persist(gi.id, 'keep_level', v); }}
-                            placeholder={keepDefault != null ? String(keepDefault) : '—'} className="w-16 rounded border border-line px-1.5 py-0.5 text-center text-xs" />
+                            placeholder={keepDefault != null ? String(keepDefault) : '—'} className="w-16 rounded-lg border border-line px-1.5 py-0.5 text-center text-xs" />
                         </td>
                         <td className="whitespace-nowrap px-3 py-1.5 text-right">
                           {order == null ? <span className="text-xs text-ink-3">set avg</span>
@@ -688,9 +688,9 @@ export default function InventoryV4Page() {
                       <span className="ml-1 text-xs font-normal text-ink-3">· {lines.length} item{lines.length === 1 ? '' : 's'} · {totalUnits} unit{totalUnits === 1 ? '' : 's'}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <button onClick={() => cancelPO(s)} className="rounded border border-line px-2 py-0.5 text-xs text-ink-2 hover:bg-ink/5">Discard</button>
+                      <button onClick={() => cancelPO(s)} className="rounded-lg border border-line px-2 py-0.5 text-sm text-ink-2 hover:bg-ink/5">Discard</button>
                       <button onClick={() => approvePO(s)} disabled={busyPo === s.id || lines.length === 0}
-                        className="rounded-md bg-good px-3 py-0.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50">
+                        className="rounded-lg bg-good px-3 py-0.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">
                         {busyPo === s.id ? 'Approving…' : 'Approve → create PO'}</button>
                     </div>
                   </div>
@@ -710,7 +710,7 @@ export default function InventoryV4Page() {
                                 onFocus={() => setEditingLine(l.id)}
                                 onChange={(e) => setLineQtyLocal(l.id, Math.floor(Number(e.target.value)))}
                                 onBlur={(e) => { setEditingLine(null); persistLineQty(l.id, Math.max(1, Math.floor(Number(e.target.value) || 1))); }}
-                                className="w-20 rounded border border-line px-1.5 py-0.5 text-center text-xs" />
+                                className="w-20 rounded-lg border border-line px-1.5 py-0.5 text-center text-xs" />
                             </td>
                             <td className="px-3 py-1.5 text-right">
                               <button onClick={() => removeLine(l.id)} title="Remove this line" className="rounded px-1 text-xs text-bad opacity-40 transition hover:bg-bad-soft hover:text-bad group-hover:opacity-100">✕</button>
@@ -751,14 +751,14 @@ export default function InventoryV4Page() {
                     </div>
                     {s.status === 'error' ? (
                       <div className="flex items-center gap-2">
-                        <button onClick={() => retryPO(s)} className="rounded-md bg-warn px-2.5 py-0.5 text-xs font-medium text-white hover:opacity-90">Retry</button>
-                        <button onClick={() => cancelPO(s)} className="rounded border border-line px-2 py-0.5 text-xs text-ink-2 hover:bg-ink/5">Discard</button>
+                        <button onClick={() => retryPO(s)} className="rounded-lg bg-warn px-2.5 py-0.5 text-xs font-semibold text-white hover:opacity-90">Retry</button>
+                        <button onClick={() => cancelPO(s)} className="rounded-lg border border-line px-2 py-0.5 text-sm text-ink-2 hover:bg-ink/5">Discard</button>
                       </div>
                     ) : s.status === 'created' ? (
                       <div className="flex items-center gap-1.5">
-                        <button onClick={() => markPOReceived(s)} disabled={busyPo === s.id} className="rounded border border-emerald-300 bg-good-soft px-2 py-0.5 text-xs font-medium text-good hover:bg-good/15 disabled:opacity-50" title="Everything arrived — mark every line fully received and close">✓ All arrived</button>
-                        <button onClick={() => closePO(s)} disabled={busyPo === s.id} className="rounded border border-line px-2 py-0.5 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50" title="Short delivery that won't be completed — close with the amounts received; the shortfall becomes re-orderable">Close (short)</button>
-                        <button onClick={() => cancelPO(s)} className="rounded border border-line px-2 py-0.5 text-xs text-bad hover:bg-bad-soft" title="Remove this PO (a mistake, a test, or one deleted in Niagawan). Does not touch Niagawan.">✕ Discard</button>
+                        <button onClick={() => markPOReceived(s)} disabled={busyPo === s.id} className="rounded-lg border border-emerald-300 bg-good-soft px-2 py-0.5 text-sm font-medium text-good hover:bg-good/15 disabled:opacity-50" title="Everything arrived — mark every line fully received and close">✓ All arrived</button>
+                        <button onClick={() => closePO(s)} disabled={busyPo === s.id} className="rounded-lg border border-line px-2 py-0.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50" title="Short delivery that won't be completed — close with the amounts received; the shortfall becomes re-orderable">Close (short)</button>
+                        <button onClick={() => cancelPO(s)} className="rounded-lg border border-line px-2 py-0.5 text-sm text-bad hover:bg-bad-soft" title="Remove this PO (a mistake, a test, or one deleted in Niagawan). Does not touch Niagawan.">✕ Discard</button>
                       </div>
                     ) : null}
                   </div>
@@ -784,7 +784,7 @@ export default function InventoryV4Page() {
                                       onFocus={() => setEditingLine(l.id)}
                                       onChange={(e) => setLineReceivedLocal(l.id, Math.floor(Number(e.target.value)))}
                                       onBlur={(e) => { setEditingLine(null); persistLineReceived(l.id, Number(e.target.value), Number(l.ordered_qty)); }}
-                                      className="w-14 rounded border border-line px-1 py-0.5 text-center text-xs" />
+                                      className="w-14 rounded-lg border border-line px-1 py-0.5 text-center text-xs" />
                                     <span className="text-xs text-ink-3">/ {Number(l.ordered_qty)}</span>
                                   </span>
                                 ) : (
@@ -812,7 +812,7 @@ export default function InventoryV4Page() {
       <div className="mb-5 rounded-card bg-card shadow-card p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-ink-2">INVENTORY LIST CARD <span className="font-normal text-ink-3">· {items.length.toLocaleString('en-MY')} items (full catalog)</span></h2>
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search code or description…" className="w-64 max-w-full rounded-md border border-line px-2 py-1 text-sm" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search code or description…" className="w-64 max-w-full rounded-lg border border-line px-2 py-1 text-sm" />
         </div>
 
         {/* Selection action bar — appears once you tick at least one row */}
@@ -829,7 +829,7 @@ export default function InventoryV4Page() {
                 value={targetGroupId}
                 onChange={(e) => setTargetGroupId(e.target.value ? Number(e.target.value) : '')}
                 disabled={inserting}
-                className="rounded-md border border-line px-2 py-1 text-sm disabled:opacity-50"
+                className="rounded-lg border border-line px-2 py-1 text-sm disabled:opacity-50"
               >
                 <option value="">Choose a card…</option>
                 {groups.length === 0 && <option value="" disabled>No cards yet — add one above</option>}
@@ -840,7 +840,7 @@ export default function InventoryV4Page() {
               <button
                 onClick={insertSelected}
                 disabled={!targetGroupId || inserting}
-                className="rounded-md bg-accent px-3 py-1 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-lg bg-accent px-3 py-1 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {inserting ? 'Inserting…' : (() => { const n = groups.find((g) => g.id === targetGroupId)?.name; return n ? `Insert → ${n}` : 'Insert'; })()}
               </button>
@@ -849,7 +849,7 @@ export default function InventoryV4Page() {
         )}
 
         {loading ? (
-          <div className="text-sm text-ink-2">Loading the full catalog…</div>
+          <div className="text-sm text-ink-3">Loading the full catalog…</div>
         ) : (
           <>
             <div className="max-h-[70vh] overflow-auto rounded border border-line">

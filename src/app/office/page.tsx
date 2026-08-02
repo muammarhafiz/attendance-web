@@ -111,9 +111,9 @@ function DailyStatusCard() {
         <Link href="/office/daily" className="ml-auto text-xs font-medium text-accent hover:underline">Open →</Link>
       </div>
       <div className="mb-3 flex items-center justify-center gap-3">
-        <button onClick={() => shiftDay(-1)} aria-label="Previous day" className="rounded-md border border-line px-2.5 py-1 text-sm hover:bg-ink/5">◀</button>
+        <button onClick={() => shiftDay(-1)} aria-label="Previous day" className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">◀</button>
         <span className="min-w-[72px] text-center text-sm font-semibold text-ink-2">{fmtDMY(day)}</span>
-        <button onClick={() => shiftDay(1)} disabled={day >= klToday()} aria-label="Next day" className="rounded-md border border-line px-2.5 py-1 text-sm hover:bg-ink/5 disabled:opacity-40">▶</button>
+        <button onClick={() => shiftDay(1)} disabled={day >= klToday()} aria-label="Next day" className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-40">▶</button>
       </div>
       {loading || !s ? (
         <div className="py-2 text-center text-sm text-ink-3">Loading…</div>

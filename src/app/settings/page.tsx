@@ -61,7 +61,7 @@ export default function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
-      <h1 className="text-2xl font-semibold text-ink">Settings</h1>
+      <h1 className="text-2xl font-semibold tracking-tight text-ink">Settings</h1>
       <p className="mt-1 mb-4 text-sm text-ink-2">Admin controls for how the system runs.</p>
 
       <div className="mb-6 flex flex-wrap gap-1 border-b border-line">

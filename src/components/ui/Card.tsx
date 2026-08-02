@@ -1,5 +1,5 @@
 export function Card({ children, className='' }: {children: React.ReactNode; className?: string}) {
-  return <div className={`rounded-lg border border-line bg-card shadow-sm ${className}`}>{children}</div>;
+  return <div className={`rounded-card bg-card shadow-card ${className}`}>{children}</div>;
 }
 export function CardHeader({ title, subtitle }: {title: string; subtitle?: string}) {
   return (
@@ -13,5 +13,5 @@ export function CardBody({ children, className='' }: {children: React.ReactNode;
   return <div className={`p-4 ${className}`}>{children}</div>;
 }
 export function CardFooter({ children, className='' }: {children: React.ReactNode; className?: string}) {
-  return <div className={`border-t border-line p-3 ${className}`}>{children}</div>;
+  return <div className={`border-t border-line p-4 ${className}`}>{children}</div>;
 }

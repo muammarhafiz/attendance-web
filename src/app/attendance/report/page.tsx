@@ -193,7 +193,7 @@ export default function AttendanceReportPage() {
   const prevMonth = () => { const d = new Date(year, month - 2, 1); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); };
   const nextMonth = () => { const d = new Date(year, month, 1); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); };
 
-  if (authed === null || isAdmin === null) return <div className="text-sm text-ink-2">Checking…</div>;
+  if (authed === null || isAdmin === null) return <div className="text-sm text-ink-3">Checking…</div>;
   if (!authed) return <div className="text-sm text-ink-2">Please sign in.</div>;
   if (!isAdmin) return <div className="text-sm text-ink-2">You don&apos;t have access to this page.</div>;
 
@@ -238,14 +238,14 @@ export default function AttendanceReportPage() {
 
       {/* Controls (not printed) */}
       <div className="mb-4 flex flex-wrap items-center gap-2 print:hidden">
-        <button onClick={prevMonth} className="rounded-md border border-line px-2.5 py-1.5 text-sm hover:bg-ink/5">◀</button>
+        <button onClick={prevMonth} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">◀</button>
         <span className="min-w-[110px] text-center text-sm font-semibold text-ink">{MONTHS[month - 1]} {year}</span>
-        <button onClick={nextMonth} className="rounded-md border border-line px-2.5 py-1.5 text-sm hover:bg-ink/5">▶</button>
+        <button onClick={nextMonth} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">▶</button>
 
         <select
           value={staffFilter}
           onChange={(e) => setStaffFilter(e.target.value)}
-          className="ml-2 rounded-md border border-line px-2 py-1.5 text-sm"
+          className="ml-2 rounded-lg border border-line px-2 py-1 text-sm"
         >
           <option value="ALL">All staff (summary)</option>
           {staffList.map(([email, name]) => (
@@ -253,16 +253,16 @@ export default function AttendanceReportPage() {
           ))}
         </select>
 
-        <button onClick={load} disabled={loading} className="ml-auto rounded-md border border-line px-2.5 py-1.5 text-sm hover:bg-ink/5 disabled:opacity-50">
+        <button onClick={load} disabled={loading} className="ml-auto rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">
           {loading ? 'Loading…' : 'Refresh'}
         </button>
-        <button onClick={() => window.print()} disabled={rows.length === 0} title="Print or save as PDF" className="rounded-md border border-line bg-card px-2.5 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5 disabled:opacity-50">
+        <button onClick={() => window.print()} disabled={rows.length === 0} title="Print or save as PDF" className="rounded-lg border border-line bg-card px-3 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5 disabled:opacity-50">
           Print
         </button>
       </div>
 
       {rows.length === 0 ? (
-        <div className="rounded-lg border border-line bg-ink/[0.03] p-6 text-center text-sm text-ink-2">No records for this month.</div>
+        <div className="rounded-lg border border-dashed border-line bg-ink/[0.03] p-4 text-center text-sm text-ink-3">No records for this month.</div>
       ) : staffFilter === 'ALL' ? (
         /* Summary table */
         <div className="overflow-x-auto rounded-lg border border-line">
@@ -302,7 +302,7 @@ export default function AttendanceReportPage() {
         /* Per-staff daily detail (editable) */
         <>
         <div className="mb-2 flex items-center gap-2 print:hidden">
-          <button onClick={() => setStaffFilter('ALL')} className="inline-flex items-center gap-1 rounded-md border border-line px-2.5 py-1 text-sm text-ink-2 hover:bg-ink/5">← All staff</button>
+          <button onClick={() => setStaffFilter('ALL')} className="inline-flex items-center gap-1 rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">← All staff</button>
           <span className="text-sm font-medium text-ink">{staffList.find(([e]) => e === staffFilter)?.[1] ?? staffFilter}</span>
         </div>
         <div className="overflow-x-auto rounded-lg border border-line">
@@ -344,7 +344,7 @@ export default function AttendanceReportPage() {
                     <td className="px-3 py-2 text-right print:hidden">
                       <button
                         onClick={() => (editDay === r.day ? setEditDay(null) : startEdit(r))}
-                        className="rounded border border-line px-2 py-0.5 text-xs text-ink-2 hover:bg-ink/5"
+                        className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5"
                       >
                         {editDay === r.day ? 'Close' : 'Edit'}
                       </button>
@@ -355,7 +355,7 @@ export default function AttendanceReportPage() {
                       <td colSpan={6} className="px-3 py-3">
                         <div className="flex flex-wrap items-end gap-3">
                           <label className="text-xs text-ink-2">Status
-                            <select value={eStatus} onChange={(e) => setEStatus(e.target.value)} className="mt-0.5 block rounded-md border border-line px-2 py-1 text-sm">
+                            <select value={eStatus} onChange={(e) => setEStatus(e.target.value)} className="mt-0.5 block rounded-lg border border-line px-2 py-1 text-sm">
                               <option value="WORKING">Working day</option>
                               <option value="HALF_AM">Half day — morning (9:30–1:30)</option>
                               <option value="HALF_PM">Half day — afternoon (1:30–6:00)</option>
@@ -367,15 +367,15 @@ export default function AttendanceReportPage() {
                           {eStatus === 'WORKING' && (
                             <>
                               <label className="text-xs text-ink-2">Check-in
-                                <input type="time" value={eIn} onChange={(e) => setEIn(e.target.value)} className="mt-0.5 block rounded-md border border-line px-2 py-1 text-sm" />
+                                <input type="time" value={eIn} onChange={(e) => setEIn(e.target.value)} className="mt-0.5 block rounded-lg border border-line px-2 py-1 text-sm" />
                               </label>
                               <label className="text-xs text-ink-2">Check-out
-                                <input type="time" value={eOut} onChange={(e) => setEOut(e.target.value)} className="mt-0.5 block rounded-md border border-line px-2 py-1 text-sm" />
+                                <input type="time" value={eOut} onChange={(e) => setEOut(e.target.value)} className="mt-0.5 block rounded-lg border border-line px-2 py-1 text-sm" />
                               </label>
                             </>
                           )}
                           <label className="text-xs text-ink-2">Note
-                            <input value={eNote} onChange={(e) => setENote(e.target.value)} placeholder="optional" className="mt-0.5 block rounded-md border border-line px-2 py-1 text-sm" />
+                            <input value={eNote} onChange={(e) => setENote(e.target.value)} placeholder="optional" className="mt-0.5 block rounded-lg border border-line px-2 py-1 text-sm" />
                           </label>
                           {eStatus !== 'WORKING' && (
                             <label className="flex cursor-pointer items-center gap-1.5 text-xs text-ink-2">
@@ -390,11 +390,11 @@ export default function AttendanceReportPage() {
                           <button
                             onClick={() => saveEdit(r.staff_email, r.day)}
                             disabled={saving}
-                            className="rounded-md bg-btn px-3 py-1.5 text-sm font-medium text-btn-ink hover:opacity-90 disabled:opacity-50"
+                            className="rounded-lg bg-btn px-3 py-1.5 text-sm font-semibold text-btn-ink hover:opacity-90 disabled:opacity-50"
                           >
                             {saving ? 'Saving…' : 'Save'}
                           </button>
-                          <button onClick={() => setEditDay(null)} className="rounded-md border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">Cancel</button>
+                          <button onClick={() => setEditDay(null)} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">Cancel</button>
                         </div>
                         <div className="mt-2 text-xs text-ink-3">
                           &quot;Working day&quot; clears any off-day/MC and uses real check-ins (with your time edits, if any).

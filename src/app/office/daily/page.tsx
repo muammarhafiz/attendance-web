@@ -99,10 +99,10 @@ export default function DailyPage() {
         <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-3">Payments</div>
         <div className="mb-3 flex items-center gap-2 text-sm">
           <span className="text-ink-2">Payments for</span>
-          <button onClick={() => shiftDay(-1)} aria-label="Previous day" className="rounded-md border border-line px-2.5 py-1 hover:bg-ink/5">◀</button>
+          <button onClick={() => shiftDay(-1)} aria-label="Previous day" className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">◀</button>
           <input type="date" value={day} max={klToday()} onChange={(e) => setDay(e.target.value)}
             className="rounded-lg border border-line px-2 py-1 text-sm" />
-          <button onClick={() => shiftDay(1)} disabled={day >= klToday()} aria-label="Next day" className="rounded-md border border-line px-2.5 py-1 hover:bg-ink/5 disabled:opacity-40">▶</button>
+          <button onClick={() => shiftDay(1)} disabled={day >= klToday()} aria-label="Next day" className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-40">▶</button>
         </div>
         <p className="mb-4 text-sm text-ink-2">Tick each transfer / QR / card payment once it&rsquo;s in the bank, then count the cash. If one looks wrong, tap <span className="font-semibold text-warn">KIV</span> and note it — the supervisor will check it.</p>
 
@@ -182,7 +182,7 @@ export default function DailyPage() {
                         <span className="text-ink-2">Counted RM</span>
                         <input type="number" inputMode="decimal" step="0.01" min="0" value={cashInput}
                           onChange={(e) => setCashInput(e.target.value)} onBlur={() => saveCashCount(cashInput, total)}
-                          placeholder="0.00" className="w-28 rounded border border-line px-2 py-1 text-sm" />
+                          placeholder="0.00" className="w-28 rounded-lg border border-line px-2 py-1 text-sm" />
                         {matches && <span className="font-semibold text-good">✓ matches</span>}
                       </div>
                       {valid && !matches && <p className="mt-1 text-xs font-semibold text-bad">{diff > 0 ? `Over by ${rm(diff)}` : `Short by ${rm(-diff)}`} · system says {rm(total)}</p>}
@@ -203,7 +203,7 @@ export default function DailyPage() {
                           <span className={`shrink-0 font-medium ${e.checked ? 'text-ink-3' : 'text-ink-2'}`}>{rm(e.amount)}</span>
                           {m.checkable && !e.checked && (
                             <button onClick={() => setKiv(e.ekey, !e.kiv, e.note ?? '')} title="KIV — mark for the supervisor to check"
-                              className={`mt-0.5 shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-semibold transition ${e.kiv ? 'border-amber-400 bg-warn-soft text-warn' : 'border-line text-ink-3 hover:border-amber-400 hover:text-warn'}`}>KIV</button>
+                              className={`mt-0.5 shrink-0 rounded-lg border px-1.5 py-0.5 text-[10px] font-semibold transition ${e.kiv ? 'border-amber-400 bg-warn-soft text-warn' : 'border-line text-ink-3 hover:border-amber-400 hover:text-warn'}`}>KIV</button>
                           )}
                         </div>
                         {e.kiv && !e.checked && (
@@ -212,7 +212,7 @@ export default function DailyPage() {
                               onChange={(ev) => setNoteDraft((p) => ({ ...p, [e.ekey]: ev.target.value }))}
                               onBlur={() => setKiv(e.ekey, true, noteDraft[e.ekey] ?? e.note ?? '')}
                               placeholder="note — what's being checked?"
-                              className="w-full rounded border border-amber-200 bg-card px-2 py-0.5 text-xs" />
+                              className="w-full rounded-lg border border-amber-200 bg-card px-2 py-0.5 text-xs" />
                           </div>
                         )}
                       </div>

@@ -9,7 +9,7 @@ type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 export default function Button({ variant='primary', size='md', className, children, ...rest }: Props) {
-  const base = 'inline-flex items-center justify-center rounded-md font-medium transition focus:outline-none focus:ring-2 focus:ring-offset-2';
+  const base = 'inline-flex items-center justify-center rounded-lg font-semibold transition focus:outline-none focus:ring-2 focus:ring-offset-2';
   const sizes = {
     sm: 'h-9 px-3 text-sm',
     md: 'h-10 px-4 text-sm'

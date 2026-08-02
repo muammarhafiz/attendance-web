@@ -254,23 +254,23 @@ export default function PayrollRecordsPage() {
   /* ------------------------------- Rendering ---------------------------- */
   if (authed === false) {
     return (
-      <main className="mx-auto max-w-6xl p-6">
-        <h1 className="mb-2 text-2xl font-semibold">Payroll Records</h1>
+      <main className="mx-auto max-w-6xl px-4 py-6">
+        <h1 className="mb-2 text-2xl font-semibold tracking-tight text-ink">Payroll Records</h1>
         <p className="text-sm text-ink-2">Please sign in to view records.</p>
       </main>
     );
   }
   if (authed === null) {
     return (
-      <main className="mx-auto max-w-6xl p-6">
-        <div className="text-sm text-ink-2">Checking session…</div>
+      <main className="mx-auto max-w-6xl px-4 py-6">
+        <div className="text-sm text-ink-3">Checking session…</div>
       </main>
     );
   }
   if (!isAdmin) {
     return (
-      <main className="mx-auto max-w-6xl p-6">
-        <h1 className="mb-2 text-2xl font-semibold">Payroll Records</h1>
+      <main className="mx-auto max-w-6xl px-4 py-6">
+        <h1 className="mb-2 text-2xl font-semibold tracking-tight text-ink">Payroll Records</h1>
         <p className="text-sm text-ink-2">You don&apos;t have access to this page.</p>
       </main>
     );
@@ -288,11 +288,11 @@ export default function PayrollRecordsPage() {
   };
 
   return (
-    <main className="mx-auto max-w-6xl p-6">
+    <main className="mx-auto max-w-6xl px-4 py-6">
       {/* Header */}
       <header className="mb-6 flex flex-wrap items-end gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">Payroll Records</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-ink">Payroll Records</h1>
           <div className="flex items-center gap-2 text-sm text-ink-2">
             <span>Period {yyyymm}</span>
             {period?.status && (
@@ -311,12 +311,12 @@ export default function PayrollRecordsPage() {
           </div>
         </div>
         <div className="ml-auto flex items-end gap-2 sm:gap-3">
-          <button onClick={onPrevMonth} className="rounded border px-2 py-1.5 text-sm hover:bg-ink/5">◀</button>
+          <button onClick={onPrevMonth} className="rounded-lg border px-2 py-1.5 text-sm text-ink-2 hover:bg-ink/5">◀</button>
           <div>
             <label className="block text-xs font-medium text-ink-2">Year</label>
             <input
               type="number"
-              className="w-24 rounded border px-2 py-1"
+              className="w-24 rounded-lg border px-2 py-1 text-sm"
               min={2020}
               max={2100}
               value={year}
@@ -327,18 +327,18 @@ export default function PayrollRecordsPage() {
             <label className="block text-xs font-medium text-ink-2">Month</label>
             <input
               type="number"
-              className="w-20 rounded border px-2 py-1"
+              className="w-20 rounded-lg border px-2 py-1 text-sm"
               min={1}
               max={12}
               value={month}
               onChange={(e) => setMonth(Number(e.target.value))}
             />
           </div>
-          <button onClick={onNextMonth} className="rounded border px-2 py-1.5 text-sm hover:bg-ink/5">▶</button>
+          <button onClick={onNextMonth} className="rounded-lg border px-2 py-1.5 text-sm text-ink-2 hover:bg-ink/5">▶</button>
           <button
             onClick={() => { loadPeriod(); loadSummary(); loadPdfLinks(); }}
             disabled={loading || busy}
-            className="rounded border px-3 py-1.5 text-sm hover:bg-ink/5 disabled:opacity-50"
+            className="rounded-lg border px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50"
           >
             Refresh
           </button>
@@ -354,7 +354,7 @@ export default function PayrollRecordsPage() {
             <button
               onClick={loadPdfLinks}
               disabled={busy}
-              className="rounded border px-3 py-1.5 text-sm hover:bg-ink/5 disabled:opacity-50"
+              className="rounded-lg border px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50"
             >
               Refresh list
             </button>
@@ -364,7 +364,7 @@ export default function PayrollRecordsPage() {
               <button
                 onClick={finalizeAndGenerate}
                 disabled={busy}
-                className="rounded bg-btn px-3 py-1.5 text-sm text-btn-ink hover:opacity-90 disabled:opacity-50"
+                className="rounded-lg bg-btn px-3 py-1.5 text-sm font-semibold text-btn-ink hover:opacity-90 disabled:opacity-50"
                 title="Generate Summary + Payslips (and LOCK the period)"
               >
                 {busy ? 'Working…' : 'Finalize & Generate PDFs'}
@@ -384,14 +384,14 @@ export default function PayrollRecordsPage() {
                 Download Payroll Summary ({basePath})
               </a>
             ) : (
-              <div className="text-sm text-ink-2">No summary for this month yet.</div>
+              <div className="text-sm text-ink-3">No summary for this month yet.</div>
             )}
           </div>
 
           <div>
             <div className="font-medium">Payslips</div>
             {payslips.length === 0 ? (
-              <div className="text-sm text-ink-2">No payslips found for this month.</div>
+              <div className="text-sm text-ink-3">No payslips found for this month.</div>
             ) : (
               <div className="max-h-72 overflow-auto rounded border">
                 <table className="w-full border-collapse text-sm">
@@ -429,9 +429,9 @@ export default function PayrollRecordsPage() {
       {/* Records table */}
       <section>
         {loading ? (
-          <div className="text-sm text-ink-2">Loading…</div>
+          <div className="text-sm text-ink-3">Loading…</div>
         ) : rows.length === 0 ? (
-          <div className="text-sm text-ink-2">No data for this period.</div>
+          <div className="text-sm text-ink-3">No data for this period.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1200px] border-collapse text-sm">

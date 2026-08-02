@@ -15,7 +15,7 @@ export default function Login() {
 
   return (
     <div className="flex min-h-[70vh] items-center justify-center px-4">
-      <div className="w-full max-w-sm rounded-2xl border border-line bg-card p-7 shadow-sm">
+      <div className="w-full max-w-sm rounded-card bg-card shadow-card p-5">
         <div className="flex justify-center">
           <Image src="/zordaq-auto.png" alt="ZORDAQ Auto Service" width={717} height={1174} priority className="h-24 w-auto" />
         </div>

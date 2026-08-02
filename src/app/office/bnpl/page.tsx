@@ -46,7 +46,7 @@ export default function BnplHubPage() {
   }, [from, to]);
   useEffect(() => { if (allowed) load(); }, [allowed, load]);
 
-  if (allowed === null) return <div className="p-6 text-sm text-ink-2">Checking…</div>;
+  if (allowed === null) return <div className="p-6 text-sm text-ink-3">Checking…</div>;
   if (!allowed) return <div className="p-6 text-sm text-ink-2">This page is for the office clerk, managers and the owner.</div>;
 
   const nameOf = (slug: string) => ov?.providers?.find((p) => p.provider === slug)?.display_name || slug.toUpperCase();
@@ -63,7 +63,7 @@ export default function BnplHubPage() {
       ) : (
         <div className="space-y-4">
           {items.length === 0 ? (
-            <div className="rounded-card bg-card shadow-card p-6 text-center text-sm text-ink-3">No BNPL services set up yet.</div>
+            <div className="rounded-lg border border-dashed border-line p-4 text-center text-sm text-ink-3">No BNPL services set up yet.</div>
           ) : (
             <div className="space-y-3">
               {items.map((it) => (
