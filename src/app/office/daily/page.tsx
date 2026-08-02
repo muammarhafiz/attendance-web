@@ -3,8 +3,10 @@
 // ticks each transfer/QR/card line once she confirms it's in the bank (cash is verified via the
 // cash count instead). Checks persist in cash_entry_checked (survives the nightly re-scrape).
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
-import { OfficeShell, Gate, rm, ZeroCogsCard, UnpaidCard, type Home, type ZeroLine } from '@/components/office/shared';
+import { OfficeShell, Gate, rm, fmtDay, ZeroCogsCard, UnpaidCard, type Home, type ZeroLine } from '@/components/office/shared';
+import { Icon } from '@/components/icons';
 
 type Entry = { ekey: string; method: string; label?: string | null; descp: string | null; amount: number | string; checked: boolean; kiv: boolean; note: string | null; checked_by: string | null; checked_at: string | null };
 type Method = { key: string; label: string; total: number | string; count: number; checked: number; kiv: number; checkable: boolean };
@@ -21,6 +23,9 @@ type DayCash = {
   cash_counted: number | null;
 };
 
+type BnplOutItem = { provider: string; display_name: string; invoice_no: string; vehicle: string | null; day: string; gross: number | string; est_net: number | string };
+type BnplOut = { providers: { slug: string; display_name: string }[]; total: { count: number; gross: number | string; est_net: number | string }; items: BnplOutItem[] };
+
 const num = (x: unknown) => Number(x || 0);
 const klYesterday = () => new Date(Date.now() + 8 * 3600e3 - 86400e3).toISOString().slice(0, 10);
 const klToday = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
@@ -32,6 +37,7 @@ export default function DailyPage() {
   const [loading, setLoading] = useState(true);
   const [cashInput, setCashInput] = useState(''); // what the clerk keys in as counted cash
   const [noteDraft, setNoteDraft] = useState<Record<string, string>>({}); // per-line KIV note being typed
+  const [bnpl, setBnpl] = useState<BnplOut | null>(null); // outstanding BNPL sales — not day-scoped, carries forward until settled
 
   useEffect(() => {
     (async () => {
@@ -51,6 +57,14 @@ export default function DailyPage() {
   }, [day]);
 
   useEffect(() => { if (allowed) load(); }, [allowed, load]);
+
+  const loadBnpl = useCallback(async () => {
+    const { data } = await supabase.rpc('bnpl_outstanding', { p_provider: null });
+    setBnpl((data ?? null) as BnplOut);
+  }, []);
+  useEffect(() => { if (allowed) loadBnpl(); }, [allowed, loadBnpl]);
+
+  const bnplSlugs = new Set((bnpl?.providers ?? []).map((p) => p.slug));
 
   const shiftDay = (delta: number) => {
     const [y, m, dd] = day.split('-').map(Number);
@@ -81,7 +95,7 @@ export default function DailyPage() {
 
   return (
     <Gate allowed={allowed} loading={loading} d={(d ?? null) as unknown as Home}>
-      <OfficeShell title="Daily" back onRefresh={load}>
+      <OfficeShell title="Daily" back onRefresh={() => { load(); loadBnpl(); }}>
         <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-3">Payments</div>
         <div className="mb-3 flex items-center gap-2 text-sm">
           <span className="text-ink-2">Payments for</span>
@@ -93,17 +107,18 @@ export default function DailyPage() {
         <p className="mb-4 text-sm text-ink-2">Tick each transfer / QR / card payment once it&rsquo;s in the bank, then count the cash. If one looks wrong, tap <span className="font-semibold text-warn">KIV</span> and note it — the supervisor will check it.</p>
 
         {d && (() => {
-          const checkableM = d.methods.filter((m) => m.checkable); // transfer/QR/card/atome/… need bank-checking; cash is counted
+          const vmethods = d.methods.filter((m) => !bnplSlugs.has(m.key)); // BNPL is tracked separately below, not bank-checked same-day
+          const checkableM = vmethods.filter((m) => m.checkable);
           const checkedN = checkableM.reduce((s, m) => s + m.checked, 0);
           const kivN = checkableM.reduce((s, m) => s + (m.kiv || 0), 0);
           const totalN = checkableM.reduce((s, m) => s + m.count, 0);
           const left = totalN - checkedN - kivN;
-          const grandTotal = d.methods.reduce((s, m) => s + num(m.total), 0);
+          const grandTotal = vmethods.reduce((s, m) => s + num(m.total), 0);
           return (
             <div className="mb-4 rounded-card bg-card shadow-card p-4">
               <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-3">Total in by method</div>
               <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
-                {d.methods.map((m) => (
+                {vmethods.map((m) => (
                   <div key={m.key}>
                     <div className="text-xs text-ink-2">{m.label}</div>
                     <div className="text-base font-semibold text-ink">{rm(num(m.total))}</div>
@@ -127,7 +142,7 @@ export default function DailyPage() {
         })()}
 
         <div className="space-y-3">
-          {d && d.methods.map((m) => {
+          {d && d.methods.filter((m) => !bnplSlugs.has(m.key)).map((m) => {
             const es = d.entries.filter((e) => e.method === m.key);
             const total = num(m.total);
             const lineSum = es.reduce((s, e) => s + num(e.amount), 0);
@@ -215,10 +230,69 @@ export default function DailyPage() {
             );
           })}
 
+          {bnpl && <BnplOutstandingCard bnpl={bnpl} />}
           {d && <UnpaidCard unpaid={d.unpaid} />}
           {d && <ZeroCogsCard zero_cogs={d.zero_cogs} lines={d.zero_cogs_lines} day={day} onRecheck={load} />}
         </div>
       </OfficeShell>
     </Gate>
+  );
+}
+
+// Outstanding BNPL sales (ATOME etc.) — money owed to the shop that hasn't been paid out yet. Not
+// day-scoped: it carries forward until the payout lands and clears it (confirmed on the BNPL page).
+function BnplOutstandingCard({ bnpl }: { bnpl: BnplOut }) {
+  const items = bnpl.items ?? [];
+  const groups: { name: string; items: BnplOutItem[] }[] = [];
+  for (const it of items) {
+    const name = it.display_name || it.provider;
+    const last = groups[groups.length - 1];
+    if (last && last.name === name) last.items.push(it);
+    else groups.push({ name, items: [it] });
+  }
+  return (
+    <div className="rounded-card bg-card shadow-card p-4">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="text-ink-2"><Icon name="wallet" size={16} /></span>
+        <h2 className="text-sm font-semibold text-ink-2">BNPL — awaiting payout</h2>
+        <Link href="/office/bnpl" className="ml-auto text-xs font-medium text-accent hover:underline">Open →</Link>
+      </div>
+      {items.length === 0 ? (
+        <div className="text-sm text-good">All BNPL sales settled ✓</div>
+      ) : (
+        <>
+          <p className="mb-2 text-[11px] text-ink-3">Sales paid via a BNPL service that haven&rsquo;t been paid out yet. They carry forward until the payout lands — confirm each deposit on the BNPL page.</p>
+          <div className="space-y-2">
+            {groups.map((g) => (
+              <div key={g.name}>
+                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-3">{g.name}</div>
+                <div className="divide-y divide-line rounded-lg border border-line">
+                  {g.items.map((it) => (
+                    <div key={it.invoice_no} className="flex items-center justify-between gap-2 px-2 py-1.5 text-xs">
+                      <div className="min-w-0">
+                        <div className="truncate text-ink-2">{it.vehicle || '—'}</div>
+                        <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-ink-3">
+                          <span className="font-mono">{it.invoice_no}</span>
+                          <span>·</span>
+                          <span>{fmtDay(it.day)}</span>
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <div className="font-semibold text-ink-2">{rm(it.est_net)}</div>
+                        <div className="text-[10px] text-ink-3">of {rm(it.gross)}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 flex justify-between border-t border-line pt-2 text-sm">
+            <span className="text-ink-2">Awaiting payout</span>
+            <span className="font-semibold text-warn">{rm(bnpl.total.est_net)} · {bnpl.total.count} sale{bnpl.total.count === 1 ? '' : 's'}</span>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
