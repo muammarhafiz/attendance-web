@@ -108,7 +108,10 @@ export async function POST(req: Request) {
       }))
       .filter((r) => r.transaction_id);
 
-    if (norm.length === 0) return NextResponse.json({ error: 'No transaction rows found in the file.' }, { status: 400 });
+    if (norm.length === 0) {
+      const dbg = `size=${buf.length} sig=${buf.slice(0, 4).toString('hex')} sheets=${wb.SheetNames.length} ref=${ws['!ref'] || '?'} rows=${rows.length} k=${rows[0] ? Object.keys(rows[0]).length : 0}`;
+      return NextResponse.json({ error: 'No rows. ' + dbg }, { status: 400 });
+    }
 
     const { data, error } = await client.rpc('bnpl_ingest_settlement', { p_provider: provider, p_rows: norm });
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
