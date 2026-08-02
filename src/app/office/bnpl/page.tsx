@@ -8,7 +8,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { OfficeShell, rm, fmtDay } from '@/components/office/shared';
 
 type Provider = { provider: string; display_name: string; mdr_pct: number; flat_fee: number; sst_pct: number; enabled: boolean };
-type Sale = { day: string; method: string; invoice_no: string | null; vehicle: string | null; gross: number | string; est_fee: number | string; est_net: number | string };
+type Sale = { day: string; method: string; invoice_no: string | null; vehicle: string | null; gross: number | string; est_fee: number | string; est_net: number | string; status: string | null };
 type Payout = {
   payout_id: string; payout_date: string | null;
   gross_total: number | string; payout_total: number | string; fee_total: number | string; txn_count: number;
@@ -22,6 +22,7 @@ type Overview = {
   payouts: Payout[];
   payouts_total: { count: number; payout: number | string; confirmed_count: number; unconfirmed_count: number; unconfirmed_amount: number | string };
   fees_all_time: number | string;
+  settled_all_time: number | string;
 };
 
 const klToday = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
@@ -192,7 +193,10 @@ export default function BnplPage() {
               <div className="text-sm font-semibold text-ink">BNPL sales</div>
               {st && <div className="text-[12px] text-ink-3">{st.count} sale{st.count === 1 ? '' : 's'} · {rm(st.gross)} gross</div>}
             </div>
-            <p className="mb-3 text-[12px] text-ink-3">Every BNPL receipt from the cash book. &ldquo;You get&rdquo; is after the estimated fee — the exact fee is confirmed when the payout above is imported.</p>
+            <p className="mb-3 text-[12px] text-ink-3">Every BNPL receipt from the cash book. &ldquo;You get&rdquo; is after the estimated fee. Status comes from the ATOME transaction report when you import it.</p>
+            {Number(d.settled_all_time) > 0 && (
+              <p className="mb-3 text-[12px] text-good">{rm(d.settled_all_time)} fully settled by ATOME to date — includes sales paid out before the email records began (e.g. the 6 Jul job).</p>
+            )}
             {d.sales.length === 0 ? (
               <div className="rounded-lg border border-dashed border-line p-4 text-center text-sm text-ink-3">No BNPL sales in this period.</div>
             ) : (
@@ -200,7 +204,10 @@ export default function BnplPage() {
                 {d.sales.map((s, i) => (
                   <div key={`${s.invoice_no ?? 'x'}-${i}`} className="flex items-center gap-3 py-2">
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm text-ink-2">{s.vehicle || '—'}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-sm text-ink-2">{s.vehicle || '—'}</span>
+                        <SaleStatusPill status={s.status} />
+                      </div>
                       <div className="mt-0.5 flex items-center gap-2 text-[11px] text-ink-3">
                         <span className="font-mono">{s.invoice_no || '—'}</span>
                         <span>·</span>
@@ -226,6 +233,14 @@ export default function BnplPage() {
       )}
     </OfficeShell>
   );
+}
+
+function SaleStatusPill({ status }: { status: string | null }) {
+  if (!status) return null;
+  const s = status.toUpperCase();
+  if (s === 'FULLY_SETTLED') return <span className="shrink-0 rounded-full bg-good-soft px-1.5 py-0.5 text-[10px] font-medium text-good">settled</span>;
+  if (s === 'CONFIRMED') return <span className="shrink-0 rounded-full bg-warn-soft px-1.5 py-0.5 text-[10px] font-medium text-warn">pending payout</span>;
+  return <span className="shrink-0 rounded-full bg-ink/5 px-1.5 py-0.5 text-[10px] font-medium text-ink-2">{status.replace(/_/g, ' ').toLowerCase()}</span>;
 }
 
 function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: 'good' | 'warn' }) {
