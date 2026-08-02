@@ -89,12 +89,12 @@ export default function BankReconPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6">
-      <h1 className="text-2xl font-bold text-ink">🏦 Bank reconciliation</h1>
+      <h1 className="text-2xl font-semibold tracking-tight text-ink">🏦 Bank reconciliation</h1>
       <p className="mt-1 text-sm text-ink-2">Upload your <strong>Maybank statement (PDF)</strong> to check transfers, or your <strong>DuitNow QR report (CSV)</strong> to check QR — each is matched to what Niagawan recorded, by date &amp; amount.</p>
 
       <div className="mt-4 rounded-card bg-card shadow-card p-4">
         <label className="flex cursor-pointer items-center gap-3">
-          <span className="rounded-md bg-btn px-3 py-1.5 text-sm font-medium text-btn-ink hover:opacity-90">Choose PDF or CSV</span>
+          <span className="rounded-lg bg-btn px-3.5 py-2 text-sm font-semibold text-btn-ink hover:opacity-90">Choose PDF or CSV</span>
           <input type="file" accept="application/pdf,.pdf,text/csv,.csv" className="hidden"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.currentTarget.value = ''; }} />
           <span className="text-sm text-ink-2">{fileName || 'No file chosen'}</span>
@@ -164,7 +164,7 @@ export default function BankReconPage() {
 function Stat({ label, value, tone }: { label: string; value: number; tone: 'ok' | 'bad' | 'warn' }) {
   const c = tone === 'bad' ? 'text-bad' : tone === 'warn' ? 'text-warn' : 'text-good';
   return (
-    <div className="rounded-card bg-card shadow-card p-3 text-center">
+    <div className="rounded-card bg-card shadow-card p-4 text-center">
       <div className={`text-2xl font-bold ${c}`}>{value}</div>
       <div className="mt-0.5 text-[11px] text-ink-2">{label}</div>
     </div>

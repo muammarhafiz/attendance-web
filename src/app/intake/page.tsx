@@ -112,10 +112,10 @@ export default function IntakePage() {
     return (
       <div className="mx-auto flex min-h-[70vh] max-w-md flex-col items-center justify-center px-6 text-center">
         <div className="text-6xl">✅</div>
-        <h1 className="mt-4 text-2xl font-bold text-ink">Thank you!</h1>
+        <h1 className="mt-4 text-2xl font-semibold tracking-tight text-ink">Thank you!</h1>
         <p className="mt-2 text-ink-2">Your car has been registered.</p>
         {invNo && <div className="mt-4 rounded-lg bg-ink/5 px-4 py-2 font-mono text-lg font-semibold text-ink-2">{invNo}</div>}
-        <button onClick={reset} className="mt-8 w-full rounded-xl bg-accent px-6 py-4 text-lg font-semibold text-white hover:opacity-90">
+        <button onClick={reset} className="mt-8 w-full rounded-lg bg-accent px-3.5 py-2 text-sm font-semibold text-white hover:opacity-90">
           Next customer
         </button>
         <div className="mt-3 text-center"><BackLink label="Back to workshop" /></div>
@@ -124,9 +124,9 @@ export default function IntakePage() {
   }
 
   return (
-    <div className="mx-auto max-w-md px-5 py-6">
+    <div className="mx-auto max-w-md px-4 py-6">
       <BackLink />
-      <h1 className="mt-2 text-2xl font-bold text-ink">Car Check-in</h1>
+      <h1 className="mt-2 text-2xl font-semibold tracking-tight text-ink">Car Check-in</h1>
       <p className="mt-1 text-sm text-ink-3">Please fill in your car details</p>
 
       <div className="mt-5 space-y-4">
@@ -134,7 +134,7 @@ export default function IntakePage() {
           <span className="text-sm font-medium text-ink-2">Plate Number *</span>
           <input value={plate} onChange={(e) => onPlateChange(e.target.value)} onBlur={(e) => checkPlate(e.target.value)}
             placeholder="WWW1234" autoCapitalize="characters" autoComplete="off"
-            className="mt-1 w-full rounded-xl border border-line px-4 py-3.5 font-mono text-xl uppercase tracking-wide" />
+            className="mt-1 w-full rounded-lg border border-line px-4 py-1 font-mono text-xl uppercase tracking-wide" />
         </label>
         {onFile && (
           <div className="rounded-lg border border-emerald-300 bg-good-soft px-3 py-2.5 text-sm text-good">
@@ -148,12 +148,12 @@ export default function IntakePage() {
             <label className="block">
               <span className="text-sm font-medium text-ink-2">Car Model</span>
               <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="e.g. Myvi, Saga, Civic" autoComplete="off"
-                className="mt-1 w-full rounded-xl border border-line px-4 py-3.5 text-lg" />
+                className="mt-1 w-full rounded-lg border border-line px-4 py-1 text-lg" />
             </label>
             <label className="block">
               <span className="text-sm font-medium text-ink-2">Phone Number</span>
               <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="0123456789" inputMode="tel" autoComplete="off"
-                className="mt-1 w-full rounded-xl border border-line px-4 py-3.5 text-lg" />
+                className="mt-1 w-full rounded-lg border border-line px-4 py-1 text-lg" />
             </label>
           </>
         )}
@@ -162,7 +162,7 @@ export default function IntakePage() {
           <span className="text-sm font-medium text-ink-2">Notes / remark (optional)</span>
           <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} autoComplete="off"
             placeholder="e.g. customer complaint, things to check…"
-            className="mt-1 w-full rounded-xl border border-line px-4 py-3 text-base" />
+            className="mt-1 w-full rounded-lg border border-line px-4 py-3 text-base" />
           <span className="mt-1 block text-xs text-ink-3">If filled, it&rsquo;s added to the invoice as a line for the cashier to price.</span>
         </label>
 
@@ -178,7 +178,7 @@ export default function IntakePage() {
         {errMsg && <div className="rounded-lg border border-rose-200 bg-bad-soft px-3 py-2 text-sm text-bad">{errMsg}</div>}
 
         <button onClick={() => save()} disabled={phase === 'saving'}
-          className="w-full rounded-xl bg-accent px-6 py-4 text-xl font-bold text-white hover:opacity-90 disabled:opacity-60">
+          className="w-full rounded-lg bg-accent px-3.5 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60">
           {phase === 'saving' ? 'Registering…' : 'SAVE'}
         </button>
         {phase === 'saving' && <p className="text-center text-sm text-ink-3">Creating the invoice in Niagawan (~30s)…</p>}

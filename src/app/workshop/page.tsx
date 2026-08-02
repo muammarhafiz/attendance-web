@@ -303,23 +303,23 @@ export default function WorkshopBoardPage() {
 
   const [tab, setTab] = useState<'board' | 'oil' | 'bnpl'>('board');
 
-  if (authed === null || (authed && canWrite === null)) return <div className="p-6 text-sm text-ink-2">Checking session…</div>;
+  if (authed === null || (authed && canWrite === null)) return <div className="p-6 text-sm text-ink-3">Checking session…</div>;
   if (!authed) return <div className="p-6 text-sm text-ink-2">Please sign in to see the workshop board.</div>;
   if (!canWrite) return <div className="p-6 text-sm text-ink-2">The workshop board is for supervisors only.</div>;
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-5 pb-24 sm:pb-5">
+    <div className="mx-auto max-w-7xl px-4 py-6 pb-24 sm:pb-5">
       <div className="mb-3 flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold text-ink">Workshop</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">Workshop</h1>
         <span className="text-sm text-ink-3">{byCol.pending.length} car(s) in the shop</span>
         <span className="flex w-full flex-wrap gap-2 sm:ml-auto sm:w-auto">
-          <button onClick={refreshAll} className="rounded-md border border-emerald-300 bg-good-soft px-3 py-1.5 text-sm font-semibold text-good hover:bg-good-soft">🔄 Refresh</button>
-          <a href="/add-part" className="hidden items-center rounded-md border border-amber-300 bg-warn-soft px-3 py-1.5 text-sm font-semibold text-warn hover:bg-warn-soft sm:inline-flex">🔩 Part arrived</a>
+          <button onClick={refreshAll} className="rounded-lg border border-emerald-300 bg-good-soft px-3 py-1.5 text-sm font-semibold text-good hover:bg-good-soft">🔄 Refresh</button>
+          <a href="/add-part" className="hidden items-center rounded-lg border border-amber-300 bg-warn-soft px-3 py-1.5 text-sm font-semibold text-warn hover:bg-warn-soft sm:inline-flex">🔩 Part arrived</a>
           {canWrite && (
             <>
-              <a href="/intake" className="hidden items-center rounded-md border border-accent bg-accent-weak px-3 py-1.5 text-sm font-semibold text-accent hover:bg-accent-weak sm:inline-flex">📝 Customer check-in</a>
-              <a href="/cash-count" className="hidden items-center rounded-md border border-emerald-300 bg-good-soft px-3 py-1.5 text-sm font-semibold text-good hover:bg-good-soft sm:inline-flex">💵 Cash Book</a>
-              <button onClick={() => setShowForm((v) => !v)} className="rounded-md bg-accent px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90">
+              <a href="/intake" className="hidden items-center rounded-lg border border-accent bg-accent-weak px-3 py-1.5 text-sm font-semibold text-accent hover:bg-accent-weak sm:inline-flex">📝 Customer check-in</a>
+              <a href="/cash-count" className="hidden items-center rounded-lg border border-emerald-300 bg-good-soft px-3 py-1.5 text-sm font-semibold text-good hover:bg-good-soft sm:inline-flex">💵 Cash Book</a>
+              <button onClick={() => setShowForm((v) => !v)} className="rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90">
                 {showForm ? 'Close' : '+ New job card'}
               </button>
             </>
@@ -355,8 +355,8 @@ export default function WorkshopBoardPage() {
           {canWrite && (
             <div className="mt-2 flex gap-2">
               <input value={newMemo} onChange={(e) => setNewMemo(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addMemo()}
-                placeholder="Write a memo for everyone…" className="min-w-0 flex-1 rounded-md border border-yellow-300 bg-card px-2 py-1 text-sm" />
-              <button onClick={addMemo} className="rounded-md border border-yellow-300 bg-card px-3 py-1 text-sm text-warn hover:bg-warn-soft">Post</button>
+                placeholder="Write a memo for everyone…" className="min-w-0 flex-1 rounded-lg border border-yellow-300 bg-card px-2 py-1 text-sm" />
+              <button onClick={addMemo} className="rounded-lg border border-yellow-300 bg-card px-3 py-1.5 text-sm text-warn hover:bg-warn-soft">Post</button>
             </div>
           )}
         </div>
@@ -366,16 +366,16 @@ export default function WorkshopBoardPage() {
       {showForm && canWrite && (
         <div className="mb-4 rounded-lg border border-accent bg-accent-weak p-3">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
-            <input value={plate} onChange={(e) => setPlate(e.target.value)} placeholder="Plate * (e.g. JNP7801)" className="rounded-md border border-line px-2 py-1.5 text-sm font-mono uppercase" />
-            <input value={vehicle} onChange={(e) => setVehicle(e.target.value)} placeholder="Car (e.g. Persona)" className="rounded-md border border-line px-2 py-1.5 text-sm" />
-            <input value={problem} onChange={(e) => setProblem(e.target.value)} placeholder="Problem / job" className="rounded-md border border-line px-2 py-1.5 text-sm" />
-            <select value={mechanic} onChange={(e) => setMechanic(e.target.value)} className="rounded-md border border-line bg-card px-2 py-1.5 text-sm">
+            <input value={plate} onChange={(e) => setPlate(e.target.value)} placeholder="Plate * (e.g. JNP7801)" className="rounded-lg border border-line px-2 py-1 text-sm font-mono uppercase" />
+            <input value={vehicle} onChange={(e) => setVehicle(e.target.value)} placeholder="Car (e.g. Persona)" className="rounded-lg border border-line px-2 py-1 text-sm" />
+            <input value={problem} onChange={(e) => setProblem(e.target.value)} placeholder="Problem / job" className="rounded-lg border border-line px-2 py-1 text-sm" />
+            <select value={mechanic} onChange={(e) => setMechanic(e.target.value)} className="rounded-lg border border-line bg-card px-2 py-1 text-sm">
               <option value="">— mechanic —</option>
               {staffNames.map((s) => <option key={s.staff_name} value={s.staff_name}>{s.staff_name}{s.staff_position !== 'Mechanic' ? ` (${s.staff_position})` : ''}</option>)}
             </select>
-            <input value={partsNote} onChange={(e) => setPartsNote(e.target.value)} placeholder="Parts to order (optional)" className="rounded-md border border-line px-2 py-1.5 text-sm" />
+            <input value={partsNote} onChange={(e) => setPartsNote(e.target.value)} placeholder="Parts to order (optional)" className="rounded-lg border border-line px-2 py-1 text-sm" />
           </div>
-          <button onClick={createCard} disabled={saving} className="mt-2 rounded-md bg-accent px-4 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+          <button onClick={createCard} disabled={saving} className="mt-2 rounded-lg bg-accent px-4 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
             {saving ? 'Adding…' : 'Add to board'}
           </button>
         </div>
@@ -407,7 +407,7 @@ export default function WorkshopBoardPage() {
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                     {c.mechanic && <span className="rounded-full bg-ink/5 px-2 py-0.5 text-xs font-medium text-ink-2">{c.mechanic}</span>}
                     <span className="ml-auto flex gap-1">
-                      {c.status !== 'done' && <button onClick={() => move(c, 'done')} className="rounded bg-good px-2 py-0.5 text-xs font-semibold text-white hover:opacity-90">Done</button>}
+                      {c.status !== 'done' && <button onClick={() => move(c, 'done')} className="rounded-lg bg-good px-2 py-0.5 text-xs font-semibold text-white hover:opacity-90">Done</button>}
                       {(() => {
                         // Phone priority: manual override on the card -> check-in / invoice phone.
                         const phone = c.customer_phone || (c.sale_id ? contacts[c.sale_id]?.phone : null);
@@ -418,18 +418,18 @@ export default function WorkshopBoardPage() {
                           const text = encodeURIComponent(fillWa(c.status === 'done' ? wa.ready : wa.received, name, veh));
                           return (
                             <>
-                              <a href={`https://wa.me/${num}?text=${text}`} target="_blank" rel="noopener noreferrer" className="rounded bg-good px-2 py-0.5 text-xs font-semibold text-white hover:opacity-90" title="Message the customer on WhatsApp">📲 WhatsApp</a>
-                              {canWrite && <button onClick={() => setCardPhone(c, phone)} className="rounded border border-line px-1.5 py-0.5 text-xs text-ink-3 hover:bg-ink/5" title="Edit this customer's number (also updates Niagawan)">✏️</button>}
+                              <a href={`https://wa.me/${num}?text=${text}`} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-good px-2 py-0.5 text-xs font-semibold text-white hover:opacity-90" title="Message the customer on WhatsApp">📲 WhatsApp</a>
+                              {canWrite && <button onClick={() => setCardPhone(c, phone)} className="rounded-lg border border-line px-1.5 py-0.5 text-xs text-ink-3 hover:bg-ink/5" title="Edit this customer's number (also updates Niagawan)">✏️</button>}
                             </>
                           );
                         }
                         // No phone anywhere — let a supervisor add one so the WhatsApp button appears.
                         return canWrite ? (
-                          <button onClick={() => setCardPhone(c)} className="rounded border border-green-300 bg-good-soft px-2 py-0.5 text-xs font-medium text-good hover:bg-good-soft" title="Add the customer's WhatsApp number">➕ phone</button>
+                          <button onClick={() => setCardPhone(c)} className="rounded-lg border border-green-300 bg-good-soft px-2 py-0.5 text-xs font-medium text-good hover:bg-good-soft" title="Add the customer's WhatsApp number">➕ phone</button>
                         ) : null;
                       })()}
-                      {c.status === 'done' && canWrite && <button onClick={() => archive(c)} className="rounded border border-line px-2 py-0.5 text-xs text-ink-2 hover:bg-ink/5" title="Remove from the board (kept in history)">Clear</button>}
-                      {c.status !== 'done' && canWrite && <button onClick={() => removeCard(c)} className="rounded border border-line px-1.5 py-0.5 text-xs text-ink-3 hover:bg-bad-soft hover:text-bad" title="Remove from the board — for a cancelled / mistaken check-in (kept in history)">✕</button>}
+                      {c.status === 'done' && canWrite && <button onClick={() => archive(c)} className="rounded-lg border border-line px-2 py-0.5 text-xs text-ink-2 hover:bg-ink/5" title="Remove from the board (kept in history)">Clear</button>}
+                      {c.status !== 'done' && canWrite && <button onClick={() => removeCard(c)} className="rounded-lg border border-line px-1.5 py-0.5 text-xs text-ink-3 hover:bg-bad-soft hover:text-bad" title="Remove from the board — for a cancelled / mistaken check-in (kept in history)">✕</button>}
                     </span>
                   </div>
                 </div>
@@ -444,7 +444,7 @@ export default function WorkshopBoardPage() {
         <div className="mt-6">
           <div className="mb-2 flex flex-wrap items-center gap-2 text-sm font-semibold text-bad">
             <span>💸 Debts</span>
-            <select value={debtView.active} onChange={(e) => setDebtYear(e.target.value)} className="rounded-md border border-rose-300 bg-card px-2 py-1 text-xs font-semibold text-bad">
+            <select value={debtView.active} onChange={(e) => setDebtYear(e.target.value)} className="rounded-lg border border-rose-300 bg-card px-2 py-1 text-xs font-semibold text-bad">
               {debtView.years.map((y) => <option key={y} value={y}>{y}</option>)}
               <option value="all">All years</option>
             </select>
@@ -453,7 +453,7 @@ export default function WorkshopBoardPage() {
           </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {debtView.shown.map((d) => (
-              <div key={d.sale_id} className="rounded-md border border-rose-200 bg-bad-soft p-2 shadow-sm">
+              <div key={d.sale_id} className="rounded-card border border-rose-200 bg-bad-soft p-2 shadow-card">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="font-mono text-sm font-bold text-ink">{d.ptoken || d.vehicle_label}</span>
                   <span className="text-[11px] font-semibold text-bad">{d.age_days}d old</span>

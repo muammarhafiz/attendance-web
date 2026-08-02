@@ -194,9 +194,9 @@ function ClerkStatusCard() {
   return (
     <Card title="Clerk" icon="briefcase" href="/office">
       <div className="mb-2 flex items-center justify-center gap-3">
-        <button onClick={() => shiftDay(-1)} aria-label="Previous day" className="rounded-md border border-line px-2.5 py-1 text-sm text-ink-2 hover:bg-ink/5">◀</button>
+        <button onClick={() => shiftDay(-1)} aria-label="Previous day" className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">◀</button>
         <span className="min-w-[80px] text-center text-sm font-semibold text-ink">{fmtDMY(day)}</span>
-        <button onClick={() => shiftDay(1)} disabled={day >= klTodayIso()} aria-label="Next day" className="rounded-md border border-line px-2.5 py-1 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-40">▶</button>
+        <button onClick={() => shiftDay(1)} disabled={day >= klTodayIso()} aria-label="Next day" className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-40">▶</button>
       </div>
       {!s || s.error ? <div className="text-sm text-ink-3">—</div> : (
         <>
@@ -380,9 +380,9 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-5">
+    <div className="mx-auto max-w-6xl px-4 py-6">
       <div className="mb-4 flex items-baseline justify-between">
-        <h1 className="text-xl font-semibold tracking-tight text-ink">Overview</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">Overview</h1>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setArranging((v) => !v)}

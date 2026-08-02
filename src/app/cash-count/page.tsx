@@ -151,7 +151,7 @@ export default function CashCountPage() {
     await loadHistory();
   }, [onHand, loadStatus, loadHistory]);
 
-  if (authed === null || (authed && allowed === null)) return <div className="p-6 text-sm text-ink-2">Checking…</div>;
+  if (authed === null || (authed && allowed === null)) return <div className="p-6 text-sm text-ink-3">Checking…</div>;
   if (!authed) return <div className="p-6 text-sm text-ink-2">Please sign in first.</div>;
   if (!allowed) return <div className="p-6 text-sm text-ink-2">This page is for supervisors only.</div>;
 
@@ -172,9 +172,9 @@ export default function CashCountPage() {
   const isSummary = step >= DENOMS.length;
 
   return (
-    <div className="mx-auto max-w-md px-5 py-6">
+    <div className="mx-auto max-w-md px-4 py-6">
       <BackLink />
-      <h1 className="mt-2 text-2xl font-bold text-ink">💵 Cash Book</h1>
+      <h1 className="mt-2 text-2xl font-semibold tracking-tight text-ink">💵 Cash Book</h1>
 
       {/* Cash Book | Petty Cash tabs */}
       <div className="mt-3 flex gap-1 rounded-lg bg-ink/5 p-1 text-sm font-semibold">
@@ -186,7 +186,7 @@ export default function CashCountPage() {
       <p className="mt-3 text-sm text-ink-2">{new Date(today).toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
 
       {!saved && !isSummary && (
-        <div className="mt-4 rounded-card bg-card shadow-card px-4 py-3">
+        <div className="mt-4 rounded-card bg-card shadow-card px-4 py-4">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-ink-2">Niagawan so far today</span>
             <button onClick={syncCash} disabled={cashSyncing} className="shrink-0 rounded-lg border border-emerald-300 bg-good-soft px-3 py-1.5 text-sm font-semibold text-good disabled:opacity-50">{cashSyncing ? 'Refreshing…' : '🔄 Refresh'}</button>
@@ -207,7 +207,7 @@ export default function CashCountPage() {
       {saved ? (
         <div className="mt-8 text-center">
           <div className="text-6xl">{savedEmoji}</div>
-          <h2 className="mt-3 text-xl font-bold text-ink">Saved</h2>
+          <h2 className="mt-3 text-xl font-semibold tracking-tight text-ink">Saved</h2>
           {anyUnreconciled && <p className="mt-1 text-xs text-warn">Some figures had no Niagawan total to compare yet.</p>}
           <div className="mt-4 space-y-1 rounded-card bg-card shadow-card p-4 text-left text-sm">
             <Row label="Counted cash" value={rm(total)} bold />
@@ -224,7 +224,7 @@ export default function CashCountPage() {
               </div>
             )}
           </div>
-          <button onClick={() => { setSaved(false); setStep(0); }} className="mt-6 w-full rounded-xl bg-ink/5 px-6 py-3 text-base font-semibold text-ink-2">Recount</button>
+          <button onClick={() => { setSaved(false); setStep(0); }} className="mt-6 w-full rounded-lg bg-ink/5 px-3.5 py-2 text-sm font-semibold text-ink-2">Recount</button>
         </div>
       ) : !isSummary ? (
         <div className="mt-6">
@@ -234,12 +234,12 @@ export default function CashCountPage() {
             <div className="my-1 text-4xl font-extrabold text-good">RM{DENOMS[step]}</div>
             <div className="text-sm text-ink-2">notes?</div>
             <div className="mt-5 flex items-center justify-center gap-4">
-              <button onClick={() => setCount(DENOMS[step], (counts[DENOMS[step]] || 0) - 1)} className="h-14 w-14 rounded-xl border border-line text-2xl font-bold text-ink-2">−</button>
+              <button onClick={() => setCount(DENOMS[step], (counts[DENOMS[step]] || 0) - 1)} className="h-14 w-14 rounded-lg border border-line text-2xl font-bold text-ink-2">−</button>
               <input type="number" inputMode="numeric" value={counts[DENOMS[step]] ?? 0}
                 onChange={(e) => { const n = parseInt(e.target.value || '0', 10); setCount(DENOMS[step], Number.isFinite(n) ? n : 0); }}
                 onFocus={(e) => e.target.select()}
-                className="w-28 rounded-xl border border-line px-2 py-3 text-center text-3xl font-bold" />
-              <button onClick={() => setCount(DENOMS[step], (counts[DENOMS[step]] || 0) + 1)} className="h-14 w-14 rounded-xl border border-line text-2xl font-bold text-ink-2">+</button>
+                className="w-28 rounded-lg border border-line px-2 py-3 text-center text-3xl font-bold" />
+              <button onClick={() => setCount(DENOMS[step], (counts[DENOMS[step]] || 0) + 1)} className="h-14 w-14 rounded-lg border border-line text-2xl font-bold text-ink-2">+</button>
             </div>
             <div className="mt-3 text-sm text-ink-2">= {rm((counts[DENOMS[step]] || 0) * DENOMS[step])}</div>
           </div>
@@ -247,8 +247,8 @@ export default function CashCountPage() {
           <div className="mt-4 rounded-lg bg-ink/5 px-3 py-2 text-center text-sm text-ink-2">Running total: <span className="font-bold text-ink">{rm(total)}</span></div>
 
           <div className="mt-5 flex gap-3">
-            {step > 0 && <button onClick={() => setStep(step - 1)} className="flex-1 rounded-xl border border-line px-4 py-3.5 text-base font-semibold text-ink-2">Back</button>}
-            <button onClick={() => setStep(step + 1)} className="flex-[2] rounded-xl bg-accent px-4 py-3.5 text-base font-bold text-white hover:opacity-90">
+            {step > 0 && <button onClick={() => setStep(step - 1)} className="flex-1 rounded-lg border border-line px-3 py-1.5 text-sm font-semibold text-ink-2">Back</button>}
+            <button onClick={() => setStep(step + 1)} className="flex-[2] rounded-lg bg-accent px-3.5 py-2 text-sm font-semibold text-white hover:opacity-90">
               {step === DENOMS.length - 1 ? 'See result' : 'Next'}
             </button>
           </div>
@@ -285,8 +285,8 @@ export default function CashCountPage() {
           {err && <div className="mt-3 rounded-lg border border-rose-200 bg-bad-soft px-3 py-2 text-sm text-bad">{err}</div>}
 
           <div className="mt-5 flex gap-3">
-            <button onClick={() => setStep(DENOMS.length - 1)} className="flex-1 rounded-xl border border-line px-4 py-3.5 text-base font-semibold text-ink-2">Back</button>
-            <button onClick={save} className="flex-[2] rounded-xl bg-good px-4 py-3.5 text-base font-bold text-white hover:opacity-90">Save count</button>
+            <button onClick={() => setStep(DENOMS.length - 1)} className="flex-1 rounded-lg border border-line px-3 py-1.5 text-sm font-semibold text-ink-2">Back</button>
+            <button onClick={save} className="flex-[2] rounded-lg bg-good px-3.5 py-2 text-sm font-semibold text-white hover:opacity-90">Save count</button>
           </div>
         </div>
       )}
@@ -449,8 +449,8 @@ function PettyCash({ isAdmin }: { isAdmin: boolean }) {
       </div>
 
       <div className="mt-3 flex gap-2">
-        <button onClick={() => { reset(); setMode('purchase'); }} className="flex-1 rounded-xl bg-accent px-3 py-2.5 text-sm font-bold text-white hover:opacity-90">＋ Add purchase</button>
-        {isAdmin && <button onClick={() => { reset(); setMode('topup'); }} className="flex-1 rounded-xl border border-emerald-300 bg-good-soft px-3 py-2.5 text-sm font-bold text-good hover:bg-good-soft">＋ Top up</button>}
+        <button onClick={() => { reset(); setMode('purchase'); }} className="flex-1 rounded-lg bg-accent px-3 py-2.5 text-sm font-semibold text-white hover:opacity-90">＋ Add purchase</button>
+        {isAdmin && <button onClick={() => { reset(); setMode('topup'); }} className="flex-1 rounded-lg border border-emerald-300 bg-good-soft px-3 py-2.5 text-sm font-bold text-good hover:bg-good-soft">＋ Top up</button>}
       </div>
 
       {mode !== 'none' && (
@@ -476,7 +476,7 @@ function PettyCash({ isAdmin }: { isAdmin: boolean }) {
           {err && <div className="mt-2 rounded-lg bg-bad-soft px-2 py-1.5 text-xs text-bad">{err}</div>}
           <div className="mt-3 flex gap-2">
             <button onClick={reset} disabled={busy} className="flex-1 rounded-lg border border-line px-3 py-2 text-sm font-medium text-ink-2">Cancel</button>
-            <button onClick={submit} disabled={busy} className="flex-[2] rounded-lg bg-good px-3 py-2 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50">{busy ? 'Saving…' : 'Save'}</button>
+            <button onClick={submit} disabled={busy} className="flex-[2] rounded-lg bg-good px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">{busy ? 'Saving…' : 'Save'}</button>
           </div>
         </div>
       )}
@@ -484,7 +484,7 @@ function PettyCash({ isAdmin }: { isAdmin: boolean }) {
       <div className="mt-5">
         <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-3">History</div>
         {txns.length === 0 ? (
-          <div className="rounded-xl border border-line bg-ink/5 p-4 text-center text-sm text-ink-3">No purchases or top-ups yet.</div>
+          <div className="rounded-lg border border-dashed border-line bg-ink/5 p-4 text-center text-sm text-ink-3">No purchases or top-ups yet.</div>
         ) : (
           <div className="divide-y divide-line overflow-hidden rounded-card bg-card shadow-card">
             {txns.map((x) => (

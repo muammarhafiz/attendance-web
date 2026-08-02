@@ -226,7 +226,7 @@ export default function RequestsPage() {
     }
   }, [picks, me, load]);
 
-  if (authed === null || isAdmin === null) return <div className="text-sm text-ink-2">Checking…</div>;
+  if (authed === null || isAdmin === null) return <div className="text-sm text-ink-3">Checking…</div>;
   if (!authed) return <div className="text-sm text-ink-2">Please sign in.</div>;
   if (!isAdmin) return <div className="text-sm text-ink-2">You don&apos;t have access to this page.</div>;
 
@@ -234,7 +234,7 @@ export default function RequestsPage() {
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <span className="text-sm text-ink-2">{pendingCount} pending</span>
-        <select value={kindF} onChange={(e) => setKindF(e.target.value as 'ALL' | Kind)} className="ml-2 rounded-md border border-line px-2 py-1.5 text-sm">
+        <select value={kindF} onChange={(e) => setKindF(e.target.value as 'ALL' | Kind)} className="ml-2 rounded-lg border border-line px-2 py-1 text-sm">
           <option value="ALL">All types</option>
           <option value="offday">Off-day</option>
           <option value="halfday">Half-day</option>
@@ -242,23 +242,23 @@ export default function RequestsPage() {
           <option value="advance">Advance</option>
           <option value="emergency">Emergency</option>
         </select>
-        <select value={staffF} onChange={(e) => setStaffF(e.target.value)} className="rounded-md border border-line px-2 py-1.5 text-sm">
+        <select value={staffF} onChange={(e) => setStaffF(e.target.value)} className="rounded-lg border border-line px-2 py-1 text-sm">
           <option value="ALL">All staff</option>
           {staffList.map(([email, name]) => <option key={email} value={email}>{name}</option>)}
         </select>
-        <select value={statusF} onChange={(e) => setStatusF(e.target.value)} className="rounded-md border border-line px-2 py-1.5 text-sm">
+        <select value={statusF} onChange={(e) => setStatusF(e.target.value)} className="rounded-lg border border-line px-2 py-1 text-sm">
           <option value="all">All statuses</option>
           <option value="pending">Pending</option>
           <option value="approved">Approved</option>
           <option value="rejected">Rejected</option>
         </select>
-        <button onClick={load} disabled={loading} className="ml-auto rounded-md border border-line px-2.5 py-1.5 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50">
+        <button onClick={load} disabled={loading} className="ml-auto rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">
           {loading ? 'Loading…' : 'Refresh'}
         </button>
       </div>
 
       {filtered.length === 0 ? (
-        <div className="rounded-lg border border-line bg-ink/[0.03] p-6 text-center text-sm text-ink-2">
+        <div className="rounded-lg border border-dashed border-line bg-ink/[0.03] p-4 text-center text-sm text-ink-3">
           {statusF === 'pending' ? 'No pending requests. Switch the status filter to see past ones.' : 'No requests.'}
         </div>
       ) : (
@@ -269,24 +269,24 @@ export default function RequestsPage() {
             const hasDate = r.kind !== 'advance';
             const pending = isPending(r);
             return (
-              <div key={`${r.kind}:${r.id}`} className={`rounded-card p-3 shadow-card ${pending ? 'bg-warn-soft' : 'bg-card'}`}>
+              <div key={`${r.kind}:${r.id}`} className={`rounded-card p-4 shadow-card ${pending ? 'bg-warn-soft' : 'bg-card'}`}>
                 {editingId === r.id ? (
                   <div className="space-y-2">
                     <div className="text-sm font-medium text-ink">{name} <span className="text-xs font-normal text-ink-3">— editing request</span></div>
                     <div className="grid grid-cols-2 gap-2">
                       <label className="text-xs text-ink-2">From
-                        <input type="date" value={eFrom} onChange={(e) => setEFrom(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
+                        <input type="date" value={eFrom} onChange={(e) => setEFrom(e.target.value)} className="mt-0.5 block w-full rounded-lg border border-line px-2 py-1 text-sm" />
                       </label>
                       <label className="text-xs text-ink-2">To
-                        <input type="date" value={eTo} min={eFrom} onChange={(e) => setETo(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
+                        <input type="date" value={eTo} min={eFrom} onChange={(e) => setETo(e.target.value)} className="mt-0.5 block w-full rounded-lg border border-line px-2 py-1 text-sm" />
                       </label>
                     </div>
                     <label className="block text-xs text-ink-2">Reason
-                      <input value={eReason} onChange={(e) => setEReason(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
+                      <input value={eReason} onChange={(e) => setEReason(e.target.value)} className="mt-0.5 block w-full rounded-lg border border-line px-2 py-1 text-sm" />
                     </label>
                     <div className="flex gap-2">
-                      <button onClick={saveEdit} disabled={savingEdit} className="rounded-md bg-good px-3 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50">{savingEdit ? 'Saving…' : 'Save changes'}</button>
-                      <button onClick={cancelEdit} disabled={savingEdit} className="rounded-md border border-line px-3 py-1 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50">Cancel</button>
+                      <button onClick={saveEdit} disabled={savingEdit} className="rounded-lg bg-good px-3 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">{savingEdit ? 'Saving…' : 'Save changes'}</button>
+                      <button onClick={cancelEdit} disabled={savingEdit} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">Cancel</button>
                     </div>
                     <p className="text-[11px] text-ink-3">Change the dates if the staff agreed to a different day, then Approve.</p>
                   </div>
@@ -314,17 +314,17 @@ export default function RequestsPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         {r.file_path && (
-                          <button onClick={() => viewAttachment(r.file_path)} className="rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-ink/5">{r.kind === 'mc' ? 'View certificate' : 'View photo'}</button>
+                          <button onClick={() => viewAttachment(r.file_path)} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">{r.kind === 'mc' ? 'View certificate' : 'View photo'}</button>
                         )}
                         {r.kind !== 'emergency' && pending && (
                           <>
                             {r.kind === 'offday' && (
-                              <button onClick={() => startEdit(r)} disabled={busy === r.id} className="rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50">Edit</button>
+                              <button onClick={() => startEdit(r)} disabled={busy === r.id} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">Edit</button>
                             )}
-                            <button onClick={() => decide(r, true)} disabled={busy === r.id} className="rounded-md bg-good px-2.5 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50">
+                            <button onClick={() => decide(r, true)} disabled={busy === r.id} className="rounded-lg bg-good px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">
                               {busy === r.id ? '…' : 'Approve'}
                             </button>
-                            <button onClick={() => decide(r, false)} disabled={busy === r.id} className="rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50">Reject</button>
+                            <button onClick={() => decide(r, false)} disabled={busy === r.id} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">Reject</button>
                           </>
                         )}
                         {r.kind !== 'emergency' && !pending && (
@@ -340,11 +340,11 @@ export default function RequestsPage() {
                     {r.kind === 'emergency' && pending && (
                       <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-line pt-2">
                         <span className="text-xs text-ink-3">Record as:</span>
-                        <select value={picks[r.id] || 'OFFDAY'} onChange={(e) => setPicks((p) => ({ ...p, [r.id]: e.target.value }))} className="rounded-md border border-line px-2 py-1 text-sm">
+                        <select value={picks[r.id] || 'OFFDAY'} onChange={(e) => setPicks((p) => ({ ...p, [r.id]: e.target.value }))} className="rounded-lg border border-line px-2 py-1 text-sm">
                           {CLASSIFY.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
                         </select>
-                        <button onClick={() => record(r, true)} disabled={busy === r.id} className="rounded-md bg-good px-2.5 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50">{busy === r.id ? '…' : 'Record & handle'}</button>
-                        <button onClick={() => record(r, false)} disabled={busy === r.id} className="rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50">Mark handled only</button>
+                        <button onClick={() => record(r, true)} disabled={busy === r.id} className="rounded-lg bg-good px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">{busy === r.id ? '…' : 'Record & handle'}</button>
+                        <button onClick={() => record(r, false)} disabled={busy === r.id} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">Mark handled only</button>
                       </div>
                     )}
                   </>

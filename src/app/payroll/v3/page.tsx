@@ -303,9 +303,9 @@ export default function PayrollV3Page() {
     window.open(`/payroll/slip?year=${year}&month=${month}&email=${encodeURIComponent(sel.staff_email.toLowerCase())}`, '_blank', 'noopener');
   };
 
-  if (authed === null || isAdmin === null) return <div className="mx-auto max-w-6xl p-6 text-sm text-ink-2">Checking…</div>;
-  if (!authed) return <div className="mx-auto max-w-6xl p-6 text-sm text-ink-2">Please sign in.</div>;
-  if (!isAdmin) return <div className="mx-auto max-w-6xl p-6 text-sm text-ink-2">You don&apos;t have access to this page.</div>;
+  if (authed === null || isAdmin === null) return <div className="mx-auto max-w-6xl px-4 py-6 text-sm text-ink-3">Checking…</div>;
+  if (!authed) return <div className="mx-auto max-w-6xl px-4 py-6 text-sm text-ink-2">Please sign in.</div>;
+  if (!isAdmin) return <div className="mx-auto max-w-6xl px-4 py-6 text-sm text-ink-2">You don&apos;t have access to this page.</div>;
 
   const status = period?.status ?? null;
   const statusCls = status === 'LOCKED' ? 'bg-warn-soft text-warn' : status === 'FINALIZED' ? 'bg-accent-weak text-accent' : status === 'OPEN' ? 'bg-good-soft text-good' : 'bg-ink/5 text-ink-2';
@@ -313,12 +313,12 @@ export default function PayrollV3Page() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold">Payroll</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">Payroll</h1>
         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusCls}`}>{status ?? 'Not generated'}</span>
         <div className="ml-auto flex items-center gap-2">
-          <button onClick={prevMonth} className="rounded-md border px-2.5 py-1.5 text-sm hover:bg-ink/5">◀</button>
+          <button onClick={prevMonth} className="rounded-lg border px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">◀</button>
           <span className="min-w-[120px] text-center text-sm font-semibold">{MONTHS[month - 1]} {year}</span>
-          <button onClick={nextMonth} className="rounded-md border px-2.5 py-1.5 text-sm hover:bg-ink/5">▶</button>
+          <button onClick={nextMonth} className="rounded-lg border px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">▶</button>
         </div>
       </div>
 
@@ -326,30 +326,30 @@ export default function PayrollV3Page() {
       <div className="mb-4 rounded-card bg-card p-4 shadow-card">
         <div className="flex flex-wrap items-center gap-2">
           {(status === null || status === 'OPEN') && (
-            <button onClick={generate} disabled={!!busy} className="rounded-md bg-btn px-3 py-2 text-sm font-medium text-btn-ink hover:opacity-90 disabled:opacity-50">
+            <button onClick={generate} disabled={!!busy} className="rounded-lg bg-btn px-3 py-2 text-sm font-semibold text-btn-ink hover:opacity-90 disabled:opacity-50">
               {busy === 'Generate' ? 'Generating…' : status === null ? 'Generate payroll from attendance' : 'Rebuild from attendance'}
             </button>
           )}
           {status === 'OPEN' && (
             <>
-              <button onClick={finalize} disabled={!!busy} className="rounded-md bg-good px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50">
+              <button onClick={finalize} disabled={!!busy} className="rounded-lg bg-good px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
                 {busy === 'Finalize' ? 'Finalizing…' : 'Finalize & generate payslips'}
               </button>
-              <button onClick={lock} disabled={!!busy} className="rounded-md border px-3 py-2 text-sm hover:bg-ink/5 disabled:opacity-50">Lock (no PDFs)</button>
+              <button onClick={lock} disabled={!!busy} className="rounded-lg border px-3 py-2 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">Lock (no PDFs)</button>
             </>
           )}
           {(status === 'LOCKED' || status === 'FINALIZED') && (
             <>
-              <button onClick={unlock} disabled={!!busy} className="rounded-md border px-3 py-2 text-sm hover:bg-ink/5 disabled:opacity-50">Unlock to edit</button>
-              <button onClick={sendPayslips} disabled={!!busy} className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50">
+              <button onClick={unlock} disabled={!!busy} className="rounded-lg border px-3 py-2 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">Unlock to edit</button>
+              <button onClick={sendPayslips} disabled={!!busy} className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
                 {busy === 'Send' ? 'Sending…' : 'Email payslips to staff'}
               </button>
             </>
           )}
-          <button onClick={sendTest} disabled={!!busy} title="Sends one payslip to your own email so you can check it before emailing staff." className="rounded-md border border-accent px-3 py-2 text-sm text-accent hover:bg-accent-weak disabled:opacity-50">
+          <button onClick={sendTest} disabled={!!busy} title="Sends one payslip to your own email so you can check it before emailing staff." className="rounded-lg border border-accent px-3 py-2 text-sm text-accent hover:bg-accent-weak disabled:opacity-50">
             {busy === 'Test' ? 'Sending test…' : 'Send test to my email'}
           </button>
-          <button onClick={refresh} className="ml-auto rounded-md border px-3 py-2 text-sm hover:bg-ink/5">Refresh</button>
+          <button onClick={refresh} className="ml-auto rounded-lg border px-3 py-2 text-sm text-ink-2 hover:bg-ink/5">Refresh</button>
         </div>
         <p className="mt-2 text-xs text-ink-2">
           <b>Generate</b> pulls each person&apos;s base salary, this month&apos;s unpaid leave (from attendance absences), recurring items &amp; statutory deductions.
@@ -383,7 +383,7 @@ export default function PayrollV3Page() {
       </div>
 
       {/* Summary table */}
-      <div className="overflow-x-auto rounded-lg border border-line">
+      <div className="overflow-x-auto rounded-card bg-card shadow-card">
         <table className="w-full min-w-[900px] border-collapse text-sm">
           <thead className="bg-ink/5 text-left">
             <tr>
@@ -413,7 +413,7 @@ export default function PayrollV3Page() {
                 <td className="px-3 py-2 text-right tabular-nums">{rm(r.total_deduct)}</td>
                 <td className="px-3 py-2 text-right font-semibold tabular-nums">{rm(r.net_pay)}</td>
                 <td className="px-3 py-2 text-center">{absent[(r.staff_email || '').toLowerCase()] || 0}</td>
-                <td className="px-3 py-2 text-right"><button onClick={() => openDetails(r)} className="rounded-md border px-2.5 py-1 text-xs hover:bg-ink/5">Details</button></td>
+                <td className="px-3 py-2 text-right"><button onClick={() => openDetails(r)} className="rounded-lg border px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">Details</button></td>
               </tr>
             ))}
           </tbody>
@@ -442,7 +442,7 @@ export default function PayrollV3Page() {
             { label: 'SOCSO + EIS', value: totals.socso.er + totals.socso.emp + totals.eis.er + totals.eis.emp, hint: 'Employer + employee' },
             { label: 'Total payroll cost', value: totals.cost, hint: 'Net + employer statutories' },
           ].map((c) => (
-            <div key={c.label} className="rounded-card bg-card p-3 shadow-card">
+            <div key={c.label} className="rounded-card bg-card p-4 shadow-card">
               <div className="text-xs text-ink-2">{c.label}</div>
               <div className="text-lg font-bold text-ink">{rm(c.value)}</div>
               <div className="text-[11px] text-ink-3">{c.hint}</div>
@@ -458,8 +458,8 @@ export default function PayrollV3Page() {
             <div className="flex items-center justify-between border-b px-4 py-3">
               <div><div className="font-semibold">{sel.staff_name ?? sel.staff_email}</div><div className="text-xs text-ink-3">{sel.staff_email}</div></div>
               <div className="flex gap-2">
-                <button onClick={printSlip} className="rounded-md border px-2.5 py-1 text-xs hover:bg-ink/5">Print payslip</button>
-                <button onClick={() => setSel(null)} className="rounded-md border px-2.5 py-1 text-xs hover:bg-ink/5">Close</button>
+                <button onClick={printSlip} className="rounded-lg border px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">Print payslip</button>
+                <button onClick={() => setSel(null)} className="rounded-lg border px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">Close</button>
               </div>
             </div>
 
@@ -475,8 +475,8 @@ export default function PayrollV3Page() {
                         <li key={it.id} className="flex items-center justify-between gap-2">
                           <div><div className="font-medium">{it.label ?? it.code}</div><div className="text-xs text-ink-3">{it.code}</div></div>
                           <div className="flex items-center gap-2"><span className="tabular-nums">{rm(it.amount)}</span>
-                            {isOpen && <><button onClick={() => editItem(it)} className="rounded border px-2 py-0.5 text-xs hover:bg-ink/5">Edit</button>
-                            <button onClick={() => removeItem(it)} className="rounded border px-2 py-0.5 text-xs text-bad hover:bg-bad-soft">✕</button></>}
+                            {isOpen && <><button onClick={() => editItem(it)} className="rounded-lg border px-2 py-0.5 text-sm text-ink-2 hover:bg-ink/5">Edit</button>
+                            <button onClick={() => removeItem(it)} className="rounded-lg border px-2 py-0.5 text-sm text-bad hover:bg-bad-soft">✕</button></>}
                           </div>
                         </li>
                       ))}
@@ -488,7 +488,7 @@ export default function PayrollV3Page() {
               <div className="rounded-lg border">
                 <div className="border-b bg-ink/5 px-3 py-2 text-sm font-semibold">Deductions</div>
                 <div className="flex items-center justify-between gap-2 border-b px-3 py-2 text-sm">
-                  <div className="font-medium">Unpaid leave {isOpen && <button onClick={setUnpaid} className="ml-1 rounded border px-2 py-0.5 text-xs hover:bg-ink/5">Edit</button>}</div>
+                  <div className="font-medium">Unpaid leave {isOpen && <button onClick={setUnpaid} className="ml-1 rounded-lg border px-2 py-0.5 text-sm text-ink-2 hover:bg-ink/5">Edit</button>}</div>
                   <span className="tabular-nums">{rm(sel.unpaid_auto)}</span>
                 </div>
                 <div className="max-h-44 overflow-auto p-3 text-sm">
@@ -498,8 +498,8 @@ export default function PayrollV3Page() {
                         <li key={it.id} className="flex items-center justify-between gap-2">
                           <div><div className="font-medium">{it.label ?? it.code}</div><div className="text-xs text-ink-3">{it.code}</div></div>
                           <div className="flex items-center gap-2"><span className="tabular-nums">{rm(it.amount)}</span>
-                            {isOpen && <><button onClick={() => editItem(it)} className="rounded border px-2 py-0.5 text-xs hover:bg-ink/5">Edit</button>
-                            <button onClick={() => removeItem(it)} className="rounded border px-2 py-0.5 text-xs text-bad hover:bg-bad-soft">✕</button></>}
+                            {isOpen && <><button onClick={() => editItem(it)} className="rounded-lg border px-2 py-0.5 text-sm text-ink-2 hover:bg-ink/5">Edit</button>
+                            <button onClick={() => removeItem(it)} className="rounded-lg border px-2 py-0.5 text-sm text-bad hover:bg-bad-soft">✕</button></>}
                           </div>
                         </li>
                       ))}
@@ -513,16 +513,16 @@ export default function PayrollV3Page() {
               <div className="border-t px-4 py-3">
                 <div className="mb-2 text-sm font-semibold">Add item</div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <select value={addType} onChange={(e) => setAddType(e.target.value === 'DEDUCT' ? 'DEDUCT' : 'EARN')} className="rounded-md border px-2 py-1.5 text-sm">
+                  <select value={addType} onChange={(e) => setAddType(e.target.value === 'DEDUCT' ? 'DEDUCT' : 'EARN')} className="rounded-lg border px-2 py-1 text-sm">
                     <option value="EARN">Earning</option><option value="DEDUCT">Deduction</option>
                   </select>
-                  <select value={addCode} onChange={(e) => setAddCode(e.target.value)} className="rounded-md border px-2 py-1.5 text-sm">
+                  <select value={addCode} onChange={(e) => setAddCode(e.target.value)} className="rounded-lg border px-2 py-1 text-sm">
                     {(addType === 'DEDUCT' ? deductOptions : earnOptions).map((o) => <option key={o.code} value={o.code}>{o.label}</option>)}
                   </select>
-                  {addCode === 'CUSTOM' && <input value={customCode} onChange={(e) => setCustomCode(e.target.value.replace(/[^A-Za-z0-9_]/g, ''))} placeholder="CODE" className="w-24 rounded-md border px-2 py-1.5 text-sm" />}
-                  <input value={addLabel} onChange={(e) => setAddLabel(e.target.value)} placeholder="Label" className="flex-1 rounded-md border px-2 py-1.5 text-sm" />
-                  <input value={addAmt} onChange={(e) => setAddAmt(e.target.value)} placeholder="0.00" className="w-24 rounded-md border px-2 py-1.5 text-right text-sm tabular-nums" />
-                  <button onClick={addItem} disabled={mWorking} className="rounded-md bg-btn px-3 py-1.5 text-sm font-medium text-btn-ink hover:opacity-90 disabled:opacity-50">Add</button>
+                  {addCode === 'CUSTOM' && <input value={customCode} onChange={(e) => setCustomCode(e.target.value.replace(/[^A-Za-z0-9_]/g, ''))} placeholder="CODE" className="w-24 rounded-lg border px-2 py-1 text-sm" />}
+                  <input value={addLabel} onChange={(e) => setAddLabel(e.target.value)} placeholder="Label" className="flex-1 rounded-lg border px-2 py-1 text-sm" />
+                  <input value={addAmt} onChange={(e) => setAddAmt(e.target.value)} placeholder="0.00" className="w-24 rounded-lg border px-2 py-1 text-right text-sm tabular-nums" />
+                  <button onClick={addItem} disabled={mWorking} className="rounded-lg bg-btn px-3 py-1.5 text-sm font-semibold text-btn-ink hover:opacity-90 disabled:opacity-50">Add</button>
                 </div>
               </div>
             )}

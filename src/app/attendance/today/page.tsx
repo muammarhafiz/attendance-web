@@ -113,7 +113,7 @@ export default function AttendanceTodayPage() {
     return { present, absent, late, off, notYet };
   }, [rows, cutoffFor]);
 
-  if (authed === null || isAdmin === null) return <div className="text-sm text-ink-2">Checking…</div>;
+  if (authed === null || isAdmin === null) return <div className="text-sm text-ink-3">Checking…</div>;
   if (!authed) return <div className="text-sm text-ink-2">Please sign in.</div>;
   if (!isAdmin) return <div className="text-sm text-ink-2">You don&apos;t have access to this page.</div>;
 
@@ -128,7 +128,7 @@ export default function AttendanceTodayPage() {
           { label: 'Absent', value: counts.absent, cls: 'text-bad' },
           { label: 'Off / MC', value: counts.off, cls: 'text-accent' },
         ].map((c) => (
-          <div key={c.label} className="rounded-card bg-card shadow-card p-3 text-center">
+          <div key={c.label} className="rounded-card bg-card shadow-card p-4 text-center">
             <div className={`text-2xl font-bold ${c.cls}`}>{c.value}</div>
             <div className="text-xs text-ink-2">{c.label}</div>
           </div>
@@ -140,13 +140,13 @@ export default function AttendanceTodayPage() {
         <button
           onClick={load}
           disabled={loading}
-          className="rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50"
+          className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50"
         >
           {loading ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-line">
+      <div className="overflow-x-auto rounded-card bg-card shadow-card">
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="bg-ink/[0.03] text-left">

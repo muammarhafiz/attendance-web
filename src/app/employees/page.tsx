@@ -544,29 +544,29 @@ export default function EmployeesPage() {
     setMsg(null);
   }
 
-  if (authed === false) return <main className="mx-auto max-w-6xl p-6">Please sign in.</main>;
-  if (authed === null || (authed && !isAdmin)) return <main className="mx-auto max-w-6xl p-6">Loading…</main>;
+  if (authed === false) return <main className="mx-auto max-w-6xl px-4 py-6 text-sm text-ink-2">Please sign in.</main>;
+  if (authed === null || (authed && !isAdmin)) return <main className="mx-auto max-w-6xl px-4 py-6 text-sm text-ink-3">Loading…</main>;
 
   return (
-    <main className="mx-auto max-w-7xl p-6">
+    <main className="mx-auto max-w-7xl px-4 py-6">
       <header className="mb-4 flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold">Employees</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">Employees</h1>
         {showArchived && <span className="rounded-full bg-ink/10 px-2 py-0.5 text-xs font-medium text-ink-2">Archived</span>}
         <div className="ml-auto flex items-center gap-2">
           <input
-            className="rounded border border-line px-3 py-2 w-72"
+            className="rounded-lg border border-line px-2 py-1 text-sm w-72"
             placeholder="Search name / email / position"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
           <button
-            className="rounded border border-line px-3 py-2 hover:bg-ink/5"
+            className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5"
             onClick={() => setShowArchived((v) => !v)}
           >
             {showArchived ? 'Show active' : 'Show archived'}
           </button>
           {!showArchived && (
-            <button className="rounded bg-good px-3 py-2 text-white hover:opacity-90" onClick={openAdd}>
+            <button className="rounded-lg bg-good px-3.5 py-2 text-sm font-semibold text-white hover:opacity-90" onClick={openAdd}>
               + Add employee
             </button>
           )}
@@ -604,12 +604,12 @@ export default function EmployeesPage() {
                   <td className="border-b px-3 py-2">{r.year_join ?? (r.start_date?.slice(0, 4) ?? '—')}</td>
                   <td className="border-b px-3 py-2 text-right">
                     <div className="flex justify-end gap-2">
-                      <button className="rounded border border-line px-3 py-1.5 hover:bg-ink/5" onClick={() => openEditor(r.email)}>
+                      <button className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5" onClick={() => openEditor(r.email)}>
                         Edit
                       </button>
                       {showArchived && isOwner && (
                         <button
-                          className="rounded border border-rose-300 px-3 py-1.5 text-bad hover:bg-bad-soft disabled:opacity-50"
+                          className="rounded-lg border border-rose-300 px-3 py-1.5 text-sm text-bad hover:bg-bad-soft disabled:opacity-50"
                           disabled={deleting === r.email}
                           onClick={() => deleteEmployee(r.email, r.display_name ?? r.email)}
                         >
@@ -638,7 +638,7 @@ export default function EmployeesPage() {
           <div className="absolute right-0 top-0 h-full w-[min(720px,92vw)] overflow-y-auto bg-card shadow-xl">
             <div className="flex items-center justify-between border-b px-4 py-3">
               <div className="font-semibold">Edit employee — {model.email}</div>
-              <button className="rounded border border-line px-2 py-1" onClick={closeEditor}>
+              <button className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2" onClick={closeEditor}>
                 Close
               </button>
             </div>
@@ -788,11 +788,11 @@ export default function EmployeesPage() {
               </Section>
 
               <div className="flex justify-end gap-2">
-                <button className="rounded border border-line px-3 py-2" onClick={closeEditor} disabled={saving}>
+                <button className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2" onClick={closeEditor} disabled={saving}>
                   Cancel
                 </button>
                 <button
-                  className="rounded bg-accent px-3 py-2 text-white hover:opacity-90 disabled:opacity-50"
+                  className="rounded-lg bg-accent px-3.5 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
                   onClick={save}
                   disabled={saving}
                 >
@@ -810,7 +810,7 @@ export default function EmployeesPage() {
           <div className="absolute right-0 top-0 h-full w-[min(560px,92vw)] overflow-y-auto bg-card shadow-xl">
             <div className="flex items-center justify-between border-b px-4 py-3">
               <div className="font-semibold">Add employee</div>
-              <button className="rounded border border-line px-2 py-1" onClick={() => setAddOpen(false)}>
+              <button className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2" onClick={() => setAddOpen(false)}>
                 Close
               </button>
             </div>
@@ -887,11 +887,11 @@ export default function EmployeesPage() {
               </Section>
 
               <div className="flex justify-end gap-2">
-                <button className="rounded border border-line px-3 py-2" onClick={() => setAddOpen(false)} disabled={adding}>
+                <button className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2" onClick={() => setAddOpen(false)} disabled={adding}>
                   Cancel
                 </button>
                 <button
-                  className="rounded bg-good px-3 py-2 text-white hover:opacity-90 disabled:opacity-50"
+                  className="rounded-lg bg-good px-3.5 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
                   onClick={createEmployee}
                   disabled={adding}
                 >
@@ -932,7 +932,7 @@ function Text({ label, value, onChange }: { label: string; value: string; onChan
   return (
     <div>
       <label className="mb-1 block text-xs text-ink-2">{label}</label>
-      <input className="w-full rounded border border-line px-2 py-1" value={value} onChange={(e) => onChange(e.target.value)} />
+      <input className="w-full rounded-lg border border-line px-2 py-1 text-sm" value={value} onChange={(e) => onChange(e.target.value)} />
     </div>
   );
 }
@@ -940,7 +940,7 @@ function DateInput({ label, value, onChange }: { label: string; value: string; o
   return (
     <div>
       <label className="mb-1 block text-xs text-ink-2">{label}</label>
-      <input type="date" className="w-full rounded border border-line px-2 py-1" value={value || ''} onChange={(e) => onChange(e.target.value)} />
+      <input type="date" className="w-full rounded-lg border border-line px-2 py-1 text-sm" value={value || ''} onChange={(e) => onChange(e.target.value)} />
     </div>
   );
 }
@@ -948,7 +948,7 @@ function Select({ label, value, options, onChange }: { label: string; value: str
   return (
     <div>
       <label className="mb-1 block text-xs text-ink-2">{label}</label>
-      <select className="w-full rounded border border-line px-2 py-1" value={value || ''} onChange={(e) => onChange(e.target.value)}>
+      <select className="w-full rounded-lg border border-line px-2 py-1 text-sm" value={value || ''} onChange={(e) => onChange(e.target.value)}>
         <option value="">—</option>
         {options.map((o) => (
           <option key={o} value={o}>
@@ -965,7 +965,7 @@ function Money({ label, value, onChange }: { label: string; value: number; onCha
       <label className="mb-1 block text-xs text-ink-2">{label}</label>
       <input
         inputMode="decimal"
-        className="w-full rounded border border-line px-2 py-1 text-right"
+        className="w-full rounded-lg border border-line px-2 py-1 text-right text-sm"
         value={Number.isFinite(value) ? String(value) : ''}
         onChange={(e) => onChange(Number(e.target.value || 0))}
         placeholder="0.00"

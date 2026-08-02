@@ -31,19 +31,19 @@ export default function PreviewAsStaffPage() {
     })();
   }, [owner]);
 
-  if (owner === null) return <div className="mx-auto max-w-5xl px-4 py-6 text-sm text-ink-3">Checking…</div>;
-  if (!owner) return <div className="mx-auto max-w-5xl px-4 py-6 text-sm text-ink-2">This page is for the owner.</div>;
+  if (owner === null) return <div className="text-sm text-ink-3">Checking…</div>;
+  if (!owner) return <div className="text-sm text-ink-2">This page is for the owner.</div>;
 
   const label = (s: StaffRow) => `${s.full_name || s.name || s.email}${s.position ? ` · ${s.position}` : ''}`;
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-6">
+    <>
       <h1 className="text-xl font-semibold tracking-tight text-ink">Preview as staff</h1>
 
       <div className="mb-4 mt-4 rounded-card bg-card p-4 shadow-card">
         <label className="block text-xs text-ink-2">Choose a staff member to see their check-in page
           <select value={selected} onChange={(e) => setSelected(e.target.value)}
-            className="mt-1 block w-full max-w-sm rounded-md border border-line px-2 py-1.5 text-sm">
+            className="mt-1 block w-full max-w-sm rounded-lg border border-line px-2 py-1 text-sm">
             <option value="">Select a staff…</option>
             {staff.map((s) => <option key={s.email} value={s.email}>{label(s)}</option>)}
           </select>
@@ -54,8 +54,8 @@ export default function PreviewAsStaffPage() {
       {selected ? (
         <CheckinV2 key={selected} previewEmail={selected} embedded />
       ) : (
-        <div className="rounded-card border border-line bg-ink/[0.03] p-10 text-center text-sm text-ink-3">Pick a staff member above to preview their page.</div>
+        <div className="rounded-lg border border-dashed border-line p-4 text-center text-sm text-ink-3">Pick a staff member above to preview their page.</div>
       )}
-    </div>
+    </>
   );
 }

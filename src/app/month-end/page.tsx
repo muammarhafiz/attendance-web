@@ -122,7 +122,7 @@ export default function MonthEndPage() {
   const prevMonth = () => { const dt = new Date(year, month - 2, 1); setYear(dt.getFullYear()); setMonth(dt.getMonth() + 1); };
   const nextMonth = () => { const dt = new Date(year, month, 1); setYear(dt.getFullYear()); setMonth(dt.getMonth() + 1); };
 
-  if (allowed === null) return <div className="p-6 text-sm text-ink-2">Checking…</div>;
+  if (allowed === null) return <div className="p-6 text-sm text-ink-3">Checking…</div>;
   if (!allowed) return <div className="p-6 text-sm text-ink-2">This page is for the office clerk, managers and the owner.</div>;
 
   const doneCount = STEPS.filter((s) => tickOf(s.key)).length;
@@ -134,13 +134,13 @@ export default function MonthEndPage() {
     <div className="mx-auto max-w-2xl px-4 py-6">
       <BackLink href="/office" />
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-bold text-ink">End of month</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">End of month</h1>
         <div className="flex items-center gap-2">
-          <button onClick={prevMonth} className="rounded-md border border-line px-2.5 py-1.5 text-sm hover:bg-ink/5">◀</button>
+          <button onClick={prevMonth} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">◀</button>
           <span className="min-w-[120px] text-center text-sm font-semibold">{MONTHS[month - 1]} {year}</span>
-          <button onClick={nextMonth} className="rounded-md border border-line px-2.5 py-1.5 text-sm hover:bg-ink/5">▶</button>
+          <button onClick={nextMonth} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">▶</button>
           <button onClick={load} disabled={loading} title="Reload the latest — tap after fixing attendance"
-            className="ml-1 rounded-md border border-line px-2.5 py-1.5 text-sm hover:bg-ink/5 disabled:opacity-50">{loading ? '…' : '↻'}</button>
+            className="ml-1 rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">{loading ? '…' : '↻'}</button>
         </div>
       </div>
 
@@ -198,7 +198,7 @@ export default function MonthEndPage() {
                       <div className="mt-2">
                         <div className="mb-1.5 flex justify-end">
                           <button onClick={load} disabled={loading} title="Reload the latest after fixing attendance"
-                            className="rounded-md border border-amber-300 bg-card px-2 py-0.5 text-xs font-medium text-warn hover:bg-warn-soft disabled:opacity-50">{loading ? '…' : '↻ Refresh'}</button>
+                            className="rounded-lg border border-amber-300 bg-card px-2 py-0.5 text-xs font-medium text-warn hover:bg-warn-soft disabled:opacity-50">{loading ? '…' : '↻ Refresh'}</button>
                         </div>
                         {d.absents.count > 0 ? (
                           <div className="rounded-lg border border-amber-200 bg-warn-soft p-3">
@@ -224,7 +224,7 @@ export default function MonthEndPage() {
 
                     {/* 28-31 — payroll (salary detail is gated) */}
                     {s.key === 'payroll' && canPay && (
-                      <div className="mt-2 rounded-card bg-card shadow-card p-3">
+                      <div className="mt-2 rounded-card bg-card shadow-card p-4">
                         <div className="mb-2 flex items-center justify-between">
                           <span className="text-sm font-semibold text-ink-2">Pay salaries</span>
                           {salaries.length > 0 && <span className="text-xs text-ink-3">{paidSalary}/{salaries.length} paid</span>}
@@ -276,15 +276,15 @@ export default function MonthEndPage() {
                   <span className={`min-w-0 flex-1 truncate ${b.paid ? 'text-ink-3 line-through' : 'text-ink-2'}`}>{b.label}</span>
                   {b.paid && b.paid_date && <span className="shrink-0 text-[11px] font-medium text-good">paid {fmtD(b.paid_date)}</span>}
                   <input type="number" step="0.01" defaultValue={Number(b.amount)} onBlur={(e) => { const v = Number(e.target.value) || 0; if (v !== Number(b.amount)) billSetAmount(b.id, v); }}
-                    className="w-24 rounded border border-line px-1.5 py-0.5 text-right text-sm" />
+                    className="w-24 rounded-lg border border-line px-1.5 py-0.5 text-right text-sm" />
                   <button onClick={() => billDelete(b.id)} className="shrink-0 text-xs text-bad/70 hover:text-bad">✕</button>
                 </div>
               ))
             )}
             <div className="mt-2 flex items-center gap-2">
-              <input value={newBillLabel} onChange={(e) => setNewBillLabel(e.target.value)} placeholder="e.g. SEWA" className="min-w-0 flex-1 rounded border border-line px-2 py-1 text-sm" />
-              <input value={newBillAmount} onChange={(e) => setNewBillAmount(e.target.value)} type="number" step="0.01" placeholder="0.00" className="w-24 rounded border border-line px-2 py-1 text-right text-sm" />
-              <button onClick={billAdd} className="shrink-0 rounded bg-btn px-2.5 py-1 text-sm font-medium text-btn-ink hover:opacity-90">Add</button>
+              <input value={newBillLabel} onChange={(e) => setNewBillLabel(e.target.value)} placeholder="e.g. SEWA" className="min-w-0 flex-1 rounded-lg border border-line px-2 py-1 text-sm" />
+              <input value={newBillAmount} onChange={(e) => setNewBillAmount(e.target.value)} type="number" step="0.01" placeholder="0.00" className="w-24 rounded-lg border border-line px-2 py-1 text-right text-sm" />
+              <button onClick={billAdd} className="shrink-0 rounded-lg bg-btn px-2.5 py-1 text-sm font-semibold text-btn-ink hover:opacity-90">Add</button>
             </div>
             <div className="mt-2 flex justify-between border-t border-line pt-2 text-sm font-semibold"><span>Bills total</span><span>{rm(d.bills.reduce((s, b) => s + Number(b.amount || 0), 0))}</span></div>
           </div>

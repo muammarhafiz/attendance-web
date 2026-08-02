@@ -147,14 +147,14 @@ export default function AddPartPage() {
     setEditPrice(false); setPriceOverride(''); setNewItem(null); setScannedCode('');
   }, [picked, chosen, qty, editPrice, priceOverride, newItem]);
 
-  if (authed === null || (authed && allowed === null)) return <div className="p-6 text-sm text-ink-2">Checking…</div>;
+  if (authed === null || (authed && allowed === null)) return <div className="p-6 text-sm text-ink-3">Checking…</div>;
   if (!authed) return <div className="p-6 text-sm text-ink-2">Please sign in first.</div>;
   if (!allowed) return <div className="p-6 text-sm text-ink-2">This page is for supervisors only.</div>;
 
   const shown = cars.filter((c) => !filter.trim() || carLabel(c).toUpperCase().includes(filter.trim().toUpperCase()));
 
   return (
-    <div className="mx-auto max-w-md px-5 py-6">
+    <div className="mx-auto max-w-md px-4 py-6">
       {scanning && (
         <BarcodeScanner
           onClose={() => setScanning(false)}
@@ -162,7 +162,7 @@ export default function AddPartPage() {
         />
       )}
       <BackLink />
-      <h1 className="mt-2 text-2xl font-bold text-ink">🔩 Part Arrived</h1>
+      <h1 className="mt-2 text-2xl font-semibold tracking-tight text-ink">🔩 Part Arrived</h1>
 
       {/* 1) vehicle */}
       <div className="mt-4">
@@ -173,7 +173,7 @@ export default function AddPartPage() {
           )}
         </div>
         {picked ? (
-          <button onClick={() => setPicked(null)} className="mt-2 flex w-full items-center justify-between rounded-xl border border-accent bg-accent-weak px-3 py-2.5 text-left">
+          <button onClick={() => setPicked(null)} className="mt-2 flex w-full items-center justify-between rounded-lg border border-accent bg-accent-weak px-3 py-2.5 text-left">
             <span className="truncate text-sm font-semibold text-accent">{carLabel(picked)}</span>
             <span className="shrink-0 rounded-lg border border-accent px-2 py-1 text-xs font-medium text-accent">Change vehicle</span>
           </button>
@@ -202,18 +202,18 @@ export default function AddPartPage() {
             </div>
             <input value={newItem.descp} onChange={(e) => setNewItem({ ...newItem, descp: e.target.value })}
               placeholder="Item name (printed on the invoice)" autoComplete="off" autoFocus={!!newItem.barcode}
-              className="w-full rounded-xl border border-line px-4 py-3 text-base" />
+              className="w-full rounded-lg border border-line px-4 py-3 text-base" />
             <div className="flex items-center gap-2">
               <span className="text-sm text-ink-2">Selling price RM</span>
               <input type="number" inputMode="decimal" step="0.01" min="0" value={newItem.price}
                 onChange={(e) => setNewItem({ ...newItem, price: e.target.value })} placeholder="0.00"
-                className="w-32 rounded-lg border border-line px-2 py-1.5 text-base" />
+                className="w-32 rounded-lg border border-line px-2 py-1 text-base" />
             </div>
             <div className="flex items-center gap-2">
               <span className="text-sm text-ink-2">Cost RM</span>
               <input type="number" inputMode="decimal" step="0.01" min="0" value={newItem.cost}
                 onChange={(e) => setNewItem({ ...newItem, cost: e.target.value })} placeholder="optional"
-                className="w-32 rounded-lg border border-line px-2 py-1.5 text-base" />
+                className="w-32 rounded-lg border border-line px-2 py-1 text-base" />
               <span className="text-xs text-ink-3">what you paid — for profit tracking</span>
             </div>
             <div className="flex items-center justify-between">
@@ -224,10 +224,10 @@ export default function AddPartPage() {
         ) : (
           <>
             <input value={q} onChange={(e) => { setScannedCode(''); search(e.target.value); }} placeholder="e.g. MRDB or BRAKE PAD" autoComplete="off"
-              className="mt-1 w-full rounded-xl border border-line px-4 py-3.5 text-lg uppercase" />
+              className="mt-1 w-full rounded-lg border border-line px-4 py-1 text-lg uppercase" />
             {!chosen && (
               <button type="button" onClick={() => setScanning(true)}
-                className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-accent bg-accent-weak px-4 py-3 text-base font-semibold text-accent hover:bg-accent-weak">
+                className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-accent bg-accent-weak px-4 py-3 text-base font-semibold text-accent hover:bg-accent-weak">
                 📷 Scan barcode
               </button>
             )}
@@ -283,15 +283,15 @@ export default function AddPartPage() {
       {/* 3) qty + go */}
       <div className="mt-4 flex items-center gap-3">
         <span className="text-sm font-medium text-ink-2">Quantity:</span>
-        <button onClick={() => setQty((v) => Math.max(1, v - 1))} className="h-11 w-11 rounded-xl border border-line text-xl font-bold text-ink-2">−</button>
+        <button onClick={() => setQty((v) => Math.max(1, v - 1))} className="h-11 w-11 rounded-lg border border-line text-xl font-bold text-ink-2">−</button>
         <span className="w-10 text-center text-xl font-bold">{qty}</span>
-        <button onClick={() => setQty((v) => v + 1)} className="h-11 w-11 rounded-xl border border-line text-xl font-bold text-ink-2">+</button>
+        <button onClick={() => setQty((v) => v + 1)} className="h-11 w-11 rounded-lg border border-line text-xl font-bold text-ink-2">+</button>
       </div>
 
       {errMsg && <div className="mt-3 rounded-lg border border-rose-200 bg-bad-soft px-3 py-2 text-sm text-bad">{errMsg}</div>}
 
       <button onClick={add} disabled={!picked || (!chosen && !newItem)}
-        className="mt-4 w-full rounded-xl bg-accent px-6 py-4 text-xl font-bold text-white hover:opacity-90 disabled:opacity-40">
+        className="mt-4 w-full rounded-lg bg-accent px-3.5 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-40">
         ADD TO INVOICE
       </button>
 

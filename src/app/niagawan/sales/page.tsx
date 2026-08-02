@@ -143,7 +143,7 @@ export default function NiagawanSalesPage() {
   }, [rows]);
 
   if (authed === null || isAdmin === null) {
-    return <div className="text-sm text-ink-2">Checking session…</div>;
+    return <div className="text-sm text-ink-3">Checking session…</div>;
   }
   if (authed === false) {
     return <div className="text-sm text-ink-2">Please sign in to view this page.</div>;
@@ -180,7 +180,7 @@ export default function NiagawanSalesPage() {
           <button
             onClick={syncNow}
             disabled={sync === 'running'}
-            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition ${
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
               sync === 'running'
                 ? 'cursor-not-allowed bg-ink/5 text-ink-3'
                 : 'bg-accent text-white hover:opacity-90'
@@ -214,7 +214,7 @@ export default function NiagawanSalesPage() {
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
         {kpis.map((k) => (
-          <div key={k.label} className="rounded-card bg-card p-3 shadow-card">
+          <div key={k.label} className="rounded-card bg-card p-4 shadow-card">
             <div className="text-xs font-medium text-ink-2">{k.label}</div>
             <div className="mt-1 text-lg font-semibold text-ink">{k.value}</div>
           </div>
@@ -232,13 +232,13 @@ export default function NiagawanSalesPage() {
       )}
 
       {loading ? (
-        <div className="text-sm text-ink-2">Loading…</div>
+        <div className="text-sm text-ink-3">Loading…</div>
       ) : rows.length === 0 ? (
         <div className="text-sm text-ink-2">
           No sales data yet. It will appear here after the nightly sync (or a manual run).
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-line">
+        <div className="overflow-x-auto rounded-card bg-card shadow-card">
           <table className="min-w-full divide-y divide-line text-sm">
             <thead className="bg-ink/[0.03]">
               <tr className="text-left">

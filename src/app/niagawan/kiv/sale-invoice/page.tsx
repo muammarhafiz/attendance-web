@@ -184,7 +184,7 @@ export default function KivSaleInvoicePage() {
   );
   const shownOwed = useMemo(() => shownPartials.reduce((s, p) => s + (Number(p.balance) || 0), 0), [shownPartials]);
 
-  if (authed === null || isAdmin === null) return <div className="text-sm text-ink-2">Checking…</div>;
+  if (authed === null || isAdmin === null) return <div className="text-sm text-ink-3">Checking…</div>;
   if (!authed) return <div className="text-sm text-ink-2">Please sign in.</div>;
   if (!isAdmin) return <div className="text-sm text-ink-2">You don&apos;t have access to this page.</div>;
 
@@ -201,22 +201,22 @@ export default function KivSaleInvoicePage() {
             <label className="text-[11px] text-ink-2">
               Invoices dated
               <input type="date" value={fromDate} max={todayISO} onChange={(e) => setFromDate(e.target.value)}
-                className="mt-0.5 block rounded-md border border-line px-2 py-1 text-xs" />
+                className="mt-0.5 block rounded-lg border border-line px-2 py-1 text-xs" />
             </label>
             <span className="pb-1.5 text-ink-3">→</span>
             <label className="text-[11px] text-ink-2">
               Move to
               <input type="date" value={toDate} max={todayISO} onChange={(e) => setToDate(e.target.value)}
-                className="mt-0.5 block rounded-md border border-line px-2 py-1 text-xs" />
+                className="mt-0.5 block rounded-lg border border-line px-2 py-1 text-xs" />
             </label>
             <button
               onClick={moveNow}
               disabled={run === 'running'}
-              className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
             >
               {run === 'running' ? 'Moving…' : 'Move unpaid invoices'}
             </button>
-            <button onClick={load} disabled={loading} className="rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50">{loading ? '…' : 'Refresh'}</button>
+            <button onClick={load} disabled={loading} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">{loading ? '…' : 'Refresh'}</button>
           </div>
         </div>
 
@@ -274,14 +274,14 @@ export default function KivSaleInvoicePage() {
             <label className="text-[11px] text-ink-2">
               Year
               <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)}
-                className="mt-0.5 block rounded-md border border-line px-2 py-1 text-xs">
+                className="mt-0.5 block rounded-lg border border-line px-2 py-1 text-xs">
                 {partialYears.map((y) => <option key={y} value={y}>{y}</option>)}
               </select>
             </label>
             <button
               onClick={scanNow}
               disabled={scan === 'running'}
-              className="rounded-md border border-line px-2.5 py-1 text-xs font-medium text-ink-2 hover:bg-ink/5 disabled:opacity-50"
+              className="rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5 disabled:opacity-50"
             >
               {scan === 'running' ? 'Scanning…' : '↻ Scan now'}
             </button>
