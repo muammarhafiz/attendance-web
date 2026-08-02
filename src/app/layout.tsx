@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import './globals.css';
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
+import NextTopLoader from 'nextjs-toploader';
 import NavBar from '@/components/NavBar';
 import Container from '@/components/Container';
 import RouteKeyed from '@/components/RouteKeyed';
@@ -32,6 +33,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Restore the theme + sidebar-collapsed preferences before paint (avoids a flash on reload).
             No stored theme → no data-theme attr → the prefers-color-scheme media query follows the OS. */}
         <script dangerouslySetInnerHTML={{ __html: "try{var t=localStorage.getItem('theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);if(localStorage.getItem('nav_collapsed')==='1')document.documentElement.setAttribute('data-nav-collapsed','1')}catch(e){}" }} />
+        {/* Top progress bar + corner spinner on every navigation (fires on click, finishes when the page is ready). */}
+        <NextTopLoader color="var(--app-accent)" height={3} showSpinner shadow="0 0 10px var(--app-accent), 0 0 5px var(--app-accent)" zIndex={1600} />
         <PwaRegister />
         <NavBar />
         {/* Clear the fixed sidebar (desktop) and the mobile top bar; app-main lets the collapse CSS drop the padding. */}
