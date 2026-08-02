@@ -1,8 +1,16 @@
 import { NextResponse } from 'next/server';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { createClientServer } from '@/lib/supabaseServer';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
+
+// Service-role client — used only for the token-authed path (the email robot has no user session).
+const admin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { persistSession: false } }
+);
 
 type Row = Record<string, unknown>;
 
@@ -31,14 +39,24 @@ const str = (v: unknown): string | null => {
 
 export async function POST(req: Request) {
   try {
-    // Auth: the office clerk / managers / owner (can_access('month_end')). The RPC re-checks too.
-    const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
-    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    const sb = createClientServer(req);
-    const { data: auth, error: aErr } = await sb.auth.getUser(token);
-    if (aErr || !auth?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    const { data: ok } = await sb.rpc('can_access', { p_feature: 'month_end' });
-    if (ok !== true) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    // Two ways in: the email robot (shared x-ingest-token — the same secret the purchase-invoice
+    // robot uses), or a logged-in office user (Bearer JWT + can_access('month_end')).
+    let client: SupabaseClient;
+    const ingestToken = (req.headers.get('x-ingest-token') || '').trim();
+    if (ingestToken) {
+      const { data: secret } = await admin.from('app_secrets').select('value').eq('name', 'niagawan_ingest_token').single();
+      if (!secret?.value || ingestToken !== secret.value) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      client = admin;
+    } else {
+      const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
+      if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const sb = createClientServer(req);
+      const { data: auth, error: aErr } = await sb.auth.getUser(token);
+      if (aErr || !auth?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      const { data: ok } = await sb.rpc('can_access', { p_feature: 'month_end' });
+      if (ok !== true) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      client = sb as unknown as SupabaseClient;
+    }
 
     const form = await req.formData();
     const file = form.get('file');
@@ -92,7 +110,7 @@ export async function POST(req: Request) {
 
     if (norm.length === 0) return NextResponse.json({ error: 'No transaction rows found in the file.' }, { status: 400 });
 
-    const { data, error } = await sb.rpc('bnpl_ingest_settlement', { p_provider: provider, p_rows: norm });
+    const { data, error } = await client.rpc('bnpl_ingest_settlement', { p_provider: provider, p_rows: norm });
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
     return NextResponse.json({ ok: true, file: file.name, result: data });
