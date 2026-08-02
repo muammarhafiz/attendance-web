@@ -58,10 +58,10 @@ export function useClerkHome() {
   return { allowed, d, loading, reload };
 }
 
-export function OfficeShell({ title, back, onRefresh, children }: { title: string; back?: boolean; onRefresh?: () => void; children: React.ReactNode }) {
+export function OfficeShell({ title, back, backHref = '/office', backLabel = '← Office', onRefresh, children }: { title: string; back?: boolean; backHref?: string; backLabel?: string; onRefresh?: () => void; children: React.ReactNode }) {
   return (
     <div className="mx-auto max-w-2xl px-4 py-6">
-      {back && <Link href="/office" className="text-sm text-accent hover:underline">← Office</Link>}
+      {back && <Link href={backHref} className="text-sm text-accent hover:underline">{backLabel}</Link>}
       <div className={`${back ? 'mt-2 ' : ''}mb-4 flex items-baseline justify-between`}>
         <h1 className="text-2xl font-bold text-ink">{title}</h1>
         {onRefresh && <button onClick={onRefresh} className="text-xs text-ink-3 hover:text-ink-2">refresh</button>}
