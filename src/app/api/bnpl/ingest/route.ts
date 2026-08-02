@@ -5,13 +5,6 @@ import { createClientServer } from '@/lib/supabaseServer';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-// Service-role client — used only for the token-authed path (the email robot has no user session).
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { persistSession: false } }
-);
-
 type Row = Record<string, unknown>;
 
 // ATOME prints dates DD/MM/YYYY (e.g. "31/07/2026 14:44:55"). Turn that into an ISO instant in
@@ -32,10 +25,23 @@ function parseNum(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+// "2" -> 2; strips non-digits; 0 when blank.
+function parseInt0(v: unknown): number {
+  const n = parseInt(String(v ?? '').replace(/[^\d]/g, ''), 10);
+  return Number.isFinite(n) ? n : 0;
+}
+
 const str = (v: unknown): string | null => {
   const s = String(v ?? '').trim();
   return s === '' ? null : s;
 };
+
+// Service-role client — used only for the token-authed path (the email robot has no user session).
+const admin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { persistSession: false } }
+);
 
 export async function POST(req: Request) {
   try {
@@ -78,48 +84,60 @@ export async function POST(req: Request) {
     const headers = new Set(headerRow.map((h) => String(h ?? '').trim()));
     const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false }) as Row[];
 
-    // TEMP diagnostic: capture what actually arrived so we can learn the emailed report's format.
-    try { await admin.from('bnpl_debug').insert({ name: file.name, size: buf.length, headers: headerRow, row0: rows[0] ?? null }); } catch { /* ignore */ }
+    const hasTxnId = headers.has('Transaction ID');
+    const hasPayout = headers.has('Payout ID') && headers.has('Payout Amount');
 
-    // This importer wants the SETTLEMENT / payout report (it carries Payout ID + Payout Amount).
-    // The transaction report has the itemised fees but no payout linkage, so we can't reconcile with it.
-    if (!headers.has('Payout ID') || !headers.has('Payout Amount')) {
-      const looksTxn = headers.has('MDR Fee') || headers.has('Transaction Status');
-      return NextResponse.json(
-        {
-          error: looksTxn
-            ? 'That looks like the ATOME transaction report. Please upload the settlement / payout report — the one with "Payout ID" and "Payout Amount" columns.'
-            : 'This doesn’t look like an ATOME settlement report — the "Payout ID" / "Payout Amount" columns are missing.',
-        },
-        { status: 400 }
-      );
+    // The ATOME email attaches a payout SUMMARY (one row per deposit): Payout ID + Payout Amount +
+    // a settled-count, but no per-transaction rows. This is what the bank reconciliation needs.
+    if (hasPayout && !hasTxnId) {
+      const norm = rows
+        .map((r) => ({
+          payout_id: str(r['Payout ID']),
+          payout_date: parseDMY(r['Payout Date']),
+          payout_amount: parseNum(r['Payout Amount']),
+          txn_count: parseInt0(r['All Settled Transactions Count']),
+          status: str(r['Payout Status']),
+        }))
+        .filter((r) => r.payout_id);
+      if (norm.length === 0) return NextResponse.json({ error: 'No payout rows found in the file.' }, { status: 400 });
+      const { data, error } = await client.rpc('bnpl_ingest_payouts', { p_provider: provider, p_rows: norm });
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ ok: true, file: file.name, kind: 'payouts', result: data });
     }
 
-    const norm = rows
-      .map((r) => ({
-        transaction_id: str(r['Transaction ID']),
-        order_id: str(r['Atome Order ID']),
-        payout_id: str(r['Payout ID']),
-        payout_date: parseDMY(r['Payout Date']),
-        transaction_type: str(r['Transaction Type']),
-        transaction_date: parseDMY(r['Transaction Date']),
-        gross_amount: parseNum(r['Transaction Amount']),
-        net_amount: parseNum(r['Amount Receivable']),
-        payout_amount: parseNum(r['Payout Amount']),
-        currency: str(r['Payout Currency']),
-        outlet_id: str(r['Outlet ID']),
-      }))
-      .filter((r) => r.transaction_id);
-
-    if (norm.length === 0) {
-      const dbg = `size=${buf.length} sig=${buf.slice(0, 4).toString('hex')} sheets=${wb.SheetNames.length} ref=${ws['!ref'] || '?'} rows=${rows.length} k=${rows[0] ? Object.keys(rows[0]).length : 0}`;
-      return NextResponse.json({ error: 'No rows. ' + dbg }, { status: 400 });
+    // The detailed per-transaction settlement file (Payout ID + Transaction ID) — exact fee per sale.
+    if (hasPayout && hasTxnId) {
+      const norm = rows
+        .map((r) => ({
+          transaction_id: str(r['Transaction ID']),
+          order_id: str(r['Atome Order ID']),
+          payout_id: str(r['Payout ID']),
+          payout_date: parseDMY(r['Payout Date']),
+          transaction_type: str(r['Transaction Type']),
+          transaction_date: parseDMY(r['Transaction Date']),
+          gross_amount: parseNum(r['Transaction Amount']),
+          net_amount: parseNum(r['Amount Receivable']),
+          payout_amount: parseNum(r['Payout Amount']),
+          currency: str(r['Payout Currency']),
+          outlet_id: str(r['Outlet ID']),
+        }))
+        .filter((r) => r.transaction_id);
+      if (norm.length === 0) return NextResponse.json({ error: 'No transaction rows found in the file.' }, { status: 400 });
+      const { data, error } = await client.rpc('bnpl_ingest_settlement', { p_provider: provider, p_rows: norm });
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ ok: true, file: file.name, kind: 'settlement', result: data });
     }
 
-    const { data, error } = await client.rpc('bnpl_ingest_settlement', { p_provider: provider, p_rows: norm });
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-    return NextResponse.json({ ok: true, file: file.name, result: data });
+    // Anything else (e.g. the transaction report, which has fees but no Payout ID) can't be reconciled.
+    const looksTxn = headers.has('MDR Fee') || headers.has('Transaction Status');
+    return NextResponse.json(
+      {
+        error: looksTxn
+          ? 'That looks like the ATOME transaction report. Please use the settlement / payout report (it has a "Payout ID" column).'
+          : 'This doesn’t look like an ATOME settlement/payout report — no "Payout ID" column found.',
+      },
+      { status: 400 }
+    );
   } catch (e: unknown) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
