@@ -16,6 +16,7 @@
     "dayjs": "^1.11.10",
     "leaflet": "^1.9.4",
     "next": "15.5.7",
+    "nextjs-toploader": "^3.9.17",
     "pdfkit": "^0.17.2",
     "react": "19.1.0",
     "react-dom": "19.1.0",
