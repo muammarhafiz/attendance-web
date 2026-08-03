@@ -111,8 +111,9 @@ body {
 /* Native <select> dropdowns. Without an explicit background, Chrome renders a
    bordered <select> (and its native option popup) on a light surface even under
    color-scheme: dark, so the inherited near-white --app-ink text became unreadable
-   in dark mode. Pin both the control and its options to the themed tokens. An
-   explicit bg-*/text-* utility on a given <select> still wins (higher specificity). */
+   in dark mode. Pin the control and its options to the themed tokens so the popup
+   reads correctly in both themes. A background or text utility on a specific
+   <select> still overrides this (higher specificity). */
 select,
 option {
   background-color: var(--app-card);
