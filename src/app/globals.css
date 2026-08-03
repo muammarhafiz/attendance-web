@@ -108,6 +108,17 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* Native <select> dropdowns. Without an explicit background, Chrome renders a
+   bordered <select> (and its native option popup) on a light surface even under
+   color-scheme: dark, so the inherited near-white --app-ink text became unreadable
+   in dark mode. Pin both the control and its options to the themed tokens. An
+   explicit bg-*/text-* utility on a given <select> still wins (higher specificity). */
+select,
+option {
+  background-color: var(--app-card);
+  color: var(--app-ink);
+}
+
 /* Printing: drop site chrome so only the page content prints.
    Anything tagged `.no-print` (the nav bar, section headers, tabs, on-screen
    controls) is hidden; Tailwind's `print:hidden` works too. */
