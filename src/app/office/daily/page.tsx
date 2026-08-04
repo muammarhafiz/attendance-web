@@ -24,7 +24,8 @@ type DayCash = {
 };
 
 type BnplOutItem = { provider: string; display_name: string; invoice_no: string; vehicle: string | null; day: string; gross: number | string; est_net: number | string };
-type BnplOut = { providers: { slug: string; display_name: string }[]; total: { count: number; gross: number | string; est_net: number | string }; items: BnplOutItem[] };
+type BnplPayout = { provider: string; display_name: string; payout_id: string; payout_date: string | null; payout_total: number | string; txn_count: number; status: string | null };
+type BnplOut = { providers: { slug: string; display_name: string }[]; total: { count: number; gross: number | string; est_net: number | string }; items: BnplOutItem[]; payouts: BnplPayout[] };
 
 const num = (x: unknown) => Number(x || 0);
 const klYesterday = () => new Date(Date.now() + 8 * 3600e3 - 86400e3).toISOString().slice(0, 10);
@@ -63,6 +64,13 @@ export default function DailyPage() {
     setBnpl((data ?? null) as BnplOut);
   }, []);
   useEffect(() => { if (allowed) loadBnpl(); }, [allowed, loadBnpl]);
+
+  // Tick a BNPL payout as received in the bank — same RPC the BNPL page uses, so both stay in sync.
+  const confirmPayout = useCallback(async (provider: string, payoutId: string) => {
+    setBnpl((prev) => (prev ? { ...prev, payouts: (prev.payouts ?? []).filter((p) => !(p.provider === provider && p.payout_id === payoutId)) } : prev));
+    await supabase.rpc('bnpl_confirm_payout', { p_provider: provider, p_payout_id: payoutId, p_confirmed: true, p_note: null });
+    loadBnpl();
+  }, [loadBnpl]);
 
   const bnplSlugs = new Set((bnpl?.providers ?? []).map((p) => p.slug));
 
@@ -230,7 +238,7 @@ export default function DailyPage() {
             );
           })}
 
-          {bnpl && <BnplOutstandingCard bnpl={bnpl} />}
+          {bnpl && <BnplOutstandingCard bnpl={bnpl} onConfirm={confirmPayout} />}
           {d && <UnpaidCard unpaid={d.unpaid} />}
           {d && <ZeroCogsCard zero_cogs={d.zero_cogs} lines={d.zero_cogs_lines} day={day} onRecheck={load} />}
         </div>
@@ -239,10 +247,12 @@ export default function DailyPage() {
   );
 }
 
-// Outstanding BNPL sales (ATOME etc.) — money owed to the shop that hasn't been paid out yet. Not
-// day-scoped: it carries forward until the payout lands and clears it (confirmed on the BNPL page).
-function BnplOutstandingCard({ bnpl }: { bnpl: BnplOut }) {
+// Outstanding BNPL (ATOME etc.): the sales still owed to the shop, PLUS the payouts that have landed
+// and need ticking against the bank. Not day-scoped — carries forward until settled. Ticking a payout
+// here calls the same RPC as the BNPL page, so a tick on either place syncs to the other.
+function BnplOutstandingCard({ bnpl, onConfirm }: { bnpl: BnplOut; onConfirm: (provider: string, payoutId: string) => void }) {
   const items = bnpl.items ?? [];
+  const payouts = bnpl.payouts ?? [];
   const groups: { name: string; items: BnplOutItem[] }[] = [];
   for (const it of items) {
     const name = it.display_name || it.provider;
@@ -257,11 +267,31 @@ function BnplOutstandingCard({ bnpl }: { bnpl: BnplOut }) {
         <h2 className="text-sm font-semibold text-ink-2">BNPL — awaiting payout</h2>
         <Link href="/office/bnpl" className="ml-auto text-xs font-medium text-accent hover:underline">Open →</Link>
       </div>
-      {items.length === 0 ? (
-        <div className="text-sm text-good">All BNPL sales settled ✓</div>
-      ) : (
+
+      {payouts.length > 0 && (
+        <div className="mb-3">
+          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-warn">Payouts to check against the bank</div>
+          <div className="divide-y divide-line rounded-lg border border-line">
+            {payouts.map((p) => (
+              <div key={p.provider + p.payout_id} className="flex items-center gap-2 px-2 py-1.5 text-xs">
+                <button onClick={() => onConfirm(p.provider, p.payout_id)} aria-label="Mark received in bank"
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 border-line text-[10px] font-bold text-transparent transition hover:border-good">✓</button>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-ink-2"><span className="font-medium">{p.display_name}</span> · {p.payout_date ? fmtDay(String(p.payout_date).slice(0, 10)) : '—'}</div>
+                  <div className="mt-0.5 text-[10px] text-ink-3">{p.txn_count} settled{p.status ? ` · ${p.status}` : ''} · tick when it&rsquo;s in the bank</div>
+                </div>
+                <div className="shrink-0 font-semibold text-ink">{rm(p.payout_total)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {items.length === 0 && payouts.length === 0 ? (
+        <div className="text-sm text-good">All BNPL settled ✓</div>
+      ) : items.length > 0 ? (
         <>
-          <p className="mb-2 text-[11px] text-ink-3">Sales paid via a BNPL service that haven&rsquo;t been paid out yet. They carry forward until the payout lands — confirm each deposit on the BNPL page.</p>
+          <p className="mb-2 text-[11px] text-ink-3">Sales paid via a BNPL service that haven&rsquo;t been paid out yet. They carry forward until the payout lands.</p>
           <div className="space-y-2">
             {groups.map((g) => (
               <div key={g.name}>
@@ -292,7 +322,7 @@ function BnplOutstandingCard({ bnpl }: { bnpl: BnplOut }) {
             <span className="font-semibold text-warn">{rm(bnpl.total.est_net)} · {bnpl.total.count} sale{bnpl.total.count === 1 ? '' : 's'}</span>
           </div>
         </>
-      )}
+      ) : null}
     </div>
   );
 }
