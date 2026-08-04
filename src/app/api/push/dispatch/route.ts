@@ -20,6 +20,7 @@ const LABEL: Record<string, string> = {
   stuckcar: 'Cars stuck in shop',
   debt: 'Newly overdue bills',
   lowstock: 'Items to restock',
+  bnpl_payout: 'New BNPL payout',
 };
 
 type FeedItem = { type: string; id: string; who: string; detail: string; when: string; href: string };
