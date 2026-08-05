@@ -149,6 +149,31 @@ export default function NiagawanCogsPage() {
     if (!day && days.length) setDay(days[0]);
   }, [days, day]);
 
+  // days[] is newest-first. Arrows step across days that HAVE parts to chase, so
+  // you never land on an empty day (older = higher index, newer = lower index).
+  const dayIdx = days.indexOf(day);
+  const goOlder = useCallback(() => {
+    const i = days.indexOf(day);
+    if (i >= 0 && i < days.length - 1) setDay(days[i + 1]);
+  }, [days, day]);
+  const goNewer = useCallback(() => {
+    const i = days.indexOf(day);
+    if (i > 0) setDay(days[i - 1]);
+  }, [days, day]);
+  // When a date is picked from the calendar, snap to the nearest day with data.
+  const pickNearestDay = useCallback((target: string) => {
+    if (!days.length || !target) return;
+    if (days.includes(target)) { setDay(target); return; }
+    const t = new Date(target).getTime();
+    let best = days[0];
+    let bestDiff = Infinity;
+    for (const d of days) {
+      const diff = Math.abs(new Date(d).getTime() - t);
+      if (diff < bestDiff) { bestDiff = diff; best = d; }
+    }
+    setDay(best);
+  }, [days]);
+
   const dayRows = useMemo(() => zeros.filter((z) => z.audit_date === day), [zeros, day]);
   const kept = useMemo(() => dayRows.filter((r) => !isIgnored(r, rules)), [dayRows, rules]);
   const hidden = useMemo(() => dayRows.filter((r) => isIgnored(r, rules)), [dayRows, rules]);
@@ -272,17 +297,32 @@ export default function NiagawanCogsPage() {
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold text-ink-2">Parts to chase</h2>
           {days.length > 0 && (
-            <select
-              value={day}
-              onChange={(e) => setDay(e.target.value)}
-              className="rounded-lg border border-line px-2 py-1 text-sm"
-            >
-              {days.map((d) => (
-                <option key={d} value={d}>
-                  {fmtDay(d)}
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={goOlder}
+                disabled={dayIdx >= days.length - 1}
+                aria-label="Previous day with parts"
+                className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-40"
+              >
+                ◀
+              </button>
+              <input
+                type="date"
+                value={day}
+                min={days[days.length - 1]}
+                max={days[0]}
+                onChange={(e) => pickNearestDay(e.target.value)}
+                className="rounded-lg border border-line px-2 py-1 text-sm"
+              />
+              <button
+                onClick={goNewer}
+                disabled={dayIdx <= 0}
+                aria-label="Next day with parts"
+                className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-40"
+              >
+                ▶
+              </button>
+            </div>
           )}
           <button
             onClick={() => setShowBackfill((s) => !s)}
