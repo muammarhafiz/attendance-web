@@ -23,6 +23,7 @@ const LABEL: Record<string, string> = {
   bnpl_payout: 'New BNPL payout',
   probation_review: 'Probation review due',
   job_done: 'Job finished',
+  po_created: 'PO created',
 };
 
 type FeedItem = { type: string; id: string; who: string; detail: string; when: string; href: string };

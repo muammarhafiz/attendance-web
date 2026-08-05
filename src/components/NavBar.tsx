@@ -12,14 +12,14 @@ type NavChild = { href: string; label: string; match?: string; badge?: number };
 type NavItem = { href?: string; label: string; match?: string; badge?: number; icon: IconName; children?: NavChild[] };
 type NavGroup = { label: string; items: NavItem[] };
 type NotifItem = { type: string; id: string; who: string; detail: string; when: string; href: string };
-const NOTIF_ICON: Record<string, string> = { offday: '🌴', halfday: '🕧', advance: '💵', mc: '📄', po: '📦', pinv: '📥', pinv_created: '✅', not_checkin: '⏰', stuckcar: '🚗', debt: '🧾', lowstock: '📉', bnpl_payout: '💳', probation_review: '🎓', job_done: '⚙️',
+const NOTIF_ICON: Record<string, string> = { offday: '🌴', halfday: '🕧', advance: '💵', mc: '📄', po: '📦', pinv: '📥', pinv_created: '✅', not_checkin: '⏰', stuckcar: '🚗', debt: '🧾', lowstock: '📉', bnpl_payout: '💳', probation_review: '🎓', job_done: '⚙️', po_created: '📦',
   // staff-facing outcomes (their own request was decided)
   offday_result: '🌴', halfday_result: '🕧', mc_result: '📄', advance_result: '💵',
   // holiday reminders (owner/office/manager)
   holiday_decide: '🗓️', holiday_load: '📅',
   // staff upload reminders
   mc_cert: '📄', doc_needed: '📎' };
-const NOTIF_LABEL: Record<string, string> = { offday: 'off-day request', halfday: 'half-day request', advance: 'advance request', mc: 'MC', po: 'purchase order', pinv: 'purchase invoice', pinv_created: 'created in Niagawan ✓', not_checkin: 'not checked in', stuckcar: 'in shop > 3 days', debt: 'newly overdue', lowstock: 'to restock', bnpl_payout: 'new payout', probation_review: 'trial review', job_done: 'finished',
+const NOTIF_LABEL: Record<string, string> = { offday: 'off-day request', halfday: 'half-day request', advance: 'advance request', mc: 'MC', po: 'purchase order', pinv: 'purchase invoice', pinv_created: 'created in Niagawan ✓', not_checkin: 'not checked in', stuckcar: 'in shop > 3 days', debt: 'newly overdue', lowstock: 'to restock', bnpl_payout: 'new payout', probation_review: 'trial review', job_done: 'finished', po_created: 'purchase order',
   offday_result: 'off-day request', halfday_result: 'half-day request', mc_result: 'MC', advance_result: 'advance',
   holiday_decide: 'public holiday', holiday_load: 'to load',
   mc_cert: 'to upload', doc_needed: 'to upload' };
