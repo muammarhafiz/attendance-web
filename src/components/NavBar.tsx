@@ -263,10 +263,7 @@ export default function NavBar() {
           { href: '/niagawan/inventory-v4', match: '/niagawan/inventory', label: 'Inventory', badge: counts.po },
           { href: '/niagawan/purchase', match: '/niagawan/purchase', label: 'Purchase Invoice', badge: counts.pinv },
           { href: '/niagawan/kiv', label: 'KIV Invoices' },
-          { href: '/niagawan/pnl', label: 'P&L' },
         ]
-      : access.pnl
-      ? [{ href: '/niagawan/pnl', label: 'P&L' }]
       : [];
     const groups: NavGroup[] = [
       { label: 'Overview', items: [
@@ -278,6 +275,11 @@ export default function NavBar() {
       ] },
       { label: 'Finance', items: [
         ...(access.owner ? [{ label: 'Bank', href: '/bank-recon', icon: 'bank' } as NavItem] : []),
+      ] },
+      { label: 'Reports', items: [
+        // P&L moved here from Niagawan (page/URL unchanged); Staff Sales is the new per-mechanic report.
+        ...(access.pnl ? [{ label: 'P&L', href: '/niagawan/pnl', icon: 'bars' } as NavItem] : []),
+        ...(access.owner ? [{ label: 'Staff Sales', href: '/niagawan/staff-sales', icon: 'sales' } as NavItem] : []),
       ] },
       { label: 'People', items: [
         // Owners' Check-in points at /checkin so it isn't bounced to the dashboard like "/".
