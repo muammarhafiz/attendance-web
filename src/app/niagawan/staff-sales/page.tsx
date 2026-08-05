@@ -1,7 +1,7 @@
 // src/app/niagawan/staff-sales/page.tsx
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 type Row = {
@@ -11,6 +11,13 @@ type Row = {
   sales: number | string;
   avg_invoice: number | string;
   is_unattributed: boolean;
+};
+
+type UnattRow = {
+  niagawan_name: string;
+  invoices: number;
+  sales: number | string;
+  inv_numbers: string[];
 };
 
 const rm = (x: number) =>
@@ -36,6 +43,9 @@ export default function StaffSalesPage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
+  const [unattOpen, setUnattOpen] = useState(false);
+  const [unatt, setUnatt] = useState<UnattRow[]>([]);
+  const [unattLoading, setUnattLoading] = useState(false);
 
   const todayISO = klTodayISO();
   const curY = Number(todayISO.slice(0, 4));
@@ -78,6 +88,23 @@ export default function StaffSalesPage() {
   useEffect(() => {
     if (isOwner) load();
   }, [isOwner, load]);
+
+  // Reset the unattributed drill-down whenever the period changes.
+  useEffect(() => {
+    setUnattOpen(false);
+    setUnatt([]);
+  }, [from, to]);
+
+  const toggleUnatt = useCallback(async () => {
+    const next = !unattOpen;
+    setUnattOpen(next);
+    if (next && unatt.length === 0) {
+      setUnattLoading(true);
+      const { data } = await supabase.rpc('staff_sales_unattributed', { p_from: from, p_to: to });
+      setUnatt((data ?? []) as UnattRow[]);
+      setUnattLoading(false);
+    }
+  }, [unattOpen, unatt.length, from, to]);
 
   const totals = useMemo(() => {
     let inv = 0;
@@ -217,27 +244,64 @@ export default function StaffSalesPage() {
             {!loading && rows.map((r) => {
               const sales = Number(r.sales) || 0;
               const pct = maxSales > 0 ? Math.max(2, (sales / maxSales) * 100) : 0;
-              const rk = r.is_unattributed ? null : ++rank;
+              const isU = r.is_unattributed;
+              const rk = isU ? null : ++rank;
               return (
-                <tr
-                  key={r.staff_name}
-                  className={`border-b border-line/60 ${r.is_unattributed ? 'bg-warn-soft' : ''}`}
-                >
-                  <td className="px-3 py-2 tabular-nums text-ink-3">{rk ?? '⚠️'}</td>
-                  <td className="px-3 py-2">
-                    <div className={r.is_unattributed ? 'font-medium text-warn' : 'text-ink'}>{r.staff_name}</div>
-                    {r.staff_position && <div className="text-xs text-ink-3">{r.staff_position}</div>}
-                    <div className="mt-1 h-1 w-full max-w-[10rem] overflow-hidden rounded-full bg-ink/5">
-                      <div
-                        className={`h-full rounded-full ${r.is_unattributed ? 'bg-warn' : 'bg-accent'}`}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-ink-2">{r.invoices}</td>
-                  <td className="px-3 py-2 text-right tabular-nums font-medium text-ink">{rm(sales)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-ink-2">{rm(Number(r.avg_invoice) || 0)}</td>
-                </tr>
+                <Fragment key={r.staff_name}>
+                  <tr
+                    onClick={isU ? toggleUnatt : undefined}
+                    className={`border-b border-line/60 ${isU ? 'cursor-pointer bg-warn-soft hover:opacity-90' : ''}`}
+                  >
+                    <td className="px-3 py-2 tabular-nums text-ink-3">{rk ?? '⚠️'}</td>
+                    <td className="px-3 py-2">
+                      <div className={isU ? 'font-medium text-warn' : 'text-ink'}>
+                        {isU && <span className="mr-1">{unattOpen ? '▾' : '▸'}</span>}
+                        {r.staff_name}
+                      </div>
+                      {r.staff_position && <div className="text-xs text-ink-3">{r.staff_position}</div>}
+                      {isU && <div className="text-xs text-ink-3">tap to see the invoices</div>}
+                      <div className="mt-1 h-1 w-full max-w-[10rem] overflow-hidden rounded-full bg-ink/5">
+                        <div
+                          className={`h-full rounded-full ${isU ? 'bg-warn' : 'bg-accent'}`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-ink-2">{r.invoices}</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-medium text-ink">{rm(sales)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-ink-2">{rm(Number(r.avg_invoice) || 0)}</td>
+                  </tr>
+                  {isU && unattOpen && (
+                    <tr>
+                      <td colSpan={5} className="px-3 py-3">
+                        {unattLoading ? (
+                          <div className="text-xs text-ink-3">Loading…</div>
+                        ) : (
+                          <div className="space-y-2">
+                            <p className="text-xs text-ink-3">
+                              Booked under a name that isn&rsquo;t linked to a staff member. Add the name to the sales
+                              map (or fix it at the till) to attribute these.
+                            </p>
+                            {unatt.map((u) => (
+                              <div key={u.niagawan_name} className="rounded-lg border border-line bg-card p-2">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-sm font-medium text-ink">{u.niagawan_name}</span>
+                                  <span className="text-xs text-ink-2">
+                                    {u.invoices} inv · {rm(Number(u.sales) || 0)}
+                                  </span>
+                                </div>
+                                <div className="mt-1 break-words font-mono text-xs text-ink-3">
+                                  {u.inv_numbers.slice(0, 40).join(', ')}
+                                  {u.inv_numbers.length > 40 ? ` … +${u.inv_numbers.length - 40} more` : ''}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               );
             })}
           </tbody>
