@@ -20,6 +20,7 @@ const TYPE_LABEL: Record<string, string> = {
   lowstock: 'Items to restock',
   bnpl_payout: 'New BNPL payout to check',
   probation_review: 'Probation review (3-month)',
+  job_done: 'Background job finished (sync / refresh / backfill)',
 };
 
 function Switch({ on, onChange, disabled }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
