@@ -21,6 +21,7 @@ const LABEL: Record<string, string> = {
   debt: 'Newly overdue bills',
   lowstock: 'Items to restock',
   bnpl_payout: 'New BNPL payout',
+  probation_review: 'Probation review due',
 };
 
 type FeedItem = { type: string; id: string; who: string; detail: string; when: string; href: string };

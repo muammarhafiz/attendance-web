@@ -19,6 +19,7 @@ const TYPE_LABEL: Record<string, string> = {
   debt: 'Newly overdue bills',
   lowstock: 'Items to restock',
   bnpl_payout: 'New BNPL payout to check',
+  probation_review: 'Probation review (3-month)',
 };
 
 function Switch({ on, onChange, disabled }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
