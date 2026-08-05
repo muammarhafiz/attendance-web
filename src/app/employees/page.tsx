@@ -472,6 +472,10 @@ export default function EmployeesPage() {
       setAddMsg('Please enter full name.');
       return;
     }
+    if (!pos) {
+      setAddMsg('Please choose a position.');
+      return;
+    }
 
     setAdding(true);
     try {
