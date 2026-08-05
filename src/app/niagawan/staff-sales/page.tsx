@@ -15,9 +15,9 @@ type Row = {
 
 type UnattRow = {
   niagawan_name: string;
-  invoices: number;
-  sales: number | string;
-  inv_numbers: string[];
+  inv: string;
+  day: string;
+  amount: number | string;
 };
 
 const rm = (x: number) =>
@@ -35,6 +35,11 @@ function monthRange(y: number, m: number) {
   const lastDay = new Date(y, m, 0).getDate(); // m is 1-based; day 0 of next month = last day of this month
   const to = `${y}-${pad(m)}-${pad(lastDay)}`;
   return { from, to };
+}
+const MON = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function fmtD(iso: string) {
+  const [y, m, d] = iso.split('-');
+  return d && m && y ? `${Number(d)} ${MON[Number(m)] ?? m}` : iso;
 }
 
 export default function StaffSalesPage() {
@@ -120,6 +125,18 @@ export default function StaffSalesPage() {
     () => rows.reduce((mx, r) => Math.max(mx, Number(r.sales) || 0), 0),
     [rows]
   );
+
+  // Group the unattributed invoices by the name they were booked under.
+  const unattGroups = useMemo(() => {
+    const m = new Map<string, { name: string; total: number; items: UnattRow[] }>();
+    for (const r of unatt) {
+      const g = m.get(r.niagawan_name) ?? { name: r.niagawan_name, total: 0, items: [] };
+      g.items.push(r);
+      g.total += Number(r.amount) || 0;
+      m.set(r.niagawan_name, g);
+    }
+    return Array.from(m.values()).sort((a, b) => b.total - a.total);
+  }, [unatt]);
 
   const canNext = ym.y < curY || (ym.y === curY && ym.m < curM);
   const stepMonth = (delta: number) => {
@@ -282,18 +299,21 @@ export default function StaffSalesPage() {
                               Booked under a name that isn&rsquo;t linked to a staff member. Add the name to the sales
                               map (or fix it at the till) to attribute these.
                             </p>
-                            {unatt.map((u) => (
-                              <div key={u.niagawan_name} className="rounded-lg border border-line bg-card p-2">
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="text-sm font-medium text-ink">{u.niagawan_name}</span>
-                                  <span className="text-xs text-ink-2">
-                                    {u.invoices} inv · {rm(Number(u.sales) || 0)}
-                                  </span>
+                            {unattGroups.map((g) => (
+                              <div key={g.name} className="rounded-lg border border-line bg-card p-2">
+                                <div className="mb-1 flex items-center justify-between gap-2">
+                                  <span className="text-sm font-medium text-ink">{g.name}</span>
+                                  <span className="text-xs text-ink-2">{g.items.length} inv · {rm(g.total)}</span>
                                 </div>
-                                <div className="mt-1 break-words font-mono text-xs text-ink-3">
-                                  {u.inv_numbers.slice(0, 40).join(', ')}
-                                  {u.inv_numbers.length > 40 ? ` … +${u.inv_numbers.length - 40} more` : ''}
-                                </div>
+                                <ul className="divide-y divide-line/60">
+                                  {g.items.map((it) => (
+                                    <li key={it.inv} className="flex items-baseline gap-3 py-1 text-xs">
+                                      <span className="font-mono text-ink">{it.inv}</span>
+                                      <span className="ml-auto text-ink-3">{fmtD(it.day)}</span>
+                                      <span className="w-20 text-right tabular-nums text-ink-2">{rm(Number(it.amount) || 0)}</span>
+                                    </li>
+                                  ))}
+                                </ul>
                               </div>
                             ))}
                           </div>
