@@ -11,6 +11,8 @@ type Row = {
   sales: number | string;
   avg_invoice: number | string;
   is_unattributed: boolean;
+  profit: number | string;
+  profit_invoices: number;
 };
 
 type UnattRow = {
@@ -114,12 +116,18 @@ export default function StaffSalesPage() {
   const totals = useMemo(() => {
     let inv = 0;
     let sales = 0;
+    let profit = 0;
+    let profitInv = 0;
     for (const r of rows) {
       inv += Number(r.invoices) || 0;
       sales += Number(r.sales) || 0;
+      profit += Number(r.profit) || 0;
+      profitInv += Number(r.profit_invoices) || 0;
     }
-    return { inv, sales };
+    return { inv, sales, profit, profitInv };
   }, [rows]);
+  const hasProfit = totals.profitInv > 0; // any per-invoice COGS synced yet?
+  const nCols = hasProfit ? 6 : 5;
 
   const maxSales = useMemo(
     () => rows.reduce((mx, r) => Math.max(mx, Number(r.sales) || 0), 0),
@@ -151,7 +159,7 @@ export default function StaffSalesPage() {
 
   const exportCsv = useCallback(() => {
     const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
-    const header = ['Rank', 'Name', 'Position', 'Invoices', 'Sales (RM)', 'Avg per invoice (RM)'];
+    const header = ['Rank', 'Name', 'Position', 'Invoices', 'Sales (RM)', 'Profit (RM)', 'Avg per invoice (RM)'];
     const lines = [header.join(',')];
     let rank = 0;
     for (const r of rows) {
@@ -162,10 +170,11 @@ export default function StaffSalesPage() {
         esc(r.staff_position ?? ''),
         String(r.invoices),
         Number(r.sales).toFixed(2),
+        Number(r.profit_invoices) > 0 ? Number(r.profit).toFixed(2) : '',
         Number(r.avg_invoice).toFixed(2),
       ].join(','));
     }
-    lines.push(['', esc('TOTAL'), '', String(totals.inv), totals.sales.toFixed(2), ''].join(','));
+    lines.push(['', esc('TOTAL'), '', String(totals.inv), totals.sales.toFixed(2), totals.profit.toFixed(2), ''].join(','));
     const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -248,15 +257,16 @@ export default function StaffSalesPage() {
               <th className="px-3 py-2 font-medium">Mechanic</th>
               <th className="px-3 py-2 text-right font-medium">Invoices</th>
               <th className="px-3 py-2 text-right font-medium">Sales</th>
+              {hasProfit && <th className="px-3 py-2 text-right font-medium">Profit</th>}
               <th className="px-3 py-2 text-right font-medium">Avg/inv</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={5} className="px-3 py-6 text-center text-sm text-ink-3">Loading…</td></tr>
+              <tr><td colSpan={nCols} className="px-3 py-6 text-center text-sm text-ink-3">Loading…</td></tr>
             )}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={5} className="px-3 py-6 text-center text-sm text-ink-3">No sales in this period.</td></tr>
+              <tr><td colSpan={nCols} className="px-3 py-6 text-center text-sm text-ink-3">No sales in this period.</td></tr>
             )}
             {!loading && rows.map((r) => {
               const sales = Number(r.sales) || 0;
@@ -286,11 +296,18 @@ export default function StaffSalesPage() {
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-ink-2">{r.invoices}</td>
                     <td className="px-3 py-2 text-right tabular-nums font-medium text-ink">{rm(sales)}</td>
+                    {hasProfit && (
+                      <td className="px-3 py-2 text-right">
+                        {Number(r.profit_invoices) > 0
+                          ? <span className="tabular-nums font-medium text-good">{rm(Number(r.profit) || 0)}</span>
+                          : <span className="text-ink-3">—</span>}
+                      </td>
+                    )}
                     <td className="px-3 py-2 text-right tabular-nums text-ink-2">{rm(Number(r.avg_invoice) || 0)}</td>
                   </tr>
                   {isU && unattOpen && (
                     <tr>
-                      <td colSpan={5} className="px-3 py-3">
+                      <td colSpan={nCols} className="px-3 py-3">
                         {unattLoading ? (
                           <div className="text-xs text-ink-3">Loading…</div>
                         ) : (
@@ -332,6 +349,7 @@ export default function StaffSalesPage() {
                 <td className="px-3 py-2">Total</td>
                 <td className="px-3 py-2 text-right tabular-nums">{totals.inv}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{rm(totals.sales)}</td>
+                {hasProfit && <td className="px-3 py-2 text-right tabular-nums text-good">{rm(totals.profit)}</td>}
                 <td className="px-3 py-2"></td>
               </tr>
             </tfoot>
@@ -343,6 +361,11 @@ export default function StaffSalesPage() {
         Sales are attributed from Niagawan invoices via each person&rsquo;s salesperson name. &ldquo;Unattributed&rdquo;
         rows are invoices booked under a name that isn&rsquo;t linked to a staff member.
       </p>
+      {!loading && rows.length > 0 && !hasProfit && (
+        <p className="mt-1 text-xs text-ink-3">
+          A <span className="font-medium">Profit</span> column will appear here once the per-invoice COGS sync is switched on.
+        </p>
+      )}
     </div>
   );
 }
