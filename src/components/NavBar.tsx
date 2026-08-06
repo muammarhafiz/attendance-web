@@ -79,6 +79,7 @@ export default function NavBar() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set()); // which expandable areas are open
   const [salesPending, setSalesPending] = useState(0); // count of not-final sales days (Sales badge)
   const [emergencyNew, setEmergencyNew] = useState(0); // count of new emergency-absence reports (Attendance badge)
+  const [needsMech, setNeedsMech] = useState(0); // count of >RM50 sales with no mechanic (Needs mechanic badge)
   useEffect(() => { setSeenAt(localStorage.getItem('notif_seen_at') || ''); }, []);
   // The <html> class is applied pre-paint by an inline script in layout.tsx (no flash on reload);
   // mirror it into state so the toggle button reflects the current mode.
@@ -193,6 +194,21 @@ export default function NavBar() {
     return () => { window.removeEventListener('focus', onVis); document.removeEventListener('visibilitychange', onVis); };
   }, [loadEmergencyNew]);
 
+  // Count of >RM50 sales with no mechanic name → badge on "Needs mechanic". Supervisors + owner.
+  const loadNeedsMech = useCallback(async () => {
+    if (!(access.workshop || access.owner)) { setNeedsMech(0); return; }
+    if (typeof document !== 'undefined' && document.hidden) return;
+    const { data } = await supabase.rpc('sales_needs_mechanic_count');
+    setNeedsMech(Number(data) || 0);
+  }, [access.workshop, access.owner]);
+  useEffect(() => {
+    loadNeedsMech();
+    const onVis = () => { if (typeof document === 'undefined' || !document.hidden) loadNeedsMech(); };
+    window.addEventListener('focus', onVis);
+    document.addEventListener('visibilitychange', onVis);
+    return () => { window.removeEventListener('focus', onVis); document.removeEventListener('visibilitychange', onVis); };
+  }, [loadNeedsMech]);
+
   // Approve / reject a staff request right from the bell (same RPCs the pages use).
   const act = useCallback(async (item: NotifItem, action: 'approve' | 'reject') => {
     let params: Record<string, unknown>;
@@ -271,6 +287,7 @@ export default function NavBar() {
       ] },
       { label: 'Shop', items: [
         ...(canBoard ? [{ label: 'Workshop', href: '/workshop', icon: 'wrench' } as NavItem] : []),
+        ...((access.workshop || access.owner) ? [{ label: 'Needs mechanic', href: '/workshop/needs-mechanic', match: '/workshop/needs-mechanic', icon: 'users', badge: needsMech } as NavItem] : []),
         ...(niagawanChildren.length ? [{ label: 'Niagawan', icon: 'box', badge: counts.po + counts.pinv + salesPending, children: niagawanChildren } as NavItem] : []),
       ] },
       { label: 'Finance', items: [
@@ -309,7 +326,7 @@ export default function NavBar() {
       ] },
     ];
     return groups.filter((g) => g.items.length > 0);
-  }, [access, canBoard, counts, salesPending, emergencyNew]);
+  }, [access, canBoard, counts, salesPending, emergencyNew, needsMech]);
 
   // Auto-open the area that contains the current route (so you always see where you are).
   useEffect(() => {
