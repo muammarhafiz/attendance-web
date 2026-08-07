@@ -129,6 +129,13 @@ export default function StaffSalesPage() {
   const hasProfit = totals.profitInv > 0; // any per-invoice COGS synced yet?
   const nCols = hasProfit ? 6 : 5;
 
+  // Period health — is this window trustworthy enough to base commission on?
+  // Two signals from the data already loaded: cost coverage, and how much is attributed.
+  const unattrSales = rows.filter((r) => r.is_unattributed).reduce((s, r) => s + (Number(r.sales) || 0), 0);
+  const coveragePct = totals.inv > 0 ? Math.round((totals.profitInv / totals.inv) * 100) : 0;
+  const attrPct = totals.sales > 0 ? Math.round((1 - unattrSales / totals.sales) * 100) : 100;
+  const healthLevel = coveragePct >= 99 && attrPct >= 99 ? 'ready' : coveragePct >= 50 ? 'partial' : 'notready';
+
   const maxSales = useMemo(
     () => rows.reduce((mx, r) => Math.max(mx, Number(r.sales) || 0), 0),
     [rows]
@@ -248,6 +255,39 @@ export default function StaffSalesPage() {
       </div>
 
       {err && <div className="mb-3 rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">{err}</div>}
+
+      {!loading && rows.length > 0 && (
+        <div className={`mb-3 rounded-xl border border-line p-3 ${
+          healthLevel === 'ready' ? 'bg-good-soft' : healthLevel === 'partial' ? 'bg-warn-soft' : 'bg-bad-soft'
+        }`}>
+          <div className="flex items-center gap-2">
+            <span aria-hidden>{healthLevel === 'ready' ? '🟢' : healthLevel === 'partial' ? '🟡' : '🔴'}</span>
+            <span className={`text-sm font-semibold ${
+              healthLevel === 'ready' ? 'text-good' : healthLevel === 'partial' ? 'text-warn' : 'text-bad'
+            }`}>
+              {healthLevel === 'ready'
+                ? 'Ready — safe to base commission on'
+                : healthLevel === 'partial'
+                ? 'Partly ready — check before paying'
+                : 'Not ready for commission'}
+            </span>
+          </div>
+          <div className="mt-2 grid gap-1.5 text-xs text-ink-2 sm:grid-cols-2">
+            <div>
+              <span className="font-medium text-ink">{coveragePct}%</span> of invoices have cost data
+              {coveragePct < 100 && <span className="text-ink-3"> · {totals.profitInv}/{totals.inv} costed</span>}
+            </div>
+            <div>
+              <span className="font-medium text-ink">{attrPct}%</span> of sales attributed to a mechanic
+              {unattrSales > 0 && <span className="text-ink-3"> · {rm(unattrSales)} unassigned</span>}
+            </div>
+          </div>
+          <p className="mt-2 text-xs text-ink-3">
+            Only pay commission on a period showing 🟢 — every invoice costed and every sale attributed. Amber or red
+            means the profit figure is <span className="font-medium">incomplete, not final</span>.
+          </p>
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-xl border border-line bg-card">
         <table className="w-full min-w-[36rem] text-sm">
