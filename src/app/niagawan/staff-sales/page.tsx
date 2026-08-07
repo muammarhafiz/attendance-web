@@ -53,6 +53,7 @@ export default function StaffSalesPage() {
   const [unattOpen, setUnattOpen] = useState(false);
   const [unatt, setUnatt] = useState<UnattRow[]>([]);
   const [unattLoading, setUnattLoading] = useState(false);
+  const [commissionPct, setCommissionPct] = useState(5); // adjustable, saved to pnl_settings
 
   const todayISO = klTodayISO();
   const curY = Number(todayISO.slice(0, 4));
@@ -68,6 +69,8 @@ export default function StaffSalesPage() {
       if (data.session?.user) {
         const { data: acc } = await supabase.rpc('my_access');
         setIsOwner(!!(acc as { owner?: boolean } | null)?.owner);
+        const { data: st } = await supabase.from('pnl_settings').select('value').eq('key', 'commission_pct').maybeSingle();
+        if (st?.value != null) setCommissionPct(Number(st.value) || 5);
       } else {
         setIsOwner(false);
       }
@@ -91,6 +94,10 @@ export default function StaffSalesPage() {
     else setRows((data ?? []) as Row[]);
     setLoading(false);
   }, [from, to]);
+
+  const persistPct = useCallback(async (v: number) => {
+    await supabase.from('pnl_settings').upsert({ key: 'commission_pct', value: v as unknown as object }, { onConflict: 'key' });
+  }, []);
 
   useEffect(() => {
     if (isOwner) load();
@@ -127,7 +134,7 @@ export default function StaffSalesPage() {
     return { inv, sales, profit, profitInv };
   }, [rows]);
   const hasProfit = totals.profitInv > 0; // any per-invoice COGS synced yet?
-  const nCols = hasProfit ? 6 : 5;
+  const nCols = hasProfit ? 7 : 5;
 
   // Period health — is this window trustworthy enough to base commission on?
   // Two signals from the data already loaded: cost coverage, and how much is attributed.
@@ -166,22 +173,24 @@ export default function StaffSalesPage() {
 
   const exportCsv = useCallback(() => {
     const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
-    const header = ['Rank', 'Name', 'Position', 'Invoices', 'Sales (RM)', 'Profit (RM)', 'Avg per invoice (RM)'];
+    const header = ['Rank', 'Name', 'Position', 'Invoices', 'Sales (RM)', 'Profit (RM)', `Commission ${commissionPct}% (RM)`, 'Avg per invoice (RM)'];
     const lines = [header.join(',')];
     let rank = 0;
     for (const r of rows) {
       const rk = r.is_unattributed ? '' : String(++rank);
+      const hasP = Number(r.profit_invoices) > 0;
       lines.push([
         rk,
         esc(r.staff_name),
         esc(r.staff_position ?? ''),
         String(r.invoices),
         Number(r.sales).toFixed(2),
-        Number(r.profit_invoices) > 0 ? Number(r.profit).toFixed(2) : '',
+        hasP ? Number(r.profit).toFixed(2) : '',
+        hasP ? ((Number(r.profit) || 0) * commissionPct / 100).toFixed(2) : '',
         Number(r.avg_invoice).toFixed(2),
       ].join(','));
     }
-    lines.push(['', esc('TOTAL'), '', String(totals.inv), totals.sales.toFixed(2), totals.profit.toFixed(2), ''].join(','));
+    lines.push(['', esc('TOTAL'), '', String(totals.inv), totals.sales.toFixed(2), totals.profit.toFixed(2), (totals.profit * commissionPct / 100).toFixed(2), ''].join(','));
     const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -189,7 +198,7 @@ export default function StaffSalesPage() {
     a.download = `staff-sales-${label.replace(/\s+/g, '-').toLowerCase()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [rows, totals, label]);
+  }, [rows, totals, label, commissionPct]);
 
   if (authed === null || isOwner === null) {
     return <div className="text-sm text-ink-3">Checking session…</div>;
@@ -252,6 +261,17 @@ export default function StaffSalesPage() {
             </button>
           </div>
         )}
+
+        <label className="ml-auto flex items-center gap-1.5 text-xs text-ink-2">
+          Commission
+          <input
+            type="number" min={0} max={100} step={0.5} value={commissionPct}
+            onChange={(e) => setCommissionPct(Math.max(0, Number(e.target.value) || 0))}
+            onBlur={(e) => persistPct(Math.max(0, Number(e.target.value) || 0))}
+            className="w-16 rounded-lg border border-line bg-card px-2 py-1 text-right text-sm text-ink"
+          />
+          %
+        </label>
       </div>
 
       {err && <div className="mb-3 rounded-lg bg-bad-soft px-3 py-2 text-sm text-bad">{err}</div>}
@@ -290,7 +310,7 @@ export default function StaffSalesPage() {
       )}
 
       <div className="overflow-x-auto rounded-xl border border-line bg-card">
-        <table className="w-full min-w-[36rem] text-sm">
+        <table className="w-full min-w-[44rem] text-sm">
           <thead>
             <tr className="border-b border-line text-left text-xs text-ink-3">
               <th className="px-3 py-2 font-medium">#</th>
@@ -298,6 +318,7 @@ export default function StaffSalesPage() {
               <th className="px-3 py-2 text-right font-medium">Invoices</th>
               <th className="px-3 py-2 text-right font-medium">Sales</th>
               {hasProfit && <th className="px-3 py-2 text-right font-medium">Profit</th>}
+              {hasProfit && <th className="px-3 py-2 text-right font-medium">Comm {commissionPct}%</th>}
               <th className="px-3 py-2 text-right font-medium">Avg/inv</th>
             </tr>
           </thead>
@@ -340,6 +361,13 @@ export default function StaffSalesPage() {
                       <td className="px-3 py-2 text-right">
                         {Number(r.profit_invoices) > 0
                           ? <span className="tabular-nums font-medium text-good">{rm(Number(r.profit) || 0)}</span>
+                          : <span className="text-ink-3">—</span>}
+                      </td>
+                    )}
+                    {hasProfit && (
+                      <td className="px-3 py-2 text-right">
+                        {Number(r.profit_invoices) > 0
+                          ? <span className="tabular-nums font-semibold text-accent">{rm((Number(r.profit) || 0) * commissionPct / 100)}</span>
                           : <span className="text-ink-3">—</span>}
                       </td>
                     )}
@@ -390,6 +418,7 @@ export default function StaffSalesPage() {
                 <td className="px-3 py-2 text-right tabular-nums">{totals.inv}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{rm(totals.sales)}</td>
                 {hasProfit && <td className="px-3 py-2 text-right tabular-nums text-good">{rm(totals.profit)}</td>}
+                {hasProfit && <td className="px-3 py-2 text-right tabular-nums font-semibold text-accent">{rm(totals.profit * commissionPct / 100)}</td>}
                 <td className="px-3 py-2"></td>
               </tr>
             </tfoot>
