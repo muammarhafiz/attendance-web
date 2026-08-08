@@ -26,6 +26,7 @@ export default function IntakePage() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const plateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoPhone = useRef<string>(''); // last phone we auto-filled from plate recognition — lets us replace it when the plate resolves to a different customer, without clobbering a hand-typed number
+  const plateSeq = useRef(0); // monotonic id per plate lookup — a stale (out-of-order) response must not overwrite a newer one
 
   useEffect(() => {
     (async () => {
@@ -41,10 +42,12 @@ export default function IntakePage() {
   // Returning car? Recognise the plate and pre-fill what we already have on file.
   const checkPlate = useCallback(async (p: string) => {
     if (p.replace(/\s/g, '').length < 4) { setHistory(null); setDupCheckin(null); return; }
+    const seq = ++plateSeq.current; // this lookup's id
     const [{ data }, { data: dup }] = await Promise.all([
       supabase.rpc('intake_plate_lookup', { p }),
       supabase.rpc('intake_today_checkin', { p }), // already checked in today? -> warn before a 2nd invoice
     ]);
+    if (seq !== plateSeq.current) return; // a newer plate lookup started while we awaited — ignore this stale result
     const row = Array.isArray(data) && data.length ? data[0] : null;
     if (row) {
       const h = row as { last_day: string | null; customer: string; cust_id: string | null; phone: string | null };
