@@ -18,6 +18,7 @@ const TYPE_LABEL: Record<string, string> = {
   stuckcar: 'Cars stuck in shop',
   debt: 'Newly overdue bills',
   lowstock: 'Items to restock',
+  owner_digest: 'End-of-day summary (8:40pm)',
   bnpl_payout: 'New BNPL payout to check',
   probation_review: 'Probation review (3-month)',
   job_done: 'Background job finished (sync / refresh / backfill)',
