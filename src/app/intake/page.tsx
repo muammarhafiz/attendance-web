@@ -25,6 +25,7 @@ export default function IntakePage() {
   const [showDetails, setShowDetails] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const plateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoPhone = useRef<string>(''); // last phone we auto-filled from plate recognition — lets us replace it when the plate resolves to a different customer, without clobbering a hand-typed number
 
   useEffect(() => {
     (async () => {
@@ -48,9 +49,19 @@ export default function IntakePage() {
     if (row) {
       const h = row as { last_day: string | null; customer: string; cust_id: string | null; phone: string | null };
       setHistory(h);
-      if (h.phone) setPhone((cur) => cur || h.phone || ''); // pre-fill phone if we know it
+      // Pre-fill the phone from the recognised customer — and REPLACE it if the plate now resolves to a
+      // different customer (fixes the wrong-number carry-over from a partial-plate match) — but never
+      // clobber a number the user typed by hand. autoPhone tracks what we last auto-filled.
+      setPhone((cur) => {
+        if (cur === '' || cur === autoPhone.current) { autoPhone.current = h.phone ?? ''; return h.phone ?? ''; }
+        return cur;
+      });
     } else {
       setHistory(null);
+      // Plate no longer matches a known customer — drop a stale auto-filled number, keep a typed one.
+      const filled = autoPhone.current;
+      setPhone((cur) => (cur !== '' && cur === filled ? '' : cur));
+      autoPhone.current = '';
     }
     const drow = Array.isArray(dup) && dup.length ? (dup[0] as { inv_no: string | null; created_at: string }) : null;
     setDupCheckin(drow ? { inv_no: drow.inv_no, created_at: drow.created_at } : null);
@@ -103,7 +114,7 @@ export default function IntakePage() {
     }, 3000);
   }, [plate, model, phone, note]);
 
-  const reset = () => { setPlate(''); setModel(''); setPhone(''); setNote(''); setInvNo(null); setErrMsg(null); setHistory(null); setDupCheckin(null); setShowDetails(false); setPhase('form'); };
+  const reset = () => { setPlate(''); setModel(''); setPhone(''); setNote(''); setInvNo(null); setErrMsg(null); setHistory(null); setDupCheckin(null); setShowDetails(false); setPhase('form'); autoPhone.current = ''; };
 
   if (allowed === null) return <div className="p-6 text-sm text-ink-3">Checking…</div>;
   if (!allowed) return <div className="p-6 text-sm text-ink-2">This page is for supervisors — please sign in with a supervisor account.</div>;
