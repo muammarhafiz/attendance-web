@@ -14,7 +14,7 @@ const TYPE_LABEL: Record<string, string> = {
   po: 'Purchase orders to approve',
   pinv: 'Purchase invoices to review',
   pinv_created: 'Purchase invoice created',
-  not_checkin: 'Staff not checked in by 10am',
+  not_checkin: 'Morning attendance report (10am)',
   stuckcar: 'Cars stuck in shop',
   debt: 'Newly overdue bills',
   lowstock: 'Items to restock',
