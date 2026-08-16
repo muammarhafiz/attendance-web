@@ -83,6 +83,20 @@ carry-forward, not scraped).
 - **Port notes:** VERBATIM. Seed the bands + a **fresh** first period; **history does NOT migrate**
   (calendar-year tax boundary — see 00). Emailed payslip PDFs are the one external-signed-URL case —
   see 03.
+- **⚠ REQUIREMENT (from the 2026-08-16 payroll audit) — commission must be statutory by construction.**
+  In attendance-web, commission entered payroll as a **hand-typed `COMM` line with a stat-exempt flag
+  nobody revisited**, so it silently sat outside the EPF/SOCSO/EIS wage base. (Harmless there only
+  because the commission was unpaid test data — but it would under-contribute the moment a real
+  commission was paid.) In ZORDAQ, **commission is posted automatically by the commission engine**, so
+  the classification cannot live in a flag someone sets once: **any commission item the engine posts
+  into payroll MUST be statutory-subject (EPF + SOCSO + EIS) by design.** More generally, carry the
+  correct wage-base classification per earning type into the schema, not into per-row flags: cash
+  allowances / incentives / arrears / additional-salary = EPF+SOCSO+EIS; **annual bonus = EPF only**
+  (SOCSO/EIS-exempt); **overtime & travelling allowance = exempt from all three**. Also fix-forward two
+  band issues the audit found before they bite: the **EIS table must reach the RM6,000 ceiling** (65
+  bands, not the 55/RM5,000 attendance-web still has), and **do not carry the `salary_profiles`
+  epf-rate default of `11`** (scale landmine — use `0.11` or drop the dead columns). See the audit's
+  `db/proposed-fixes-2026-08-16.sql`.
 
 ---
 
