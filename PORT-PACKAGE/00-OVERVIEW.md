@@ -24,6 +24,8 @@ Files 01/03/04 flag every place this re-pointing applies.
 - **`02-STATUTORY-VERBATIM.sql`** — runnable seed for the EIS / SOCSO / SKBBK bands + the statutory-calc functions, verbatim (the "correctness above all" core). Note: the live bands are `pay_v2.ref_*` — the `public.*_brackets` are legacy, ignore them.
 - **`03-DEPENDENCY-WARNINGS.md`** — the exhaustive, pessimistic "won't survive self-hosted Supabase / off Vercel" list. Read this first for the December risks.
 - **`04-PORTING-ORDER.md`** — what to move first, and what is entangled enough that it must move together.
+- **`05-AUTH-CUTOVER-CHECKLIST.md`** — a runnable, pass/fail checklist to prove Google sign-in + the JWT-key repoint + the `fdw_attendance` role work on the NAS. **Run it in September, not on 1 Jan.**
+- **`06-CONFIG-MIGRATION-MAP.md`** — the full 14-item config surface (5 env + 9 `app_secrets`), who reads each, and where it must end up — because config is what gets half-migrated and fails silently.
 
 ## Would I structure it differently? (you asked)
 Two additions I'd make to your 4-part framing:

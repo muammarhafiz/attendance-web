@@ -102,23 +102,54 @@ Corrections to the outside-in version of this claim:
   `cron.database_name` in `postgresql.conf` — not just `CREATE EXTENSION`) and `pg_net`, then recreate
   the 3 jobs from `db/infra.sql`, and add a real health signal (`last_ok_at`) so a future outage is loud.
 
-### B2. 🟠 THREE independent schedulers exist; pg_cron is only one — the other two are invisible to both repo and DB
-Enabling pg_cron/pg_net restores **only** the 3 DB jobs. The larger automation surface runs off-platform
-and leaves no footprint in the repo or the schema — only live *side-effects* (rows it writes) prove it
-exists. Each must be re-homed or re-pointed or the feature silently dies:
+### B2. 🟠 THE THREE SCHEDULERS — pg_cron is only one; the other two are invisible to BOTH the repo and the database
+**This is the section to read twice.** Neither session's audit, nor the owner's own mental model, had
+these on any list — because they leave **no footprint in the repo or the schema**. The only proof they
+exist is the *side-effects* they write into DB tables. They are the classic thing discovered in January
+when "meals stopped being recorded and nobody knows why." Enabling pg_cron/pg_net restores **only** the 3
+DB jobs; the other two schedulers must be separately re-homed or re-pointed, or the feature silently dies.
 
-| Scheduler | Where | Cadence | Drives | Live evidence it's alive |
-|---|---|---|---|---|
-| NAS Niagawan poller | Synology NAS (workshop LAN) | ~20s loop | drains `sync_requests` (intake, cash-count, add-part, customers) | `sync_requests`: 46 done `customers/pg_cron-daily` rows, latest completed **last night 22:00 UTC** |
-| NAS schedule-checker | Synology NAS | ~60s | executes `automation_tasks` config | live `automation_tasks`: `hourly_sync` 09:30–19:00 **ON**, `kiv_move` 20:00 **ON**, `kiv_partial` 20:45 **ON**, `nightly_sync` 20:30 **ON**, `auto_po` Mon 08:00 **OFF** |
-| Apps Script invoice watcher | Google cloud (workshop Gmail) | **15-min time trigger** (not Pub/Sub) | Gmail→Drive→`niagawan-pinv` `pinvUpload` | the 4 edge fns are live; watcher config lives only in Apps Script |
-| Apps Script mailbox triggers | Google cloud | timed | hourly **BNPL** email pull → `/api/bnpl/ingest`; GrabFood staff-meal parser → ingest `grabMeals` | `app_secrets.notify_url` = `script.google.com/...`; `grabMeals` comment "parsed by the mailbox script" |
+**Scheduler 1 — Supabase pg_cron (the only DB-visible one).** 3 jobs; see §B1. Restored by enabling
+pg_cron + pg_net on the NAS.
 
-- **Key correction:** the "hourly BNPL/payment sync" is **NAS/Apps-Script-driven, NOT pg_cron** — so it
-  is *not* restored by enabling pg_cron. Whoever plans the cutover must explicitly re-home the NAS engine
-  and re-point the Apps Script triggers.
-- **Negative findings (don't chase these):** there is **no Gmail Pub/Sub** subscription, and **no Vercel
-  cron** (`vercel.json` absent everywhere; Vercel is only the *receiver* of the pg_cron POST).
+**Scheduler 2 — the NAS automation engine (Synology, workshop LAN).** Polling loops, *not* cron:
+
+| Loop | Cadence | Drives | Live evidence it's alive |
+|---|---|---|---|
+| Niagawan on-demand poller | ~20s | drains `sync_requests` (intake, cash-count, add-part, customers) | `sync_requests`: 46 done `customers/pg_cron-daily` rows, latest completed **last night 22:00 UTC** |
+| schedule-checker | ~60s | executes `automation_tasks` config | live `automation_tasks`: `hourly_sync` 09:30–19:00 **ON**, `kiv_move` 20:00 **ON**, `kiv_partial` 20:45 **ON**, `nightly_sync` 20:30 **ON**, `auto_po` Mon 08:00 **OFF** |
+
+> **Key correction:** the "hourly BNPL/payment sync" is driven by this NAS engine (`automation_tasks`),
+> **NOT pg_cron** — enabling pg_cron does *not* bring it back. The NAS engine must be re-homed onto/beside
+> ZORDAQ and its `automation_tasks` re-pointed at native tables.
+
+**Scheduler 3 — Google Apps Script (Google's cloud, bound to a Google account).** Time-driven triggers,
+invisible everywhere except the endpoints they call:
+
+| Script | Trigger | Drives | Owning Google account — **CONFIRM** |
+|---|---|---|---|
+| Invoice watcher | **15-min time trigger** (not Gmail Pub/Sub) | Gmail→Drive→`niagawan-pinv` `pinvUpload` | *likely* `zordaqputrajaya@gmail.com` (workshop Gmail) — verify |
+| BNPL email auto-pull | hourly time trigger | parses BNPL emails → `/api/bnpl/ingest` | *likely* workshop Gmail — verify |
+| GrabFood meal parser | timed | parses GrabFood staff-meal emails → ingest `grabMeals` | *likely* workshop Gmail — verify |
+| Mailer webhook (`notify_url`) | *push target, no timer* | receives digest/payslip email POSTs from `notify_owner()` | *likely* workshop Gmail — verify |
+
+Evidence base: `app_secrets.vapid_subject` = `mailto:zordaqputrajaya@gmail.com` (the workshop Gmail);
+`app_secrets.notify_url` = `https://script.google.com/macros/s/...`; `grabMeals` code comment "parsed by
+the mailbox script"; `CLAUDE.md` "a Google Apps Script fetches supplier invoice PDFs every 15 min."
+
+> **🚌 Bus-factor warning (separate from the migration).** Each of these scripts lives in **one person's
+> Google account** and runs on **that person's** Apps Script quota and OAuth grants. If any is bound to a
+> *personal* account rather than the workshop account, then payroll-adjacent automation (staff meals,
+> BNPL receivables, supplier invoices) silently depends on an individual who could leave, change their
+> password, or revoke a grant — with no handover and no visibility. **Action, worth doing now regardless
+> of the port:** log into `script.google.com` under each candidate account, list the projects + their
+> triggers, record the true owner of each, and move any personal-account script to a shared workshop
+> account. This is the one item on this page you should action even if December slipped.
+
+**Negative findings (so nobody wastes time hunting for what isn't there):**
+- **No Gmail Pub/Sub** — the invoice watcher is a 15-min *time* trigger, not a Gmail push/watch subscription.
+- **No Vercel cron** — `vercel.json` is absent everywhere; Vercel is only the *receiver* of the pg_cron POST, never a scheduler.
+- **No other in-app schedulers** — no `setInterval`/cron in server code; the app schedules nothing itself.
 
 ---
 

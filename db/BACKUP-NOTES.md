@@ -134,3 +134,57 @@ hardcoded host. Findings across the 4 edge functions + the app:
 
 **Answer: yes — the vercel.app URL in niagawan-pinv is the only self-referential hardcoded host.**
 Everything else is either a dependency CDN or a keyed third-party API.
+
+---
+
+## 6. Restore rehearsal — a backup that has never been restored is a hypothesis
+
+### 6a. What has actually been verified (2026-08-16, no Postgres needed)
+- **Statutory bands are byte-faithful to live.** The committed `02-STATUTORY-VERBATIM.sql` band rows were
+  parsed and their per-column sums + counts compared against the live `pay_v2.ref_*` tables. **Exact
+  match, to the cent:** `ref_eis_bands` 55 rows (Σemp 260.60, Σer 260.60); `ref_socso_bands` 65 rows
+  (ΣempFirst 931.20, ΣerFirst 3259.20, ΣerSecond 2328.20); `ref_skbbk_bands` 65 rows (Σemp 1396.95).
+  (Internal consistency also holds: Σmin_wage = Σmax_wage per table, as contiguous bands with a `0`
+  floor require.) This is the most correctness-critical data in the whole backup and it is **proven**,
+  not assumed.
+- **Every committed SQL file is structurally intact.** Dollar-quote tags balanced
+  (`02`=12, `att_v2`=14, `pay_v2-pipeline`=34), `CREATE FUNCTION` counts as expected (6 / 7 / 17), no
+  truncated statements; the 4 edge-function files are complete (69 / 363 / 150 / 232 lines).
+
+### 6b. What is NOT yet proven, and the cheapest way to prove it
+A **full** restore (all table DDL + the ~250 remaining functions + RLS + triggers) can't be tested until
+the `supabase db dump --schema-only` from §2 exists. Once it does, rehearse the restore in ~15 minutes on
+any machine with Docker (a **throwaway** container — never against prod, never against the NAS prod DB):
+
+```bash
+# 1. throwaway Postgres (nothing persisted; container is deleted at the end)
+docker run --rm -d --name zordaq-restore-test -e POSTGRES_PASSWORD=x -p 5433:5432 postgres:16
+sleep 5
+
+# 2. load in dependency order: extensions/roles first, then schema, then the crown-jewel logic + bands
+psql "postgresql://postgres:x@localhost:5433/postgres" -v ON_ERROR_STOP=1 -f db/infra.sql          # extensions (pg_net/pg_cron will error here — expected, see note)
+psql "postgresql://postgres:x@localhost:5433/postgres" -v ON_ERROR_STOP=1 -f db/roles.sql          # if you captured fdw_attendance
+psql "postgresql://postgres:x@localhost:5433/postgres" -v ON_ERROR_STOP=1 -f db/schema.sql         # the full --schema-only dump
+psql "postgresql://postgres:x@localhost:5433/postgres" -v ON_ERROR_STOP=1 -f PORT-PACKAGE/02-STATUTORY-VERBATIM.sql
+psql "postgresql://postgres:x@localhost:5433/postgres" -v ON_ERROR_STOP=1 -f db/functions/att_v2.sql
+psql "postgresql://postgres:x@localhost:5433/postgres" -v ON_ERROR_STOP=1 -f db/functions/pay_v2-pipeline.sql
+
+# 3. sanity: bands landed, functions exist, geofence math works
+psql "postgresql://postgres:x@localhost:5433/postgres" -c "select count(*) from pay_v2.ref_socso_bands;"   -- expect 65
+psql "postgresql://postgres:x@localhost:5433/postgres" -c "select proname from pg_proc where proname='recalc_statutories';"  -- expect 1 row
+
+docker rm -f zordaq-restore-test
+```
+
+**`ON_ERROR_STOP=1` is the point** — the first load that fails aborts loudly instead of leaving a
+half-built schema that looks fine. Expect two *known* errors that are lessons, not failures:
+- `db/infra.sql` will error on `create extension pg_net` / `pg_cron` — the stock `postgres:16` image
+  doesn't ship them (exactly the §B1 warning). On the NAS, install them per §B1 first.
+- `att_v2.sql` / `pay_v2-pipeline.sql` reference tables created by `schema.sql`; load them **after** it,
+  as ordered above. If loaded standalone, SQL-language functions referencing missing tables will fail —
+  that ordering *is* the test.
+
+Anything else that errors is a real backup defect found on a laptop in September instead of on the NAS in
+January. (This rehearsal already paid for itself once: it's the review that caught the `uuid-ossp`
+schema-placement bug in `infra.sql` — see `03` §C1 — which would have made every payroll-item insert
+fail on a fresh DB.)
