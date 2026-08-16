@@ -26,6 +26,7 @@ Files 01/03/04 flag every place this re-pointing applies.
 - **`04-PORTING-ORDER.md`** — what to move first, and what is entangled enough that it must move together.
 - **`05-AUTH-CUTOVER-CHECKLIST.md`** — a runnable, pass/fail checklist to prove Google sign-in + the JWT-key repoint + the `fdw_attendance` role work on the NAS. **Run it in September, not on 1 Jan.**
 - **`06-CONFIG-MIGRATION-MAP.md`** — the full 14-item config surface (5 env + 9 `app_secrets`), who reads each, and where it must end up — because config is what gets half-migrated and fails silently.
+- **`07-OUTBOUND-CONTRACT.md`** — the exact shape + write semantics of the 13 payloads the NAS scraper posts to the 4 edge functions, so ZORDAQ can become the producer with zero app changes. **7 of 13 have destructive (wipe/replace) semantics — read its top section first;** a windowed producer must never drive a full-replace consumer or the sales history is lost.
 
 ## Would I structure it differently? (you asked)
 Two additions I'd make to your 4-part framing:
