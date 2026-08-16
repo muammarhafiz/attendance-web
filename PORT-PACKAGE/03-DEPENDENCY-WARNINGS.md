@@ -1,9 +1,30 @@
 # ZORDAQ Port — Dependency Warnings (read this first)
 
 The exhaustive, pessimistic list of things that **do not survive a naive move** to self-hosted Supabase
-+ a NAS Node runtime. Every entry is verified against the **live** database (2026-08-16), not inferred
-from the repo. Where a widely-assumed risk turns out to be a non-issue, that's called out too — knowing
-what *not* to spend December on is as valuable as the landmines.
++ a NAS Node runtime. Most entries are checked against the **live** database (2026-08-16); some — the
+off-platform pieces and anything tagged `CONFIRM`/`UNRESOLVED` — could not be, and say so. Where a
+widely-assumed risk turns out to be a non-issue, that's called out too — knowing what *not* to spend
+December on is as valuable as the landmines.
+
+> ## ⚠ Before you trust this document — what you must NOT assume
+> A dependency-warnings list is read by someone under time pressure who *wants* it to be complete. It is
+> not, and the honest thing is to say where it is soft — that's more useful than another warning:
+> - **Two sessions wrote this; neither could see the whole system.** One had the live database + repo but
+>   not the NAS, Google Cloud, or the Apps Script internals; the other read the repo from the outside with
+>   no live access. Anything off-platform (the NAS engine, the Apps Script triggers, GoTrue/Google-OAuth
+>   config) is inference or second-hand observation — not something this document *proved*.
+> - **At least three load-bearing claims here were WRONG on first pass**, and were caught only because
+>   they were checked from the other side. Treat that as a reason to distrust the *unchecked* claims too:
+>   1. "≈210 RLS policies key off `auth.uid()` → preserve the UUIDs" — **wrong.** Authz is **email-keyed**
+>      (only 2 of 210 policies touch `auth.uid()`); protect the exact `staff.email` + the JWT email claim,
+>      not the UUIDs. (§A2)
+>   2. "Emailed payslips break on JWT rotation (signed URLs)" — **wrong.** They're base64 attachments; no
+>      signed URL is ever sent externally. A non-issue. (§D1)
+>   3. "Three Apps Script triggers, including a GrabFood one" — **wrong.** There are **two**; GrabFood has
+>      no trigger of its own. (§B, Scheduler 3)
+> - **Anything tagged `CONFIRM` or `UNRESOLVED` has been verified by NO ONE.** It is a flagged open
+>   question, not a finding — do not act on it as settled. Resolve it, then remove the tag.
+> - **Point-in-time snapshot (2026-08-16).** The live system keeps changing; re-check before cutover.
 
 **Severity legend**
 - 🔴 **TOTAL FAILURE** — nobody can use the system, or every API call fails.
@@ -136,12 +157,16 @@ below are seen, not inferred):
 | `checkInvoices` | time-based | supplier-invoice pipeline: Gmail→Drive→`niagawan-pinv` `pinvUpload` | ⚠ **failing/degrading — see §B3** |
 | `importAtomeSettlements` | time-based | ATOME BNPL settlements → `/api/bnpl/ingest` | ✅ 0% errors, sub-second |
 
-- **GrabFood meal parser has NO trigger of its own.** It is *not* a third scheduler — "a scheduler that
-  doesn't exist" would waste a day in December, so state it plainly: the only footprint in this repo is
-  the **receiver** `niagawan-ingest` action `grabMeals` (batch upsert into `grab_meals`, deduped by
-  `order_code`). The repo has the endpoint, not the caller, so it can't be told from here *which* function
-  POSTs it — most plausibly folded inside `checkInvoices` (the mailbox scanner). **Definitive check (30s
-  for whoever's in the editor):** search the Apps Script project for the function that posts `grabMeals`.
+- **❓ UNRESOLVED — how the GrabFood meal parser is invoked.** *(This is an open question, not a finding.
+  Two facts are settled; one is genuinely unknown — do not let a future reader collapse them into "solved.")*
+  - **Settled:** GrabFood has **no trigger of its own** (only the two triggers above exist), and the only
+    footprint in this repo is the **receiver** `niagawan-ingest` action `grabMeals` (batch upsert into
+    `grab_meals`, deduped by `order_code`).
+  - **UNRESOLVED:** the repo has the endpoint, not the caller, so it **cannot be told from here** *which*
+    function posts it — **most plausibly folded inside `checkInvoices`** (the mailbox scanner), **but this
+    is a guess, not a verified fact.** ⚠ Do **not** read "most plausibly" as settled.
+  - **To resolve (≈30s for whoever is in the editor):** search the Apps Script project for the function
+    that posts `grabMeals`, then replace this block with what you find. Until then it stays UNRESOLVED.
 - **The mailer (`notify_url`) is a Web App deployment, not a trigger** — a push target that
   `notify_owner()` POSTs to; it has no timer.
 
