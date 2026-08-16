@@ -123,33 +123,72 @@ pg_cron + pg_net on the NAS.
 > **NOT pg_cron** — enabling pg_cron does *not* bring it back. The NAS engine must be re-homed onto/beside
 > ZORDAQ and its `automation_tasks` re-pointed at native tables.
 
-**Scheduler 3 — Google Apps Script (Google's cloud, bound to a Google account).** Time-driven triggers,
-invisible everywhere except the endpoints they call:
+**Scheduler 3 — Google Apps Script.** **Observed directly in the Apps Script console, 2026-08-16** (facts
+below are seen, not inferred):
+- **One project only:** "ZORDAQ Workshop Email Automation" — created 11 Jun 2026, last modified 2 Aug
+  2026, status **Deployed, Version 15**.
+- **Owner:** `zordaqputrajaya@gmail.com` (display name MUAMMARHAFIZ ZAINAL) — i.e. the **workshop
+  Gmail**, not a personal account.
+- **Exactly TWO time-based triggers** (not three):
 
-| Script | Trigger | Drives | Owning Google account — **CONFIRM** |
+| Function (trigger) | Type | Drives | Health (observed 2026-08-16) |
 |---|---|---|---|
-| Invoice watcher | **15-min time trigger** (not Gmail Pub/Sub) | Gmail→Drive→`niagawan-pinv` `pinvUpload` | *likely* `zordaqputrajaya@gmail.com` (workshop Gmail) — verify |
-| BNPL email auto-pull | hourly time trigger | parses BNPL emails → `/api/bnpl/ingest` | *likely* workshop Gmail — verify |
-| GrabFood meal parser | timed | parses GrabFood staff-meal emails → ingest `grabMeals` | *likely* workshop Gmail — verify |
-| Mailer webhook (`notify_url`) | *push target, no timer* | receives digest/payslip email POSTs from `notify_owner()` | *likely* workshop Gmail — verify |
+| `checkInvoices` | time-based | supplier-invoice pipeline: Gmail→Drive→`niagawan-pinv` `pinvUpload` | ⚠ **failing/degrading — see §B3** |
+| `importAtomeSettlements` | time-based | ATOME BNPL settlements → `/api/bnpl/ingest` | ✅ 0% errors, sub-second |
 
-Evidence base: `app_secrets.vapid_subject` = `mailto:zordaqputrajaya@gmail.com` (the workshop Gmail);
-`app_secrets.notify_url` = `https://script.google.com/macros/s/...`; `grabMeals` code comment "parsed by
-the mailbox script"; `CLAUDE.md` "a Google Apps Script fetches supplier invoice PDFs every 15 min."
+- **GrabFood meal parser has NO trigger of its own.** It is *not* a third scheduler — "a scheduler that
+  doesn't exist" would waste a day in December, so state it plainly: the only footprint in this repo is
+  the **receiver** `niagawan-ingest` action `grabMeals` (batch upsert into `grab_meals`, deduped by
+  `order_code`). The repo has the endpoint, not the caller, so it can't be told from here *which* function
+  POSTs it — most plausibly folded inside `checkInvoices` (the mailbox scanner). **Definitive check (30s
+  for whoever's in the editor):** search the Apps Script project for the function that posts `grabMeals`.
+- **The mailer (`notify_url`) is a Web App deployment, not a trigger** — a push target that
+  `notify_owner()` POSTs to; it has no timer.
 
-> **🚌 Bus-factor warning (separate from the migration).** Each of these scripts lives in **one person's
-> Google account** and runs on **that person's** Apps Script quota and OAuth grants. If any is bound to a
-> *personal* account rather than the workshop account, then payroll-adjacent automation (staff meals,
-> BNPL receivables, supplier invoices) silently depends on an individual who could leave, change their
-> password, or revoke a grant — with no handover and no visibility. **Action, worth doing now regardless
-> of the port:** log into `script.google.com` under each candidate account, list the projects + their
-> triggers, record the true owner of each, and move any personal-account script to a shared workshop
-> account. This is the one item on this page you should action even if December slipped.
+**Five OAuth scopes on the project = its blast radius** (record these; two are total access):
+`script.scriptapp` (run while the user is away) · `script.send_mail` (send email as the user) ·
+`script.external_request` (call external services) · **`auth/drive`** (see, edit, create and **DELETE
+ALL** Drive files) · **`mail.google.com`** (read, compose, send and **PERMANENTLY DELETE all** mail).
+The last two grant complete control of that mailbox and Drive.
+
+> **🚌 Bus-factor — downgraded, not cleared.** Good news from the direct look: it's a **shared company
+> mailbox** (`zordaqputrajaya@`), not someone's personal account — materially better than feared. But it
+> is still (a) a **free Gmail, not a Workspace identity** (no admin console, no central recovery, no
+> off-boarding controls), (b) a **single account** whose password/2FA is the single point of failure for
+> supplier-invoice intake **and** BNPL settlement import, and (c) holding **permanent-delete scope over
+> all mail and Drive**. The project shows as **shared with one other person — identity not checked
+> (CONFIRM** by opening the sharing dialog). Standing hygiene, independent of the port: move to a
+> Workspace identity if possible, confirm the second collaborator, and ensure recovery/2FA is controlled
+> by the business, not one individual.
 
 **Negative findings (so nobody wastes time hunting for what isn't there):**
-- **No Gmail Pub/Sub** — the invoice watcher is a 15-min *time* trigger, not a Gmail push/watch subscription.
+- **No Gmail Pub/Sub** — the invoice pipeline runs on a *time* trigger (`checkInvoices`), not a Gmail push/watch subscription.
 - **No Vercel cron** — `vercel.json` is absent everywhere; Vercel is only the *receiver* of the pg_cron POST, never a scheduler.
 - **No other in-app schedulers** — no `setInterval`/cron in server code; the app schedules nothing itself.
+- **No third Apps Script trigger** — the GrabFood meal parser has no trigger of its own (see Scheduler 3).
+
+### B3. 🟠→🔴 LIVE DEFECT (has a clock): `checkInvoices` is degrading toward silent failure of supplier-invoice intake
+Not a port item — a **currently-live** problem, observed in the Apps Script console 2026-08-16. Recorded
+here because it **gets worse on its own**, which turns it from a nice-to-have into something time-boxed.
+
+- **Error rate:** 7.55% over the last 7 days across **781 executions**; the trigger view attributes
+  **9.74%** to `checkInvoices` specifically.
+- **Two hard timeouts on 16 Aug** (13:18:55 and 13:48:55), both at **~360 s = the Apps Script 6-minute
+  execution ceiling** — i.e. killed, not merely slow.
+- **Run duration is climbing across the day:** 90 s → 118 s → 150 s → 176 s → 325 s → 360 s (killed).
+  That trajectory means **per-run work is growing rather than bounded** — extrapolated, it will soon fail
+  **every** run.
+- **The failure is silent:** nothing surfaces an Apps Script error to the app, so when it tips over,
+  supplier-invoice intake (`pinv`) simply **stops with no alarm**.
+- **Contrast:** `importAtomeSettlements` is healthy — 0% errors, sub-second — so this is specific to
+  `checkInvoices`, not the account or quota.
+- **Likely shape (inferred, worth confirming in the script):** the run reprocesses a growing set each
+  time (scanning all/unprocessed mail rather than a bounded window), so cost scales with mailbox size.
+  **Fix direction when un-parked:** bound the work per run (process only the last N / unmarked, mark as
+  done, paginate) so runtime stays flat. **Port implication:** if this pipeline is carried into ZORDAQ,
+  re-implement with bounded work — do **not** port the unbounded pattern.
+- **Status:** owner has **parked** it (2026-08-16). Written down with the trend so the clock is visible;
+  not being fixed now.
 
 ---
 
