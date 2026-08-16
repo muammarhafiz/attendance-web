@@ -54,6 +54,21 @@ pg_dump "$DB_URL" --data-only --no-owner \
   -f db/reference-data.sql
 ```
 
+### ⚠ Roles & grants — `--no-privileges` drops them, and `pg_dump` never emits roles at all
+The commands above use `--no-privileges`, and `pg_dump` **never** dumps role definitions (roles are
+cluster-global). Live has one non-standard role — **`fdw_attendance`** (login-enabled, holds SELECT on
+**144 public tables**), a dedicated read-only external consumer. A rebuild from the dumps above would
+**silently lose** the role and its 144 grants. If you want the restore to be faithful, also run:
+
+```bash
+pg_dumpall "$DB_URL" --roles-only -f db/roles.sql
+```
+
+Caveat: `fdw_attendance` is **not** connected in the current `pg_stat_activity` snapshot — it may be a
+stale artifact of the retiring NAS integration. Decide before relying on it: if something still reads as
+`fdw_attendance`, keep the role + re-grant; if not, drop it. Don't lose it by accident. (Full detail:
+`PORT-PACKAGE/03-DEPENDENCY-WARNINGS.md` §A5.)
+
 ### ⚠ ecom_* exclusion
 `ecom_*` is the **live ZORDAQ store schema mirrored into this project — do NOT drop it, do NOT port
 it.** `--exclude-table='public.ecom_*'` keeps the ~36 ecom tables/views out of the dump. Note pg_dump

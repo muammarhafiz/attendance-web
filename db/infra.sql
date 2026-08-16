@@ -2,15 +2,23 @@
 -- extensions. From naefauflkisldxftxuhq, 2026-08-16. Re-create on the target Postgres.
 
 -- ---- Extensions (enable before the schema dump) ----
-create extension if not exists "uuid-ossp";
-create extension if not exists pgcrypto;
-create extension if not exists pg_trgm;
-create extension if not exists cube;
-create extension if not exists earthdistance;   -- (depends on cube)
+-- SCHEMA PLACEMENT MATTERS: on the live project pgcrypto + uuid-ossp live in the `extensions` schema,
+-- while earthdistance/cube/pg_trgm live in `public`. pay_v2 functions pin search_path=public,pay_v2,
+-- extensions and pay_v2.items.id DEFAULTs to uuid_generate_v4() (unqualified) — if uuid-ossp lands
+-- anywhere off that search_path, payroll-item INSERTs fail. So pin the schema explicitly to match live.
+create schema if not exists extensions;
+create extension if not exists "uuid-ossp" with schema extensions;   -- REQUIRED by pay_v2.items
+create extension if not exists pgcrypto    with schema extensions;
+create extension if not exists pg_trgm;          -- public — REQUIRED by 11 non-ecom functions (similarity())
+create extension if not exists cube;             -- public
+create extension if not exists earthdistance;    -- public — depends on cube; REQUIRED by geofenced check-in
 create extension if not exists pg_stat_statements;
 create extension if not exists pg_net;          -- v0.19.5 — REQUIRED by notify_owner() + the cron http_post jobs
 create extension if not exists pg_cron;         -- v1.6.4 — REQUIRED by the 3 scheduled jobs below
--- supabase_vault (v0.3.1) and plpgsql are managed by Supabase.
+                                                --   (pg_cron also needs shared_preload_libraries + cron.database_name
+                                                --    set in postgresql.conf on self-hosted — not just CREATE EXTENSION)
+-- supabase_vault (v0.3.1) and plpgsql are managed by Supabase. NOTE: vault is INSTALLED BUT UNUSED
+-- (vault.secrets has 0 rows; app_secrets is a plain public table) — no vault migration needed.
 
 -- ---- pg_cron jobs (times are UTC) ----
 -- 1) refresh Niagawan customers nightly (06:00 MYT)
