@@ -80,6 +80,9 @@ export default function IntakePage() {
 
   const save = useCallback(async (force = false) => {
     if (!plate.trim()) { setErrMsg('Please enter the plate number.'); return; }
+    // Note is required: it becomes the invoice's line item, so a blank note would create an
+    // empty RM0 invoice that Niagawan marks "paid" and the system never flags. Force a note.
+    if (!note.trim()) { window.alert('Please fill in the Notes / remark before checking in — describe the work or complaint so the cashier can price it.'); return; }
     setErrMsg(null);
     setPhase('saving');
     const { data: id, error } = await supabase.rpc('queue_intake', {
@@ -173,11 +176,11 @@ export default function IntakePage() {
         )}
 
         <label className="block">
-          <span className="text-sm font-medium text-ink-2">Notes / remark (optional)</span>
+          <span className="text-sm font-medium text-ink-2">Notes / remark *</span>
           <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} autoComplete="off"
             placeholder="e.g. customer complaint, things to check…"
             className="mt-1 w-full rounded-lg border border-line px-4 py-3 text-base" />
-          <span className="mt-1 block text-xs text-ink-3">If filled, it&rsquo;s added to the invoice as a line for the cashier to price.</span>
+          <span className="mt-1 block text-xs text-ink-3">Required &mdash; added to the invoice as a line for the cashier to price.</span>
         </label>
 
         {dupCheckin && (
