@@ -1,7 +1,7 @@
 // src/app/intake/page.tsx — customer check-in.
-// The supervisor opens this on his phone and hands it to the customer. The customer types
-// their car + phone, taps save, and the NAS creates the sale invoice in Niagawan within
-// ~30 seconds. Supervisors/admins only (the page runs under the supervisor's login).
+// The supervisor opens this on his phone and hands it to the customer. They tap the jobs the
+// customer wants (each becomes an invoice line), and the NAS creates the sale invoice in
+// Niagawan within ~30 seconds. Supervisors/admins only (the page runs under the supervisor's login).
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -9,13 +9,26 @@ import { supabase } from '@/lib/supabaseClient';
 import BackLink from '@/components/BackLink';
 
 type Phase = 'form' | 'saving' | 'done' | 'error';
+type Item = { key: string; name: string; detail: string; diag: boolean; custom: boolean };
+
+// The common workshop jobs, shown as one-tap chips. Editable — add/remove to taste.
+const COMMON_JOBS = ['Engine oil', 'Gearbox oil', 'Brake pad', 'Radiator / cooling', 'Aircond', 'Battery', 'Tyre', 'Alignment', 'General service'];
+// Diagnostic jobs — flagged "(diagnose)" so the mechanic checks before quoting.
+const TROUBLESHOOT = ['Wiring', 'Engine', 'Gearbox', 'Aircond not cold'];
+
+function detailPlaceholder(name: string): string {
+  if (name === 'Engine oil') return 'which oil? e.g. 5W-40 fully synthetic';
+  if (name === 'Brake pad') return 'front / rear?';
+  if (name === 'Tyre') return 'which tyre / size?';
+  return 'add detail (optional)';
+}
 
 export default function IntakePage() {
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [plate, setPlate] = useState('');
   const [model, setModel] = useState('');
   const [phone, setPhone] = useState('');
-  const [note, setNote] = useState('');
+  const [items, setItems] = useState<Item[]>([]);
   const [phase, setPhase] = useState<Phase>('form');
   const [invNo, setInvNo] = useState<string | null>(null);
   const [errMsg, setErrMsg] = useState<string | null>(null);
@@ -27,6 +40,7 @@ export default function IntakePage() {
   const plateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoPhone = useRef<string>(''); // last phone we auto-filled from plate recognition — lets us replace it when the plate resolves to a different customer, without clobbering a hand-typed number
   const plateSeq = useRef(0); // monotonic id per plate lookup — a stale (out-of-order) response must not overwrite a newer one
+  const idRef = useRef(0); // stable keys for item rows
 
   useEffect(() => {
     (async () => {
@@ -78,11 +92,30 @@ export default function IntakePage() {
     plateTimer.current = setTimeout(() => checkPlate(v), 300);
   }, [checkPlate]);
 
+  // --- Items the customer wants (each becomes its own invoice line) ---
+  const chipOn = (name: string) => items.some((i) => !i.custom && i.name === name);
+  const toggleChip = (name: string, diag: boolean) => {
+    setItems((prev) => prev.some((i) => !i.custom && i.name === name)
+      ? prev.filter((i) => !(!i.custom && i.name === name))
+      : [...prev, { key: 'c' + (idRef.current++), name, detail: '', diag, custom: false }]);
+  };
+  const addItem = () => setItems((prev) => [...prev, { key: 'x' + (idRef.current++), name: '', detail: '', diag: false, custom: true }]);
+  const setItemField = (key: string, field: 'name' | 'detail', value: string) =>
+    setItems((prev) => prev.map((i) => (i.key === key ? { ...i, [field]: value } : i)));
+  const removeItem = (key: string) => setItems((prev) => prev.filter((i) => i.key !== key));
+
   const save = useCallback(async (force = false) => {
     if (!plate.trim()) { setErrMsg('Please enter the plate number.'); return; }
-    // Note is required: it becomes the invoice's line item, so a blank note would create an
-    // empty RM0 invoice that Niagawan marks "paid" and the system never flags. Force a note.
-    if (!note.trim()) { window.alert('Please fill in the Notes / remark before checking in — describe the work or complaint so the cashier can price it.'); return; }
+    // Each item -> one invoice line. Sent newline-separated; the NAS creates a RM0.50 line per entry
+    // so the invoice is never an empty RM0 "paid" ghost. "Job" or "Job: detail"; diagnostics tagged.
+    const note = items.map((it) => {
+      const nm = it.name.trim();
+      if (!nm) return '';
+      const label = it.diag ? `${nm} (diagnose)` : nm;
+      const d = it.detail.trim();
+      return d ? `${label}: ${d}` : label;
+    }).filter(Boolean).join('\n');
+    if (!note) { window.alert('Add at least one item — tap a job above, or use “Add item”.'); return; }
     setErrMsg(null);
     setPhase('saving');
     const { data: id, error } = await supabase.rpc('queue_intake', {
@@ -118,9 +151,9 @@ export default function IntakePage() {
         setPhase('error');
       }
     }, 3000);
-  }, [plate, model, phone, note]);
+  }, [plate, model, phone, items]);
 
-  const reset = () => { setPlate(''); setModel(''); setPhone(''); setNote(''); setInvNo(null); setErrMsg(null); setHistory(null); setDupCheckin(null); setShowDetails(false); setPhase('form'); autoPhone.current = ''; };
+  const reset = () => { setPlate(''); setModel(''); setPhone(''); setItems([]); setInvNo(null); setErrMsg(null); setHistory(null); setDupCheckin(null); setShowDetails(false); setPhase('form'); autoPhone.current = ''; };
 
   if (allowed === null) return <div className="p-6 text-sm text-ink-3">Checking…</div>;
   if (!allowed) return <div className="p-6 text-sm text-ink-2">This page is for supervisors — please sign in with a supervisor account.</div>;
@@ -144,7 +177,7 @@ export default function IntakePage() {
     <div className="mx-auto max-w-md px-4 py-6">
       <BackLink />
       <h1 className="mt-2 text-2xl font-semibold tracking-tight text-ink">Car Check-in</h1>
-      <p className="mt-1 text-sm text-ink-3">Please fill in your car details</p>
+      <p className="mt-1 text-sm text-ink-3">Tap what the customer wants — add anything extra.</p>
 
       <div className="mt-5 space-y-4">
         <label className="block">
@@ -156,7 +189,7 @@ export default function IntakePage() {
         {onFile && (
           <div className="rounded-lg border border-emerald-300 bg-good-soft px-3 py-2.5 text-sm text-good">
             👋 Welcome back, <span className="font-semibold">{history?.customer}</span>.<br />
-            We already have your details — just tap <span className="font-semibold">SAVE</span>.
+            We already have your details — just add the job below and tap <span className="font-semibold">SAVE</span>.
             <button onClick={() => setShowDetails((v) => !v)} className="ml-1 underline">{showDetails ? 'hide' : 'update details'}</button>
           </div>
         )}
@@ -175,13 +208,57 @@ export default function IntakePage() {
           </>
         )}
 
-        <label className="block">
-          <span className="text-sm font-medium text-ink-2">Notes / remark *</span>
-          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} autoComplete="off"
-            placeholder="e.g. customer complaint, things to check…"
-            className="mt-1 w-full rounded-lg border border-line px-4 py-3 text-base" />
-          <span className="mt-1 block text-xs text-ink-3">Required &mdash; added to the invoice as a line for the cashier to price.</span>
-        </label>
+        {/* What the customer wants — one-tap jobs, each becomes an invoice line for the cashier to price */}
+        <div>
+          <span className="text-sm font-medium text-ink-2">What does the customer want? *</span>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {COMMON_JOBS.map((name) => (
+              <button key={name} type="button" onClick={() => toggleChip(name, false)} aria-pressed={chipOn(name)}
+                className={`rounded-full border px-3 py-1.5 text-sm ${chipOn(name) ? 'border-accent bg-accent text-white' : 'border-line text-ink hover:bg-ink/5'}`}>
+                {name}
+              </button>
+            ))}
+          </div>
+          <div className="mt-3 text-xs font-semibold uppercase tracking-wide text-ink-3">Troubleshoot / diagnose</div>
+          <div className="mt-1.5 flex flex-wrap gap-2">
+            {TROUBLESHOOT.map((name) => (
+              <button key={name} type="button" onClick={() => toggleChip(name, true)} aria-pressed={chipOn(name)}
+                className={`rounded-full border px-3 py-1.5 text-sm ${chipOn(name) ? 'border-accent bg-accent text-white' : 'border-line text-ink hover:bg-ink/5'}`}>
+                {name}
+              </button>
+            ))}
+          </div>
+
+          {items.length > 0 && (
+            <div className="mt-3 divide-y divide-line rounded-lg border border-line">
+              {items.map((it) => (
+                <div key={it.key} className="p-2.5">
+                  <div className="flex items-center gap-2">
+                    {it.custom ? (
+                      <input value={it.name} onChange={(e) => setItemField(it.key, 'name', e.target.value)}
+                        placeholder="item name — e.g. Wiper blade" autoComplete="off"
+                        className="min-w-0 flex-1 rounded-lg border border-line px-2 py-1 text-sm font-medium" />
+                    ) : (
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{it.name}</span>
+                    )}
+                    {it.diag && <span className="rounded border border-line px-1.5 py-0.5 text-xs font-semibold text-ink-3">diagnose</span>}
+                    <button type="button" onClick={() => removeItem(it.key)} aria-label={`Remove ${it.name || 'item'}`}
+                      className="shrink-0 rounded px-1 text-lg leading-none text-ink-3 hover:text-bad">×</button>
+                  </div>
+                  <input value={it.detail} onChange={(e) => setItemField(it.key, 'detail', e.target.value)}
+                    placeholder={detailPlaceholder(it.name)} autoComplete="off"
+                    className="mt-1.5 w-full rounded-lg border border-line px-2 py-1 text-sm" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button type="button" onClick={addItem}
+            className="mt-2.5 w-full rounded-lg border border-dashed border-line py-2.5 text-sm font-semibold text-accent hover:bg-ink/5">
+            + Add item
+          </button>
+          <p className="mt-1.5 text-xs text-ink-3">Each item becomes its own invoice line for the cashier to price.</p>
+        </div>
 
         {dupCheckin && (
           <div className="rounded-lg border border-amber-300 bg-warn-soft px-3 py-2.5 text-sm text-warn">
