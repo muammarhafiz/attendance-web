@@ -12,14 +12,14 @@ type NavChild = { href: string; label: string; match?: string; badge?: number };
 type NavItem = { href?: string; label: string; match?: string; badge?: number; icon: IconName; children?: NavChild[] };
 type NavGroup = { label: string; items: NavItem[] };
 type NotifItem = { type: string; id: string; who: string; detail: string; when: string; href: string };
-const NOTIF_ICON: Record<string, string> = { offday: '🌴', halfday: '🕧', advance: '💵', mc: '📄', po: '📦', pinv: '📥', pinv_created: '✅', not_checkin: '⏰', stuckcar: '🚗', debt: '🧾', lowstock: '📉', bnpl_payout: '💳', probation_review: '🎓', job_done: '⚙️', po_created: '📦', owner_digest: '🌙',
+const NOTIF_ICON: Record<string, string> = { offday: '🌴', halfday: '🕧', advance: '💵', mc: '📄', po: '📦', pinv: '📥', pinv_created: '✅', not_checkin: '⏰', stuckcar: '🚗', debt: '🧾', lowstock: '📉', bnpl_payout: '💳', probation_review: '🎓', job_done: '⚙️', po_created: '📦', owner_digest: '🌙', robot_health: '🤖',
   // staff-facing outcomes (their own request was decided)
   offday_result: '🌴', halfday_result: '🕧', mc_result: '📄', advance_result: '💵',
   // holiday reminders (owner/office/manager)
   holiday_decide: '🗓️', holiday_load: '📅',
   // staff upload reminders
   mc_cert: '📄', doc_needed: '📎' };
-const NOTIF_LABEL: Record<string, string> = { offday: 'off-day request', halfday: 'half-day request', advance: 'advance request', mc: 'MC', po: 'purchase order', pinv: 'purchase invoice', pinv_created: 'created in Niagawan ✓', not_checkin: 'attendance', stuckcar: 'in shop > 3 days', debt: 'newly overdue', lowstock: 'to restock', bnpl_payout: 'new payout', probation_review: 'trial review', job_done: 'finished', po_created: 'purchase order', owner_digest: 'end-of-day summary',
+const NOTIF_LABEL: Record<string, string> = { offday: 'off-day request', halfday: 'half-day request', advance: 'advance request', mc: 'MC', po: 'purchase order', pinv: 'purchase invoice', pinv_created: 'created in Niagawan ✓', not_checkin: 'attendance', stuckcar: 'in shop > 3 days', debt: 'newly overdue', lowstock: 'to restock', bnpl_payout: 'new payout', probation_review: 'trial review', job_done: 'finished', po_created: 'purchase order', owner_digest: 'end-of-day summary', robot_health: 'import problem',
   offday_result: 'off-day request', halfday_result: 'half-day request', mc_result: 'MC', advance_result: 'advance',
   holiday_decide: 'public holiday', holiday_load: 'to load',
   mc_cert: 'to upload', doc_needed: 'to upload' };
@@ -32,6 +32,14 @@ function relTime(iso: string): string {
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
+}
+// Always-visible timestamp for a bell item: clock time + short date + relative, e.g. "9:05 AM · 23 Sep · 3h ago".
+function fmtWhen(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const time = d.toLocaleTimeString('en-MY', { hour: 'numeric', minute: '2-digit', hour12: true });
+  const date = d.toLocaleDateString('en-MY', { day: 'numeric', month: 'short' });
+  return `${time} · ${date} · ${relTime(iso)}`;
 }
 
 // Monochrome line icons (currentColor) — one per nav item, keyed by IconName.
@@ -506,7 +514,8 @@ export default function NavBar() {
                           <span className="mt-0.5 text-base leading-none">{NOTIF_ICON[i.type] ?? '🔔'}</span>
                           <span className="min-w-0 flex-1">
                             <span className="block text-sm text-ink"><span className="font-medium">{i.who}</span> · {NOTIF_LABEL[i.type] ?? i.type}</span>
-                            <span className="block truncate text-xs text-ink-3">{i.detail} · {relTime(i.when)}</span>
+                            <span className="block truncate text-xs text-ink-3">{i.detail}</span>
+                            <span className="mt-0.5 block text-[11px] text-ink-3">{fmtWhen(i.when)}</span>
                           </span>
                         </button>
                         <button onClick={() => dismiss(i)} aria-label="Dismiss" className="shrink-0 leading-none text-ink-3 hover:text-ink">✕</button>

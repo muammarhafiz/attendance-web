@@ -23,6 +23,7 @@ const TYPE_LABEL: Record<string, string> = {
   probation_review: 'Probation review (3-month)',
   job_done: 'Background job finished (sync / refresh / backfill)',
   po_created: 'Purchase order created in Niagawan',
+  robot_health: 'ATOME import health',
 };
 
 function Switch({ on, onChange, disabled }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
