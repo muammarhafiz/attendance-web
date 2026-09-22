@@ -24,6 +24,7 @@ const TYPE_LABEL: Record<string, string> = {
   job_done: 'Background job finished (sync / refresh / backfill)',
   po_created: 'Purchase order created in Niagawan',
   robot_health: 'ATOME import health',
+  sales_unmapped: 'New salesperson to identify',
 };
 
 function Switch({ on, onChange, disabled }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
