@@ -34,6 +34,8 @@ export default function PnlPage() {
   const [staffMeals, setStaffMeals] = useState(0); // GrabFood staff lunch total (auto from email receipts)
   const [meals, setMeals] = useState<Meal[]>([]);   // individual GrabFood receipts for the month
   const [staffSales, setStaffSales] = useState<StaffSales[]>([]); // per-staff sales (admin RPC, matches each staff's "My sales")
+  const [staffOptions, setStaffOptions] = useState<{ email: string; label: string }[]>([]); // active staff, for the "assign unmapped name" picker
+  const [pick, setPick] = useState<Record<string, string>>({}); // per-nickname chosen staff email (defaults to the suggestion)
   const [zeroByDay, setZeroByDay] = useState<Record<string, number>>({}); // day -> count of un-priced parts (Sales-page finality)
   const [targetNet, setTargetNet] = useState(50000);
   const [ptjPct, setPtjPct] = useState(5);
@@ -54,7 +56,7 @@ export default function PnlPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [d, s, t, b, p, st, g, ml, ss, zc] = await Promise.all([
+    const [d, s, t, b, p, st, g, ml, ss, zc, so] = await Promise.all([
       supabase.from('niagawan_daily').select('day,invoices,sales,cogs,profit,unpaid_count').gte('day', firstDay).lte('day', lastDay).order('day'),
       supabase.from('niagawan_sale_inv').select('inv,day,customer,amount,status,staff').gte('day', firstDay).lte('day', lastDay),
       supabase.from('trade_customers').select('*').order('match'),
@@ -65,6 +67,7 @@ export default function PnlPage() {
       supabase.from('grab_meals').select('meal_date,amount,item_count,drink_count').gte('meal_date', firstDay).lte('meal_date', lastDay).order('meal_date', { ascending: true }),
       supabase.rpc('all_staff_sales', { p_year: year, p_month: month }),
       supabase.rpc('cogs_zero_day_counts'), // days with un-priced parts -> Sales-page day finality
+      supabase.rpc('sales_staff_options'), // active staff for the "assign unmapped name" picker
     ]);
     const loadErr = d.error || ss.error; // surface a Staff-sales RPC failure, don't mask it as empty
     if (loadErr) setErr(loadErr.message); else setErr(null);
@@ -76,6 +79,7 @@ export default function PnlPage() {
     setStaffMeals(n(g.data) || 0);
     setMeals((ml.data ?? []) as Meal[]);
     setStaffSales((ss.data ?? []) as StaffSales[]);
+    setStaffOptions((so.data ?? []) as { email: string; label: string }[]);
     const zmap: Record<string, number> = {};
     for (const row of (zc.data ?? []) as ZeroCount[]) zmap[row.audit_date] = Number(row.n) || 0;
     setZeroByDay(zmap);
@@ -187,6 +191,22 @@ export default function PnlPage() {
     await load();
   }, [load]);
 
+  // Link an unmapped Niagawan salesperson name to a staff member — credits all their sales (past + future).
+  const assignName = useCallback(async (nickname: string, email: string) => {
+    if (!nickname || !email) return;
+    const { error } = await supabase.rpc('sales_staff_assign', { p_nickname: nickname, p_staff_email: email });
+    if (error) { setErr(error.message); return; }
+    await load();
+  }, [load]);
+
+  // Park a name (typo / not a real seller) so it stops asking "who is this?".
+  const ignoreName = useCallback(async (nickname: string) => {
+    if (!nickname) return;
+    const { error } = await supabase.rpc('sales_name_ignore', { p_nickname: nickname });
+    if (error) { setErr(error.message); return; }
+    await load();
+  }, [load]);
+
   const saveSetting = useCallback(async (key: string, value: number) => {
     await supabase.from('pnl_settings').upsert({ key, value: value as unknown as object }, { onConflict: 'key' });
   }, []);
@@ -202,11 +222,19 @@ export default function PnlPage() {
   // Staff-meal portions split into food vs drinks (drinks classified at parse time).
   const mealDrink = meals.reduce((s, m) => s + n(m.drink_count), 0);
   const mealFood = meals.reduce((s, m) => s + (m.item_count == null ? 0 : n(m.item_count) - n(m.drink_count)), 0);
-  // Staff sales: mapped staff by total desc, "Unattributed" bucket (staff_email === null) pinned last.
+  // Staff sales: mapped staff by total desc, then unmapped names to identify, then the non-actionable bucket.
   const staffRows = [...staffSales].sort((a, b) => {
-    if ((a.staff_email === null) !== (b.staff_email === null)) return a.staff_email === null ? 1 : -1;
+    const rank = (r: StaffSales) => (r.staff_email !== null ? 0 : r.niagawan_names !== null ? 1 : 2);
+    if (rank(a) !== rank(b)) return rank(a) - rank(b);
     return n(b.total) - n(a.total);
   });
+  // Suggest the staff for an unmapped nickname: unique active staff whose name contains it (len >= 4).
+  const suggestFor = (nick: string): string => {
+    const q = (nick || '').trim().toUpperCase();
+    if (q.length < 4) return '';
+    const hits = staffOptions.filter((o) => o.label.toUpperCase().includes(q));
+    return hits.length === 1 ? hits[0].email : '';
+  };
   const staffSalesTotal = staffRows.reduce((s, r) => s + n(r.total), 0);
   const staffSalesInv = staffRows.reduce((s, r) => s + n(r.invoices), 0);
 
@@ -255,17 +283,47 @@ export default function PnlPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-line">
-                      {staffRows.map((r, i) => (
-                        <tr key={r.staff_email ?? '__unmapped__'} className={r.staff_email === null ? 'bg-ink/[0.03]' : ''}>
-                          <td className="px-3 py-1.5 tabular-nums text-ink-3">{r.staff_email === null ? '·' : i + 1}</td>
-                          <td className="px-3 py-1.5">
-                            <div className={r.staff_email === null ? 'text-ink-2' : 'text-ink-2'}>{r.staff_name}</div>
-                            {r.niagawan_names && <div className="text-xs text-ink-3">{r.niagawan_names}</div>}
-                          </td>
-                          <td className="px-3 py-1.5 text-right tabular-nums text-ink-2">{n(r.invoices)}</td>
-                          <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums font-medium text-ink-2">{rm(n(r.total))}</td>
-                        </tr>
-                      ))}
+                      {staffRows.map((r, i) => {
+                        const mapped = r.staff_email !== null;
+                        const assignable = !mapped && r.niagawan_names !== null;
+                        const nick = r.niagawan_names ?? '';
+                        const chosen = assignable ? (pick[nick] ?? suggestFor(nick)) : '';
+                        return (
+                          <tr key={r.staff_email ?? r.staff_name} className={mapped ? '' : assignable ? 'bg-warn-soft/40' : 'bg-ink/[0.03]'}>
+                            <td className="px-3 py-1.5 align-top tabular-nums text-ink-3">{mapped ? i + 1 : '·'}</td>
+                            <td className="px-3 py-1.5">
+                              {mapped ? (
+                                <>
+                                  <div className="text-ink-2">{r.staff_name}</div>
+                                  {r.niagawan_names && <div className="text-xs text-ink-3">{r.niagawan_names}</div>}
+                                </>
+                              ) : assignable ? (
+                                <>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="font-medium text-ink">{r.staff_name}</span>
+                                    <span className="rounded-full bg-warn-soft px-2 py-0.5 text-[11px] font-medium text-warn">new · who is this?</span>
+                                  </div>
+                                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                                    <select value={chosen} onChange={(e) => setPick((p) => ({ ...p, [nick]: e.target.value }))}
+                                      className="max-w-[12rem] rounded-lg border border-line bg-card px-2 py-1 text-xs text-ink-2">
+                                      <option value="">Assign to…</option>
+                                      {staffOptions.map((o) => (<option key={o.email} value={o.email}>{o.label}</option>))}
+                                    </select>
+                                    <button onClick={() => assignName(nick, chosen)} disabled={!chosen}
+                                      className="rounded-lg bg-btn px-2.5 py-1 text-xs font-semibold text-btn-ink hover:opacity-90 disabled:opacity-40">Assign</button>
+                                    <button onClick={() => ignoreName(nick)}
+                                      className="rounded-lg border border-line px-2.5 py-1 text-xs text-ink-3 hover:bg-ink/5">Ignore</button>
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="text-ink-3">{r.staff_name}</div>
+                              )}
+                            </td>
+                            <td className="px-3 py-1.5 align-top text-right tabular-nums text-ink-2">{n(r.invoices)}</td>
+                            <td className="whitespace-nowrap px-3 py-1.5 align-top text-right tabular-nums font-medium text-ink-2">{rm(n(r.total))}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                     <tfoot>
                       <tr className="border-t border-line font-semibold">
@@ -278,7 +336,7 @@ export default function PnlPage() {
                   </table>
                 </div>
               )}
-              <div className="mt-2 text-xs text-ink-3">All invoices for the month, attributed by salesperson (Niagawan &ldquo;Delivery&rdquo; name → staff). &ldquo;Unattributed&rdquo; = invoices whose salesperson isn&rsquo;t in the mapping yet. This is total sales, not repair-only — it can differ from the Overview&rsquo;s &ldquo;Top mechanics&rdquo; (repair revenue only).</div>
+              <div className="mt-2 text-xs text-ink-3">All invoices for the month, credited by salesperson. A <span className="font-medium text-warn">new · who is this?</span> row is a Niagawan name not yet linked to a staff member — pick who it is (or Ignore a typo) and it credits all their sales, past and future. &ldquo;No salesperson / ignored&rdquo; = invoices with no name entered in Niagawan, or names you&rsquo;ve ignored. This is total sales, not repair-only — it can differ from the Overview&rsquo;s &ldquo;Top mechanics&rdquo;.</div>
             </div>
           )}
 

@@ -26,6 +26,7 @@ const LABEL: Record<string, string> = {
   po_created: 'PO created',
   owner_digest: 'End-of-day summary',
   robot_health: '⚠️ Import health',
+  sales_unmapped: '👤 New salesperson',
 };
 
 type FeedItem = { type: string; id: string; who: string; detail: string; when: string; href: string };
