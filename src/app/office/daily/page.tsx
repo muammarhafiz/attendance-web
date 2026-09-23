@@ -2,7 +2,7 @@
 // Office → Daily: yesterday's payments grouped by method, with the individual invoices. The clerk
 // ticks each transfer/QR/card line once she confirms it's in the bank (cash is verified via the
 // cash count instead). Checks persist in cash_entry_checked (survives the nightly re-scrape).
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import { OfficeShell, Gate, rm, fmtDay, ZeroCogsCard, UnpaidCard, type Home, type ZeroLine } from '@/components/office/shared';
@@ -39,6 +39,10 @@ export default function DailyPage() {
   const [cashInput, setCashInput] = useState(''); // what the clerk keys in as counted cash
   const [noteDraft, setNoteDraft] = useState<Record<string, string>>({}); // per-line KIV note being typed
   const [bnpl, setBnpl] = useState<BnplOut | null>(null); // outstanding BNPL sales — not day-scoped, carries forward until settled
+  const [syncing, setSyncing] = useState(false); // refresh = re-scrape the viewed day from Niagawan, then reload
+  const [syncMsg, setSyncMsg] = useState('');
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
   useEffect(() => {
     (async () => {
@@ -72,6 +76,43 @@ export default function DailyPage() {
     loadBnpl();
   }, [loadBnpl]);
 
+  // Refresh = pull the VIEWED day fresh from Niagawan (sales + COGS + cash-book), then reload — so the
+  // reconcile shows the true day instead of a stale scrape. Uses the same NAS sync queue as Sales "Sync now".
+  const syncFromNiagawan = useCallback(async () => {
+    if (syncing) return;
+    setSyncing(true);
+    setSyncMsg(`Pulling ${fmtDay(day)} from Niagawan… (can take up to a minute)`);
+    const { data, error } = await supabase
+      .from('sync_requests')
+      .insert({ source: 'website', which: 'sales', from_date: day, to_date: day })
+      .select('id')
+      .single();
+    if (error || !data) {
+      setSyncing(false);
+      setSyncMsg('Could not start sync: ' + (error?.message ?? 'unknown error'));
+      return;
+    }
+    const id = data.id as number;
+    const startedAt = Date.now();
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(async () => {
+      const { data: row } = await supabase.from('sync_requests').select('status').eq('id', id).single();
+      const status = row?.status;
+      if (status === 'done' || status === 'error') {
+        if (pollRef.current) clearInterval(pollRef.current);
+        await load();
+        await loadBnpl();
+        setSyncing(false);
+        setSyncMsg(status === 'done' ? 'Updated from Niagawan ✓' : 'Sync ran but reported an error — try again shortly.');
+        setTimeout(() => setSyncMsg(''), 4000);
+      } else if (Date.now() - startedAt > 3 * 60 * 1000) {
+        if (pollRef.current) clearInterval(pollRef.current);
+        setSyncing(false);
+        setSyncMsg('Still running in the background — tap sync again in a moment.');
+      }
+    }, 4000);
+  }, [syncing, day, load, loadBnpl]);
+
   const bnplSlugs = new Set((bnpl?.providers ?? []).map((p) => p.slug));
 
   const shiftDay = (delta: number) => {
@@ -103,7 +144,18 @@ export default function DailyPage() {
 
   return (
     <Gate allowed={allowed} loading={loading} d={(d ?? null) as unknown as Home}>
-      <OfficeShell title="Daily" back onRefresh={() => { load(); loadBnpl(); }}>
+      <OfficeShell title="Daily" back onRefresh={syncFromNiagawan} refreshing={syncing} refreshLabel="sync from Niagawan">
+        {syncMsg && (
+          <div className={`mb-3 rounded-lg border px-3 py-2 text-xs ${
+            syncMsg.startsWith('Could not') || syncMsg.includes('error')
+              ? 'border-rose-200 bg-bad-soft text-bad'
+              : syncMsg.includes('✓')
+              ? 'border-emerald-200 bg-good-soft text-good'
+              : 'border-accent/40 bg-accent-weak text-accent'
+          }`}>
+            {syncMsg}
+          </div>
+        )}
         <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-3">Payments</div>
         <div className="mb-3 flex items-center gap-2 text-sm">
           <span className="text-ink-2">Payments for</span>
