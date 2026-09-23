@@ -10,6 +10,7 @@ import BackLink from '@/components/BackLink';
 
 type Phase = 'form' | 'saving' | 'done' | 'error';
 type Item = { key: string; name: string; detail: string; diag: boolean; custom: boolean };
+type Cand = { last_day: string | null; customer: string; cust_id: string | null; phone: string | null };
 
 // The common workshop jobs, shown as one-tap chips. Editable — add/remove to taste.
 const COMMON_JOBS = ['Engine oil', 'Gearbox oil', 'Brake pad', 'Radiator / cooling', 'Aircond', 'Battery', 'Tyre', 'Alignment', 'General service'];
@@ -32,7 +33,8 @@ export default function IntakePage() {
   const [phase, setPhase] = useState<Phase>('form');
   const [invNo, setInvNo] = useState<string | null>(null);
   const [errMsg, setErrMsg] = useState<string | null>(null);
-  const [history, setHistory] = useState<{ last_day: string | null; customer: string; cust_id: string | null; phone: string | null } | null>(null);
+  const [history, setHistory] = useState<Cand | null>(null);
+  const [candidates, setCandidates] = useState<Cand[] | null>(null); // >1 customer matches this plate (different phones) — ask the clerk which
   const [dupCheckin, setDupCheckin] = useState<{ inv_no: string | null; created_at: string } | null>(null); // already checked in today
   const onFile = !!history?.cust_id; // already a registered Niagawan customer
   const [showDetails, setShowDetails] = useState(false);
@@ -53,36 +55,51 @@ export default function IntakePage() {
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); if (plateTimer.current) clearTimeout(plateTimer.current); }, []);
 
-  // Returning car? Recognise the plate and pre-fill what we already have on file.
+  // Drop a stale auto-filled number (keep a hand-typed one) — used when the plate no longer resolves
+  // to a single customer.
+  const clearAutoPhone = useCallback(() => {
+    const filled = autoPhone.current;
+    setPhone((cur) => (cur !== '' && cur === filled ? '' : cur));
+    autoPhone.current = '';
+  }, []);
+
+  // Recognise a single matched customer: fill history + phone (never clobber a hand-typed number).
+  const recognise = useCallback((h: Cand) => {
+    setHistory(h);
+    setCandidates(null);
+    setPhone((cur) => {
+      if (cur === '' || cur === autoPhone.current) { autoPhone.current = h.phone ?? ''; return h.phone ?? ''; }
+      return cur;
+    });
+  }, []);
+
+  // Returning car? The lookup collapses duplicate records by phone: 1 row -> recognise & pre-fill;
+  // several rows (same plate, different phones) -> show a picker so the clerk chooses (never auto-fill a
+  // guess); 0 rows -> treat as new.
   const checkPlate = useCallback(async (p: string) => {
-    if (p.replace(/\s/g, '').length < 4) { setHistory(null); setDupCheckin(null); return; }
+    if (p.replace(/\s/g, '').length < 4) { setHistory(null); setCandidates(null); setDupCheckin(null); return; }
     const seq = ++plateSeq.current; // this lookup's id
     const [{ data }, { data: dup }] = await Promise.all([
       supabase.rpc('intake_plate_lookup', { p }),
       supabase.rpc('intake_today_checkin', { p }), // already checked in today? -> warn before a 2nd invoice
     ]);
     if (seq !== plateSeq.current) return; // a newer plate lookup started while we awaited — ignore this stale result
-    const row = Array.isArray(data) && data.length ? data[0] : null;
-    if (row) {
-      const h = row as { last_day: string | null; customer: string; cust_id: string | null; phone: string | null };
-      setHistory(h);
-      // Pre-fill the phone from the recognised customer — and REPLACE it if the plate now resolves to a
-      // different customer (fixes the wrong-number carry-over from a partial-plate match) — but never
-      // clobber a number the user typed by hand. autoPhone tracks what we last auto-filled.
-      setPhone((cur) => {
-        if (cur === '' || cur === autoPhone.current) { autoPhone.current = h.phone ?? ''; return h.phone ?? ''; }
-        return cur;
-      });
+    const rows = (Array.isArray(data) ? data : []) as Cand[];
+    if (rows.length === 1) {
+      recognise(rows[0]);
+    } else if (rows.length > 1) {
+      // Ambiguous — more than one customer on this plate. Surface them; don't auto-fill a wrong number.
+      setCandidates(rows);
+      setHistory(null);
+      clearAutoPhone();
     } else {
       setHistory(null);
-      // Plate no longer matches a known customer — drop a stale auto-filled number, keep a typed one.
-      const filled = autoPhone.current;
-      setPhone((cur) => (cur !== '' && cur === filled ? '' : cur));
-      autoPhone.current = '';
+      setCandidates(null);
+      clearAutoPhone();
     }
     const drow = Array.isArray(dup) && dup.length ? (dup[0] as { inv_no: string | null; created_at: string }) : null;
     setDupCheckin(drow ? { inv_no: drow.inv_no, created_at: drow.created_at } : null);
-  }, []);
+  }, [recognise, clearAutoPhone]);
 
   // Live recognition as the plate is typed (debounced, like the Part Arrived search).
   const onPlateChange = useCallback((raw: string) => {
@@ -153,7 +170,7 @@ export default function IntakePage() {
     }, 3000);
   }, [plate, model, phone, items]);
 
-  const reset = () => { setPlate(''); setModel(''); setPhone(''); setItems([]); setInvNo(null); setErrMsg(null); setHistory(null); setDupCheckin(null); setShowDetails(false); setPhase('form'); autoPhone.current = ''; };
+  const reset = () => { setPlate(''); setModel(''); setPhone(''); setItems([]); setInvNo(null); setErrMsg(null); setHistory(null); setCandidates(null); setDupCheckin(null); setShowDetails(false); setPhase('form'); autoPhone.current = ''; };
 
   if (allowed === null) return <div className="p-6 text-sm text-ink-3">Checking…</div>;
   if (!allowed) return <div className="p-6 text-sm text-ink-2">This page is for supervisors — please sign in with a supervisor account.</div>;
@@ -186,6 +203,21 @@ export default function IntakePage() {
             placeholder="WWW1234" autoCapitalize="characters" autoComplete="off"
             className="mt-1 w-full rounded-lg border border-line px-4 py-1 font-mono text-xl uppercase tracking-wide" />
         </label>
+        {candidates && candidates.length > 0 && (
+          <div className="rounded-lg border border-amber-300 bg-warn-soft px-3 py-2.5 text-sm text-warn">
+            <div className="font-medium">More than one customer is on plate <span className="font-semibold">{plate}</span> — which one?</div>
+            <div className="mt-2 flex flex-col gap-1.5">
+              {candidates.map((c) => (
+                <button key={(c.cust_id ?? '') + '|' + (c.phone ?? '')} type="button" onClick={() => recognise(c)}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-line bg-card px-3 py-1.5 text-left hover:bg-ink/5">
+                  <span className="min-w-0 truncate font-medium text-ink">{c.customer}</span>
+                  <span className="shrink-0 text-xs text-ink-3">{c.phone ?? 'no phone'}</span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-1.5 text-xs text-warn">Pick the one with the right phone — or just fill the details below if it&rsquo;s a new customer.</div>
+          </div>
+        )}
         {onFile && (
           <div className="rounded-lg border border-emerald-300 bg-good-soft px-3 py-2.5 text-sm text-good">
             👋 Welcome back, <span className="font-semibold">{history?.customer}</span>.<br />
