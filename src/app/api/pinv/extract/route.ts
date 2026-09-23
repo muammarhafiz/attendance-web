@@ -171,6 +171,14 @@ export async function POST(req: Request) {
     if (ingest) {
       const { data: secret } = await admin.from('app_secrets').select('value').eq('name', 'niagawan_ingest_token').single();
       if (!secret?.value || ingest !== secret.value) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      // Auto-read of EMAIL-imported invoices is deferred by default: the invoice lands as 'uploaded'
+      // and waits for the owner to tap "Read" on the purchase-invoice page (control over when/what gets
+      // AI-read). A manual Read (admin Bearer, below) always proceeds. Flip app_secrets 'pinv_auto_read'
+      // to 'on' to restore automatic reading on email import.
+      const { data: autoCfg } = await admin.from('app_secrets').select('value').eq('name', 'pinv_auto_read').maybeSingle();
+      if (String(autoCfg?.value ?? 'off').toLowerCase() !== 'on') {
+        return NextResponse.json({ ok: true, deferred: true });
+      }
     } else {
       const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
       if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
