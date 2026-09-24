@@ -30,6 +30,10 @@ export async function POST(req: Request) {
     const filesPosted = int0(body?.files_posted);
     const filesFailed = int0(body?.files_failed);
     const threadsLabelled = int0(body?.threads_labelled);
+    // A robot may report it stopped early on its own wall-clock budget (e.g. checkInvoices' 4-min
+    // soft cap) rather than being killed. Capping is HEALTHY — it is the robot finishing cleanly — so
+    // we only record it for visibility; it is never an alert condition.
+    const capped = body?.capped === true;
     const errText = body?.error ? String(body.error).slice(0, 500) : null;
     const nowIso = new Date().toISOString();
 
@@ -38,7 +42,7 @@ export async function POST(req: Request) {
     const patch: Record<string, unknown> = {
       name,
       last_run_at: nowIso,
-      last_result: { files_posted: filesPosted, files_failed: filesFailed, threads_labelled: threadsLabelled, error: errText, at: nowIso },
+      last_result: { files_posted: filesPosted, files_failed: filesFailed, threads_labelled: threadsLabelled, capped, error: errText, at: nowIso },
       updated_at: nowIso,
     };
     if (filesFailed === 0) patch.last_ok_at = nowIso;
