@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
-import { Icon } from './icons';
+import { Icon, type IconName } from './icons';
 
 type Status = {
   status?: string;
@@ -701,22 +701,26 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
               {/* My leave — annual + sick balances (Employment Act entitlement by tenure) */}
               {leave && (
                 <div className="rounded-card bg-card p-4 shadow-card">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-ink"><span className="text-ink-2"><Icon name="calendar" size={16} /></span> My leave <span className="text-xs font-normal text-ink-3">· {leave.year}</span></div>
-                  <div className="mt-3">
-                    <div className="flex items-baseline justify-between text-sm">
-                      <span className="text-ink-2">Annual leave</span>
-                      <span><span className="font-semibold text-ink">{leave.annual_left}</span><span className="text-ink-3"> of {leave.annual_ent} left</span></span>
+                  <CardHead icon="calendar" title="My leave" meta={<span className="rounded-full bg-ink/5 px-2 py-0.5 text-[11px] font-semibold text-ink-2">{leave.year}</span>} />
+                  <div className="space-y-4">
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">Annual leave</div>
+                      <div className="mt-1 flex items-baseline gap-1.5">
+                        <span className="text-2xl font-semibold tabular-nums leading-none text-ink">{leave.annual_left}</span>
+                        <span className="text-xs text-ink-2">of {leave.annual_ent} days left</span>
+                      </div>
+                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-ink/10"><div className={`h-full rounded-full ${leave.annual_left === 0 ? 'bg-bad' : 'bg-good'}`} style={{ width: `${leave.annual_ent > 0 ? Math.min(100, Math.round((leave.annual_used / leave.annual_ent) * 100)) : 0}%` }} /></div>
+                      <div className="mt-1 text-[11px] text-ink-3">{leave.annual_used} used{leave.emergency_used > 0 ? ` · incl. ${leave.emergency_used} emergency` : ''}</div>
                     </div>
-                    <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-ink/10"><div className={`h-full rounded-full ${leave.annual_left === 0 ? 'bg-bad' : 'bg-good'}`} style={{ width: `${leave.annual_ent > 0 ? Math.min(100, Math.round((leave.annual_used / leave.annual_ent) * 100)) : 0}%` }} /></div>
-                    <div className="mt-1 text-[11px] text-ink-3">{leave.annual_used} used{leave.emergency_used > 0 ? ` · incl. ${leave.emergency_used} emergency` : ''}</div>
-                  </div>
-                  <div className="mt-3">
-                    <div className="flex items-baseline justify-between text-sm">
-                      <span className="text-ink-2">Sick leave (MC)</span>
-                      <span><span className="font-semibold text-ink">{leave.mc_left}</span><span className="text-ink-3"> of {leave.mc_ent} left</span></span>
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">Sick leave · MC</div>
+                      <div className="mt-1 flex items-baseline gap-1.5">
+                        <span className="text-2xl font-semibold tabular-nums leading-none text-ink">{leave.mc_left}</span>
+                        <span className="text-xs text-ink-2">of {leave.mc_ent} days left</span>
+                      </div>
+                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-ink/10"><div className={`h-full rounded-full ${leave.mc_left === 0 ? 'bg-bad' : 'bg-accent'}`} style={{ width: `${leave.mc_ent > 0 ? Math.min(100, Math.round((leave.mc_used / leave.mc_ent) * 100)) : 0}%` }} /></div>
+                      <div className="mt-1 text-[11px] text-ink-3">{leave.mc_used} used of {leave.mc_ent}</div>
                     </div>
-                    <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-ink/10"><div className={`h-full rounded-full ${leave.mc_left === 0 ? 'bg-bad' : 'bg-accent'}`} style={{ width: `${leave.mc_ent > 0 ? Math.min(100, Math.round((leave.mc_used / leave.mc_ent) * 100)) : 0}%` }} /></div>
-                    <div className="mt-1 text-[11px] text-ink-3">{leave.mc_used} used of {leave.mc_ent}</div>
                   </div>
                   {leave.unpaid > 0 && <div className="mt-3 rounded-md bg-bad-soft px-2 py-1 text-xs text-bad">{leave.unpaid} day{leave.unpaid === 1 ? '' : 's'} over annual leave → unpaid</div>}
                   <div className="mt-3 border-t border-line pt-2 text-[11px] text-ink-3">Emergency leave comes out of annual. Rest days &amp; public holidays don&rsquo;t count.</div>
@@ -725,15 +729,14 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
               {/* Attendance performance this month — late/absent highlighted */}
               {perf && (
                 <div className="rounded-card bg-card p-4 shadow-card">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-ink"><span className="text-ink-2"><Icon name="calendar" size={16} /></span> My attendance</div>
+                  <CardHead icon="calendar" title="My attendance" meta={
                     <div className="flex items-center gap-1">
                       <button onClick={() => setPerfOffset((o) => o + 1)} aria-label="Previous month" className="rounded px-1.5 py-0.5 text-base leading-none text-ink-2 hover:bg-ink/5">‹</button>
                       <span className="min-w-[64px] text-center text-xs font-medium text-ink-2">{new Date(perf.year, perf.month - 1, 1).toLocaleDateString('en-MY', { month: 'short', year: 'numeric' })}</span>
                       <button onClick={() => setPerfOffset((o) => Math.max(0, o - 1))} disabled={perfOffset === 0} aria-label="Next month" className="rounded px-1.5 py-0.5 text-base leading-none text-ink-2 hover:bg-ink/5 disabled:opacity-30">›</button>
                     </div>
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2">
+                  } />
+                  <div className="grid grid-cols-2 gap-2">
                     <PerfStat label="Late" value={perf.late_days === 0 ? 'None' : `${perf.late_days}× · ${perf.late_minutes} min`} bad={perf.late_days > 0} tone="amber" />
                     <PerfStat label="Absent" value={perf.absent === 0 ? 'None' : `${perf.absent} day${perf.absent === 1 ? '' : 's'}`} bad={perf.absent > 0} tone="rose" />
                     <PerfStat label="Off days" value={String(perf.offday)} />
@@ -757,18 +760,16 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
               {/* My sales this month */}
               {sales && (
                 <div className="rounded-card bg-card p-4 shadow-card">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-ink"><span className="text-ink-2"><Icon name="trending" size={16} /></span> My sales <span className="text-xs font-normal text-ink-3">· {monthLabel}</span></div>
-                    <div className="text-xl font-extrabold text-ink">{rm(sales.total)}</div>
-                  </div>
-                  <div className="mt-0.5 text-xs text-ink-3">{sales.invoices} invoice{sales.invoices === 1 ? '' : 's'} · use ‹ › above to change month</div>
+                  <CardHead icon="trending" title="My sales" meta={<span className="rounded-full bg-ink/5 px-2 py-0.5 text-[11px] font-semibold text-ink-2">{monthLabel}</span>} />
+                  <div className="text-3xl font-semibold tabular-nums tracking-tight text-ink">{rm(sales.total)}</div>
+                  <div className="mt-1 text-xs text-ink-3">{sales.invoices} invoice{sales.invoices === 1 ? '' : 's'} this month</div>
                 </div>
               )}
 
               {/* Team sales leaderboard — everyone can see (sales are not private) */}
               {board.length > 0 && (
                 <div className="rounded-card bg-card p-4 shadow-card">
-                  <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-ink"><span className="text-ink-2"><Icon name="award" size={16} /></span> Sales leaderboard {sales && <span className="text-xs font-normal text-ink-3">· {monthLabel}</span>}</div>
+                  <CardHead icon="award" title="Sales leaderboard" meta={sales ? <span className="rounded-full bg-ink/5 px-2 py-0.5 text-[11px] font-semibold text-ink-2">{monthLabel}</span> : undefined} />
                   <div className="divide-y divide-line">
                     {board.map((r, i) => (
                       <div key={`${r.staff_name}-${i}`} className={`flex items-center justify-between gap-2 py-1.5 ${r.is_me ? 'rounded-lg bg-accent-weak px-2' : ''}`}>
@@ -798,7 +799,7 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
                 const key = `${p.year}-${p.month}`;
                 return (
                   <div className="rounded-card bg-card p-4 shadow-card">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-ink"><span className="text-ink-2"><Icon name="receipt" size={16} /></span> Last month&rsquo;s payslip</div>
+                    <CardHead icon="receipt" title="Last month's payslip" />
                     <div className="mt-2 flex items-center justify-between gap-2">
                       <div className="text-sm text-ink-2">{new Date(p.year, p.month - 1, 1).toLocaleDateString('en-MY', { month: 'long', year: 'numeric' })}</div>
                       <button onClick={() => downloadPayslip(p)} disabled={readOnly || slipBusy === key}
@@ -1248,13 +1249,27 @@ function ProfileSelect({ label, value, onChange, options }: { label: string; val
   );
 }
 
-function PerfStat({ label, value, bad, tone }: { label: string; value: string; bad?: boolean; tone?: 'amber' | 'rose' }) {
-  const box = bad ? (tone === 'rose' ? 'border-line bg-bad-soft' : 'border-line bg-warn-soft') : 'border-line bg-ink/[0.03]';
-  const val = bad ? (tone === 'rose' ? 'text-bad' : 'text-warn') : 'text-ink-2';
+// Section header used across the check-in cards: an accent icon chip + a clear title,
+// with an optional right-aligned meta (year pill, month nav, download button). This is the
+// single change that gives the page its typographic hierarchy — titles read as headings.
+function CardHead({ icon, title, meta }: { icon: IconName; title: string; meta?: ReactNode }) {
   return (
-    <div className={`rounded-lg border px-3 py-2 ${box}`}>
-      <div className="text-[11px] uppercase tracking-wide text-ink-3">{label}</div>
-      <div className={`text-sm font-semibold ${val}`}>{value}</div>
+    <div className="mb-3 flex items-center gap-2.5">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] bg-accent-weak text-accent"><Icon name={icon} size={15} /></span>
+      <h2 className="text-[15px] font-semibold tracking-tight text-ink">{title}</h2>
+      {meta != null && <div className="ml-auto shrink-0">{meta}</div>}
+    </div>
+  );
+}
+
+function PerfStat({ label, value, bad, tone }: { label: string; value: string; bad?: boolean; tone?: 'amber' | 'rose' }) {
+  const box = bad ? (tone === 'rose' ? 'bg-bad-soft' : 'bg-warn-soft') : 'bg-ink/[0.04]';
+  const val = bad ? (tone === 'rose' ? 'text-bad' : 'text-warn') : 'text-ink';
+  const lab = bad ? (tone === 'rose' ? 'text-bad' : 'text-warn') : 'text-ink-3';
+  return (
+    <div className={`rounded-xl px-3 py-2.5 ${box}`}>
+      <div className={`text-[10.5px] font-semibold uppercase tracking-wide ${lab} ${bad ? 'opacity-80' : ''}`}>{label}</div>
+      <div className={`mt-0.5 text-[17px] font-semibold ${val}`}>{value}</div>
     </div>
   );
 }
