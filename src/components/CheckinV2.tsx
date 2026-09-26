@@ -852,8 +852,8 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
 
               {/* Request time off — one card; pick the Type first (Off day / Emergency / Half day) */}
               <div className="mb-3 rounded-card bg-card p-4 shadow-card">
-                <button onClick={() => setShowReq((v) => !v)} className="flex w-full items-center gap-2 text-sm font-medium text-ink">
-                  <span className="text-ink-2"><Icon name="sun" size={16} /></span><span>Request time off</span><span className="ml-auto text-ink-3">{showReq ? '−' : '+'}</span>
+                <button onClick={() => setShowReq((v) => !v)} className="flex w-full items-center gap-2.5">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] bg-accent-weak text-accent"><Icon name="sun" size={15} /></span><span className="text-[15px] font-semibold text-ink">Request time off</span><span className="ml-auto text-lg leading-none text-ink-3">{showReq ? '−' : '+'}</span>
                 </button>
                 {showReq && (
                   <div className="mt-3 space-y-2">
@@ -928,7 +928,7 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
               {/* My off-day requests — staff see their own request status (pending / approved / rejected) */}
               {myOff.length > 0 && (
                 <div className="mb-3 rounded-card bg-card p-4 shadow-card">
-                  <div className="flex items-center gap-2 text-sm font-medium text-ink"><span className="text-ink-2"><Icon name="sun" size={16} /></span> My off-day requests</div>
+                  <CardHead icon="sun" title="My off-day requests" />
                   <div className="mt-2 space-y-1.5">
                     {myOff.map((r) => (
                       <div key={r.id} className="text-sm">
@@ -954,7 +954,7 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
               {/* My emergency reports */}
               {myEm.length > 0 && (
                 <div className="mb-3 rounded-card bg-card p-4 shadow-card">
-                  <div className="flex items-center gap-2 text-sm font-medium text-ink"><span className="text-ink-2"><Icon name="bell" size={16} /></span> My emergency reports</div>
+                  <CardHead icon="bell" title="My emergency reports" />
                   <div className="mt-2 space-y-1.5">
                     {myEm.map((r) => (
                       <div key={r.id} className="flex items-center justify-between gap-2 text-sm">
@@ -972,7 +972,7 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
               {/* My half-day requests */}
               {myHalf.length > 0 && (
                 <div className="mb-3 rounded-card bg-card p-4 shadow-card">
-                  <div className="flex items-center gap-2 text-sm font-medium text-ink"><span className="text-ink-2"><Icon name="clock" size={16} /></span> My half-day requests</div>
+                  <CardHead icon="clock" title="My half-day requests" />
                   <div className="mt-2 space-y-1.5">
                     {myHalf.map((r) => (
                       <div key={r.id} className="text-sm">
@@ -999,8 +999,8 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
 
               {/* Request salary advance */}
               <div className="mb-3 rounded-card bg-card p-4 shadow-card">
-                <button onClick={() => setShowAdv((v) => !v)} className="flex w-full items-center gap-2 text-sm font-medium text-ink">
-                  <span className="text-ink-2"><Icon name="wallet" size={16} /></span><span>Request salary advance</span><span className="ml-auto text-ink-3">{showAdv ? '−' : '+'}</span>
+                <button onClick={() => setShowAdv((v) => !v)} className="flex w-full items-center gap-2.5">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] bg-accent-weak text-accent"><Icon name="wallet" size={15} /></span><span className="text-[15px] font-semibold text-ink">Request salary advance</span><span className="ml-auto text-lg leading-none text-ink-3">{showAdv ? '−' : '+'}</span>
                 </button>
                 {showAdv && (
                   <div className="mt-3 space-y-2 text-sm">
@@ -1030,7 +1030,7 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
               {/* My advance requests */}
               {myAdv.length > 0 && (
                 <div className="mb-3 rounded-card bg-card p-4 shadow-card">
-                  <div className="flex items-center gap-2 text-sm font-medium text-ink"><span className="text-ink-2"><Icon name="wallet" size={16} /></span> My advance requests</div>
+                  <CardHead icon="wallet" title="My advance requests" />
                   <div className="mt-2 space-y-1.5">
                     {myAdv.map((r) => (
                       <div key={r.id} className="text-sm">
@@ -1058,17 +1058,14 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
           {/* MY DETAILS — staff view/edit their own personal info (position & start date are read-only) */}
           {tab === 'details' && profile && (
             <div className="rounded-card bg-card p-4 shadow-card">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 text-sm font-semibold text-ink"><span className="text-ink-2"><Icon name="user" size={16} /></span> My details</div>
-                {!editProfile && (
-                  <button onClick={readOnly ? undefined : () => { setPf(profile); setProfileMsg(null); setEditProfile(true); }}
-                    disabled={readOnly}
-                    title={readOnly ? 'Staff edit this from their own login' : undefined}
-                    className="shrink-0 rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent-weak disabled:opacity-40">
-                    Edit
-                  </button>
-                )}
-              </div>
+              <CardHead icon="user" title="My details" meta={!editProfile ? (
+                <button onClick={readOnly ? undefined : () => { setPf(profile); setProfileMsg(null); setEditProfile(true); }}
+                  disabled={readOnly}
+                  title={readOnly ? 'Staff edit this from their own login' : undefined}
+                  className="shrink-0 rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent-weak disabled:opacity-40">
+                  Edit
+                </button>
+              ) : undefined} />
 
               {/* Read-only — set by management */}
               <div className="mt-3 grid grid-cols-2 gap-2">
@@ -1162,7 +1159,7 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
           {/* HOLIDAYS — the year's public holidays; managed in Settings, read live here */}
           {tab === 'holidays' && (
             <div className="rounded-card bg-card p-4 shadow-card">
-              <div className="flex items-center gap-2 text-sm font-semibold text-ink"><span className="text-ink-2"><Icon name="calendar" size={16} /></span> Public holidays <span className="text-xs font-normal text-ink-3">· {new Date(Date.now() + 8 * 3600e3).getUTCFullYear()}</span></div>
+              <CardHead icon="calendar" title="Public holidays" meta={<span className="rounded-full bg-ink/5 px-2 py-0.5 text-[11px] font-semibold text-ink-2">{new Date(Date.now() + 8 * 3600e3).getUTCFullYear()}</span>} />
               <p className="mt-1 text-xs text-ink-3"><span className="font-medium text-good">Closed</span> = you&rsquo;re off, paid. <span className="font-medium text-warn">Open</span> = shop working that day.</p>
               {holByDate.length === 0 ? (
                 <div className="mt-3 text-xs text-ink-3">No public holidays set yet.</div>
