@@ -44,20 +44,45 @@ export default function MonthEndPage() {
   const [salaries, setSalaries] = useState<Salary[]>([]);
   const [newBillLabel, setNewBillLabel] = useState('');
   const [newBillAmount, setNewBillAmount] = useState('');
+  // Inline "fix a day" on the absent card (admin-only, mirrors the Attendance report editor).
+  const [canFix, setCanFix] = useState(false);
+  const [me, setMe] = useState('');
+  const [locked, setLocked] = useState(false); // this month's payroll period is LOCKED/FINALIZED
+  const [editKey, setEditKey] = useState<string | null>(null); // `${email}|${day}` being fixed
+  const [eStatus, setEStatus] = useState(''); // '', WORKING, OFFDAY, MC
+  const [eIn, setEIn] = useState('');
+  const [eOut, setEOut] = useState('');
+  const [eNote, setENote] = useState('');
+  const [eCert, setECert] = useState<File | null>(null);
+  const [savingRow, setSavingRow] = useState<string | null>(null);
 
   const monthKey = `${year}-${String(month).padStart(2, '0')}`;
   const todayIso = today.toISOString().slice(0, 10);
 
   useEffect(() => {
     (async () => {
-      const [me, pay] = await Promise.all([
+      const [ma, pay, fix, sess] = await Promise.all([
         supabase.rpc('can_access', { p_feature: 'month_end' }),
         supabase.rpc('can_access', { p_feature: 'pay_salaries' }),
+        supabase.rpc('is_admin'), // inline attendance edits require admin (day_status/recompute RLS)
+        supabase.auth.getSession(),
       ]);
-      setAllowed(me.data === true);
+      setAllowed(ma.data === true);
       setCanPay(pay.data === true);
+      setCanFix(fix.data === true);
+      setMe(sess.data.session?.user?.email ?? '');
     })();
   }, []);
+
+  // Is this month's payroll already locked? If so, block inline attendance edits (they'd desync a paid month).
+  useEffect(() => {
+    if (!allowed) return;
+    (async () => {
+      const { data } = await supabase.from('v_periods_min').select('status').eq('year', year).eq('month', month).maybeSingle();
+      const st = (data as { status?: string } | null)?.status;
+      setLocked(st === 'LOCKED' || st === 'FINALIZED');
+    })();
+  }, [allowed, year, month]);
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
@@ -118,6 +143,50 @@ export default function MonthEndPage() {
     if (error) setErr(error.message);
     await load();
   }, [load]);
+
+  // --- Inline fix a single absent day (Present / Off day / MC) — mirrors the Attendance report editor ---
+  const startFix = useCallback((email: string, day: string) => {
+    setEditKey(`${email}|${day}`); setEStatus(''); setEIn(''); setEOut(''); setENote(''); setECert(null);
+  }, []);
+  const cancelFix = useCallback(() => setEditKey(null), []);
+  const saveRow = useCallback(async (email: string, day: string) => {
+    setErr(null);
+    if (!eStatus) { setErr('Choose what the day should be.'); return; }
+    if (eStatus === 'WORKING' && !eIn) { setErr('Enter a check-in time to mark the day present.'); return; }
+    setSavingRow(`${email}|${day}`);
+    try {
+      if (eStatus === 'WORKING') {
+        // Present with keyed times: clear any status override, then set the manual check-in/out.
+        await supabase.rpc('clear_day_half', { p_email: email, p_day: day });
+        await supabase.from('day_status').delete().eq('day', day).eq('staff_email', email);
+        const { error } = await supabase.from('day_time_override').upsert(
+          { day, staff_email: email, check_in_kl: eIn, check_out_kl: eOut || null, note: eNote || null },
+          { onConflict: 'day,staff_email' });
+        if (error) throw error;
+      } else {
+        // OFFDAY / MC — paid leave; mark paid so an over-quota day isn't docked.
+        await supabase.rpc('clear_day_half', { p_email: email, p_day: day });
+        const { error } = await supabase.rpc('set_day_status', { p_email: email, p_day: day, p_status: eStatus, p_note: eNote || null });
+        if (error) throw error;
+        await supabase.rpc('set_day_pay', { p_email: email, p_day: day, p_paid: true });
+      }
+      await supabase.rpc('attendance_v2_recompute', { p_from: day, p_to: day });
+      if (eStatus === 'MC' && eCert) {
+        const ext = (eCert.name.split('.').pop() || 'jpg').toLowerCase();
+        const path = `${email}/doc_${crypto.randomUUID()}.${ext}`;
+        const up = await supabase.storage.from('mc').upload(path, eCert, { upsert: true });
+        if (up.error) throw up.error;
+        await supabase.from('attendance_doc_requests').delete().eq('staff_email', email).eq('day', day);
+        await supabase.from('attendance_doc_requests').insert({ staff_email: email, day, label: 'MC', doc_path: path, required_by: me || null, uploaded_at: new Date().toISOString() });
+      }
+      setEditKey(null);
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingRow(null);
+    }
+  }, [eStatus, eIn, eOut, eNote, eCert, me, load]);
 
   const prevMonth = () => { const dt = new Date(year, month - 2, 1); setYear(dt.getFullYear()); setMonth(dt.getMonth() + 1); };
   const nextMonth = () => { const dt = new Date(year, month, 1); setYear(dt.getFullYear()); setMonth(dt.getMonth() + 1); };
@@ -206,17 +275,62 @@ export default function MonthEndPage() {
                               <span className="text-sm font-medium text-warn">{d.absents.count} ABSENT day{d.absents.count === 1 ? '' : 's'} to fix:</span>
                               <Link href="/attendance/checkin" className="shrink-0 text-xs font-medium text-accent hover:underline">Attendance →</Link>
                             </div>
-                            <ul className="max-h-48 space-y-0.5 overflow-y-auto text-sm text-warn">
-                              {d.absents.list.map((a, i) => (
-                                <li key={i} className="flex justify-between gap-2">
-                                  {a.email
-                                    ? <Link href={`/attendance/report?staff=${encodeURIComponent(a.email)}`} className="min-w-0 truncate font-medium text-accent hover:underline">{a.name}</Link>
-                                    : <span className="min-w-0 truncate">{a.name}</span>}
-                                  <span className="shrink-0">{fmtD(a.day)}</span>
-                                </li>
-                              ))}
+                            {locked && <p className="mb-1.5 text-[11px] font-medium text-bad">This month&rsquo;s payroll is locked — unlock it (Payroll page) to change attendance.</p>}
+                            <ul className="max-h-80 space-y-1 overflow-y-auto text-sm text-warn">
+                              {d.absents.list.map((a, i) => {
+                                const key = a.email ? `${a.email}|${a.day}` : `${i}`;
+                                const editing = editKey === key;
+                                return (
+                                  <li key={i} className="rounded-md bg-card/60 px-2 py-1">
+                                    <div className="flex items-center justify-between gap-2">
+                                      {a.email
+                                        ? <Link href={`/attendance/report?staff=${encodeURIComponent(a.email)}`} className="min-w-0 truncate font-medium text-accent hover:underline">{a.name}</Link>
+                                        : <span className="min-w-0 truncate font-medium text-ink">{a.name}</span>}
+                                      <div className="flex shrink-0 items-center gap-2">
+                                        <span className="text-ink-2">{fmtD(a.day)}</span>
+                                        {canFix && !locked && a.email && !editing && (
+                                          <button onClick={() => startFix(a.email!, a.day)} className="rounded-md border border-amber-300 bg-card px-2 py-0.5 text-xs font-medium text-warn hover:bg-warn-soft">Fix</button>
+                                        )}
+                                      </div>
+                                    </div>
+                                    {editing && a.email && (
+                                      <div className="mt-1.5 space-y-1.5 border-t border-amber-200 pt-1.5">
+                                        <select value={eStatus} onChange={(e) => setEStatus(e.target.value)} className="block w-full rounded-md border border-line bg-card px-2 py-1 text-sm text-ink">
+                                          <option value="">Set this day as…</option>
+                                          <option value="WORKING">Present (worked)</option>
+                                          <option value="OFFDAY">Off day (paid leave)</option>
+                                          <option value="MC">MC (paid sick)</option>
+                                        </select>
+                                        {eStatus === 'WORKING' && (
+                                          <div className="grid grid-cols-2 gap-2">
+                                            <label className="text-[11px] text-ink-2">Check-in <span className="text-bad">*</span>
+                                              <input type="time" value={eIn} onChange={(e) => setEIn(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line bg-card px-2 py-1 text-sm text-ink" />
+                                            </label>
+                                            <label className="text-[11px] text-ink-2">Check-out
+                                              <input type="time" value={eOut} onChange={(e) => setEOut(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line bg-card px-2 py-1 text-sm text-ink" />
+                                            </label>
+                                          </div>
+                                        )}
+                                        {eStatus === 'MC' && (
+                                          <label className="block text-[11px] text-ink-2">Certificate (optional)
+                                            <input type="file" accept="image/*,application/pdf" onChange={(e) => setECert(e.target.files?.[0] ?? null)} className="mt-0.5 block w-full text-xs text-ink-2 file:mr-2 file:rounded file:border-0 file:bg-accent file:px-2 file:py-1 file:text-xs file:font-medium file:text-white" />
+                                          </label>
+                                        )}
+                                        {(eStatus === 'OFFDAY' || eStatus === 'MC') && (
+                                          <p className="text-[11px] text-ink-3">Uses one of their {eStatus === 'MC' ? 'sick-leave (MC)' : 'annual-leave'} days.</p>
+                                        )}
+                                        <input value={eNote} onChange={(e) => setENote(e.target.value)} placeholder="Note (optional)" className="block w-full rounded-md border border-line bg-card px-2 py-1 text-sm text-ink" />
+                                        <div className="flex gap-2">
+                                          <button onClick={() => saveRow(a.email!, a.day)} disabled={savingRow === key} className="rounded-md bg-good px-3 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">{savingRow === key ? 'Saving…' : 'Save'}</button>
+                                          <button onClick={cancelFix} disabled={savingRow === key} className="rounded-md border border-line bg-card px-3 py-1 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50">Cancel</button>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </li>
+                                );
+                              })}
                             </ul>
-                            <p className="mt-2 text-[11px] text-warn/80">Approve their MC / off-day (or fix in attendance) so they aren&rsquo;t paid as absent.</p>
+                            <p className="mt-2 text-[11px] text-warn/80">{canFix ? 'Tap Fix to set a day as Present / Off day / MC — no need to open Attendance. Days truly absent stay unpaid.' : 'Approve their MC / off-day (or fix in attendance) so they aren’t paid as absent.'}</p>
                           </div>
                         ) : <p className="text-sm text-good">No one left as absent ✓</p>}
                       </div>
