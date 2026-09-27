@@ -24,14 +24,15 @@ type Req = {
   file_path: string | null;
   amount: number | null;
   credit_by: string | null;
+  proof_deadline: string | null;
 };
 
 // Raw row shapes per source table (only the columns we read).
-type OffRow = { id: string; staff_email: string; status: string; created_at: string; review_note: string | null; reason: string | null; informed_supervisor: string | null; date_from: string; date_to: string; file_path: string | null };
-type HdRow = { id: string; staff_email: string; status: string; created_at: string; review_note: string | null; reason: string | null; informed_supervisor: string | null; date_from: string; date_to: string; half: string };
-type McRow = { id: string; staff_email: string; status: string; created_at: string; note: string | null; date_from: string; date_to: string; file_path: string | null };
+type OffRow = { id: string; staff_email: string; status: string; created_at: string; review_note: string | null; reason: string | null; informed_supervisor: string | null; date_from: string; date_to: string; file_path: string | null; proof_deadline: string | null };
+type HdRow = { id: string; staff_email: string; status: string; created_at: string; review_note: string | null; reason: string | null; informed_supervisor: string | null; date_from: string; date_to: string; half: string; proof_deadline: string | null };
+type McRow = { id: string; staff_email: string; status: string; created_at: string; note: string | null; date_from: string; date_to: string; file_path: string | null; proof_deadline: string | null };
 type AdvRow = { id: string; staff_email: string; status: string; requested_at: string; review_note: string | null; reason: string | null; amount: number; credit_by: string | null };
-type EmRow = { id: string; staff_email: string; status: string; created_at: string; reason: string | null; informed_supervisor: string | null; absent_date: string; file_path: string | null };
+type EmRow = { id: string; staff_email: string; status: string; created_at: string; reason: string | null; informed_supervisor: string | null; absent_date: string; file_path: string | null; proof_deadline: string | null };
 
 const KIND_META: Record<Kind, { icon: string; label: string }> = {
   offday: { icon: '🌴', label: 'Off-day' },
@@ -52,8 +53,9 @@ const CLASSIFY = [
 const fmtD = (d: string | null) => { if (!d) return ''; const [y, m, dd] = d.split('-'); return `${dd}/${m}/${y}`; };
 const rm = (n: number | null) => `RM${Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const halfLabel = (h: string | null) => (h === 'PM' ? 'PM (1:30–6:00)' : 'AM (9:30–1:30)');
-// "Needs action" — pending for approve/reject types, new for emergency.
-const isPending = (r: Req) => (r.kind === 'emergency' ? r.status === 'new' : r.status === 'pending');
+// "Needs action" — fresh requests (pending / new) plus anything waiting on proof.
+const isFresh = (r: Req) => (r.kind === 'emergency' ? r.status === 'new' : r.status === 'pending');
+const isPending = (r: Req) => isFresh(r) || r.status === 'awaiting_proof';
 
 export default function RequestsPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -74,6 +76,10 @@ export default function RequestsPage() {
   const [eTo, setETo] = useState('');
   const [eReason, setEReason] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
+  // "Approve · needs proof" — pick a deadline; the day stays unpaid until proof arrives.
+  const [proofFor, setProofFor] = useState<string | null>(null);       // request id currently choosing a deadline
+  const [proofOpt, setProofOpt] = useState<'3' | '7' | '25' | 'date'>('7');
+  const [proofDate, setProofDate] = useState('');
 
   useEffect(() => {
     (async () => {
@@ -105,11 +111,11 @@ export default function RequestsPage() {
       supabase.rpc('leave_balances', { p_year: yr }),
     ]);
     const rows: Req[] = [];
-    ((off.data ?? []) as OffRow[]).forEach((r) => rows.push({ kind: 'offday', id: r.id, staff_email: r.staff_email, status: r.status, ts: r.created_at, review_note: r.review_note, reason: r.reason, informed_supervisor: r.informed_supervisor, date_from: r.date_from, date_to: r.date_to, half: null, file_path: r.file_path, amount: null, credit_by: null }));
-    ((hd.data ?? []) as HdRow[]).forEach((r) => rows.push({ kind: 'halfday', id: r.id, staff_email: r.staff_email, status: r.status, ts: r.created_at, review_note: r.review_note, reason: r.reason, informed_supervisor: r.informed_supervisor, date_from: r.date_from, date_to: r.date_to, half: r.half, file_path: null, amount: null, credit_by: null }));
-    ((mcq.data ?? []) as McRow[]).forEach((r) => rows.push({ kind: 'mc', id: r.id, staff_email: r.staff_email, status: r.status, ts: r.created_at, review_note: null, reason: r.note, informed_supervisor: null, date_from: r.date_from, date_to: r.date_to, half: null, file_path: r.file_path, amount: null, credit_by: null }));
-    ((adv.data ?? []) as AdvRow[]).forEach((r) => rows.push({ kind: 'advance', id: r.id, staff_email: r.staff_email, status: r.status, ts: r.requested_at, review_note: r.review_note, reason: r.reason, informed_supervisor: null, date_from: null, date_to: null, half: null, file_path: null, amount: r.amount, credit_by: r.credit_by }));
-    ((em.data ?? []) as EmRow[]).forEach((r) => rows.push({ kind: 'emergency', id: r.id, staff_email: r.staff_email, status: r.status, ts: r.created_at, review_note: null, reason: r.reason, informed_supervisor: r.informed_supervisor, date_from: r.absent_date, date_to: r.absent_date, half: null, file_path: r.file_path, amount: null, credit_by: null }));
+    ((off.data ?? []) as OffRow[]).forEach((r) => rows.push({ kind: 'offday', id: r.id, staff_email: r.staff_email, status: r.status, ts: r.created_at, review_note: r.review_note, reason: r.reason, informed_supervisor: r.informed_supervisor, date_from: r.date_from, date_to: r.date_to, half: null, file_path: r.file_path, amount: null, credit_by: null, proof_deadline: r.proof_deadline }));
+    ((hd.data ?? []) as HdRow[]).forEach((r) => rows.push({ kind: 'halfday', id: r.id, staff_email: r.staff_email, status: r.status, ts: r.created_at, review_note: r.review_note, reason: r.reason, informed_supervisor: r.informed_supervisor, date_from: r.date_from, date_to: r.date_to, half: r.half, file_path: null, amount: null, credit_by: null, proof_deadline: r.proof_deadline }));
+    ((mcq.data ?? []) as McRow[]).forEach((r) => rows.push({ kind: 'mc', id: r.id, staff_email: r.staff_email, status: r.status, ts: r.created_at, review_note: null, reason: r.note, informed_supervisor: null, date_from: r.date_from, date_to: r.date_to, half: null, file_path: r.file_path, amount: null, credit_by: null, proof_deadline: r.proof_deadline }));
+    ((adv.data ?? []) as AdvRow[]).forEach((r) => rows.push({ kind: 'advance', id: r.id, staff_email: r.staff_email, status: r.status, ts: r.requested_at, review_note: r.review_note, reason: r.reason, informed_supervisor: null, date_from: null, date_to: null, half: null, file_path: null, amount: r.amount, credit_by: r.credit_by, proof_deadline: null }));
+    ((em.data ?? []) as EmRow[]).forEach((r) => rows.push({ kind: 'emergency', id: r.id, staff_email: r.staff_email, status: r.status, ts: r.created_at, review_note: null, reason: r.reason, informed_supervisor: r.informed_supervisor, date_from: r.absent_date, date_to: r.absent_date, half: null, file_path: r.file_path, amount: null, credit_by: null, proof_deadline: r.proof_deadline }));
     setReqs(rows);
     const m = new Map<string, string>();
     ((s.data ?? []) as Array<{ email: string; name: string | null }>).forEach((x) => m.set(x.email.toLowerCase(), x.name ?? x.email));
@@ -204,6 +210,27 @@ export default function RequestsPage() {
     setBusy(null);
   }, [over, load]);
 
+  // Approve · needs proof: mark the request awaiting_proof with a deadline. The day is NOT paid
+  // until the staff uploads and the office approves — so no clawback if the proof never comes.
+  const needProof = useCallback(async (r: Req) => {
+    const klNow = new Date(Date.now() + 8 * 3600e3);            // KL = UTC+8
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    const plus = (days: number) => iso(new Date(klNow.getTime() + days * 86400e3));
+    const by25 = () => {
+      const y = klNow.getUTCFullYear(); const m = klNow.getUTCMonth();
+      const target = klNow.getUTCDate() <= 25 ? new Date(Date.UTC(y, m, 25)) : new Date(Date.UTC(y, m + 1, 25));
+      return iso(target);
+    };
+    const deadline = proofOpt === '3' ? plus(3) : proofOpt === '7' ? plus(7) : proofOpt === '25' ? by25() : proofDate;
+    if (!deadline) { alert('Pick a deadline date.'); return; }
+    setBusy(r.id);
+    const { error } = await supabase.rpc('leave_need_proof', { p_type: r.kind, p_id: r.id, p_deadline: deadline });
+    setBusy(null);
+    if (error) { alert(error.message); return; }
+    setProofFor(null);
+    await load();
+  }, [proofOpt, proofDate, load]);
+
   // Emergency absence: record what the day counts as (optionally set attendance + pay), then mark handled.
   const record = useCallback(async (r: Req, alsoSetDay: boolean) => {
     setBusy(r.id);
@@ -268,6 +295,8 @@ export default function RequestsPage() {
             const name = names.get(r.staff_email.toLowerCase()) ?? r.staff_email;
             const hasDate = r.kind !== 'advance';
             const pending = isPending(r);
+            const fresh = isFresh(r);
+            const awaiting = r.status === 'awaiting_proof';
             return (
               <div key={`${r.kind}:${r.id}`} className={`rounded-card p-4 shadow-card ${pending ? 'bg-warn-soft' : 'bg-card'}`}>
                 {editingId === r.id ? (
@@ -316,7 +345,7 @@ export default function RequestsPage() {
                         {r.file_path && (
                           <button onClick={() => viewAttachment(r.file_path)} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">{r.kind === 'mc' ? 'View certificate' : 'View photo'}</button>
                         )}
-                        {r.kind !== 'emergency' && pending && (
+                        {r.kind !== 'emergency' && fresh && (
                           <>
                             {r.kind === 'offday' && (
                               <button onClick={() => startEdit(r)} disabled={busy === r.id} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">Edit</button>
@@ -324,20 +353,34 @@ export default function RequestsPage() {
                             <button onClick={() => decide(r, true)} disabled={busy === r.id} className="rounded-lg bg-good px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">
                               {busy === r.id ? '…' : 'Approve'}
                             </button>
+                            {(r.kind === 'offday' || r.kind === 'mc') && (
+                              <button onClick={() => { setProofOpt('7'); setProofDate(''); setProofFor(proofFor === r.id ? null : r.id); }} disabled={busy === r.id} className="rounded-lg border border-accent/40 bg-accent-weak px-2.5 py-1 text-xs font-semibold text-accent hover:opacity-90 disabled:opacity-50">Needs proof</button>
+                            )}
                             <button onClick={() => decide(r, false)} disabled={busy === r.id} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">Reject</button>
                           </>
                         )}
-                        {r.kind !== 'emergency' && !pending && (
+                        {awaiting && (
+                          <>
+                            <span className="rounded-full bg-warn-soft px-2 py-0.5 text-[11px] font-medium text-warn">
+                              {r.file_path ? 'Proof uploaded' : 'Awaiting proof'}{r.proof_deadline ? ` · due ${fmtD(r.proof_deadline)}` : ''}
+                            </span>
+                            {r.file_path && (
+                              <button onClick={() => decide(r, true)} disabled={busy === r.id} className="rounded-lg bg-good px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">{busy === r.id ? '…' : 'Approve'}</button>
+                            )}
+                            <button onClick={() => decide(r, false)} disabled={busy === r.id} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">Decline</button>
+                          </>
+                        )}
+                        {!fresh && !awaiting && r.kind !== 'emergency' && (
                           <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${r.status === 'approved' ? 'bg-good-soft text-good' : 'bg-bad-soft text-bad'}`}>
                             {r.status === 'approved' ? 'Approved ✓' : 'Rejected'}
                           </span>
                         )}
-                        {r.kind === 'emergency' && !pending && (
+                        {!fresh && !awaiting && r.kind === 'emergency' && (
                           <span className="rounded-full bg-good-soft px-2 py-0.5 text-xs font-medium text-good">Handled ✓</span>
                         )}
                       </div>
                     </div>
-                    {r.kind === 'emergency' && pending && (
+                    {r.kind === 'emergency' && fresh && (
                       <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-line pt-2">
                         <span className="text-xs text-ink-3">Record as:</span>
                         <select value={picks[r.id] || 'OFFDAY'} onChange={(e) => setPicks((p) => ({ ...p, [r.id]: e.target.value }))} className="rounded-lg border border-line px-2 py-1 text-sm">
@@ -345,6 +388,23 @@ export default function RequestsPage() {
                         </select>
                         <button onClick={() => record(r, true)} disabled={busy === r.id} className="rounded-lg bg-good px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">{busy === r.id ? '…' : 'Record & handle'}</button>
                         <button onClick={() => record(r, false)} disabled={busy === r.id} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">Mark handled only</button>
+                      </div>
+                    )}
+                    {proofFor === r.id && (
+                      <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-line pt-2">
+                        <span className="text-xs text-ink-3">Upload proof by:</span>
+                        <select value={proofOpt} onChange={(e) => setProofOpt(e.target.value as '3' | '7' | '25' | 'date')} className="rounded-lg border border-line px-2 py-1 text-sm">
+                          <option value="3">Within 3 days</option>
+                          <option value="7">Within 7 days</option>
+                          <option value="25">By the 25th</option>
+                          <option value="date">Pick a date…</option>
+                        </select>
+                        {proofOpt === 'date' && (
+                          <input type="date" value={proofDate} min={new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)} onChange={(e) => setProofDate(e.target.value)} className="rounded-lg border border-line px-2 py-1 text-sm" />
+                        )}
+                        <button onClick={() => needProof(r)} disabled={busy === r.id} className="rounded-lg bg-accent px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">{busy === r.id ? '…' : 'Set deadline'}</button>
+                        <button onClick={() => setProofFor(null)} disabled={busy === r.id} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">Cancel</button>
+                        <span className="w-full text-[11px] text-ink-3">The day stays unpaid until the staff uploads proof and you approve. No upload by the deadline → it stays absent.</span>
                       </div>
                     )}
                   </>
