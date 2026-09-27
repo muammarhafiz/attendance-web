@@ -351,6 +351,13 @@ export async function POST(req: Request) {
       .rpc('sync_absent_deductions', { p_year: year, p_month: month });
     if (syncErr) throw new Error('Could not refresh attendance deductions before finalizing: ' + syncErr.message);
 
+    // Also true up the PRIOR month's tail absences (days that weren't yet elapsed when it was locked)
+    // as a carried deduction on THIS payslip, so the PDFs + net reflect it before we lock.
+    const { error: carryErr } = await supabaseAdmin
+      .schema('pay_v2')
+      .rpc('sync_absent_carryforward', { p_year: year, p_month: month });
+    if (carryErr) throw new Error('Could not refresh carried absences before finalizing: ' + carryErr.message);
+
     const rows = await fetchSummary(year, month);
     const items = await fetchItems(period.id);
     const staffMap = await fetchStaff();
