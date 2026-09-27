@@ -35,6 +35,15 @@ function fmtDate(d: string): string {
 }
 // KL today + N days as 'YYYY-MM-DD' (off-day requests need >= 2 days' lead time).
 const klDatePlus = (days: number) => new Date(Date.now() + 8 * 3600e3 + days * 86400e3).toISOString().slice(0, 10);
+// Proof-upload deadline badge: colour + wording by how many days are left (KL).
+function proofDue(deadline: string | null): { cls: string; txt: string } | null {
+  if (!deadline) return null;
+  const n = Math.round((Date.parse(`${deadline}T00:00:00Z`) - Date.parse(`${klDatePlus(0)}T00:00:00Z`)) / 86400000);
+  if (n < 0) return { cls: 'bg-bad-soft text-bad', txt: `Overdue since ${fmtDate(deadline)} — upload now or the day stays unpaid` };
+  if (n === 0) return { cls: 'bg-warn-soft text-warn', txt: `Due today — ${fmtDate(deadline)}` };
+  if (n <= 2) return { cls: 'bg-warn-soft text-warn', txt: `Upload by ${fmtDate(deadline)} · ${n} day${n === 1 ? '' : 's'} left` };
+  return { cls: 'bg-accent-weak text-accent', txt: `Upload by ${fmtDate(deadline)} · ${n} days left` };
+}
 function offStatusLabel(s: string): string {
   const x = (s || '').toLowerCase();
   return x === 'approved' ? 'Approved' : x === 'rejected' ? 'Rejected' : 'Pending';
@@ -135,8 +144,10 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
   const [myHalf, setMyHalf] = useState<HalfReq[]>([]);
   const [docNeeded, setDocNeeded] = useState<DocNeed[]>([]); // proof the office asked this staff to upload
   const [docBusy, setDocBusy] = useState<string | null>(null);
-  const [mcPending, setMcPending] = useState<{ id: string; date_from: string; date_to: string; note: string | null }[]>([]); // MC awaiting its certificate
+  const [mcPending, setMcPending] = useState<{ id: string; date_from: string; date_to: string; note: string | null; status: string; proof_deadline: string | null }[]>([]); // MC awaiting its certificate
   const [mcCertBusy, setMcCertBusy] = useState<string | null>(null);
+  const [offProof, setOffProof] = useState<{ id: string; date_from: string; date_to: string; reason: string | null; proof_deadline: string | null }[]>([]); // off-day the office asked for proof on
+  const [offProofBusy, setOffProofBusy] = useState<string | null>(null);
   const [showAdv, setShowAdv] = useState(false);
   const [advAmount, setAdvAmount] = useState('');
   const [advReason, setAdvReason] = useState('');
@@ -251,14 +262,25 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
   };
 
   // MC requests still missing a certificate — surfaced like "Documents needed" so staff upload it later.
+  // status/proof_deadline let us show a hard "upload by …" date when the office asked for proof.
   const loadMcPending = useCallback(async () => {
     if (!email) return;
     const { data } = await supabase.from('mc_requests')
-      .select('id,date_from,date_to,note')
+      .select('id,date_from,date_to,note,status,proof_deadline')
       .eq('staff_email', email).is('file_path', null).neq('status', 'rejected').order('created_at', { ascending: false });
-    setMcPending((data ?? []) as { id: string; date_from: string; date_to: string; note: string | null }[]);
+    setMcPending((data ?? []) as { id: string; date_from: string; date_to: string; note: string | null; status: string; proof_deadline: string | null }[]);
   }, [email]);
   useEffect(() => { if (email) loadMcPending(); }, [email, loadMcPending]);
+
+  // Off-day requests the office marked "needs proof" — staff uploads on the check-in page by the deadline.
+  const loadOffProof = useCallback(async () => {
+    if (!email) return;
+    const { data } = await supabase.from('offday_requests')
+      .select('id,date_from,date_to,reason,proof_deadline')
+      .eq('staff_email', email).eq('status', 'awaiting_proof').is('file_path', null).order('proof_deadline', { ascending: true });
+    setOffProof((data ?? []) as { id: string; date_from: string; date_to: string; reason: string | null; proof_deadline: string | null }[]);
+  }, [email]);
+  useEffect(() => { if (email) loadOffProof(); }, [email, loadOffProof]);
 
   const uploadMcCert = async (id: string, file: File | null) => {
     if (readOnly || !file || !email) return;
@@ -275,6 +297,24 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
       alert(e instanceof Error ? e.message : String(e));
     } finally {
       setMcCertBusy(null);
+    }
+  };
+
+  const uploadOffProof = async (id: string, file: File | null) => {
+    if (readOnly || !file || !email) return;
+    setOffProofBusy(id);
+    try {
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const path = `${email}/offproof_${id}.${ext}`;
+      const up = await supabase.storage.from('mc').upload(path, file, { upsert: true });
+      if (up.error) throw up.error;
+      const { error } = await supabase.rpc('attach_proof', { p_type: 'offday', p_id: id, p_path: path });
+      if (error) throw error;
+      await loadOffProof();
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setOffProofBusy(null);
     }
   };
 
@@ -833,20 +873,37 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
                 </div>
               )}
 
-              {/* MC awaiting its certificate — upload it later, shown like Documents needed */}
-              {mcPending.length > 0 && (
+              {/* Proof the office asked for — MC certificate or off-day proof — upload here by the deadline */}
+              {(mcPending.length > 0 || offProof.length > 0) && (
                 <div className="mb-3 rounded-card bg-warn-soft p-4">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-warn"><span className="text-warn"><Icon name="file" size={16} /></span> MC certificate needed</div>
+                  <div className="flex items-center gap-2 text-sm font-semibold text-warn"><span className="text-warn"><Icon name="file" size={16} /></span> Proof needed</div>
                   <div className="mt-2 space-y-2">
-                    {mcPending.map((m) => (
-                      <div key={m.id} className="rounded-md bg-card p-3">
-                        <div className="text-sm font-medium text-ink">MC for {m.date_from === m.date_to ? fmtDate(m.date_from) : `${fmtDate(m.date_from)} – ${fmtDate(m.date_to)}`}</div>
-                        {m.note && <div className="text-xs text-ink-3">{m.note}</div>}
-                        <input type="file" accept="image/*,application/pdf" disabled={readOnly || mcCertBusy === m.id} onChange={(e) => uploadMcCert(m.id, e.target.files?.[0] ?? null)} className="mt-1.5 block w-full text-sm text-ink-2 file:mr-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white disabled:opacity-50" />
-                        {mcCertBusy === m.id && <div className="mt-1 text-xs text-ink-3">Uploading…</div>}
-                      </div>
-                    ))}
+                    {mcPending.map((m) => {
+                      const due = m.status === 'awaiting_proof' ? proofDue(m.proof_deadline) : null;
+                      return (
+                        <div key={m.id} className="rounded-md bg-card p-3">
+                          <div className="text-sm font-medium text-ink">MC for {m.date_from === m.date_to ? fmtDate(m.date_from) : `${fmtDate(m.date_from)} – ${fmtDate(m.date_to)}`}</div>
+                          {m.note && <div className="text-xs text-ink-3">{m.note}</div>}
+                          {due && <div className={`mt-1 inline-block rounded-md px-2 py-0.5 text-xs font-semibold ${due.cls}`}>{due.txt}</div>}
+                          <input type="file" accept="image/*,application/pdf" disabled={readOnly || mcCertBusy === m.id} onChange={(e) => uploadMcCert(m.id, e.target.files?.[0] ?? null)} className="mt-1.5 block w-full text-sm text-ink-2 file:mr-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white disabled:opacity-50" />
+                          {mcCertBusy === m.id && <div className="mt-1 text-xs text-ink-3">Uploading…</div>}
+                        </div>
+                      );
+                    })}
+                    {offProof.map((o) => {
+                      const due = proofDue(o.proof_deadline);
+                      return (
+                        <div key={o.id} className="rounded-md bg-card p-3">
+                          <div className="text-sm font-medium text-ink">Off day · {o.date_from === o.date_to ? fmtDate(o.date_from) : `${fmtDate(o.date_from)} – ${fmtDate(o.date_to)}`}</div>
+                          {o.reason && <div className="text-xs text-ink-3">{o.reason}</div>}
+                          {due && <div className={`mt-1 inline-block rounded-md px-2 py-0.5 text-xs font-semibold ${due.cls}`}>{due.txt}</div>}
+                          <input type="file" accept="image/*,application/pdf" disabled={readOnly || offProofBusy === o.id} onChange={(e) => uploadOffProof(o.id, e.target.files?.[0] ?? null)} className="mt-1.5 block w-full text-sm text-ink-2 file:mr-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white disabled:opacity-50" />
+                          {offProofBusy === o.id && <div className="mt-1 text-xs text-ink-3">Uploading…</div>}
+                        </div>
+                      );
+                    })}
                   </div>
+                  <div className="mt-2 text-xs text-ink-3">Until you upload and the office approves, these days stay unpaid.</div>
                 </div>
               )}
 
