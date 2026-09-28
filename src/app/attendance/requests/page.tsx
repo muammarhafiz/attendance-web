@@ -80,6 +80,7 @@ export default function RequestsPage() {
   const [proofFor, setProofFor] = useState<string | null>(null);       // request id currently choosing a deadline
   const [proofOpt, setProofOpt] = useState<'3' | '7' | '25' | 'date'>('7');
   const [proofDate, setProofDate] = useState('');
+  const [docReqs, setDocReqs] = useState<{ id: string; staff_email: string; day: string; label: string | null }[]>([]); // office-requested docs still unuploaded
 
   useEffect(() => {
     (async () => {
@@ -101,7 +102,7 @@ export default function RequestsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     const yr = new Date(Date.now() + 8 * 3600e3).getUTCFullYear();
-    const [off, hd, mcq, adv, em, s, bal] = await Promise.all([
+    const [off, hd, mcq, adv, em, s, bal, dq] = await Promise.all([
       supabase.from('offday_requests').select('*').order('created_at', { ascending: false }),
       supabase.from('halfday_requests').select('*').order('created_at', { ascending: false }),
       supabase.from('mc_requests').select('*').order('created_at', { ascending: false }),
@@ -109,6 +110,7 @@ export default function RequestsPage() {
       supabase.from('emergency_absences').select('*').order('created_at', { ascending: false }),
       supabase.from('staff').select('email,name'),
       supabase.rpc('leave_balances', { p_year: yr }),
+      supabase.from('attendance_doc_requests').select('id,staff_email,day,label').is('doc_path', null),
     ]);
     const rows: Req[] = [];
     ((off.data ?? []) as OffRow[]).forEach((r) => rows.push({ kind: 'offday', id: r.id, staff_email: r.staff_email, status: r.status, ts: r.created_at, review_note: r.review_note, reason: r.reason, informed_supervisor: r.informed_supervisor, date_from: r.date_from, date_to: r.date_to, half: null, file_path: r.file_path, amount: null, credit_by: null, proof_deadline: r.proof_deadline }));
@@ -120,6 +122,7 @@ export default function RequestsPage() {
     const m = new Map<string, string>();
     ((s.data ?? []) as Array<{ email: string; name: string | null }>).forEach((x) => m.set(x.email.toLowerCase(), x.name ?? x.email));
     setNames(m);
+    setDocReqs((dq.data ?? []) as { id: string; staff_email: string; day: string; label: string | null }[]);
     const ov = new Set<string>();
     ((bal.data ?? []) as Array<{ email: string; annual_left: number }>).forEach((b) => { if (Number(b.annual_left) <= 0) ov.add(String(b.email).toLowerCase()); });
     setOver(ov);
@@ -142,6 +145,22 @@ export default function RequestsPage() {
   }, [reqs, kindF, staffF, statusF]);
 
   const pendingCount = useMemo(() => reqs.filter(isPending).length, [reqs]);
+
+  // "Proof outstanding" — every staff+day still owing a cert/doc (MC cert missing, off-day proof, office doc request).
+  const outstanding = useMemo(() => {
+    const nm = (e: string) => names.get(e.toLowerCase()) ?? e;
+    const dr = (a: string | null, b: string | null) => (a && b && a !== b ? `${fmtD(a)} – ${fmtD(b)}` : fmtD(a));
+    const rows: { key: string; staff: string; kind: string; day: string; status: string; deadline: string | null }[] = [];
+    reqs.forEach((r) => {
+      if (r.kind === 'mc' && !r.file_path && r.status !== 'rejected') {
+        rows.push({ key: `mc:${r.id}`, staff: nm(r.staff_email), kind: 'MC certificate', day: dr(r.date_from, r.date_to), status: r.status, deadline: r.proof_deadline });
+      } else if (r.kind === 'offday' && r.status === 'awaiting_proof' && !r.file_path) {
+        rows.push({ key: `off:${r.id}`, staff: nm(r.staff_email), kind: 'Off-day proof', day: dr(r.date_from, r.date_to), status: r.status, deadline: r.proof_deadline });
+      }
+    });
+    docReqs.forEach((d) => rows.push({ key: `doc:${d.id}`, staff: nm(d.staff_email), kind: d.label ? `${d.label} document` : 'Document', day: fmtD(d.day), status: 'requested', deadline: null }));
+    return rows.sort((a, b) => a.staff.localeCompare(b.staff));
+  }, [reqs, docReqs, names]);
 
   const startEdit = useCallback((r: Req) => { setEditingId(r.id); setEFrom(r.date_from ?? ''); setETo(r.date_to ?? ''); setEReason(r.reason ?? ''); }, []);
   const cancelEdit = useCallback(() => setEditingId(null), []);
@@ -259,6 +278,25 @@ export default function RequestsPage() {
 
   return (
     <div>
+      {outstanding.length > 0 && (
+        <div className="mb-3 rounded-card bg-warn-soft p-4 shadow-card">
+          <div className="mb-2 text-sm font-semibold text-warn">📎 Proof outstanding · {outstanding.length}</div>
+          <ul className="max-h-60 space-y-1 overflow-y-auto">
+            {outstanding.map((o) => (
+              <li key={o.key} className="flex items-center justify-between gap-2 rounded-md bg-card px-2.5 py-1.5">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium text-ink">{o.staff}</div>
+                  <div className="text-xs text-ink-3">{o.kind} · {o.day}{o.status === 'approved' ? ' · approved (already paid)' : o.status === 'requested' ? '' : ` · ${o.status}`}</div>
+                </div>
+                {o.deadline
+                  ? <span className="shrink-0 rounded-full bg-bad-soft px-2 py-0.5 text-[11px] font-semibold text-bad">due {fmtD(o.deadline)}</span>
+                  : <span className="shrink-0 text-[11px] text-ink-3">no deadline</span>}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[11px] text-warn/80">Staff still owe these documents. Approved MCs are already paid — the cert is only for records; awaiting-proof days stay unpaid until the proof arrives.</p>
+        </div>
+      )}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <span className="text-sm text-ink-2">{pendingCount} pending</span>
         <select value={kindF} onChange={(e) => setKindF(e.target.value as 'ALL' | Kind)} className="ml-2 rounded-lg border border-line px-2 py-1 text-sm">

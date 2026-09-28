@@ -901,6 +901,8 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
                           <div className="text-sm font-medium text-ink">MC for {m.date_from === m.date_to ? fmtDate(m.date_from) : `${fmtDate(m.date_from)} – ${fmtDate(m.date_to)}`}</div>
                           {m.note && <div className="text-xs text-ink-3">{m.note}</div>}
                           {due && <div className={`mt-1 inline-block rounded-md px-2 py-0.5 text-xs font-semibold ${due.cls}`}>{due.txt}</div>}
+                          {m.status === 'approved' && <div className="mt-1 text-[11px] font-medium text-good">Approved &amp; paid ✓ — the cert is just for our records.</div>}
+                          {m.status === 'pending' && !due && <div className="mt-1 text-[11px] text-ink-3">Waiting for the office to review.</div>}
                           <input type="file" accept="image/*,application/pdf" disabled={readOnly || mcCertBusy === m.id} onChange={(e) => { pickProof(m.id, e.target.files?.[0] ?? null); setProofErr((p) => ({ ...p, [m.id]: '' })); }} className="mt-1.5 block w-full text-sm text-ink-2 file:mr-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white disabled:opacity-50" />
                           {proofFile[m.id] && (
                             <div className="mt-1.5 flex items-center gap-2">
@@ -931,7 +933,7 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
                       );
                     })}
                   </div>
-                  <div className="mt-2 text-xs text-ink-3">Until you upload and the office approves, these days stay unpaid.</div>
+                  <div className="mt-2 text-xs text-ink-3">{(mcPending.some((m) => m.status === 'awaiting_proof') || offProof.length > 0) ? 'Until you upload and the office approves, those days stay unpaid.' : 'Your pay isn’t affected — please still send these for our records.'}</div>
                 </div>
               )}
 
