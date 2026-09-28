@@ -253,8 +253,8 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
     setDocBusy(id); setProofErr((p) => ({ ...p, [id]: '' }));
     try {
       const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
-      const path = `${email}/doc_${id}.${ext}`;
-      const up = await supabase.storage.from('mc').upload(path, file, { upsert: true });
+      const path = `${email}/doc_${id}_${crypto.randomUUID()}.${ext}`;
+      const up = await supabase.storage.from('mc').upload(path, file, { upsert: false });
       if (up.error) throw up.error;
       const { error } = await supabase.from('attendance_doc_requests').update({ doc_path: path, uploaded_at: new Date().toISOString() }).eq('id', id);
       if (error) throw error;
@@ -294,8 +294,8 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
     setMcCertBusy(id); setProofErr((p) => ({ ...p, [id]: '' }));
     try {
       const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
-      const path = `${email}/mc_${id}.${ext}`;
-      const up = await supabase.storage.from('mc').upload(path, file, { upsert: true });
+      const path = `${email}/mc_${id}_${crypto.randomUUID()}.${ext}`;
+      const up = await supabase.storage.from('mc').upload(path, file, { upsert: false });
       if (up.error) throw up.error;
       const { error } = await supabase.rpc('attach_mc_cert', { p_id: id, p_path: path });
       if (error) throw error;
@@ -314,8 +314,8 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
     setOffProofBusy(id); setProofErr((p) => ({ ...p, [id]: '' }));
     try {
       const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
-      const path = `${email}/offproof_${id}.${ext}`;
-      const up = await supabase.storage.from('mc').upload(path, file, { upsert: true });
+      const path = `${email}/offproof_${id}_${crypto.randomUUID()}.${ext}`;
+      const up = await supabase.storage.from('mc').upload(path, file, { upsert: false });
       if (up.error) throw up.error;
       const { error } = await supabase.rpc('attach_proof', { p_type: 'offday', p_id: id, p_path: path });
       if (error) throw error;

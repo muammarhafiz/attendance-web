@@ -174,7 +174,7 @@ export default function MonthEndPage() {
       if (eStatus === 'MC' && eCert) {
         const ext = (eCert.name.split('.').pop() || 'jpg').toLowerCase();
         const path = `${email}/doc_${crypto.randomUUID()}.${ext}`;
-        const up = await supabase.storage.from('mc').upload(path, eCert, { upsert: true });
+        const up = await supabase.storage.from('mc').upload(path, eCert, { upsert: false });
         if (up.error) throw up.error;
         await supabase.from('attendance_doc_requests').delete().eq('staff_email', email).eq('day', day);
         await supabase.from('attendance_doc_requests').insert({ staff_email: email, day, label: 'MC', doc_path: path, required_by: me || null, uploaded_at: new Date().toISOString() });
