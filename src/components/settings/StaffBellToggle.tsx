@@ -8,8 +8,8 @@ type PrefKey = 'notify_staff_decision' | 'notify_staff_uploads' | 'notify_holida
 const TOGGLES: { key: PrefKey; title: string; desc: string }[] = [
   {
     key: 'notify_proof_uploaded',
-    title: 'Alert me when staff upload leave proof',
-    desc: 'A bell notification when a staff member uploads the MC certificate or off-day proof you asked for, so you can review and approve it.',
+    title: 'Alert me when staff upload a document',
+    desc: 'A bell notification whenever a staff member uploads a document — an MC certificate, off-day proof, or a document you requested — so you know it came in.',
   },
   {
     key: 'notify_staff_decision',

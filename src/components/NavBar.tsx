@@ -19,13 +19,13 @@ const NOTIF_ICON: Record<string, string> = { offday: '🌴', halfday: '🕧', ad
   holiday_decide: '🗓️', holiday_load: '📅',
   // staff upload reminders
   mc_cert: '📄', doc_needed: '📎',
-  // owner: staff uploaded the leave proof you asked for
-  proof_offday: '📎', proof_mc: '📎' };
+  // owner: a staff member uploaded a document (MC cert / off-day proof / requested doc)
+  proof_offday: '📎', proof_mc: '📎', proof_doc: '📎' };
 const NOTIF_LABEL: Record<string, string> = { offday: 'off-day request', halfday: 'half-day request', advance: 'advance request', mc: 'MC', po: 'purchase order', pinv: 'purchase invoice', pinv_created: 'created in Niagawan ✓', not_checkin: 'attendance', stuckcar: 'in shop > 3 days', debt: 'newly overdue', lowstock: 'to restock', bnpl_payout: 'new payout', probation_review: 'trial review', job_done: 'finished', po_created: 'purchase order', owner_digest: 'end-of-day summary', robot_health: 'import problem', sales_unmapped: 'new salesperson',
   offday_result: 'off-day request', halfday_result: 'half-day request', mc_result: 'MC', advance_result: 'advance',
   holiday_decide: 'public holiday', holiday_load: 'to load',
   mc_cert: 'to upload', doc_needed: 'to upload',
-  proof_offday: 'proof to review', proof_mc: 'proof to review' };
+  proof_offday: 'document', proof_mc: 'document', proof_doc: 'document' };
 // Request types the owner can approve/reject right in the bell (each has approve_*/reject_* RPCs).
 const ACTIONABLE = new Set(['offday', 'halfday', 'advance', 'mc']);
 function relTime(iso: string): string {
