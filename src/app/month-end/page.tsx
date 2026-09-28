@@ -44,6 +44,7 @@ export default function MonthEndPage() {
   const [salaries, setSalaries] = useState<Salary[]>([]);
   const [newBillLabel, setNewBillLabel] = useState('');
   const [newBillAmount, setNewBillAmount] = useState('');
+  const [copying, setCopying] = useState(false); // "Copy last month" for the Bills card
   // Inline "fix a day" on the absent card (admin-only, mirrors the Attendance report editor).
   const [canFix, setCanFix] = useState(false);
   const [me, setMe] = useState('');
@@ -143,6 +144,21 @@ export default function MonthEndPage() {
     if (error) setErr(error.message);
     await load();
   }, [load]);
+  // Copy the previous month's bills into this month (same as the P&L page's button) — via the gated RPCs.
+  const copyLastMonth = useCallback(async () => {
+    const prevD = new Date(year, month - 2, 1);
+    const prevKey = `${prevD.getFullYear()}-${String(prevD.getMonth() + 1).padStart(2, '0')}`;
+    setCopying(true); setErr(null);
+    const { data } = await supabase.rpc('month_end_status', { p_month: prevKey });
+    const prevBills = ((data as Dash | null)?.bills ?? []) as Dash['bills'];
+    if (!prevBills.length) { setErr(`No bills saved for ${prevKey} to copy.`); setCopying(false); return; }
+    for (const b of prevBills) {
+      const { error } = await supabase.rpc('month_end_add_bill', { p_month: monthKey, p_label: b.label, p_amount: Number(b.amount) || 0 });
+      if (error) { setErr(error.message); break; }
+    }
+    setCopying(false);
+    await load();
+  }, [year, month, monthKey, load]);
 
   // --- Inline fix a single absent day (Present / Off day / MC) — mirrors the Attendance report editor ---
   const startFix = useCallback((email: string, day: string) => {
@@ -382,7 +398,10 @@ export default function MonthEndPage() {
               <span className="text-xs text-ink-3">operating cost · tick when paid</span>
             </div>
             {d.bills.length === 0 ? (
-              <p className="text-sm text-ink-3">No bills added for this month yet.</p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm text-ink-3">No bills added for this month yet.</p>
+                <button onClick={copyLastMonth} disabled={copying} className="shrink-0 rounded-lg border border-line px-2.5 py-1 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">{copying ? 'Copying…' : 'Copy last month'}</button>
+              </div>
             ) : (
               d.bills.map((b) => (
                 <div key={b.id} className="flex items-center gap-2 py-0.5 text-sm">
