@@ -15,6 +15,17 @@ type Pay = { staff_name: string; total_earn: number | string; epf_er: number | s
 type Meal = { meal_date: string; amount: number | string; item_count: number | null; drink_count: number | null };
 type StaffSales = { staff_email: string | null; staff_name: string; niagawan_names: string | null; total: number | string; invoices: number };
 type ZeroCount = { audit_date: string; n: number | string }; // days with un-priced (zero-cost) parts
+// Paid-only P&L (July 2026+) — one row from niagawan_pnl_month(). Counts fully-paid invoices only.
+type PaidPnl = {
+  sales: number | string; cogs: number | string; profit: number | string;
+  trade_sales: number | string; repair_sales: number | string; repair_profit: number | string; margin_pct: number | string;
+  car_count: number; paid_invoices: number;
+  provisional_inv: number; provisional_sales: number | string; provisional_profit: number | string;
+  unpriced_jobs: number; unpriced_cost: number | string;
+  receivable: number | string; partial_collected: number | string; cost_coverage_pct: number | string;
+};
+// Paid-invoice basis begins July 2026 (per-invoice cost capture started then); earlier months keep the settled-day method.
+const PAID_BASIS_FROM = { y: 2026, m: 7 };
 
 const n = (x: unknown) => { const v = Number(x); return Number.isFinite(v) ? v : 0; };
 const rm = (x: number) => `RM ${x.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -37,6 +48,7 @@ export default function PnlPage() {
   const [staffOptions, setStaffOptions] = useState<{ email: string; label: string }[]>([]); // active staff, for the "assign unmapped name" picker
   const [pick, setPick] = useState<Record<string, string>>({}); // per-nickname chosen staff email (defaults to the suggestion)
   const [zeroByDay, setZeroByDay] = useState<Record<string, number>>({}); // day -> count of un-priced parts (Sales-page finality)
+  const [paidPnl, setPaidPnl] = useState<PaidPnl | null>(null); // paid-only P&L row (July 2026+)
   const [targetNet, setTargetNet] = useState(50000);
   const [ptjPct, setPtjPct] = useState(5);
   const [loading, setLoading] = useState(true);
@@ -56,7 +68,7 @@ export default function PnlPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [d, s, t, b, p, st, g, ml, ss, zc, so] = await Promise.all([
+    const [d, s, t, b, p, st, g, ml, ss, zc, so, pp] = await Promise.all([
       supabase.from('niagawan_daily').select('day,invoices,sales,cogs,profit,unpaid_count').gte('day', firstDay).lte('day', lastDay).order('day'),
       supabase.from('niagawan_sale_inv').select('inv,day,customer,amount,status,staff').gte('day', firstDay).lte('day', lastDay),
       supabase.from('trade_customers').select('*').order('match'),
@@ -68,6 +80,7 @@ export default function PnlPage() {
       supabase.rpc('all_staff_sales', { p_year: year, p_month: month }),
       supabase.rpc('cogs_zero_day_counts'), // days with un-priced parts -> Sales-page day finality
       supabase.rpc('sales_staff_options'), // active staff for the "assign unmapped name" picker
+      supabase.rpc('niagawan_pnl_month', { p_year: year, p_month: month }), // paid-only P&L (used July 2026+)
     ]);
     const loadErr = d.error || ss.error; // surface a Staff-sales RPC failure, don't mask it as empty
     if (loadErr) setErr(loadErr.message); else setErr(null);
@@ -83,6 +96,7 @@ export default function PnlPage() {
     const zmap: Record<string, number> = {};
     for (const row of (zc.data ?? []) as ZeroCount[]) zmap[row.audit_date] = Number(row.n) || 0;
     setZeroByDay(zmap);
+    setPaidPnl((((pp.data ?? []) as PaidPnl[])[0]) ?? null);
     for (const row of (st.data ?? []) as Array<{ key: string; value: unknown }>) {
       if (row.key === 'target_net') setTargetNet(n(row.value) || 50000);
       if (row.key === 'putrajaya_pct') setPtjPct(n(row.value));
@@ -139,8 +153,41 @@ export default function PnlPage() {
     const projProfit = daysWithSales > 0 ? (totalProfit / daysWithSales) * 26 : 0;
     const netSoFar = totalProfit - costs;
     const netProjected = projProfit - costs;
-    return { totalSales, totalCogs, totalProfit, tradeSales, tradeRows, repairSales, carCount, aro, margin, mechanics, payrollGross, employer, billsTotal, staffMeals, costs, netSoFar, netProjected, daysWithSales, pendingDays, pendingProfit, pendingSales };
-  }, [daily, salesInv, trades, bills, pay, staffMeals, zeroByDay]);
+
+    // Paid-only basis (July 2026+): sales/COGS/profit come from the niagawan_pnl_month RPC
+    // (fully-paid invoices, per-invoice cost). Top-mechanics + days come from the paid invoice
+    // rows client-side (display only). Earlier months fall through to the legacy settled-day calc.
+    const usePaid = year > PAID_BASIS_FROM.y || (year === PAID_BASIS_FROM.y && month >= PAID_BASIS_FROM.m);
+    if (usePaid && paidPnl) {
+      const P = paidPnl;
+      const pRepair = n(P.repair_sales), pTrade = n(P.trade_sales), pProfit = n(P.profit);
+      const pCar = n(P.car_count);
+      const paidMech: Record<string, { total: number; jobs: number }> = {};
+      for (const r of salesInv) {
+        if (String(r.status ?? '').toLowerCase() !== 'paid' || n(r.amount) <= 0 || isTrade(r.customer)) continue;
+        const who = (r.staff || '').trim() || '(no mechanic)';
+        (paidMech[who] = paidMech[who] || { total: 0, jobs: 0 }); paidMech[who].total += n(r.amount); paidMech[who].jobs += 1;
+      }
+      const pMechanics = Object.entries(paidMech).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.total - a.total);
+      const pDays = new Set(salesInv.filter((r) => String(r.status ?? '').toLowerCase() === 'paid' && n(r.amount) > 0).map((r) => r.day)).size;
+      const pProj = pDays > 0 ? (pProfit / pDays) * 26 : 0;
+      return {
+        paid: true,
+        totalSales: n(P.sales), totalCogs: n(P.cogs), totalProfit: pProfit,
+        tradeSales: pTrade, tradeRows: [] as SaleInv[], repairSales: pRepair,
+        carCount: pCar, aro: pCar > 0 ? pRepair / pCar : 0, margin: n(P.margin_pct), mechanics: pMechanics,
+        payrollGross, employer, billsTotal, staffMeals, costs,
+        netSoFar: pProfit - costs, netProjected: pProj - costs, daysWithSales: pDays,
+        pendingDays: 0, pendingProfit: 0, pendingSales: 0,
+        receivable: n(P.receivable), partialCollected: n(P.partial_collected),
+        provisionalInv: n(P.provisional_inv), provisionalSales: n(P.provisional_sales), provisionalProfit: n(P.provisional_profit),
+        unpricedJobs: n(P.unpriced_jobs), unpricedCost: n(P.unpriced_cost), costCoverage: n(P.cost_coverage_pct),
+      };
+    }
+
+    return { paid: false, totalSales, totalCogs, totalProfit, tradeSales, tradeRows, repairSales, carCount, aro, margin, mechanics, payrollGross, employer, billsTotal, staffMeals, costs, netSoFar, netProjected, daysWithSales, pendingDays, pendingProfit, pendingSales,
+      receivable: 0, partialCollected: 0, provisionalInv: 0, provisionalSales: 0, provisionalProfit: 0, unpricedJobs: 0, unpricedCost: 0, costCoverage: 100 };
+  }, [daily, salesInv, trades, bills, pay, staffMeals, zeroByDay, paidPnl, year, month]);
 
   /* --------------------------------- actions -------------------------------- */
   const addBill = useCallback(async () => {
@@ -266,7 +313,7 @@ export default function PnlPage() {
           {tab === 'staff' && (
             <div className="mb-4 rounded-card bg-card shadow-card p-4">
               <div className="mb-2 flex items-center justify-between gap-2">
-                <span className="text-sm font-semibold text-ink-2">Staff sales <span className="font-normal text-ink-3">· {MONTHS[month - 1]} {year} · matches each staff&rsquo;s own &ldquo;My sales&rdquo;</span></span>
+                <span className="text-sm font-semibold text-ink-2">Staff sales <span className="font-normal text-ink-3">· {MONTHS[month - 1]} {year} · paid invoices, by salesperson</span></span>
                 <span className="text-sm font-semibold">{rm(staffSalesTotal)}</span>
               </div>
               {staffRows.length === 0 ? (
@@ -336,7 +383,7 @@ export default function PnlPage() {
                   </table>
                 </div>
               )}
-              <div className="mt-2 text-xs text-ink-3">All invoices for the month, credited by salesperson. A <span className="font-medium text-warn">new · who is this?</span> row is a Niagawan name not yet linked to a staff member — pick who it is (or Ignore a typo) and it credits all their sales, past and future. &ldquo;No salesperson / ignored&rdquo; = invoices with no name entered in Niagawan, or names you&rsquo;ve ignored. This is total sales, not repair-only — it can differ from the Overview&rsquo;s &ldquo;Top mechanics&rdquo;.</div>
+              <div className="mt-2 text-xs text-ink-3"><span className="font-medium">Paid invoices only</span>, credited by salesperson — the grand total matches the Overview&rsquo;s paid sales (July 2026 onward). A <span className="font-medium text-warn">new · who is this?</span> row is a Niagawan name not yet linked to a staff member — pick who it is (or Ignore a typo) and it credits all their sales, past and future. &ldquo;No salesperson / ignored&rdquo; = invoices with no name entered in Niagawan, or names you&rsquo;ve ignored. Unpaid / part-paid invoices aren&rsquo;t counted until they&rsquo;re paid.</div>
             </div>
           )}
 
@@ -344,7 +391,7 @@ export default function PnlPage() {
           {tab === 'overview' && (<>
           <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-card bg-card shadow-card p-4">
-              <div className="text-xs font-medium text-ink-2">Net profit (so far) <span className="text-ink-3">(settled days only · full-month costs)</span></div>
+              <div className="text-xs font-medium text-ink-2">Net profit (so far) <span className="text-ink-3">({c.paid ? 'paid invoices' : 'settled days only'} · full-month costs)</span></div>
               <div className={`mt-1 text-xl font-semibold ${c.netSoFar < 0 ? 'text-bad' : 'text-good'}`}>{rm(c.netSoFar)}</div>
             </div>
             <div className="rounded-card bg-card shadow-card p-4">
@@ -357,15 +404,38 @@ export default function PnlPage() {
             </div>
           </div>
 
-          {c.pendingDays > 0 && (
+          {c.paid ? (
+            <>
+              {c.receivable > 0 && (
+                <div className="mb-2 rounded-lg border border-line bg-ink/[0.02] px-3 py-2 text-xs text-ink-2">
+                  Counting <span className="font-semibold">paid invoices only</span>. <span className="font-semibold">{rm(c.receivable)}</span> is still owed on unpaid / part-paid invoices — not counted here{c.partialCollected > 0 ? <>, though <span className="font-semibold">{rm(c.partialCollected)}</span> of it is already collected on part-paid jobs</> : null}. It counts once the invoice is fully paid.
+                </div>
+              )}
+              {c.provisionalInv > 0 && (
+                <div className="mb-2 rounded-lg border border-amber-200 bg-warn-soft px-3 py-2 text-xs text-warn">
+                  Profit is an upper bound: <span className="font-semibold">{c.provisionalInv}</span> paid invoice{c.provisionalInv === 1 ? '' : 's'} ({rm(c.provisionalSales)}) {c.provisionalInv === 1 ? 'has' : 'have'} an un-priced part — the real cost isn&rsquo;t in yet.
+                </div>
+              )}
+              {c.unpricedJobs > 0 && (
+                <div className="mb-2 rounded-lg border border-amber-200 bg-warn-soft px-3 py-2 text-xs text-warn">
+                  <span className="font-semibold">{c.unpricedJobs}</span> paid job{c.unpricedJobs === 1 ? '' : 's'} {c.unpricedJobs === 1 ? 'has' : 'have'} <span className="font-semibold">{rm(c.unpricedCost)}</span> in parts but no sale price — price {c.unpricedJobs === 1 ? 'it' : 'them'} in Niagawan so {c.unpricedJobs === 1 ? 'it counts' : 'they count'}.
+                </div>
+              )}
+              {c.costCoverage > 0 && c.costCoverage < 100 && (
+                <div className="mb-2 rounded-lg border border-amber-200 bg-warn-soft px-3 py-2 text-xs text-warn">
+                  Cost data is {c.costCoverage.toFixed(0)}% complete for paid invoices — profit and margin may shift as the rest is priced.
+                </div>
+              )}
+            </>
+          ) : (c.pendingDays > 0 && (
             <div className="mb-4 rounded-lg border border-amber-200 bg-warn-soft px-3 py-2 text-xs text-warn">
               Not counted yet: <span className="font-semibold">{rm(c.pendingProfit)}</span> profit from {c.pendingDays} day{c.pendingDays === 1 ? '' : 's'} still settling (unpaid, or parts not priced yet). It&rsquo;s added automatically once those days are finalised — same rule as the Sales page.
             </div>
-          )}
+          ))}
 
           {/* Sales */}
           <div className="mb-4 rounded-card bg-card shadow-card p-4">
-            <div className="mb-2 text-sm font-semibold text-ink-2">Sales (month to date{c.pendingDays > 0 ? ` · ${c.pendingDays} day(s) still pending` : ''})</div>
+            <div className="mb-2 text-sm font-semibold text-ink-2">{c.paid ? `Sales (paid invoices · ${MONTHS[month - 1]} ${year})` : `Sales (month to date${c.pendingDays > 0 ? ` · ${c.pendingDays} day(s) still pending` : ''})`}</div>
             <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
               <div><div className="text-xs text-ink-2">Repair sales</div><div className="font-semibold">{rm(c.repairSales)}</div></div>
               <div><div className="text-xs text-ink-2">Sold to other shops</div><div className="font-semibold text-ink-2">{rm(c.tradeSales)}</div></div>
