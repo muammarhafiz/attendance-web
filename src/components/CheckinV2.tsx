@@ -148,6 +148,10 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
   const [mcCertBusy, setMcCertBusy] = useState<string | null>(null);
   const [offProof, setOffProof] = useState<{ id: string; date_from: string; date_to: string; reason: string | null; proof_deadline: string | null }[]>([]); // off-day the office asked for proof on
   const [offProofBusy, setOffProofBusy] = useState<string | null>(null);
+  const [proofFile, setProofFile] = useState<Record<string, File>>({}); // chosen-but-not-yet-uploaded proof, by request id
+  const [proofErr, setProofErr] = useState<Record<string, string>>({}); // last upload error, by request id
+  const pickProof = (id: string, f: File | null) =>
+    setProofFile((p) => { const n = { ...p }; if (f) n[id] = f; else delete n[id]; return n; }); // stage a chosen file; upload is a separate tap
   const [showAdv, setShowAdv] = useState(false);
   const [advAmount, setAdvAmount] = useState('');
   const [advReason, setAdvReason] = useState('');
@@ -243,9 +247,10 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
   }, [email]);
   useEffect(() => { if (email) loadDocNeeded(); }, [email, loadDocNeeded]);
 
-  const uploadDoc = async (id: string, file: File | null) => {
+  const uploadDoc = async (id: string) => {
+    const file = proofFile[id];
     if (readOnly || !file || !email) return;
-    setDocBusy(id);
+    setDocBusy(id); setProofErr((p) => ({ ...p, [id]: '' }));
     try {
       const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
       const path = `${email}/doc_${id}.${ext}`;
@@ -253,9 +258,10 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
       if (up.error) throw up.error;
       const { error } = await supabase.from('attendance_doc_requests').update({ doc_path: path, uploaded_at: new Date().toISOString() }).eq('id', id);
       if (error) throw error;
+      pickProof(id, null);
       await loadDocNeeded();
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : String(e));
+      setProofErr((p) => ({ ...p, [id]: e instanceof Error ? e.message : String(e) }));
     } finally {
       setDocBusy(null);
     }
@@ -282,9 +288,10 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
   }, [email]);
   useEffect(() => { if (email) loadOffProof(); }, [email, loadOffProof]);
 
-  const uploadMcCert = async (id: string, file: File | null) => {
+  const uploadMcCert = async (id: string) => {
+    const file = proofFile[id];
     if (readOnly || !file || !email) return;
-    setMcCertBusy(id);
+    setMcCertBusy(id); setProofErr((p) => ({ ...p, [id]: '' }));
     try {
       const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
       const path = `${email}/mc_${id}.${ext}`;
@@ -292,17 +299,19 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
       if (up.error) throw up.error;
       const { error } = await supabase.rpc('attach_mc_cert', { p_id: id, p_path: path });
       if (error) throw error;
+      pickProof(id, null);
       await loadMcPending();
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : String(e));
+      setProofErr((p) => ({ ...p, [id]: e instanceof Error ? e.message : String(e) }));
     } finally {
       setMcCertBusy(null);
     }
   };
 
-  const uploadOffProof = async (id: string, file: File | null) => {
+  const uploadOffProof = async (id: string) => {
+    const file = proofFile[id];
     if (readOnly || !file || !email) return;
-    setOffProofBusy(id);
+    setOffProofBusy(id); setProofErr((p) => ({ ...p, [id]: '' }));
     try {
       const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
       const path = `${email}/offproof_${id}.${ext}`;
@@ -310,9 +319,10 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
       if (up.error) throw up.error;
       const { error } = await supabase.rpc('attach_proof', { p_type: 'offday', p_id: id, p_path: path });
       if (error) throw error;
+      pickProof(id, null);
       await loadOffProof();
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : String(e));
+      setProofErr((p) => ({ ...p, [id]: e instanceof Error ? e.message : String(e) }));
     } finally {
       setOffProofBusy(null);
     }
@@ -865,8 +875,14 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
                       <div key={d.id} className="rounded-md bg-card p-3">
                         <div className="text-sm font-medium text-ink">Proof for {fmtDate(d.day)}{d.label ? ` (${d.label})` : ''}</div>
                         {d.note && <div className="text-xs text-ink-3">{d.note}</div>}
-                        <input type="file" accept="image/*,application/pdf" disabled={readOnly || docBusy === d.id} onChange={(e) => uploadDoc(d.id, e.target.files?.[0] ?? null)} className="mt-1.5 block w-full text-sm text-ink-2 file:mr-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white disabled:opacity-50" />
-                        {docBusy === d.id && <div className="mt-1 text-xs text-ink-3">Uploading…</div>}
+                        <input type="file" accept="image/*,application/pdf" disabled={readOnly || docBusy === d.id} onChange={(e) => { pickProof(d.id, e.target.files?.[0] ?? null); setProofErr((p) => ({ ...p, [d.id]: '' })); }} className="mt-1.5 block w-full text-sm text-ink-2 file:mr-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white disabled:opacity-50" />
+                        {proofFile[d.id] && (
+                          <div className="mt-1.5 flex items-center gap-2">
+                            <button onClick={() => uploadDoc(d.id)} disabled={docBusy === d.id} className="shrink-0 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">{docBusy === d.id ? 'Uploading…' : 'Upload'}</button>
+                            <span className="min-w-0 truncate text-[11px] text-ink-3">{proofFile[d.id].name}</span>
+                          </div>
+                        )}
+                        {proofErr[d.id] && <div className="mt-1 text-xs font-medium text-bad">Upload failed — {proofErr[d.id]}. Tap Upload to try again.</div>}
                       </div>
                     ))}
                   </div>
@@ -885,8 +901,14 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
                           <div className="text-sm font-medium text-ink">MC for {m.date_from === m.date_to ? fmtDate(m.date_from) : `${fmtDate(m.date_from)} – ${fmtDate(m.date_to)}`}</div>
                           {m.note && <div className="text-xs text-ink-3">{m.note}</div>}
                           {due && <div className={`mt-1 inline-block rounded-md px-2 py-0.5 text-xs font-semibold ${due.cls}`}>{due.txt}</div>}
-                          <input type="file" accept="image/*,application/pdf" disabled={readOnly || mcCertBusy === m.id} onChange={(e) => uploadMcCert(m.id, e.target.files?.[0] ?? null)} className="mt-1.5 block w-full text-sm text-ink-2 file:mr-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white disabled:opacity-50" />
-                          {mcCertBusy === m.id && <div className="mt-1 text-xs text-ink-3">Uploading…</div>}
+                          <input type="file" accept="image/*,application/pdf" disabled={readOnly || mcCertBusy === m.id} onChange={(e) => { pickProof(m.id, e.target.files?.[0] ?? null); setProofErr((p) => ({ ...p, [m.id]: '' })); }} className="mt-1.5 block w-full text-sm text-ink-2 file:mr-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white disabled:opacity-50" />
+                          {proofFile[m.id] && (
+                            <div className="mt-1.5 flex items-center gap-2">
+                              <button onClick={() => uploadMcCert(m.id)} disabled={mcCertBusy === m.id} className="shrink-0 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">{mcCertBusy === m.id ? 'Uploading…' : 'Upload'}</button>
+                              <span className="min-w-0 truncate text-[11px] text-ink-3">{proofFile[m.id].name}</span>
+                            </div>
+                          )}
+                          {proofErr[m.id] && <div className="mt-1 text-xs font-medium text-bad">Upload failed — {proofErr[m.id]}. Tap Upload to try again.</div>}
                         </div>
                       );
                     })}
@@ -897,8 +919,14 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
                           <div className="text-sm font-medium text-ink">Off day · {o.date_from === o.date_to ? fmtDate(o.date_from) : `${fmtDate(o.date_from)} – ${fmtDate(o.date_to)}`}</div>
                           {o.reason && <div className="text-xs text-ink-3">{o.reason}</div>}
                           {due && <div className={`mt-1 inline-block rounded-md px-2 py-0.5 text-xs font-semibold ${due.cls}`}>{due.txt}</div>}
-                          <input type="file" accept="image/*,application/pdf" disabled={readOnly || offProofBusy === o.id} onChange={(e) => uploadOffProof(o.id, e.target.files?.[0] ?? null)} className="mt-1.5 block w-full text-sm text-ink-2 file:mr-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white disabled:opacity-50" />
-                          {offProofBusy === o.id && <div className="mt-1 text-xs text-ink-3">Uploading…</div>}
+                          <input type="file" accept="image/*,application/pdf" disabled={readOnly || offProofBusy === o.id} onChange={(e) => { pickProof(o.id, e.target.files?.[0] ?? null); setProofErr((p) => ({ ...p, [o.id]: '' })); }} className="mt-1.5 block w-full text-sm text-ink-2 file:mr-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white disabled:opacity-50" />
+                          {proofFile[o.id] && (
+                            <div className="mt-1.5 flex items-center gap-2">
+                              <button onClick={() => uploadOffProof(o.id)} disabled={offProofBusy === o.id} className="shrink-0 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">{offProofBusy === o.id ? 'Uploading…' : 'Upload'}</button>
+                              <span className="min-w-0 truncate text-[11px] text-ink-3">{proofFile[o.id].name}</span>
+                            </div>
+                          )}
+                          {proofErr[o.id] && <div className="mt-1 text-xs font-medium text-bad">Upload failed — {proofErr[o.id]}. Tap Upload to try again.</div>}
                         </div>
                       );
                     })}
