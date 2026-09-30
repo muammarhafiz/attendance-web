@@ -92,6 +92,17 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+type OffbSummary = {
+  name: string; basic_salary: number; employment_end_date: string | null; already_archived: boolean;
+  proration: { worked_days: number; month_days: number; suggested_base: number } | null;
+  unpaid_commission: { invoices: number; sales: number };
+  advances_to_settle: { count: number; amount: number };
+  unlocked_payslip: boolean;
+  target_period: { year: number; month: number; has_lines: boolean; total: number } | null;
+  error?: string;
+};
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 export default function EmployeesPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false); // can open Employees (position grants 'employees')
@@ -122,6 +133,16 @@ export default function EmployeesPage() {
   const [editSocsoEnabled, setEditSocsoEnabled] = useState<boolean>(true);
   const [editEisEnabled, setEditEisEnabled] = useState<boolean>(true);
   const [editTrackAttendance, setEditTrackAttendance] = useState<boolean>(true);
+
+  // offboarding: final-pay / settlement summary (loaded on demand for an existing staff)
+  const [offb, setOffb] = useState<OffbSummary | null>(null);
+  const [offbBusy, setOffbBusy] = useState(false);
+  const loadOffb = async (email: string) => {
+    setOffbBusy(true);
+    const { data } = await supabase.rpc('offboard_summary', { p_email: email });
+    setOffb((data ?? null) as OffbSummary);
+    setOffbBusy(false);
+  };
 
   // add employee drawer
   const [addOpen, setAddOpen] = useState(false);
@@ -277,6 +298,7 @@ export default function EmployeesPage() {
 
     const row = (data ?? null) as StaffFull | null;
     setModel(row);
+    setOffb(null); // clear any prior staff's offboarding summary
 
     // Sync local toggles with DB row (coalesce for safety)
     setEditIsAdmin(!!row?.is_admin);
@@ -313,6 +335,20 @@ export default function EmployeesPage() {
     setMsg(null);
 
     try {
+      // Guardrail: archiving rebuilds the latest OPEN payroll period and removes this person's
+      // lines there. If that period holds their (unfinalised) pay, warn before wiping it.
+      if (editArchived && !origPayrollRef.current?.arch) {
+        const { data: sum } = await supabase.rpc('offboard_summary', { p_email: model.email });
+        const s = (sum ?? null) as OffbSummary | null;
+        const tp = s?.target_period;
+        if (s?.unlocked_payslip && tp?.has_lines) {
+          const ok = window.confirm(
+            `Archiving ${s?.name ?? model.email} will rebuild the ${MON[tp.month - 1]} ${tp.year} payroll and REMOVE their lines there (RM ${Number(tp.total).toFixed(2)}).\n\nIf that month is their final pay, finalise & lock it FIRST, then archive.\n\nArchive anyway?`,
+          );
+          if (!ok) { setSaving(false); return; }
+        }
+      }
+
       const archived_at = editArchived ? (model.archived_at ?? nowIso()) : null;
 
       const payload: Partial<StaffFull> = {
@@ -659,20 +695,43 @@ export default function EmployeesPage() {
               {/* Employment status */}
               <Section title="Employment status">
                 <div className="flex flex-col gap-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <DateInput label="Last working day (resignation)" value={(model as any).employment_end_date ?? ''} onChange={(v) => setModel((m) => ({ ...m!, employment_end_date: v || null }) as StaffFull)} />
+                    <Text label="Reason (optional)" value={(model as any).employment_end_reason ?? ''} onChange={(v) => setModel((m) => ({ ...m!, employment_end_reason: v || null }) as StaffFull)} />
+                  </div>
                   <div className="flex items-center gap-2">
-                    <input
-                      id="archived-flag"
-                      type="checkbox"
-                      checked={editArchived}
-                      onChange={(e) => setEditArchived(e.target.checked)}
-                    />
-                    <label htmlFor="archived-flag" className="text-sm">
-                      Archived / Resigned (removes from active employee list & payroll)
-                    </label>
+                    <input id="archived-flag" type="checkbox" checked={editArchived} onChange={(e) => setEditArchived(e.target.checked)} />
+                    <label htmlFor="archived-flag" className="text-sm">Archived / Resigned (removes from active employee list &amp; payroll)</label>
                   </div>
                   <div className="text-xs text-ink-2">
-                    When checked, <code>archived_at</code> will be set. Uncheck to reactivate.
+                    Safe order: set the <span className="font-medium">last working day</span> → run &amp; <span className="font-medium">lock</span> their final pay → <span className="font-medium">then</span> tick Archived. Archiving rebuilds the open payroll and removes their lines, so do it last. Uncheck to reactivate.
                   </div>
+
+                  {model.email && (
+                    <div>
+                      <button type="button" onClick={() => loadOffb(model.email)} className="rounded-lg border border-line px-2.5 py-1 text-xs font-medium text-ink-2 hover:bg-ink/5">
+                        {offbBusy ? 'Loading…' : 'Show final-pay / settlement summary'}
+                      </button>
+                      {offb && !offb.error && (
+                        <div className="mt-2 rounded-lg border border-line bg-ink/[0.02] p-3 text-xs text-ink-2">
+                          {offb.unlocked_payslip && offb.target_period && (
+                            <div className="mb-2 rounded border border-amber-200 bg-warn-soft px-2 py-1.5 text-warn">
+                              ⚠️ Archiving now rebuilds <b>{MON[offb.target_period.month - 1]} {offb.target_period.year}</b> payroll and removes {offb.name}&rsquo;s lines there (RM {Number(offb.target_period.total).toFixed(2)}). Finalise &amp; lock that month first.
+                            </div>
+                          )}
+                          <ul className="space-y-1">
+                            {offb.proration && (
+                              <li>Part-month base (if last day is mid-month): {offb.proration.worked_days}/{offb.proration.month_days} days → suggested <b>RM {Number(offb.proration.suggested_base).toFixed(2)}</b> <span className="text-ink-3">(from RM {Number(offb.basic_salary).toFixed(2)}; verify vs your divisor)</span></li>
+                            )}
+                            <li>Advances on file: <b>{offb.advances_to_settle.count}</b> (RM {Number(offb.advances_to_settle.amount).toFixed(2)}) — recover from final pay.</li>
+                            <li>Commission earned, not yet paid: <b>{offb.unpaid_commission.invoices}</b> invoice(s), RM {Number(offb.unpaid_commission.sales).toFixed(2)} of their sales still unpaid — decide whether to pay out.</li>
+                            <li>Also check: unused annual leave (pay out or forfeit); company property returned.</li>
+                          </ul>
+                        </div>
+                      )}
+                      {offb?.error && <div className="mt-2 text-xs text-bad">{offb.error}</div>}
+                    </div>
+                  )}
                 </div>
               </Section>
 
