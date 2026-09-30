@@ -156,6 +156,7 @@ export default function DailyPage() {
             {syncMsg}
           </div>
         )}
+        <DailyTasksCard day={day} />
         <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-3">Payments</div>
         <div className="mb-3 flex items-center gap-2 text-sm">
           <span className="text-ink-2">Payments for</span>
@@ -302,6 +303,77 @@ export default function DailyPage() {
 // Outstanding BNPL (ATOME etc.): the sales still owed to the shop, PLUS the payouts that have landed
 // and need ticking against the bank. Not day-scoped — carries forward until settled. Ticking a payout
 // here calls the same RPC as the BNPL page, so a tick on either place syncs to the other.
+type DailyTask = { id: number; title: string; instruction: string | null; link_href: string | null; responsible: string | null; requires_upload: boolean; done: boolean; done_by: string | null; done_at: string | null; note: string | null; file_path: string | null };
+
+// Owner-configurable recurring daily tasks (defined in Settings). The clerk ticks each off per day;
+// who + when is recorded. Tasks that require proof take a file upload (stored in the private 'mc' bucket).
+function DailyTasksCard({ day }: { day: string }) {
+  const [tasks, setTasks] = useState<DailyTask[] | null>(null);
+  const [busy, setBusy] = useState<number | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const { data, error } = await supabase.rpc('daily_tasks_for', { p_day: day });
+    if (error) { setErr(error.message); setTasks([]); return; }
+    setErr(null); setTasks((data ?? []) as DailyTask[]);
+  }, [day]);
+  useEffect(() => { load(); }, [load]);
+
+  const toggle = useCallback(async (t: DailyTask, done: boolean, filePath?: string | null) => {
+    setBusy(t.id); setErr(null);
+    const { error } = await supabase.rpc('daily_task_toggle', { p_task_id: t.id, p_day: day, p_done: done, p_note: null, p_file_path: filePath ?? null });
+    setBusy(null);
+    if (error) { setErr(error.message); return; }
+    await load();
+  }, [day, load]);
+
+  const upload = useCallback(async (t: DailyTask, file: File) => {
+    setBusy(t.id); setErr(null);
+    const ext = (file.name.split('.').pop() || 'pdf').toLowerCase();
+    const path = `daily_task/${t.id}/${day}_${crypto.randomUUID()}.${ext}`;
+    const { error: upErr } = await supabase.storage.from('mc').upload(path, file, { upsert: false });
+    if (upErr) { setBusy(null); setErr(upErr.message); return; }
+    await toggle(t, true, path);
+  }, [day, toggle]);
+
+  if (!tasks || tasks.length === 0) return null;
+  const doneN = tasks.filter((t) => t.done).length;
+  return (
+    <div className="mb-4 rounded-card bg-card shadow-card p-4">
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-ink-2">Daily tasks <span className="font-normal text-ink-3">· {fmtDay(day)}</span></h2>
+        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${doneN === tasks.length ? 'bg-good-soft text-good' : 'bg-warn-soft text-warn'}`}>{doneN}/{tasks.length} done</span>
+      </div>
+      {err && <div className="mb-2 rounded-md border border-rose-200 bg-bad-soft p-2 text-xs text-bad">{err}</div>}
+      <ul className="divide-y divide-line">
+        {tasks.map((t) => (
+          <li key={t.id} className="flex items-start gap-3 py-2">
+            <input type="checkbox" checked={t.done} disabled={busy === t.id || (t.requires_upload && !t.done)}
+              onChange={(e) => toggle(t, e.target.checked)} className="mt-1 h-4 w-4 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`text-sm font-medium ${t.done ? 'text-ink-3 line-through' : 'text-ink'}`}>{t.title}</span>
+                {t.responsible && <span className="rounded-full bg-ink/5 px-2 py-0.5 text-[11px] text-ink-2">{t.responsible}</span>}
+                {t.link_href && <Link href={t.link_href} className="text-xs font-medium text-accent hover:underline">open ↗</Link>}
+              </div>
+              {t.instruction && <p className="mt-0.5 text-xs text-ink-3">{t.instruction}</p>}
+              {t.done ? (
+                <p className="mt-1 text-[11px] text-good">✓ done{t.done_by ? ` by ${t.done_by.split('@')[0]}` : ''}{t.done_at ? ` · ${new Date(t.done_at).toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit' })}` : ''}{t.file_path ? ' · file attached' : ''}</p>
+              ) : t.requires_upload ? (
+                <label className="mt-1 inline-flex cursor-pointer items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs font-medium text-ink-2 hover:bg-ink/5">
+                  {busy === t.id ? 'Uploading…' : 'Upload file to complete'}
+                  <input type="file" accept="application/pdf,image/*" className="hidden" disabled={busy === t.id}
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(t, f); e.currentTarget.value = ''; }} />
+                </label>
+              ) : null}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function BnplOutstandingCard({ bnpl, onConfirm }: { bnpl: BnplOut; onConfirm: (provider: string, payoutId: string) => void }) {
   const items = bnpl.items ?? [];
   const payouts = bnpl.payouts ?? [];
