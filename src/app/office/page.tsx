@@ -188,7 +188,10 @@ function MonthlyStatusCard({ d }: { d: Home }) {
         <h2 className="text-lg font-semibold text-ink">Monthly</h2>
         {hasBad ? <span className="h-2 w-2 rounded-full bg-bad" title="Pending items" />
           : <span className="h-2 w-2 rounded-full bg-good" title="All settled" />}
-        <Link href="/month-end" className="ml-auto text-xs font-medium text-accent hover:underline">Open →</Link>
+        <div className="ml-auto flex items-center gap-3">
+          <Link href="/office/month-report" className="text-xs font-medium text-accent hover:underline">Report →</Link>
+          <Link href="/month-end" className="text-xs font-medium text-accent hover:underline">Open →</Link>
+        </div>
       </div>
       <ul className="space-y-1.5">
         {rows.map((r, i) => {
