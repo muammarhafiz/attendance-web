@@ -6,6 +6,7 @@
 // is a classify-and-record flow (the absence already happened — pick what it counts as).
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { openSignedFile } from '@/lib/openSignedFile';
 
 type Kind = 'offday' | 'halfday' | 'mc' | 'advance' | 'emergency';
 
@@ -183,11 +184,7 @@ export default function RequestsPage() {
     setSavingEdit(false);
   }, [editingId, eFrom, eTo, eReason, load]);
 
-  const viewAttachment = useCallback(async (path: string | null) => {
-    if (!path) return;
-    const { data, error } = await supabase.storage.from('mc').createSignedUrl(path, 300);
-    if (!error && data?.signedUrl) window.open(data.signedUrl, '_blank', 'noopener');
-  }, []);
+  const viewAttachment = useCallback((path: string | null) => openSignedFile('mc', path), []);
 
   // Approve / reject the four request types (each has its own approve_*/reject_* RPC).
   const decide = useCallback(async (r: Req, approve: boolean) => {
