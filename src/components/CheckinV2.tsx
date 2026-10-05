@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { Icon, type IconName } from './icons';
+import { LeaveLedgerList, type LedgerRow } from './LeaveLedger';
 
 type Status = {
   status?: string;
@@ -174,6 +175,10 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
   const [profileMsg, setProfileMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [leave, setLeave] = useState<LeaveBal | null>(null); // my annual + sick balances
   const [holidays, setHolidays] = useState<Holi[]>([]);       // public holidays for the year (from Settings)
+  const [showLedger, setShowLedger] = useState(false);        // "See my leave days" drill-down
+  const [myLedger, setMyLedger] = useState<LedgerRow[] | null>(null);
+  const [myLedgerBusy, setMyLedgerBusy] = useState(false);
+  const [myLedgerErr, setMyLedgerErr] = useState(false);
 
   useEffect(() => {
     setNow(new Date());
@@ -459,6 +464,27 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
     }
   }, [email, isPreview, previewEmail]);
   useEffect(() => { if (email) loadLeave(); }, [email, loadLeave]);
+
+  // My dated leave ledger (the "See my leave days" drill-down). Reconciles to the balances above.
+  // In preview the owner reads the chosen staff's ledger via the admin RPC.
+  const loadMyLedger = useCallback(async () => {
+    if (!email) return;
+    setMyLedgerErr(false);
+    setMyLedgerBusy(true);
+    const yr = leave?.year ?? new Date(Date.now() + 8 * 3600e3).getUTCFullYear();
+    const { data, error } = isPreview
+      ? await supabase.rpc('leave_ledger', { p_year: yr, p_email: previewEmail })
+      : await supabase.rpc('my_leave_ledger', { p_year: yr });
+    setMyLedgerBusy(false);
+    if (error) { setMyLedgerErr(true); return; } // leave myLedger null so reopening retries
+    const rows = ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+      bucket: r.bucket as LedgerRow['bucket'], day: String(r.day), paid: !!r.paid,
+      over_quota: !!r.over_quota, is_emergency: !!r.is_emergency, note: (r.note ?? null) as string | null,
+    }));
+    setMyLedger(rows);
+  }, [email, isPreview, previewEmail, leave?.year]);
+  // Reset the drill-down when the viewed person changes (owner switching previews, or re-auth in place).
+  useEffect(() => { setMyLedger(null); setShowLedger(false); setMyLedgerErr(false); }, [previewEmail, email]);
 
   // Public holidays for the current year — read live from the same table Settings manages.
   const loadHolidays = useCallback(async () => {
@@ -773,6 +799,17 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
                     </div>
                   </div>
                   {leave.unpaid > 0 && <div className="mt-3 rounded-md bg-bad-soft px-2 py-1 text-xs text-bad">{leave.unpaid} day{leave.unpaid === 1 ? '' : 's'} over annual leave → unpaid</div>}
+                  <button onClick={() => { const n = !showLedger; setShowLedger(n); if (n && myLedger === null && !myLedgerBusy) loadMyLedger(); }}
+                    className="mt-3 w-full rounded-lg border border-line py-1.5 text-xs font-medium text-ink-2 hover:bg-ink/5">
+                    {showLedger ? 'Hide my leave days ▴' : 'See my leave days ▾'}
+                  </button>
+                  {showLedger && (
+                    <div className="mt-2">
+                      {myLedgerBusy ? <div className="py-2 text-center text-xs text-ink-3">Loading…</div>
+                        : myLedgerErr ? <div className="py-2 text-center text-xs text-bad">Couldn&rsquo;t load — <button onClick={loadMyLedger} className="font-medium underline">tap to retry</button></div>
+                        : <LeaveLedgerList rows={myLedger ?? []} />}
+                    </div>
+                  )}
                   <div className="mt-3 border-t border-line pt-2 text-[11px] text-ink-3">Emergency leave comes out of annual. Rest days &amp; public holidays don&rsquo;t count.</div>
                 </div>
               )}

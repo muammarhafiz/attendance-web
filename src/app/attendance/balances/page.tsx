@@ -2,8 +2,10 @@
 // Leave balances (Employment Act). Entitlement from each staff's start date:
 // Annual 8/12/16, Sick (MC) 14/18/22 by years of service. "Used" comes from the request
 // flows — approved off-day requests + emergencies (annual) and approved MC (sick).
-import { useCallback, useEffect, useState } from 'react';
+// Tap a staff to open their dated ledger; Export CSV downloads every staff's full ledger.
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { LeaveLedgerList, ledgerToCsv, type LedgerRow, type AdminLedgerRow } from '@/components/LeaveLedger';
 
 type Bal = {
   email: string; name: string; start_date: string | null; years: number;
@@ -12,6 +14,7 @@ type Bal = {
 };
 
 const nowYear = new Date(Date.now() + 8 * 3600e3).getUTCFullYear();
+const toLedgerRow = (r: AdminLedgerRow): LedgerRow => ({ bucket: r.bucket, day: r.day, paid: r.paid, over_quota: r.over_quota, is_emergency: r.is_emergency, note: r.note });
 
 export default function LeaveBalancesPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -19,6 +22,13 @@ export default function LeaveBalancesPage() {
   const [year, setYear] = useState(nowYear);
   const [rows, setRows] = useState<Bal[]>([]);
   const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [ledgers, setLedgers] = useState<Record<string, LedgerRow[]>>({});
+  const [ledgerBusy, setLedgerBusy] = useState<string | null>(null);
+  const [ledgerErr, setLedgerErr] = useState<Record<string, boolean>>({});
+  const [exporting, setExporting] = useState(false);
+  const yearRef = useRef(year);
+  useEffect(() => { yearRef.current = year; }, [year]);
 
   useEffect(() => {
     (async () => {
@@ -31,11 +41,45 @@ export default function LeaveBalancesPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setExpanded(null); setLedgers({}); setLedgerBusy(null); setLedgerErr({});
     const { data } = await supabase.rpc('leave_balances', { p_year: year });
     setRows((data ?? []) as Bal[]);
     setLoading(false);
   }, [year]);
   useEffect(() => { if (ok) load(); }, [ok, load]);
+
+  // Fetch one staff's dated ledger. Guards against a stale result landing after the year changed,
+  // and distinguishes a real error (retryable) from a genuinely empty ledger (don't cache [] on error).
+  const fetchLedger = useCallback(async (em: string) => {
+    setLedgerErr((e) => ({ ...e, [em]: false }));
+    setLedgerBusy(em);
+    const y = year;
+    const { data, error } = await supabase.rpc('leave_ledger', { p_year: y, p_email: em });
+    if (yearRef.current !== y) return; // year switched mid-flight — drop this stale result
+    setLedgerBusy(null);
+    if (error) { setLedgerErr((e) => ({ ...e, [em]: true })); return; }
+    setLedgers((m) => ({ ...m, [em]: ((data ?? []) as AdminLedgerRow[]).map(toLedgerRow) }));
+  }, [year]);
+
+  const toggleRow = useCallback((em: string) => {
+    if (expanded === em) { setExpanded(null); return; }
+    setExpanded(em);
+    if (!ledgers[em]) fetchLedger(em);
+  }, [expanded, ledgers, fetchLedger]);
+
+  const exportCsv = useCallback(async () => {
+    setExporting(true);
+    const { data, error } = await supabase.rpc('leave_ledger', { p_year: year });
+    setExporting(false);
+    if (error || !data) { alert('Could not export the ledger — please try again.'); return; }
+    const csv = ledgerToCsv(data as AdminLedgerRow[]);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `leave-ledger-${year}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }, [year]);
 
   if (authed === null || ok === null) return <div className="text-sm text-ink-3">Checking…</div>;
   if (!authed) return <div className="text-sm text-ink-2">Please sign in.</div>;
@@ -47,10 +91,16 @@ export default function LeaveBalancesPage() {
     <>
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <h1 className="text-xl font-semibold tracking-tight text-ink">Leave balances</h1>
-        <div className="ml-auto flex items-center gap-1">
-          <button onClick={() => setYear((y) => y - 1)} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">‹</button>
-          <span className="min-w-[56px] text-center text-sm font-semibold text-ink tabular-nums">{year}</span>
-          <button onClick={() => setYear((y) => y + 1)} disabled={year >= nowYear} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-30">›</button>
+        <div className="ml-auto flex items-center gap-2">
+          <button onClick={exportCsv} disabled={exporting || rows.length === 0}
+            className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-40">
+            {exporting ? 'Exporting…' : '⬇ Export CSV'}
+          </button>
+          <div className="flex items-center gap-1">
+            <button onClick={() => setYear((y) => y - 1)} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">‹</button>
+            <span className="min-w-[56px] text-center text-sm font-semibold text-ink tabular-nums">{year}</span>
+            <button onClick={() => setYear((y) => y + 1)} disabled={year >= nowYear} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-30">›</button>
+          </div>
         </div>
       </div>
 
@@ -58,7 +108,7 @@ export default function LeaveBalancesPage() {
         <p className="text-xs text-ink-3">
           Set by law from each staff&rsquo;s start date — <b>Annual</b> 8 / 12 / 16 and <b>MC</b> 14 / 18 / 22 days by years of service.
           Annual counts approved <b>off-day</b> requests and <b>emergencies</b>; MC counts approved <b>MC</b>. Rest days, Sundays, and public holidays don&rsquo;t count.
-          Emergency leave comes out of annual.
+          Emergency leave comes out of annual. <b>Tap a staff</b> to see the exact dates.
         </p>
         {missing > 0 && (
           <p className="mt-2 rounded-md bg-warn-soft px-3 py-2 text-xs text-warn">
@@ -84,29 +134,52 @@ export default function LeaveBalancesPage() {
               <tr><td colSpan={6} className="px-3 py-4 text-ink-3">Loading…</td></tr>
             ) : rows.length === 0 ? (
               <tr><td colSpan={6} className="px-3 py-4 text-ink-3">No staff.</td></tr>
-            ) : rows.map((r) => (
-              <tr key={r.email}>
-                <td className="px-3 py-2.5">
-                  <div className="font-medium text-ink">{r.name}</div>
-                  {!r.start_date && <div className="text-[11px] text-warn">no start date</div>}
-                </td>
-                <td className="px-3 py-2.5 text-ink-2 tabular-nums">{r.start_date ? `${r.years} yr${r.years === 1 ? '' : 's'}` : '—'}</td>
-                <td className="px-3 py-2.5">
-                  <span className="tabular-nums text-ink">{r.annual_used}</span>
-                  <span className="text-ink-3"> / {r.annual_ent}</span>
-                  <span className={`ml-2 text-xs ${r.annual_left === 0 ? 'text-bad' : 'text-good'}`}>{r.annual_left} left</span>
-                </td>
-                <td className="px-3 py-2.5">
-                  <span className="tabular-nums text-ink">{r.mc_used}</span>
-                  <span className="text-ink-3"> / {r.mc_ent}</span>
-                  <span className={`ml-2 text-xs ${r.mc_left === 0 ? 'text-bad' : 'text-good'}`}>{r.mc_left} left</span>
-                </td>
-                <td className="px-3 py-2.5 tabular-nums text-ink-2">{r.emergency_used}</td>
-                <td className="px-3 py-2.5 tabular-nums">
-                  {r.unpaid > 0 ? <span className="rounded-full bg-bad-soft px-2 py-0.5 text-xs font-medium text-bad">{r.unpaid}</span> : <span className="text-ink-3">0</span>}
-                </td>
-              </tr>
-            ))}
+            ) : rows.map((r) => {
+              const open = expanded === r.email;
+              return (
+              <Fragment key={r.email}>
+                <tr onClick={() => toggleRow(r.email)} role="button" tabIndex={0} aria-expanded={open}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleRow(r.email); } }}
+                  className="cursor-pointer hover:bg-ink/[0.02] focus:bg-ink/[0.04] focus:outline-none">
+                  <td className="px-3 py-2.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className={`text-ink-3 transition-transform ${open ? 'rotate-90' : ''}`}>›</span>
+                      <span className="font-medium text-ink">{r.name}</span>
+                    </div>
+                    {!r.start_date && <div className="pl-5 text-[11px] text-warn">no start date</div>}
+                  </td>
+                  <td className="px-3 py-2.5 text-ink-2 tabular-nums">{r.start_date ? `${r.years} yr${r.years === 1 ? '' : 's'}` : '—'}</td>
+                  <td className="px-3 py-2.5">
+                    <span className="tabular-nums text-ink">{r.annual_used}</span>
+                    <span className="text-ink-3"> / {r.annual_ent}</span>
+                    <span className={`ml-2 text-xs ${r.annual_left === 0 ? 'text-bad' : 'text-good'}`}>{r.annual_left} left</span>
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <span className="tabular-nums text-ink">{r.mc_used}</span>
+                    <span className="text-ink-3"> / {r.mc_ent}</span>
+                    <span className={`ml-2 text-xs ${r.mc_left === 0 ? 'text-bad' : 'text-good'}`}>{r.mc_left} left</span>
+                  </td>
+                  <td className="px-3 py-2.5 tabular-nums text-ink-2">{r.emergency_used}</td>
+                  <td className="px-3 py-2.5 tabular-nums">
+                    {r.unpaid > 0 ? <span className="rounded-full bg-bad-soft px-2 py-0.5 text-xs font-medium text-bad">{r.unpaid}</span> : <span className="text-ink-3">0</span>}
+                  </td>
+                </tr>
+                {open && (
+                  <tr className="bg-ink/[0.02]">
+                    <td colSpan={6} className="px-3 pb-3 pt-0">
+                      {ledgerBusy === r.email ? (
+                        <div className="py-3 text-xs text-ink-3">Loading {r.name}&rsquo;s leave days…</div>
+                      ) : ledgerErr[r.email] ? (
+                        <div className="py-3 text-xs text-bad">Couldn&rsquo;t load — <button onClick={(e) => { e.stopPropagation(); fetchLedger(r.email); }} className="font-medium underline">tap to retry</button></div>
+                      ) : (
+                        <LeaveLedgerList rows={ledgers[r.email] ?? []} />
+                      )}
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
