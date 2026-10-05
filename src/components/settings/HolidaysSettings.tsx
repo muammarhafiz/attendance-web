@@ -22,6 +22,9 @@ export default function HolidaysSettings() {
   const [newName, setNewName] = useState('');
   const [newCompulsory, setNewCompulsory] = useState(false);
   const [swapId, setSwapId] = useState<string | null>(null); // row currently choosing a swap-to date
+  const [closeFrom, setCloseFrom] = useState(''); // "Close the shop" date-range
+  const [closeTo, setCloseTo] = useState('');
+  const [closeName, setCloseName] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -46,6 +49,17 @@ export default function HolidaysSettings() {
     if (!newDate || !newName.trim()) { setMsg({ kind: 'err', text: 'Enter a date and a name.' }); return; }
     run(() => supabase.rpc('add_holiday', { p_date: newDate, p_name: newName.trim(), p_compulsory: newCompulsory }), 'Holiday added ✓')
       .then(() => { setNewDate(''); setNewName(''); setNewCompulsory(false); });
+  };
+  const closeShop = () => {
+    if (!closeFrom || !closeTo) { setMsg({ kind: 'err', text: 'Pick a start and end date.' }); return; }
+    if (closeTo < closeFrom) { setMsg({ kind: 'err', text: 'End date is before the start date.' }); return; }
+    setBusy(true); setMsg(null);
+    supabase.rpc('add_shop_closure', { p_from: closeFrom, p_to: closeTo, p_name: closeName.trim() || null })
+      .then(async ({ data, error }) => {
+        if (error) setMsg({ kind: 'err', text: error.message });
+        else { setMsg({ kind: 'ok', text: `Shop marked closed for ${data} day${data === 1 ? '' : 's'} ✓ (Sundays skipped)` }); setCloseFrom(''); setCloseTo(''); setCloseName(''); await load(); }
+        setBusy(false);
+      });
   };
   const remove = (h: Holiday) => {
     if (!window.confirm(`Remove "${h.name}" on ${fmtD(h.holiday_date)}?`)) return;
@@ -148,6 +162,23 @@ export default function HolidaysSettings() {
           <button onClick={add} disabled={busy} className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">Add</button>
         </div>
         <p className="mt-2 text-[11px] text-ink-3">Adding or removing a holiday re-marks that day on the attendance record automatically.</p>
+      </div>
+
+      <div className="mt-4 rounded-card bg-card shadow-card p-4">
+        <div className="text-sm font-medium text-ink">Close the shop (date range)</div>
+        <p className="mt-1 text-[11px] text-ink-3">For a festive shutdown (e.g. a Raya week). Marks <b>every day in the range</b> as a paid shop-closure holiday — Sundays skipped — so it counts as a holiday for everyone and <b>never comes out of anyone&rsquo;s annual leave</b>. Use this instead of setting each staff&rsquo;s off-day one by one.</p>
+        <div className="mt-2 flex flex-wrap items-end gap-2">
+          <label className="text-xs text-ink-2">From
+            <input type="date" value={closeFrom} onChange={(e) => setCloseFrom(e.target.value)} className="mt-0.5 block rounded-md border border-line px-2 py-1.5 text-sm" />
+          </label>
+          <label className="text-xs text-ink-2">To
+            <input type="date" value={closeTo} onChange={(e) => setCloseTo(e.target.value)} className="mt-0.5 block rounded-md border border-line px-2 py-1.5 text-sm" />
+          </label>
+          <label className="min-w-[160px] flex-1 text-xs text-ink-2">Reason (optional)
+            <input value={closeName} onChange={(e) => setCloseName(e.target.value)} placeholder="e.g. Hari Raya shutdown" className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
+          </label>
+          <button onClick={closeShop} disabled={busy} className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">Close shop</button>
+        </div>
       </div>
     </div>
   );
