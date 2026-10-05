@@ -478,7 +478,7 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
     setMyLedgerBusy(false);
     if (error) { setMyLedgerErr(true); return; } // leave myLedger null so reopening retries
     const rows = ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
-      bucket: r.bucket as LedgerRow['bucket'], day: String(r.day), paid: !!r.paid,
+      kind: r.kind as LedgerRow['kind'], day: String(r.day), paid: !!r.paid,
       over_quota: !!r.over_quota, is_emergency: !!r.is_emergency, note: (r.note ?? null) as string | null,
     }));
     setMyLedger(rows);
@@ -798,7 +798,7 @@ export default function CheckinV2({ embedded = false, previewEmail }: { embedded
                       <div className="mt-1 text-[11px] text-ink-3">{leave.mc_used} used of {leave.mc_ent}</div>
                     </div>
                   </div>
-                  {leave.unpaid > 0 && <div className="mt-3 rounded-md bg-bad-soft px-2 py-1 text-xs text-bad">{leave.unpaid} day{leave.unpaid === 1 ? '' : 's'} over annual leave → unpaid</div>}
+                  {leave.unpaid > 0 && <div className="mt-3 rounded-md bg-bad-soft px-2 py-1 text-xs text-bad">{leave.unpaid} day{leave.unpaid === 1 ? '' : 's'} this year may be unpaid — see the list below</div>}
                   <button onClick={() => { const n = !showLedger; setShowLedger(n); if (n && myLedger === null && !myLedgerBusy) loadMyLedger(); }}
                     className="mt-3 w-full rounded-lg border border-line py-1.5 text-xs font-medium text-ink-2 hover:bg-ink/5">
                     {showLedger ? 'Hide my leave days ▴' : 'See my leave days ▾'}
