@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { openSignedFile } from '@/lib/openSignedFile';
 import BackLink from '@/components/BackLink';
 
 const DENOMS = [100, 50, 20, 10, 5, 1] as const;
@@ -429,10 +430,7 @@ function PettyCash({ isAdmin }: { isAdmin: boolean }) {
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
   }, [amt, desc, file, mode, load]);
 
-  const viewReceipt = async (path: string) => {
-    const { data } = await supabase.storage.from('petty-cash').createSignedUrl(path, 300);
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank', 'noopener');
-  };
+  const viewReceipt = (path: string) => openSignedFile('petty-cash', path);
 
   return (
     <div className="mt-4">

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
+import { openSignedFile } from '@/lib/openSignedFile';
 
 type Pinv = {
   id: string;
@@ -206,11 +207,7 @@ export default function PurchaseInvoicePage() {
     else { setMsg({ kind: 'ok', text: `Restored ${r.ref_no || 'invoice'} ✓` }); await load(); }
   }, [load]);
 
-  const viewPdf = useCallback(async (path: string | null) => {
-    if (!path) return;
-    const { data } = await supabase.storage.from('pinv').createSignedUrl(path, 300);
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank', 'noopener');
-  }, []);
+  const viewPdf = useCallback((path: string | null) => openSignedFile('pinv', path), []);
 
   // --- self-service auto-import suppliers (the mailbox script reads this list live) ---
   const loadSuppliers = useCallback(async () => {

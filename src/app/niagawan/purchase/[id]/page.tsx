@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
+import { openSignedFile } from '@/lib/openSignedFile';
 
 type Pinv = {
   id: string;
@@ -408,11 +409,7 @@ export default function ReviewInvoicePage() {
     return () => clearInterval(t);
   }, [head?.resolve_status, load]);
 
-  const viewPdf = useCallback(async () => {
-    if (!head?.file_path) return;
-    const { data } = await supabase.storage.from('pinv').createSignedUrl(head.file_path, 300);
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank', 'noopener');
-  }, [head]);
+  const viewPdf = useCallback(() => openSignedFile('pinv', head?.file_path ?? null), [head]);
 
   // Dismiss = hide this invoice from the list (e.g. it's already keyed into Niagawan manually).
   // Nothing in Niagawan is touched; reversible from the list via "Show dismissed".

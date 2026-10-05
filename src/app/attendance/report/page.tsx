@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { openSignedFile } from '@/lib/openSignedFile';
 
 type Row = {
   staff_name: string | null;
@@ -95,11 +96,7 @@ export default function AttendanceReportPage() {
     setPaidMap(m);
   }, [staffFilter, year, month]);
   useEffect(() => { if (isAdmin) loadPaid(); }, [isAdmin, loadPaid]);
-  const viewDoc = useCallback(async (path: string | null) => {
-    if (!path) return;
-    const { data } = await supabase.storage.from('mc').createSignedUrl(path, 300);
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank', 'noopener');
-  }, []);
+  const viewDoc = useCallback((path: string | null) => openSignedFile('mc', path), []);
 
   // Deep-link from the month-end fix-absent card: /attendance/report?staff=<email> preselects that staff.
   useEffect(() => {
