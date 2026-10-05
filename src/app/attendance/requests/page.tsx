@@ -250,14 +250,14 @@ export default function RequestsPage() {
 
   // Approve an off-day / MC request AS a chosen type (change the type before approving) — e.g. off-day → MC.
   const approveAs = useCallback(async (r: Req) => {
-    const target = recAs[r.id] ?? (r.kind === 'offday' ? 'OFFDAY' : 'MC');
+    const target = recAs[r.id] ?? (r.kind === 'offday' ? 'ANNUAL' : 'SICK');
     let payAnyway = false;
-    if (target === 'OFFDAY' && over.has(r.staff_email.toLowerCase())) {
+    if (target === 'ANNUAL' && over.has(r.staff_email.toLowerCase())) {
       payAnyway = window.confirm('This staff has no annual leave left.\n\nOK = pay this off day anyway (goodwill).\nCancel = follow the law (unpaid over quota).');
     }
     if (target === 'ABSENT' && !window.confirm('Record this as ABSENT (unpaid) and turn down the leave?')) return;
     setBusy(r.id);
-    const { error } = await supabase.rpc('approve_leave_as', { p_type: r.kind, p_id: r.id, p_as: target, p_note: null, p_pay_anyway: payAnyway });
+    const { error } = await supabase.rpc('approve_leave_as_kind', { p_type: r.kind, p_id: r.id, p_as: target, p_note: null, p_pay_anyway: payAnyway });
     setBusy(null);
     if (error) { alert(error.message); return; }
     await load();
@@ -402,11 +402,22 @@ export default function RequestsPage() {
                               <button onClick={() => startEdit(r)} disabled={busy === r.id} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">Edit</button>
                             )}
                             {(r.kind === 'offday' || r.kind === 'mc') && (
-                              <select value={recAs[r.id] ?? (r.kind === 'offday' ? 'OFFDAY' : 'MC')} onChange={(e) => setRecAs((p) => ({ ...p, [r.id]: e.target.value }))} disabled={busy === r.id} title="Record this day as…" className="rounded-lg border border-line px-2 py-1 text-xs text-ink disabled:opacity-50">
-                                <option value="OFFDAY">Off day</option>
-                                <option value="MC">MC</option>
-                                <option value="ABSENT">Absent</option>
-                                <option value="PH">Public holiday</option>
+                              <select value={recAs[r.id] ?? (r.kind === 'offday' ? 'ANNUAL' : 'SICK')} onChange={(e) => setRecAs((p) => ({ ...p, [r.id]: e.target.value }))} disabled={busy === r.id} title="Record this day as…" className="rounded-lg border border-line px-2 py-1 text-xs text-ink disabled:opacity-50">
+                                <optgroup label="Annual-leave side">
+                                  <option value="ANNUAL">Annual leave</option>
+                                  <option value="UNPAID">Unpaid leave</option>
+                                  <option value="PATERNITY">Paternity</option>
+                                  <option value="MATERNITY">Maternity</option>
+                                  <option value="HOLIDAY">Company holiday</option>
+                                </optgroup>
+                                <optgroup label="Sick-leave side">
+                                  <option value="SICK">MC (sick)</option>
+                                  <option value="HOSPITALISATION">Hospitalisation</option>
+                                </optgroup>
+                                <optgroup label="Other">
+                                  <option value="ABSENT">Absent</option>
+                                  <option value="PH">Public holiday</option>
+                                </optgroup>
                               </select>
                             )}
                             <button onClick={() => (r.kind === 'offday' || r.kind === 'mc') ? approveAs(r) : decide(r, true)} disabled={busy === r.id} className="rounded-lg bg-good px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">

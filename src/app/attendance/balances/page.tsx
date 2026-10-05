@@ -14,7 +14,7 @@ type Bal = {
 };
 
 const nowYear = new Date(Date.now() + 8 * 3600e3).getUTCFullYear();
-const toLedgerRow = (r: AdminLedgerRow): LedgerRow => ({ bucket: r.bucket, day: r.day, paid: r.paid, over_quota: r.over_quota, is_emergency: r.is_emergency, note: r.note });
+const toLedgerRow = (r: AdminLedgerRow): LedgerRow => ({ kind: r.kind, day: r.day, paid: r.paid, over_quota: r.over_quota, is_emergency: r.is_emergency, note: r.note });
 
 export default function LeaveBalancesPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
