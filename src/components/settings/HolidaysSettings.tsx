@@ -3,6 +3,7 @@
 // Attendance auto-marks these days as PH for tracked staff (paid, no leave spent).
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { useToast } from '@/components/Toast';
 
 type Holiday = { id: string; holiday_date: string; name: string; is_substitute: boolean; is_compulsory: boolean; handling: string; swap_to_date: string | null };
 
@@ -18,6 +19,7 @@ export default function HolidaysSettings() {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const toast = useToast();
   const [newDate, setNewDate] = useState('');
   const [newName, setNewName] = useState('');
   const [newCompulsory, setNewCompulsory] = useState(false);
@@ -40,24 +42,24 @@ export default function HolidaysSettings() {
   const run = async (fn: () => PromiseLike<{ error: { message: string } | null }>, ok: string) => {
     setBusy(true); setMsg(null);
     const { error } = await fn();
-    if (error) setMsg({ kind: 'err', text: error.message });
-    else { setMsg({ kind: 'ok', text: ok }); await load(); }
+    if (error) { setMsg({ kind: 'err', text: error.message }); toast.error(error.message); }
+    else { setMsg({ kind: 'ok', text: ok }); toast.success(ok.replace(/\s*✓\s*$/, '')); await load(); }
     setBusy(false);
   };
 
   const add = () => {
-    if (!newDate || !newName.trim()) { setMsg({ kind: 'err', text: 'Enter a date and a name.' }); return; }
+    if (!newDate || !newName.trim()) { setMsg({ kind: 'err', text: 'Enter a date and a name.' }); toast.error('Enter a date and a name.'); return; }
     run(() => supabase.rpc('add_holiday', { p_date: newDate, p_name: newName.trim(), p_compulsory: newCompulsory }), 'Holiday added ✓')
       .then(() => { setNewDate(''); setNewName(''); setNewCompulsory(false); });
   };
   const closeShop = () => {
-    if (!closeFrom || !closeTo) { setMsg({ kind: 'err', text: 'Pick a start and end date.' }); return; }
-    if (closeTo < closeFrom) { setMsg({ kind: 'err', text: 'End date is before the start date.' }); return; }
+    if (!closeFrom || !closeTo) { setMsg({ kind: 'err', text: 'Pick a start and end date.' }); toast.error('Pick a start and end date.'); return; }
+    if (closeTo < closeFrom) { setMsg({ kind: 'err', text: 'End date is before the start date.' }); toast.error('End date is before the start date.'); return; }
     setBusy(true); setMsg(null);
     supabase.rpc('add_shop_closure', { p_from: closeFrom, p_to: closeTo, p_name: closeName.trim() || null })
       .then(async ({ data, error }) => {
-        if (error) setMsg({ kind: 'err', text: error.message });
-        else { setMsg({ kind: 'ok', text: `Shop marked closed for ${data} day${data === 1 ? '' : 's'} ✓ (Sundays skipped)` }); setCloseFrom(''); setCloseTo(''); setCloseName(''); await load(); }
+        if (error) { setMsg({ kind: 'err', text: error.message }); toast.error(error.message); }
+        else { setMsg({ kind: 'ok', text: `Shop marked closed for ${data} day${data === 1 ? '' : 's'} ✓ (Sundays skipped)` }); toast.success(`Shop closed for ${data} day${data === 1 ? '' : 's'} (Sundays skipped).`); setCloseFrom(''); setCloseTo(''); setCloseName(''); await load(); }
         setBusy(false);
       });
   };

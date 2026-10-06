@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
+import { useToast } from '@/components/Toast';
 import BackLink from '@/components/BackLink';
 import { Icon } from '@/components/icons';
 
@@ -40,6 +41,7 @@ export default function MonthEndPage() {
   const [d, setD] = useState<Dash | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const toast = useToast();
   const [canPay, setCanPay] = useState(false);
   const [salaries, setSalaries] = useState<Salary[]>([]);
   const [newBillLabel, setNewBillLabel] = useState('');
@@ -167,8 +169,8 @@ export default function MonthEndPage() {
   const cancelFix = useCallback(() => setEditKey(null), []);
   const saveRow = useCallback(async (email: string, day: string) => {
     setErr(null);
-    if (!eStatus) { setErr('Choose what the day should be.'); return; }
-    if (eStatus === 'WORKING' && !eIn) { setErr('Enter a check-in time to mark the day present.'); return; }
+    if (!eStatus) { toast.error('Choose what the day should be.'); return; }
+    if (eStatus === 'WORKING' && !eIn) { toast.error('Enter a check-in time to mark the day present.'); return; }
     setSavingRow(`${email}|${day}`);
     try {
       if (eStatus === 'WORKING') {
@@ -197,12 +199,13 @@ export default function MonthEndPage() {
       }
       setEditKey(null);
       await load();
+      toast.success('Day updated.');
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      toast.error(e instanceof Error ? e.message : String(e));
     } finally {
       setSavingRow(null);
     }
-  }, [eStatus, eIn, eOut, eNote, eCert, me, load]);
+  }, [eStatus, eIn, eOut, eNote, eCert, me, load, toast]);
 
   const prevMonth = () => { const dt = new Date(year, month - 2, 1); setYear(dt.getFullYear()); setMonth(dt.getMonth() + 1); };
   const nextMonth = () => { const dt = new Date(year, month, 1); setYear(dt.getFullYear()); setMonth(dt.getMonth() + 1); };

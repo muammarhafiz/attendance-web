@@ -8,6 +8,7 @@ import NavBar from '@/components/NavBar';
 import Container from '@/components/Container';
 import RouteKeyed from '@/components/RouteKeyed';
 import PwaRegister from '@/components/PwaRegister';
+import { ToastProvider } from '@/components/Toast';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' });
 
@@ -38,11 +39,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <PwaRegister />
         <NavBar />
         {/* Clear the fixed sidebar (desktop) and the mobile top bar; app-main lets the collapse CSS drop the padding. */}
-        <main className="app-main pt-14 lg:pl-64 lg:pt-0">
-          <Container>
-            <RouteKeyed>{children}</RouteKeyed>
-          </Container>
-        </main>
+        <ToastProvider>
+          <main className="app-main pt-14 lg:pl-64 lg:pt-0">
+            <Container>
+              <RouteKeyed>{children}</RouteKeyed>
+            </Container>
+          </main>
+        </ToastProvider>
       </body>
     </html>
   );
