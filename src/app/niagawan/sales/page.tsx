@@ -139,6 +139,11 @@ export default function NiagawanSalesPage() {
     if (sync === 'running') return;
     setSync('running');
     setSyncMsg('Starting…');
+    // Also re-check any OLDER day still showing an unpaid/part-paid invoice — a bill settled in
+    // Niagawan a few days ago has aged out of the rolling re-pull window, so a plain sync can't
+    // clear it. These per-day rechecks are enqueued FIRST, so they finish before the website
+    // sync we poll on below (the NAS processes the queue in order). Failure here is non-fatal.
+    await supabase.rpc('enqueue_open_invoice_recheck');
     const { data, error } = await supabase
       .from('sync_requests')
       .insert({ source: 'website' })
