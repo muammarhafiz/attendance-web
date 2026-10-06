@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { useToast } from '@/components/Toast';
 import { useVisibleInterval } from '@/lib/useVisibleInterval';
 
 type Row = {
@@ -59,6 +60,8 @@ export default function AttendanceTodayPage() {
     })();
   }, []);
 
+  const toast = useToast();
+
   const load = useCallback(async () => {
     setLoading(true);
     const { data, error } = await supabase.rpc('attendance_today_v2');
@@ -69,9 +72,11 @@ export default function AttendanceTodayPage() {
           timeZone: 'Asia/Kuala_Lumpur', hour: '2-digit', minute: '2-digit', hour12: true,
         }).format(new Date())
       );
+    } else {
+      toast.error("Couldn't refresh the board — showing the last update. Tap Refresh to retry.");
     }
     setLoading(false);
-  }, []);
+  }, [toast]);
 
   useEffect(() => { if (isAdmin) load(); }, [isAdmin, load]);
   useVisibleInterval(load, 30000, isAdmin);
