@@ -112,8 +112,10 @@ export default function AttendanceReportPage() {
 
   // per-staff summary
   const summary = useMemo(() => {
+    const todayISO = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10); // KL today
     const by = new Map<string, { name: string; present: number; absent: number; lateDays: number; lateMin: number; mc: number; offday: number; ph: number }>();
     for (const r of rows) {
+      if (r.day > todayISO) continue; // elapsed days only — future planned days are not counted here
       const cur = by.get(r.staff_email) ?? { name: r.staff_name ?? r.staff_email, present: 0, absent: 0, lateDays: 0, lateMin: 0, mc: 0, offday: 0, ph: 0 };
       if (r.status === 'PRESENT' || r.status === 'HOME') { cur.present++; if ((r.late_min ?? 0) > 0) { cur.lateDays++; cur.lateMin += r.late_min ?? 0; } }
       else if (r.status === 'ABSENT') cur.absent++;
@@ -327,6 +329,7 @@ export default function AttendanceReportPage() {
                       {r.status === 'OFFDAY' && <span className="text-accent">Off day</span>}
                       {r.status === 'PH' && <span className="text-accent">Public holiday</span>}
                       {r.status === 'MC' && <span className="text-accent">MC</span>}
+                      {!r.status && <span className="text-ink-3">—</span>}
                       {r.half && <span className="ml-1 rounded-full bg-accent-weak px-1.5 py-0.5 text-xs font-medium text-accent" title={r.half === 'AM' ? 'Half day · morning (9:30–1:30)' : 'Half day · afternoon (1:30–6:00)'}>½ {r.half}</span>}
                       {(r.status === 'OFFDAY' || r.status === 'MC') && paidMap.get(r.day) && <span className="ml-1 rounded-full bg-good-soft px-1.5 py-0.5 text-xs font-medium text-good" title="Paid anyway — not docked as unpaid">paid</span>}
                       {docByDay.get(r.day) && (docByDay.get(r.day)!.doc_path
