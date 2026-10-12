@@ -84,6 +84,10 @@ export default function RequestsPage() {
   const [proofDate, setProofDate] = useState('');
   const [docReqs, setDocReqs] = useState<{ id: string; staff_email: string; day: string; label: string | null }[]>([]); // office-requested docs still unuploaded
   const [recAs, setRecAs] = useState<Record<string, string>>({}); // "Record as" target per off-day/MC request (change the type before approving)
+  // Inline approve/reject drawer (replaces the browser prompt()/confirm() popups).
+  const [actId, setActId] = useState<string | null>(null);     // request id whose approve/reject drawer is open
+  const [actMode, setActMode] = useState<'approve' | 'reject' | null>(null);
+  const [actNote, setActNote] = useState('');
 
   useEffect(() => {
     (async () => {
@@ -167,7 +171,7 @@ export default function RequestsPage() {
     return rows.sort((a, b) => a.staff.localeCompare(b.staff));
   }, [reqs, docReqs, names]);
 
-  const startEdit = useCallback((r: Req) => { setEditingId(r.id); setEFrom(r.date_from ?? ''); setETo(r.date_to ?? ''); setEReason(r.reason ?? ''); }, []);
+  const startEdit = useCallback((r: Req) => { setActId(null); setProofFor(null); setEditingId(r.id); setEFrom(r.date_from ?? ''); setETo(r.date_to ?? ''); setEReason(r.reason ?? ''); }, []);
   const cancelEdit = useCallback(() => setEditingId(null), []);
   const saveEdit = useCallback(async () => {
     if (!editingId) return;
@@ -189,47 +193,36 @@ export default function RequestsPage() {
 
   const viewAttachment = useCallback((path: string | null) => openSignedFile('mc', path), []);
 
-  // Approve / reject the four request types (each has its own approve_*/reject_* RPC).
-  const decide = useCallback(async (r: Req, approve: boolean) => {
-    // A note is required (same as the original pages) — MC takes no note at all. The bell can
-    // still approve with no note; only this full page prompts for one.
-    let note: string | null = null;
-    if (r.kind === 'mc') {
-      if (!approve && !window.confirm('Reject this MC request?')) return;
-    } else {
-      const n = window.prompt(approve
-        ? 'Note for the staff (required) — e.g. "OK, approved":'
-        : 'Reason for rejecting (required):', '');
-      if (n === null) return;                        // cancelled
-      if (!n.trim()) { toast.error('A note is required.'); return; }
-      note = n.trim();
-    }
-    // Over-quota off day: ask whether to pay it anyway (goodwill) or leave it unpaid (the law).
-    let payAnyway = false;
-    if (r.kind === 'offday' && approve && over.has(r.staff_email.toLowerCase())) {
-      payAnyway = window.confirm('This staff has no annual leave left.\n\nOK = pay this off day anyway (goodwill).\nCancel = follow the law (unpaid over quota).');
-    }
+  // Approve / reject (each type has its own approve_*/reject_* RPC). Called from the inline
+  // action drawer below — no browser popups. The note + over-quota pay choice come from the drawer.
+  const decide = useCallback(async (r: Req, approve: boolean, note: string | null, payAnyway = false) => {
+    const n = (note ?? '').trim();
+    // Note required to reject anything but an MC, and to approve a half-day/advance.
+    const needNote = approve ? (r.kind === 'halfday' || r.kind === 'advance') : (r.kind !== 'mc');
+    if (needNote && !n) { toast.error('Add a note first.'); return; }
     setBusy(r.id);
     let error: { message: string } | null = null;
     if (r.kind === 'offday') {
       const res = approve
-        ? await supabase.rpc('approve_offday', { p_id: r.id, p_note: note, p_pay_anyway: payAnyway })
-        : await supabase.rpc('reject_offday', { p_id: r.id, p_note: note });
+        ? await supabase.rpc('approve_offday', { p_id: r.id, p_note: n || null, p_pay_anyway: payAnyway })
+        : await supabase.rpc('reject_offday', { p_id: r.id, p_note: n });
       error = res.error;
     } else if (r.kind === 'halfday') {
-      const res = await supabase.rpc(approve ? 'approve_halfday' : 'reject_halfday', { p_id: r.id, p_note: note });
+      const res = await supabase.rpc(approve ? 'approve_halfday' : 'reject_halfday', { p_id: r.id, p_note: n });
       error = res.error;
     } else if (r.kind === 'mc') {
       const res = await supabase.rpc(approve ? 'approve_mc' : 'reject_mc', { p_id: r.id });
       error = res.error;
     } else if (r.kind === 'advance') {
-      const res = await supabase.rpc(approve ? 'approve_advance' : 'reject_advance', { p_id: r.id, p_note: note });
+      const res = await supabase.rpc(approve ? 'approve_advance' : 'reject_advance', { p_id: r.id, p_note: n });
       error = res.error;
     }
-    if (error) toast.error(error.message);
-    else { await load(); toast.success(approve ? 'Request approved.' : 'Request rejected.'); }
     setBusy(null);
-  }, [over, load, toast]);
+    if (error) { toast.error(error.message); return; }
+    setActId(null); setActMode(null); setActNote('');
+    await load();
+    toast.success(approve ? 'Request approved.' : 'Request rejected.');
+  }, [load, toast]);
 
   // Approve · needs proof: mark the request awaiting_proof with a deadline. The day is NOT paid
   // until the staff uploads and the office approves — so no clawback if the proof never comes.
@@ -253,21 +246,31 @@ export default function RequestsPage() {
     toast.success('Marked — staff asked to upload proof.');
   }, [proofOpt, proofDate, load, toast]);
 
-  // Approve an off-day / MC request AS a chosen type (change the type before approving) — e.g. off-day → MC.
-  const approveAs = useCallback(async (r: Req) => {
+  // Approve an off-day / MC request AS the chosen "Record as" kind. Called from the drawer;
+  // the over-quota pay-anyway choice and optional note are passed in (no popups).
+  const approveAs = useCallback(async (r: Req, payAnyway = false, note: string | null = null) => {
     const target = recAs[r.id] ?? (r.kind === 'offday' ? 'ANNUAL' : 'SICK');
-    let payAnyway = false;
-    if (target === 'ANNUAL' && over.has(r.staff_email.toLowerCase())) {
-      payAnyway = window.confirm('This staff has no annual leave left.\n\nOK = pay this off day anyway (goodwill).\nCancel = follow the law (unpaid over quota).');
-    }
-    if (target === 'ABSENT' && !window.confirm('Record this as ABSENT (unpaid) and turn down the leave?')) return;
     setBusy(r.id);
-    const { error } = await supabase.rpc('approve_leave_as_kind', { p_type: r.kind, p_id: r.id, p_as: target, p_note: null, p_pay_anyway: payAnyway });
+    const { error } = await supabase.rpc('approve_leave_as_kind', { p_type: r.kind, p_id: r.id, p_as: target, p_note: (note ?? '').trim() || null, p_pay_anyway: payAnyway });
     setBusy(null);
     if (error) { toast.error(error.message); return; }
+    setActId(null); setActMode(null); setActNote('');
     await load();
     toast.success('Recorded.');
-  }, [recAs, over, load, toast]);
+  }, [recAs, load, toast]);
+
+  // Open/close the inline approve/reject drawer (replaces prompt()/confirm()).
+  const openAct = useCallback((r: Req, mode: 'approve' | 'reject') => {
+    setEditingId(null); setProofFor(null);
+    setActNote(''); setActMode(mode); setActId(r.id);
+  }, []);
+  const closeAct = useCallback(() => { setActId(null); setActMode(null); setActNote(''); }, []);
+  // Fresh off-day/MC approve goes through approve_leave_as_kind (honours the "Record as" kind);
+  // half-day/advance approve and any awaiting-proof approve use the plain approve_* path.
+  const confirmApprove = useCallback((r: Req, payAnyway: boolean) => {
+    if (isFresh(r) && (r.kind === 'offday' || r.kind === 'mc')) approveAs(r, payAnyway, actNote);
+    else decide(r, true, actNote, payAnyway);
+  }, [approveAs, decide, actNote]);
 
   // Emergency absence: record what the day counts as (optionally set attendance + pay), then mark handled.
   const record = useCallback(async (r: Req, alsoSetDay: boolean) => {
@@ -427,13 +430,13 @@ export default function RequestsPage() {
                                 </optgroup>
                               </select>
                             )}
-                            <button onClick={() => (r.kind === 'offday' || r.kind === 'mc') ? approveAs(r) : decide(r, true)} disabled={busy === r.id} className="rounded-lg bg-good px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">
+                            <button onClick={() => (actId === r.id && actMode === 'approve' ? closeAct() : openAct(r, 'approve'))} disabled={busy === r.id} className="rounded-lg bg-good px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">
                               {busy === r.id ? '…' : 'Approve'}
                             </button>
                             {(r.kind === 'offday' || r.kind === 'mc') && (
-                              <button onClick={() => { setProofOpt('7'); setProofDate(''); setProofFor(proofFor === r.id ? null : r.id); }} disabled={busy === r.id} className="rounded-lg border border-accent/40 bg-accent-weak px-2.5 py-1 text-xs font-semibold text-accent hover:opacity-90 disabled:opacity-50">Needs proof</button>
+                              <button onClick={() => { setActId(null); setProofOpt('7'); setProofDate(''); setProofFor(proofFor === r.id ? null : r.id); }} disabled={busy === r.id} className="rounded-lg border border-accent/40 bg-accent-weak px-2.5 py-1 text-xs font-semibold text-accent hover:opacity-90 disabled:opacity-50">Needs proof</button>
                             )}
-                            <button onClick={() => decide(r, false)} disabled={busy === r.id} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">Reject</button>
+                            <button onClick={() => (actId === r.id && actMode === 'reject' ? closeAct() : openAct(r, 'reject'))} disabled={busy === r.id} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">Reject</button>
                           </>
                         )}
                         {awaiting && (
@@ -442,9 +445,9 @@ export default function RequestsPage() {
                               {r.file_path ? 'Proof uploaded' : 'Awaiting proof'}{r.proof_deadline ? ` · due ${fmtD(r.proof_deadline)}` : ''}
                             </span>
                             {r.file_path && (
-                              <button onClick={() => decide(r, true)} disabled={busy === r.id} className="rounded-lg bg-good px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">{busy === r.id ? '…' : 'Approve'}</button>
+                              <button onClick={() => (actId === r.id && actMode === 'approve' ? closeAct() : openAct(r, 'approve'))} disabled={busy === r.id} className="rounded-lg bg-good px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">{busy === r.id ? '…' : 'Approve'}</button>
                             )}
-                            <button onClick={() => decide(r, false)} disabled={busy === r.id} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">Decline</button>
+                            <button onClick={() => (actId === r.id && actMode === 'reject' ? closeAct() : openAct(r, 'reject'))} disabled={busy === r.id} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">Decline</button>
                           </>
                         )}
                         {!fresh && !awaiting && r.kind !== 'emergency' && (
@@ -482,6 +485,39 @@ export default function RequestsPage() {
                         <button onClick={() => needProof(r)} disabled={busy === r.id} className="rounded-lg bg-accent px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">{busy === r.id ? '…' : 'Set deadline'}</button>
                         <button onClick={() => setProofFor(null)} disabled={busy === r.id} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">Cancel</button>
                         <span className="w-full text-[11px] text-ink-3">The day stays unpaid until the staff uploads proof and you approve. No upload by the deadline → it stays absent.</span>
+                      </div>
+                    )}
+                    {actId === r.id && actMode && (
+                      <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-line pt-2">
+                        {actMode === 'reject' && r.kind === 'mc' ? (
+                          <span className="w-full text-xs text-ink-2">Reject this MC request?</span>
+                        ) : (
+                          <label className="w-full text-xs text-ink-2">
+                            {actMode === 'reject' ? 'Reason for rejecting' : 'Note for the staff'}
+                            {(actMode === 'reject' || r.kind === 'halfday' || r.kind === 'advance') ? ' (required)' : ' (optional)'}
+                            <input value={actNote} onChange={(e) => setActNote(e.target.value)} placeholder={actMode === 'reject' ? 'e.g. clashes with the roster' : 'e.g. OK, approved'} className="mt-0.5 block w-full rounded-lg border border-line px-2 py-1 text-sm" />
+                          </label>
+                        )}
+                        {actMode === 'approve' ? (
+                          (r.kind === 'offday' && (recAs[r.id] ?? 'ANNUAL') === 'ANNUAL' && over.has(r.staff_email.toLowerCase())) ? (
+                            <>
+                              <span className="w-full text-[11px] font-medium text-bad">No annual leave left — record this day as:</span>
+                              <button onClick={() => confirmApprove(r, true)} disabled={busy === r.id} className="rounded-lg bg-good px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">{busy === r.id ? '…' : 'Approve · pay anyway'}</button>
+                              <button onClick={() => confirmApprove(r, false)} disabled={busy === r.id} className="rounded-lg border border-warn/40 bg-warn-soft px-2.5 py-1 text-xs font-semibold text-warn hover:opacity-90 disabled:opacity-50">{busy === r.id ? '…' : 'Approve · unpaid'}</button>
+                              <button onClick={closeAct} disabled={busy === r.id} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">Cancel</button>
+                            </>
+                          ) : (
+                            <>
+                              <button onClick={() => confirmApprove(r, false)} disabled={busy === r.id} className="rounded-lg bg-good px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">{busy === r.id ? '…' : ((recAs[r.id] ?? '') === 'ABSENT' ? 'Record as Absent' : 'Confirm approve')}</button>
+                              <button onClick={closeAct} disabled={busy === r.id} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">Cancel</button>
+                            </>
+                          )
+                        ) : (
+                          <>
+                            <button onClick={() => decide(r, false, actNote)} disabled={busy === r.id} className="rounded-lg border border-bad/40 bg-bad-soft px-2.5 py-1 text-xs font-semibold text-bad hover:opacity-90 disabled:opacity-50">{busy === r.id ? '…' : 'Confirm reject'}</button>
+                            <button onClick={closeAct} disabled={busy === r.id} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">Cancel</button>
+                          </>
+                        )}
                       </div>
                     )}
                   </>
