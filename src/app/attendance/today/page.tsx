@@ -170,7 +170,7 @@ export default function AttendanceTodayPage() {
       </div>
 
       <div className="overflow-x-auto rounded-card bg-card shadow-card">
-        <table className="w-full border-collapse text-sm">
+        <table className="card-table w-full border-collapse text-sm">
           <thead>
             <tr className="bg-ink/[0.03] text-left">
               <th className="px-3 py-2 font-medium text-ink-2">Name</th>
@@ -190,8 +190,8 @@ export default function AttendanceTodayPage() {
               const halfLabel = r.half === 'AM' ? 'Half day · AM (9:30–1:30)' : r.half === 'PM' ? 'Half day · PM (1:30–6:00)' : null;
               return (
                 <tr key={r.staff_email} className="border-t border-line">
-                  <td className="px-3 py-2 text-ink">{r.display_name ?? r.staff_email}</td>
-                  <td className="px-3 py-2">
+                  <td data-label="Name" className="px-3 py-2 text-ink">{r.display_name ?? r.staff_email}</td>
+                  <td data-label="Status" className="px-3 py-2">
                     {r.status === 'PRESENT' && <span className="rounded-full bg-good-soft px-2 py-0.5 text-xs font-medium text-good">Present</span>}
                     {r.status === 'HOME' && <span className="rounded-full bg-good-soft px-2 py-0.5 text-xs font-medium text-good">Home</span>}
                     {r.status === 'OFF' && <span className="rounded-full bg-ink/5 px-2 py-0.5 text-xs font-medium text-ink-2">Closed</span>}
@@ -202,9 +202,9 @@ export default function AttendanceTodayPage() {
                     {showNotYet && <span className="rounded-full bg-ink/5 px-2 py-0.5 text-xs font-medium text-ink-2">Not in yet</span>}
                     {halfLabel && <span className="ml-1 rounded-full bg-accent-weak px-2 py-0.5 text-xs font-medium text-accent" title={halfLabel}>½ {r.half}</span>}
                   </td>
-                  <td className="px-3 py-2 text-ink-2">{fmtTime(r.check_in_kl)}</td>
-                  <td className="px-3 py-2 text-ink-2">{fmtTime(r.check_out_kl)}</td>
-                  <td className={`px-3 py-2 text-right ${isLate ? 'font-semibold text-bad' : 'text-ink-3'}`}>
+                  <td data-label="Check-in" className="px-3 py-2 text-ink-2">{fmtTime(r.check_in_kl)}</td>
+                  <td data-label="Check-out" className="px-3 py-2 text-ink-2">{fmtTime(r.check_out_kl)}</td>
+                  <td data-label="Late" className={`px-3 py-2 text-right ${isLate ? 'font-semibold text-bad' : 'text-ink-3'}`}>
                     {(r.late_min ?? 0) > 0 ? `${r.late_min} min` : '—'}
                   </td>
                 </tr>
@@ -212,7 +212,7 @@ export default function AttendanceTodayPage() {
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-3 py-6 text-center text-sm text-ink-2">
+                <td colSpan={5} className="cell-full px-3 py-6 text-center text-sm text-ink-2">
                   No check-ins recorded today yet.
                 </td>
               </tr>

@@ -141,3 +141,55 @@ option {
 @media (prefers-reduced-motion: reduce) {
   .app-sidebar, .app-main { transition: none; }
 }
+
+/* Phone-friendly tables. On a narrow screen a wide admin table becomes a stack of
+   cards: the header row is hidden and each cell shows its column label (from
+   data-label) on the left with the value on the right; the first cell is the card
+   title. Desktop is unchanged. Opt in with className="card-table" on the <table>
+   and data-label="…" on each <td>. A full-width cell (an expanded detail/editor row
+   that uses colSpan) opts out with className="cell-full". */
+@media (max-width: 639px) {
+  table.card-table,
+  table.card-table tbody { display: block; width: 100%; }
+  table.card-table thead { display: none; }
+  table.card-table tr {
+    display: block;
+    margin-bottom: 10px;
+    border: 1px solid var(--color-line);
+    border-radius: 14px;
+    background: var(--color-card);
+    overflow: hidden;
+  }
+  table.card-table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    text-align: right;
+    padding: 7px 14px;
+    border: 0;
+    border-top: 1px solid var(--color-line);
+  }
+  table.card-table td::before {
+    content: attr(data-label);
+    text-align: left;
+    color: var(--color-ink-3);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  table.card-table tr td:first-child {
+    border-top: 0;
+    justify-content: flex-start;
+    text-align: left;
+    font-weight: 600;
+  }
+  table.card-table tr td:first-child::before { content: ""; }
+  table.card-table td[data-label=""]::before { content: ""; }
+  /* Full-width cell (colSpan expansion row): render as a normal block, no label. */
+  table.card-table td.cell-full {
+    display: block;
+    text-align: left;
+    border-top: 0;
+  }
+  table.card-table td.cell-full::before { content: ""; display: none; }
+}
