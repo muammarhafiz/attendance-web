@@ -519,6 +519,21 @@ export default function EmployeesPage() {
 
     setAdding(true);
     try {
+      // Guard: never silently overwrite an existing staff row. "Add" used to upsert on email,
+      // so re-adding an existing (or archived) person would clobber their record.
+      const { data: existing, error: exErr } = await supabase
+        .from('staff').select('email, full_name, name, archived_at').eq('email', email).maybeSingle();
+      if (exErr) throw exErr;
+      if (existing) {
+        const who = (existing.full_name || existing.name || email) as string;
+        const m = existing.archived_at
+          ? `${who} already uses this email but is archived — reactivate them from their row instead of adding.`
+          : `${who} already uses this email — edit them from the list instead of adding a new one.`;
+        setAddMsg(m);
+        toast.error(m);
+        return; // finally{} clears the adding spinner
+      }
+
       const payload: any = {
         email,
         full_name: name,
@@ -539,8 +554,15 @@ export default function EmployeesPage() {
         is_admin: !!newEmp.is_admin,
       };
 
-      const res = await supabase.from('staff').upsert(payload, { onConflict: 'email' }).select('email').maybeSingle();
-      if (res.error) throw res.error;
+      const res = await supabase.from('staff').insert(payload).select('email').maybeSingle();
+      if (res.error) {
+        // Unique-violation race (someone added the same email between the check and here).
+        if ((res.error as { code?: string }).code === '23505') {
+          const m = 'An employee with this email already exists — edit them instead of adding a new one.';
+          setAddMsg(m); toast.error(m); return;
+        }
+        throw res.error;
+      }
 
       setAddMsg('Employee added.');
       toast.success('Employee added.');
