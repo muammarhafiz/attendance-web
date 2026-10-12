@@ -27,6 +27,8 @@ export default function HolidaysSettings() {
   const [closeFrom, setCloseFrom] = useState(''); // "Close the shop" date-range
   const [closeTo, setCloseTo] = useState('');
   const [closeName, setCloseName] = useState('');
+  const [confirmClose, setConfirmClose] = useState(false); // show the "are you sure" step before closing the shop
+  const [lastClosure, setLastClosure] = useState<{ from: string; to: string; name: string; count: number } | null>(null); // for Undo
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -52,14 +54,47 @@ export default function HolidaysSettings() {
     run(() => supabase.rpc('add_holiday', { p_date: newDate, p_name: newName.trim(), p_compulsory: newCompulsory }), 'Holiday added ✓')
       .then(() => { setNewDate(''); setNewName(''); setNewCompulsory(false); });
   };
-  const closeShop = () => {
+  // Non-Sunday days in the range (matches add_shop_closure, which skips Sundays) — for the confirm preview.
+  const closeDays = (from: string, to: string) => {
+    if (!from || !to || to < from) return 0;
+    let n = 0; const cur = parseD(from); const end = parseD(to);
+    while (cur <= end) { if (cur.getDay() !== 0) n++; cur.setDate(cur.getDate() + 1); }
+    return n;
+  };
+  // Step 1: validate, then show the inline confirm (closing the shop marks many days for everyone).
+  const askCloseShop = () => {
     if (!closeFrom || !closeTo) { setMsg({ kind: 'err', text: 'Pick a start and end date.' }); toast.error('Pick a start and end date.'); return; }
     if (closeTo < closeFrom) { setMsg({ kind: 'err', text: 'End date is before the start date.' }); toast.error('End date is before the start date.'); return; }
-    setBusy(true); setMsg(null);
-    supabase.rpc('add_shop_closure', { p_from: closeFrom, p_to: closeTo, p_name: closeName.trim() || null })
+    setLastClosure(null);
+    setConfirmClose(true);
+  };
+  // Step 2: actually mark the range closed; remember it so it can be undone.
+  const doCloseShop = () => {
+    const from = closeFrom, to = closeTo, name = closeName.trim() || null;
+    setBusy(true); setMsg(null); setConfirmClose(false);
+    supabase.rpc('add_shop_closure', { p_from: from, p_to: to, p_name: name })
       .then(async ({ data, error }) => {
         if (error) { setMsg({ kind: 'err', text: error.message }); toast.error(error.message); }
-        else { setMsg({ kind: 'ok', text: `Shop marked closed for ${data} day${data === 1 ? '' : 's'} ✓ (Sundays skipped)` }); toast.success(`Shop closed for ${data} day${data === 1 ? '' : 's'} (Sundays skipped).`); setCloseFrom(''); setCloseTo(''); setCloseName(''); await load(); }
+        else {
+          const cnt = Number(data);
+          setMsg({ kind: 'ok', text: `Shop marked closed for ${cnt} day${cnt === 1 ? '' : 's'} ✓ (Sundays skipped)` });
+          toast.success(`Shop closed for ${cnt} day${cnt === 1 ? '' : 's'} (Sundays skipped).`);
+          setLastClosure({ from, to, name: name ?? 'Shop closed', count: cnt });
+          setCloseFrom(''); setCloseTo(''); setCloseName('');
+          await load();
+        }
+        setBusy(false);
+      });
+  };
+  // Undo the last closure — removes exactly the days it created (same name + range + handling='close').
+  const undoClose = () => {
+    if (!lastClosure) return;
+    const { from, to, name } = lastClosure;
+    setBusy(true); setMsg(null);
+    supabase.rpc('remove_shop_closure', { p_from: from, p_to: to, p_name: name })
+      .then(async ({ data, error }) => {
+        if (error) { setMsg({ kind: 'err', text: error.message }); toast.error(error.message); }
+        else { const cnt = Number(data); setMsg({ kind: 'ok', text: `Undone — ${cnt} closure day${cnt === 1 ? '' : 's'} removed ✓` }); toast.success(`Undone — ${cnt} day${cnt === 1 ? '' : 's'} removed.`); setLastClosure(null); await load(); }
         setBusy(false);
       });
   };
@@ -179,8 +214,30 @@ export default function HolidaysSettings() {
           <label className="min-w-[160px] flex-1 text-xs text-ink-2">Reason (optional)
             <input value={closeName} onChange={(e) => setCloseName(e.target.value)} placeholder="e.g. Hari Raya shutdown" className="mt-0.5 block w-full rounded-md border border-line px-2 py-1.5 text-sm" />
           </label>
-          <button onClick={closeShop} disabled={busy} className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">Close shop</button>
+          <button onClick={askCloseShop} disabled={busy || confirmClose} className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">Close shop</button>
         </div>
+        {confirmClose && (
+          <div className="mt-3 rounded-lg bg-warn-soft p-3">
+            <div className="text-xs font-medium text-warn">
+              Mark {closeFrom ? fmtD(closeFrom) : '—'} – {closeTo ? fmtD(closeTo) : '—'} as shop-closed?
+            </div>
+            <p className="mt-1 text-[11px] text-warn/80">
+              That&rsquo;s {closeDays(closeFrom, closeTo)} day{closeDays(closeFrom, closeTo) === 1 ? '' : 's'} (Sundays skipped), marked as a paid holiday for everyone — not deducted from anyone&rsquo;s annual leave. You can undo it straight after.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button onClick={doCloseShop} disabled={busy} className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">{busy ? 'Closing…' : `Yes, close ${closeDays(closeFrom, closeTo)} day${closeDays(closeFrom, closeTo) === 1 ? '' : 's'}`}</button>
+              <button onClick={() => setConfirmClose(false)} disabled={busy} className="rounded-lg border border-line bg-card px-3 py-1.5 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50">Cancel</button>
+            </div>
+          </div>
+        )}
+        {lastClosure && !confirmClose && (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-good-soft px-3 py-2">
+            <span className="text-xs font-medium text-good">
+              Shop closed {fmtD(lastClosure.from)} – {fmtD(lastClosure.to)} · {lastClosure.count} day{lastClosure.count === 1 ? '' : 's'}
+            </span>
+            <button onClick={undoClose} disabled={busy} className="rounded-lg border border-line bg-card px-3 py-1.5 text-xs font-semibold text-ink-2 hover:bg-ink/5 disabled:opacity-50">{busy ? '…' : 'Undo'}</button>
+          </div>
+        )}
       </div>
     </div>
   );
