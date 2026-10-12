@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { useToast } from '@/components/Toast';
 
 /* ---------- Types ---------- */
 type StaffBrief = {
@@ -148,6 +149,7 @@ export default function EmployeesPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [addMsg, setAddMsg] = useState<string | null>(null);
+  const toast = useToast();
 
   const today = new Date().toISOString().slice(0, 10);
   const [newEmp, setNewEmp] = useState<NewEmployee>({
@@ -458,9 +460,11 @@ export default function EmployeesPage() {
       }
 
       setMsg(editArchived ? 'Saved. Employee archived & login revoked.' : 'Saved.');
+      toast.success(editArchived ? 'Saved — employee archived.' : 'Saved.');
       await reloadList();
     } catch (e: any) {
       setMsg(`Save failed: ${e.message ?? e}`);
+      toast.error(`Couldn't save: ${e.message ?? e}`);
     } finally {
       setSaving(false);
     }
@@ -539,10 +543,12 @@ export default function EmployeesPage() {
       if (res.error) throw res.error;
 
       setAddMsg('Employee added.');
+      toast.success('Employee added.');
       setAddOpen(false);
       await load();
     } catch (e: any) {
       setAddMsg(`Add failed: ${e.message ?? e}`);
+      toast.error(`Couldn't add: ${e.message ?? e}`);
     } finally {
       setAdding(false);
     }
@@ -569,9 +575,11 @@ export default function EmployeesPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error || 'Delete failed');
       setMsg(`Permanently deleted ${name}.`);
+      toast.success(`Permanently deleted ${name}.`);
       await reloadList();
     } catch (e: any) {
       setMsg(`Delete failed: ${e.message ?? e}`);
+      toast.error(`Couldn't delete: ${e.message ?? e}`);
     } finally {
       setDeleting(null);
     }

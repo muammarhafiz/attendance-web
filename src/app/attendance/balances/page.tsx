@@ -6,6 +6,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { LeaveLedgerList, ledgerToCsv, type LedgerRow, type AdminLedgerRow } from '@/components/LeaveLedger';
+import { useToast } from '@/components/Toast';
 
 type Bal = {
   email: string; name: string; start_date: string | null; years: number;
@@ -29,6 +30,7 @@ export default function LeaveBalancesPage() {
   const [exporting, setExporting] = useState(false);
   const yearRef = useRef(year);
   useEffect(() => { yearRef.current = year; }, [year]);
+  const toast = useToast();
 
   useEffect(() => {
     (async () => {
@@ -71,7 +73,7 @@ export default function LeaveBalancesPage() {
     setExporting(true);
     const { data, error } = await supabase.rpc('leave_ledger', { p_year: year });
     setExporting(false);
-    if (error || !data) { alert('Could not export the ledger — please try again.'); return; }
+    if (error || !data) { toast.error('Could not export the ledger — please try again.'); return; }
     const csv = ledgerToCsv(data as AdminLedgerRow[]);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -79,7 +81,8 @@ export default function LeaveBalancesPage() {
     a.href = url; a.download = `leave-ledger-${year}.csv`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }, [year]);
+    toast.success(`Leave ledger ${year} downloaded.`);
+  }, [year, toast]);
 
   if (authed === null || ok === null) return <div className="text-sm text-ink-3">Checking…</div>;
   if (!authed) return <div className="text-sm text-ink-2">Please sign in.</div>;

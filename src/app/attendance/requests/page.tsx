@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { openSignedFile } from '@/lib/openSignedFile';
+import { useToast } from '@/components/Toast';
 
 type Kind = 'offday' | 'halfday' | 'mc' | 'advance' | 'emergency';
 
@@ -101,6 +102,8 @@ export default function RequestsPage() {
     if (t === 'offday' || t === 'halfday' || t === 'mc' || t === 'advance' || t === 'emergency') setKindF(t);
   }, []);
 
+  const toast = useToast();
+
   const load = useCallback(async () => {
     setLoading(true);
     const yr = new Date(Date.now() + 8 * 3600e3).getUTCFullYear();
@@ -168,8 +171,8 @@ export default function RequestsPage() {
   const cancelEdit = useCallback(() => setEditingId(null), []);
   const saveEdit = useCallback(async () => {
     if (!editingId) return;
-    if (!eFrom || !eTo) { alert('Pick both dates.'); return; }
-    if (eFrom > eTo) { alert('The From date is after the To date.'); return; }
+    if (!eFrom || !eTo) { toast.error('Pick both dates.'); return; }
+    if (eFrom > eTo) { toast.error('The From date is after the To date.'); return; }
     setSavingEdit(true);
     const { data: sess } = await supabase.auth.getSession();
     const token = sess.session?.access_token;
@@ -179,10 +182,10 @@ export default function RequestsPage() {
       body: JSON.stringify({ id: editingId, date_from: eFrom, date_to: eTo, reason: eReason.trim() || null }),
     });
     const j = await res.json().catch(() => ({} as { error?: string }));
-    if (!res.ok) alert(j.error || 'Could not save the change.');
-    else { setEditingId(null); await load(); }
+    if (!res.ok) toast.error(j.error || 'Could not save the change.');
+    else { setEditingId(null); await load(); toast.success('Dates updated.'); }
     setSavingEdit(false);
-  }, [editingId, eFrom, eTo, eReason, load]);
+  }, [editingId, eFrom, eTo, eReason, load, toast]);
 
   const viewAttachment = useCallback((path: string | null) => openSignedFile('mc', path), []);
 
@@ -198,7 +201,7 @@ export default function RequestsPage() {
         ? 'Note for the staff (required) — e.g. "OK, approved":'
         : 'Reason for rejecting (required):', '');
       if (n === null) return;                        // cancelled
-      if (!n.trim()) { alert('A note is required.'); return; }
+      if (!n.trim()) { toast.error('A note is required.'); return; }
       note = n.trim();
     }
     // Over-quota off day: ask whether to pay it anyway (goodwill) or leave it unpaid (the law).
@@ -223,9 +226,10 @@ export default function RequestsPage() {
       const res = await supabase.rpc(approve ? 'approve_advance' : 'reject_advance', { p_id: r.id, p_note: note });
       error = res.error;
     }
-    if (error) alert(error.message); else await load();
+    if (error) toast.error(error.message);
+    else { await load(); toast.success(approve ? 'Request approved.' : 'Request rejected.'); }
     setBusy(null);
-  }, [over, load]);
+  }, [over, load, toast]);
 
   // Approve · needs proof: mark the request awaiting_proof with a deadline. The day is NOT paid
   // until the staff uploads and the office approves — so no clawback if the proof never comes.
@@ -239,14 +243,15 @@ export default function RequestsPage() {
       return iso(target);
     };
     const deadline = proofOpt === '3' ? plus(3) : proofOpt === '7' ? plus(7) : proofOpt === '25' ? by25() : proofDate;
-    if (!deadline) { alert('Pick a deadline date.'); return; }
+    if (!deadline) { toast.error('Pick a deadline date.'); return; }
     setBusy(r.id);
     const { error } = await supabase.rpc('leave_need_proof', { p_type: r.kind, p_id: r.id, p_deadline: deadline });
     setBusy(null);
-    if (error) { alert(error.message); return; }
+    if (error) { toast.error(error.message); return; }
     setProofFor(null);
     await load();
-  }, [proofOpt, proofDate, load]);
+    toast.success('Marked — staff asked to upload proof.');
+  }, [proofOpt, proofDate, load, toast]);
 
   // Approve an off-day / MC request AS a chosen type (change the type before approving) — e.g. off-day → MC.
   const approveAs = useCallback(async (r: Req) => {
@@ -259,9 +264,10 @@ export default function RequestsPage() {
     setBusy(r.id);
     const { error } = await supabase.rpc('approve_leave_as_kind', { p_type: r.kind, p_id: r.id, p_as: target, p_note: null, p_pay_anyway: payAnyway });
     setBusy(null);
-    if (error) { alert(error.message); return; }
+    if (error) { toast.error(error.message); return; }
     await load();
-  }, [recAs, over, load]);
+    toast.success('Recorded.');
+  }, [recAs, over, load, toast]);
 
   // Emergency absence: record what the day counts as (optionally set attendance + pay), then mark handled.
   const record = useCallback(async (r: Req, alsoSetDay: boolean) => {
@@ -278,12 +284,13 @@ export default function RequestsPage() {
         .eq('id', r.id);
       if (e2) throw e2;
       await load();
+      toast.success('Emergency recorded.');
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
+      toast.error(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(null);
     }
-  }, [picks, me, load]);
+  }, [picks, me, load, toast]);
 
   if (authed === null || isAdmin === null) return <div className="text-sm text-ink-3">Checking…</div>;
   if (!authed) return <div className="text-sm text-ink-2">Please sign in.</div>;

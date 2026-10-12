@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { useToast } from '@/components/Toast';
 import { openSignedFile } from '@/lib/openSignedFile';
 
 type Row = {
@@ -63,12 +64,15 @@ export default function AttendanceReportPage() {
     })();
   }, []);
 
+  const toast = useToast();
+
   const load = useCallback(async () => {
     setLoading(true);
     const { data, error } = await supabase.rpc('month_attendance_v2_daily', { p_year: year, p_month: month });
-    if (!error) setRows((data ?? []) as Row[]);
+    if (error) toast.error('Could not load the month — try again.');
+    else setRows((data ?? []) as Row[]);
     setLoading(false);
-  }, [year, month]);
+  }, [year, month, toast]);
 
   useEffect(() => {
     if (isAdmin) load();
@@ -182,10 +186,13 @@ export default function AttendanceReportPage() {
       await load();
       await loadDocReqs();
       await loadPaid();
+      toast.success('Day updated.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not save — check your connection and try again.');
     } finally {
       setSaving(false);
     }
-  }, [eStatus, eIn, eOut, eNote, requireProof, paidOverride, me, load, loadDocReqs, loadPaid]);
+  }, [eStatus, eIn, eOut, eNote, requireProof, paidOverride, me, load, loadDocReqs, loadPaid, toast]);
 
   const prevMonth = () => { const d = new Date(year, month - 2, 1); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); };
   const nextMonth = () => { const d = new Date(year, month, 1); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); };
