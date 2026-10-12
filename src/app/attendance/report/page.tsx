@@ -62,6 +62,9 @@ export default function AttendanceReportPage() {
   const [paidMap, setPaidMap] = useState<Map<string, boolean>>(new Map()); // day -> paid_override for the viewed staff
   const [eKind, setEKind] = useState(''); // editor: leave kind for an OFFDAY/MC day (Annual/Unpaid/Paternity/…)
   const [kindMap, setKindMap] = useState<Map<string, string | null>>(new Map()); // day -> leave_kind for the viewed staff
+  const [noteMap, setNoteMap] = useState<Map<string, string | null>>(new Map()); // day -> existing note for the viewed staff (so an edit doesn't wipe it)
+  const [metaReady, setMetaReady] = useState(false); // paid/kind/note for the viewed staff loaded — gate editing until true
+  const [locked, setLocked] = useState(false); // this month's payroll period is LOCKED/FINALIZED — block edits (they'd desync a paid month)
 
   useEffect(() => {
     (async () => {
@@ -100,18 +103,38 @@ export default function AttendanceReportPage() {
 
   // paid_override per day for the viewed staff — so the editor can show/preserve the "pay anyway" flag.
   const loadPaid = useCallback(async () => {
-    if (staffFilter === 'ALL') { setPaidMap(new Map()); setKindMap(new Map()); return; }
+    if (staffFilter === 'ALL') { setPaidMap(new Map()); setKindMap(new Map()); setNoteMap(new Map()); setMetaReady(true); return; }
+    setMetaReady(false); // block editing until this staff's paid/kind/note are loaded (else a save would reset them to defaults)
     const mm = String(month).padStart(2, '0');
     const start = `${year}-${mm}-01`;
     const endD = new Date(year, month, 1);
     const end = `${endD.getFullYear()}-${String(endD.getMonth() + 1).padStart(2, '0')}-01`;
-    const { data } = await supabase.from('day_status').select('day,paid_override,leave_kind').eq('staff_email', staffFilter).gte('day', start).lt('day', end);
+    const { data } = await supabase.from('day_status').select('day,paid_override,leave_kind,note').eq('staff_email', staffFilter).gte('day', start).lt('day', end);
     const m = new Map<string, boolean>();
     const k = new Map<string, string | null>();
-    (data ?? []).forEach((d: { day: string; paid_override: boolean | null; leave_kind: string | null }) => { m.set(d.day, !!d.paid_override); k.set(d.day, d.leave_kind); });
+    const nt = new Map<string, string | null>();
+    (data ?? []).forEach((d: { day: string; paid_override: boolean | null; leave_kind: string | null; note: string | null }) => { m.set(d.day, !!d.paid_override); k.set(d.day, d.leave_kind); nt.set(d.day, d.note); });
     setPaidMap(m);
     setKindMap(k);
+    setNoteMap(nt);
+    setMetaReady(true);
   }, [staffFilter, year, month]);
+  // Safety: never leave an editor open across a staff switch — its fields hold the previous
+  // staff's values and Save targets the row's email, so it would write onto the new person.
+  useEffect(() => { setEditDay(null); }, [staffFilter]);
+
+  // Is the displayed month's payroll locked? If so, block inline edits here too — the Report
+  // editor must not be an unguarded back door to retro-edit a paid month (same rule as Month-end).
+  useEffect(() => {
+    if (!isAdmin) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from('v_periods_min').select('status').eq('year', year).eq('month', month).maybeSingle();
+      const st = (data as { status?: string } | null)?.status;
+      if (!cancelled) setLocked(st === 'LOCKED' || st === 'FINALIZED');
+    })();
+    return () => { cancelled = true; };
+  }, [isAdmin, year, month]);
   useEffect(() => { if (isAdmin) loadPaid(); }, [isAdmin, loadPaid]);
   const viewDoc = useCallback((path: string | null) => openSignedFile('mc', path), []);
 
@@ -156,14 +179,15 @@ export default function AttendanceReportPage() {
       : r.status === 'OFFDAY' ? 'OFFDAY' : r.status === 'MC' ? 'MC' : r.status === 'ABSENT' ? 'ABSENT' : 'WORKING');
     setEIn(r.check_in_kl ?? '');
     setEOut(r.check_out_kl ?? '');
-    setENote('');
+    setENote(noteMap.get(r.day) ?? ''); // carry the existing reason so a kind/pay edit doesn't blank it
     setRequireProof(false);
     setPaidOverride(paidMap.get(r.day) ?? false);
     const curKind = kindMap.get(r.day) ?? null;
     setEKind(curKind ?? (r.status === 'OFFDAY' ? 'ANNUAL' : r.status === 'MC' ? 'SICK' : ''));
-  }, [paidMap, kindMap]);
+  }, [paidMap, kindMap, noteMap]);
 
   const saveEdit = useCallback(async (email: string, day: string) => {
+    if (locked) { toast.error('This month’s payroll is locked — unlock it on the Payroll page before editing attendance.'); return; }
     setSaving(true);
     try {
       if (eStatus === 'HALF_AM' || eStatus === 'HALF_PM') {
@@ -192,8 +216,11 @@ export default function AttendanceReportPage() {
             : null;
           await supabase.rpc('set_day_status', { p_email: email, p_day: day, p_status: eStatus, p_note: eNote || null, p_kind: kind });
           // For leave days, carry the "pay anyway" flag so an over-quota day isn't docked as unpaid.
+          // Unpaid leave can never be "paid anyway" (that would cancel the deduction + under-count
+          // unpaid), so force the flag off for an UNPAID day regardless of a stale checkbox.
           if (eStatus === 'OFFDAY' || eStatus === 'MC') {
-            await supabase.rpc('set_day_pay', { p_email: email, p_day: day, p_paid: paidOverride });
+            const pay = kind === 'UNPAID' ? false : paidOverride;
+            await supabase.rpc('set_day_pay', { p_email: email, p_day: day, p_paid: pay });
           }
         }
       }
@@ -213,7 +240,7 @@ export default function AttendanceReportPage() {
     } finally {
       setSaving(false);
     }
-  }, [eStatus, eIn, eOut, eNote, eKind, requireProof, paidOverride, me, load, loadDocReqs, loadPaid, toast]);
+  }, [locked, eStatus, eIn, eOut, eNote, eKind, requireProof, paidOverride, me, load, loadDocReqs, loadPaid, toast]);
 
   const prevMonth = () => { const d = new Date(year, month - 2, 1); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); };
   const nextMonth = () => { const d = new Date(year, month, 1); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); };
@@ -330,6 +357,11 @@ export default function AttendanceReportPage() {
           <button onClick={() => setStaffFilter('ALL')} className="inline-flex items-center gap-1 rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">← All staff</button>
           <span className="text-sm font-medium text-ink">{staffList.find(([e]) => e === staffFilter)?.[1] ?? staffFilter}</span>
         </div>
+        {locked && (
+          <div className="mb-2 rounded-lg bg-bad-soft px-3 py-2 text-xs font-medium text-bad print:hidden">
+            This month’s payroll is locked — unlock it on the Payroll page to change attendance.
+          </div>
+        )}
         <div className="overflow-x-auto rounded-lg border border-line">
           <table className="w-full border-collapse text-sm">
             <thead>
@@ -372,7 +404,9 @@ export default function AttendanceReportPage() {
                     <td className="px-3 py-2 text-right print:hidden">
                       <button
                         onClick={() => (editDay === r.day ? setEditDay(null) : startEdit(r))}
-                        className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5"
+                        disabled={locked || (editDay !== r.day && !metaReady)}
+                        title={locked ? 'Month locked' : !metaReady ? 'Loading this day…' : undefined}
+                        className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50"
                       >
                         {editDay === r.day ? 'Close' : 'Edit'}
                       </button>
@@ -394,7 +428,7 @@ export default function AttendanceReportPage() {
                           </label>
                           {eStatus === 'OFFDAY' && (
                             <label className="text-xs text-ink-2">Leave type
-                              <select value={OFFDAY_KINDS.includes(eKind) ? eKind : 'ANNUAL'} onChange={(e) => setEKind(e.target.value)} className="mt-0.5 block rounded-lg border border-line px-2 py-1 text-sm">
+                              <select value={OFFDAY_KINDS.includes(eKind) ? eKind : 'ANNUAL'} onChange={(e) => { const v = e.target.value; setEKind(v); if (v === 'UNPAID') setPaidOverride(false); }} className="mt-0.5 block rounded-lg border border-line px-2 py-1 text-sm">
                                 {OFFDAY_KINDS.map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
                               </select>
                             </label>
@@ -424,7 +458,7 @@ export default function AttendanceReportPage() {
                               <input type="checkbox" checked={requireProof} onChange={(e) => setRequireProof(e.target.checked)} className="h-3.5 w-3.5" /> Require proof from staff
                             </label>
                           )}
-                          {(eStatus === 'OFFDAY' || eStatus === 'MC') && (
+                          {(eStatus === 'MC' || (eStatus === 'OFFDAY' && eKind !== 'UNPAID')) && (
                             <label className="flex cursor-pointer items-center gap-1.5 text-xs text-ink-2" title="Pay this day even if the staff is over their leave quota (don't dock it as unpaid).">
                               <input type="checkbox" checked={paidOverride} onChange={(e) => setPaidOverride(e.target.checked)} className="h-3.5 w-3.5" /> Pay anyway (don&apos;t dock)
                             </label>
