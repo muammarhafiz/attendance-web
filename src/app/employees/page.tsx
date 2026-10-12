@@ -582,7 +582,7 @@ export default function EmployeesPage() {
     );
     if (typed === null) return; // cancelled
     if (typed.trim().toLowerCase() !== email.toLowerCase()) {
-      alert('Email did not match — nothing was deleted.');
+      toast.error('Email did not match — nothing was deleted.');
       return;
     }
     setDeleting(email);
