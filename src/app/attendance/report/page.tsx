@@ -18,6 +18,15 @@ type Row = {
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+// Leave kinds the editor can tag a day with (mirrors the Requests "Record as" list + the
+// day_status normalize trigger). OFFDAY carries an annual-leave-side kind; MC a sick-side one.
+const OFFDAY_KINDS = ['ANNUAL', 'UNPAID', 'PATERNITY', 'MATERNITY', 'HOLIDAY'];
+const MC_KINDS = ['SICK', 'HOSPITALISATION'];
+const KIND_LABEL: Record<string, string> = {
+  ANNUAL: 'Annual leave', UNPAID: 'Unpaid leave', PATERNITY: 'Paternity', MATERNITY: 'Maternity', HOLIDAY: 'Company holiday',
+  SICK: 'MC (sick)', HOSPITALISATION: 'Hospitalisation',
+};
+
 function fmt12(t: string | null): string {
   if (!t) return '—';
   const [hh, mm] = t.split(':');
@@ -51,6 +60,8 @@ export default function AttendanceReportPage() {
   const [docReqs, setDocReqs] = useState<{ id: string; day: string; doc_path: string | null }[]>([]);
   const [paidOverride, setPaidOverride] = useState(false); // editor: "pay anyway" for an OFFDAY/MC day
   const [paidMap, setPaidMap] = useState<Map<string, boolean>>(new Map()); // day -> paid_override for the viewed staff
+  const [eKind, setEKind] = useState(''); // editor: leave kind for an OFFDAY/MC day (Annual/Unpaid/Paternity/…)
+  const [kindMap, setKindMap] = useState<Map<string, string | null>>(new Map()); // day -> leave_kind for the viewed staff
 
   useEffect(() => {
     (async () => {
@@ -89,15 +100,17 @@ export default function AttendanceReportPage() {
 
   // paid_override per day for the viewed staff — so the editor can show/preserve the "pay anyway" flag.
   const loadPaid = useCallback(async () => {
-    if (staffFilter === 'ALL') { setPaidMap(new Map()); return; }
+    if (staffFilter === 'ALL') { setPaidMap(new Map()); setKindMap(new Map()); return; }
     const mm = String(month).padStart(2, '0');
     const start = `${year}-${mm}-01`;
     const endD = new Date(year, month, 1);
     const end = `${endD.getFullYear()}-${String(endD.getMonth() + 1).padStart(2, '0')}-01`;
-    const { data } = await supabase.from('day_status').select('day,paid_override').eq('staff_email', staffFilter).gte('day', start).lt('day', end);
+    const { data } = await supabase.from('day_status').select('day,paid_override,leave_kind').eq('staff_email', staffFilter).gte('day', start).lt('day', end);
     const m = new Map<string, boolean>();
-    (data ?? []).forEach((d: { day: string; paid_override: boolean | null }) => m.set(d.day, !!d.paid_override));
+    const k = new Map<string, string | null>();
+    (data ?? []).forEach((d: { day: string; paid_override: boolean | null; leave_kind: string | null }) => { m.set(d.day, !!d.paid_override); k.set(d.day, d.leave_kind); });
     setPaidMap(m);
+    setKindMap(k);
   }, [staffFilter, year, month]);
   useEffect(() => { if (isAdmin) loadPaid(); }, [isAdmin, loadPaid]);
   const viewDoc = useCallback((path: string | null) => openSignedFile('mc', path), []);
@@ -146,7 +159,9 @@ export default function AttendanceReportPage() {
     setENote('');
     setRequireProof(false);
     setPaidOverride(paidMap.get(r.day) ?? false);
-  }, [paidMap]);
+    const curKind = kindMap.get(r.day) ?? null;
+    setEKind(curKind ?? (r.status === 'OFFDAY' ? 'ANNUAL' : r.status === 'MC' ? 'SICK' : ''));
+  }, [paidMap, kindMap]);
 
   const saveEdit = useCallback(async (email: string, day: string) => {
     setSaving(true);
@@ -170,8 +185,12 @@ export default function AttendanceReportPage() {
             await supabase.from('day_time_override').delete().eq('day', day).eq('staff_email', email);
           }
         } else {
-          // OFFDAY / MC / ABSENT
-          await supabase.rpc('set_day_status', { p_email: email, p_day: day, p_status: eStatus, p_note: eNote || null });
+          // OFFDAY / MC / ABSENT. For leave days, tag the kind (Annual/Paternity/…); the
+          // DB trigger falls back to the default if the kind doesn't match the status.
+          const kind = eStatus === 'OFFDAY' ? (OFFDAY_KINDS.includes(eKind) ? eKind : 'ANNUAL')
+            : eStatus === 'MC' ? (MC_KINDS.includes(eKind) ? eKind : 'SICK')
+            : null;
+          await supabase.rpc('set_day_status', { p_email: email, p_day: day, p_status: eStatus, p_note: eNote || null, p_kind: kind });
           // For leave days, carry the "pay anyway" flag so an over-quota day isn't docked as unpaid.
           if (eStatus === 'OFFDAY' || eStatus === 'MC') {
             await supabase.rpc('set_day_pay', { p_email: email, p_day: day, p_paid: paidOverride });
@@ -194,7 +213,7 @@ export default function AttendanceReportPage() {
     } finally {
       setSaving(false);
     }
-  }, [eStatus, eIn, eOut, eNote, requireProof, paidOverride, me, load, loadDocReqs, loadPaid, toast]);
+  }, [eStatus, eIn, eOut, eNote, eKind, requireProof, paidOverride, me, load, loadDocReqs, loadPaid, toast]);
 
   const prevMonth = () => { const d = new Date(year, month - 2, 1); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); };
   const nextMonth = () => { const d = new Date(year, month, 1); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); };
@@ -324,7 +343,9 @@ export default function AttendanceReportPage() {
               </tr>
             </thead>
             <tbody>
-              {detail.map((r) => (
+              {detail.map((r) => {
+                const dayKind = kindMap.get(r.day) ?? null;
+                return (
                 <Fragment key={r.day}>
                   <tr className="border-t border-line">
                     <td className="px-3 py-2 text-ink-2">{fmtDay(r.day)}</td>
@@ -333,9 +354,9 @@ export default function AttendanceReportPage() {
                       {r.status === 'HOME' && <span className="text-good">Home (WFH)</span>}
                       {r.status === 'ABSENT' && <span className="text-bad">Absent</span>}
                       {r.status === 'OFF' && <span className="text-ink-2">Closed</span>}
-                      {r.status === 'OFFDAY' && <span className="text-accent">Off day</span>}
+                      {r.status === 'OFFDAY' && <span className="text-accent">Off day{dayKind && dayKind !== 'ANNUAL' ? ` · ${KIND_LABEL[dayKind] ?? dayKind}` : ''}</span>}
                       {r.status === 'PH' && <span className="text-accent">Public holiday</span>}
-                      {r.status === 'MC' && <span className="text-accent">MC</span>}
+                      {r.status === 'MC' && <span className="text-accent">MC{dayKind === 'HOSPITALISATION' ? ' · Hospitalisation' : ''}</span>}
                       {!r.status && <span className="text-ink-3">—</span>}
                       {r.half && <span className="ml-1 rounded-full bg-accent-weak px-1.5 py-0.5 text-xs font-medium text-accent" title={r.half === 'AM' ? 'Half day · morning (9:30–1:30)' : 'Half day · afternoon (1:30–6:00)'}>½ {r.half}</span>}
                       {(r.status === 'OFFDAY' || r.status === 'MC') && paidMap.get(r.day) && <span className="ml-1 rounded-full bg-good-soft px-1.5 py-0.5 text-xs font-medium text-good" title="Paid anyway — not docked as unpaid">paid</span>}
@@ -371,6 +392,20 @@ export default function AttendanceReportPage() {
                               <option value="ABSENT">Absent</option>
                             </select>
                           </label>
+                          {eStatus === 'OFFDAY' && (
+                            <label className="text-xs text-ink-2">Leave type
+                              <select value={OFFDAY_KINDS.includes(eKind) ? eKind : 'ANNUAL'} onChange={(e) => setEKind(e.target.value)} className="mt-0.5 block rounded-lg border border-line px-2 py-1 text-sm">
+                                {OFFDAY_KINDS.map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
+                              </select>
+                            </label>
+                          )}
+                          {eStatus === 'MC' && (
+                            <label className="text-xs text-ink-2">MC type
+                              <select value={MC_KINDS.includes(eKind) ? eKind : 'SICK'} onChange={(e) => setEKind(e.target.value)} className="mt-0.5 block rounded-lg border border-line px-2 py-1 text-sm">
+                                {MC_KINDS.map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
+                              </select>
+                            </label>
+                          )}
                           {eStatus === 'WORKING' && (
                             <>
                               <label className="text-xs text-ink-2">Check-in
@@ -410,7 +445,8 @@ export default function AttendanceReportPage() {
                     </tr>
                   )}
                 </Fragment>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
