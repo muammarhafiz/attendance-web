@@ -29,6 +29,7 @@ export default function HolidaysSettings() {
   const [closeName, setCloseName] = useState('');
   const [confirmClose, setConfirmClose] = useState(false); // show the "are you sure" step before closing the shop
   const [lastClosure, setLastClosure] = useState<{ from: string; to: string; name: string; count: number } | null>(null); // for Undo
+  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null); // holiday row showing an inline "Remove?" confirm
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -98,8 +99,8 @@ export default function HolidaysSettings() {
         setBusy(false);
       });
   };
-  const remove = (h: Holiday) => {
-    if (!window.confirm(`Remove "${h.name}" on ${fmtD(h.holiday_date)}?`)) return;
+  const doRemove = (h: Holiday) => {
+    setConfirmRemoveId(null);
     run(() => supabase.rpc('remove_holiday', { p_id: h.id }), 'Removed ✓');
   };
   const prefill = () => run(() => supabase.rpc('prefill_fixed_holidays', { p_year: year }), 'Fixed dates added ✓');
@@ -159,7 +160,15 @@ export default function HolidaysSettings() {
                     {sunday && !h.is_substitute && <span className="ml-2 rounded-full bg-warn-soft px-2 py-0.5 text-[10px] font-medium text-warn">Sunday → shifted</span>}
                   </div>
                 </div>
-                <button onClick={() => remove(h)} disabled={busy} className="shrink-0 rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50">Remove</button>
+                {confirmRemoveId === h.id ? (
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <span className="text-[11px] text-ink-3">Remove?</span>
+                    <button onClick={() => doRemove(h)} disabled={busy} className="rounded-md border border-bad/40 bg-bad-soft px-2 py-1 text-xs font-semibold text-bad hover:opacity-90 disabled:opacity-50">Yes</button>
+                    <button onClick={() => setConfirmRemoveId(null)} disabled={busy} className="rounded-md border border-line px-2 py-1 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50">No</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setConfirmRemoveId(h.id)} disabled={busy} className="shrink-0 rounded-md border border-line px-2.5 py-1 text-xs text-ink-2 hover:bg-ink/5 disabled:opacity-50">Remove</button>
+                )}
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <span className="text-xs text-ink-3">On this day:</span>
