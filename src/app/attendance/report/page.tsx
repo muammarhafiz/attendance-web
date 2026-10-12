@@ -402,14 +402,18 @@ export default function AttendanceReportPage() {
                       {(r.late_min ?? 0) > 0 ? `${r.late_min} min` : '—'}
                     </td>
                     <td className="px-3 py-2 text-right print:hidden">
-                      <button
-                        onClick={() => (editDay === r.day ? setEditDay(null) : startEdit(r))}
-                        disabled={locked || (editDay !== r.day && !metaReady)}
-                        title={locked ? 'Month locked' : !metaReady ? 'Loading this day…' : undefined}
-                        className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50"
-                      >
-                        {editDay === r.day ? 'Close' : 'Edit'}
-                      </button>
+                      {r.status === 'PH' && editDay !== r.day ? (
+                        <span className="text-xs text-ink-3" title="Public holiday — manage it on the Holidays page, not per staff.">Holiday 🔒</span>
+                      ) : (
+                        <button
+                          onClick={() => (editDay === r.day ? setEditDay(null) : startEdit(r))}
+                          disabled={editDay !== r.day && (locked || !metaReady)}
+                          title={locked ? 'Month locked' : !metaReady ? 'Loading this day…' : undefined}
+                          className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50"
+                        >
+                          {editDay === r.day ? 'Close' : 'Edit'}
+                        </button>
+                      )}
                     </td>
                   </tr>
                   {editDay === r.day && (
