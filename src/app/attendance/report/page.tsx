@@ -47,6 +47,7 @@ export default function AttendanceReportPage() {
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1);
   const [staffFilter, setStaffFilter] = useState<string>('ALL');
+  const [needsFix, setNeedsFix] = useState(false); // show only days that need the admin's attention
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
   const [editDay, setEditDay] = useState<string | null>(null);
@@ -172,6 +173,15 @@ export default function AttendanceReportPage() {
     () => rows.filter((r) => r.staff_email === staffFilter).sort((a, b) => a.day.localeCompare(b.day)),
     [rows, staffFilter]
   );
+
+  // "Needs fixing" worklist across all staff: elapsed unexplained absents + days marked off/MC
+  // where the person actually checked in (a conflict to resolve).
+  const fixList = useMemo(() => {
+    const todayISO = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+    return rows
+      .filter((r) => (r.status === 'ABSENT' && r.day <= todayISO) || ((r.status === 'OFFDAY' || r.status === 'MC') && r.check_in_kl))
+      .sort((a, b) => a.day.localeCompare(b.day) || (a.staff_name ?? '').localeCompare(b.staff_name ?? ''));
+  }, [rows]);
 
   const startEdit = useCallback((r: Row) => {
     setEditDay(r.day);
@@ -305,7 +315,14 @@ export default function AttendanceReportPage() {
           ))}
         </select>
 
-        <button onClick={load} disabled={loading} className="ml-auto rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">
+        <button
+          onClick={() => setNeedsFix((v) => !v)}
+          title="Show only days that need attention (unexplained absents, or off/MC days the person checked in)"
+          className={`ml-auto rounded-lg border px-3 py-1.5 text-sm font-medium ${needsFix ? 'border-warn/50 bg-warn-soft text-warn' : fixList.length > 0 ? 'border-warn/40 text-warn hover:bg-warn-soft/60' : 'border-line text-ink-2 hover:bg-ink/5'}`}
+        >
+          ⚠ Needs fixing ({fixList.length})
+        </button>
+        <button onClick={load} disabled={loading} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">
           {loading ? 'Loading…' : 'Refresh'}
         </button>
         <button onClick={() => window.print()} disabled={rows.length === 0} title="Print or save as PDF" className="rounded-lg border border-line bg-card px-3 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5 disabled:opacity-50">
@@ -315,6 +332,40 @@ export default function AttendanceReportPage() {
 
       {rows.length === 0 ? (
         <div className="rounded-lg border border-dashed border-line bg-ink/[0.03] p-4 text-center text-sm text-ink-3">No records for this month.</div>
+      ) : needsFix ? (
+        /* Needs-fixing worklist (across all staff) */
+        <div className="overflow-x-auto rounded-lg border border-line print:hidden">
+          {fixList.length === 0 ? (
+            <div className="p-4 text-center text-sm text-ink-3">Nothing needs fixing this month 🎉</div>
+          ) : (
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="bg-ink/[0.03] text-left">
+                  <th className="px-3 py-2 font-medium text-ink-2">Date</th>
+                  <th className="px-3 py-2 font-medium text-ink-2">Staff</th>
+                  <th className="px-3 py-2 font-medium text-ink-2">Issue</th>
+                  <th className="px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {fixList.map((r) => (
+                  <tr key={`${r.staff_email}-${r.day}`} className="border-t border-line">
+                    <td className="px-3 py-2 text-ink-2">{fmtDay(r.day)}</td>
+                    <td className="px-3 py-2 text-ink">{r.staff_name ?? r.staff_email}</td>
+                    <td className="px-3 py-2">
+                      {r.status === 'ABSENT'
+                        ? <span className="rounded-full bg-bad-soft px-2 py-0.5 text-xs font-medium text-bad">Absent — unexplained</span>
+                        : <span className="rounded-full bg-warn-soft px-2 py-0.5 text-xs font-medium text-warn">{r.status === 'OFFDAY' ? 'Off day' : 'MC'} but checked in {fmt12(r.check_in_kl)}</span>}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <button onClick={() => { setNeedsFix(false); setStaffFilter(r.staff_email); }} className="rounded-lg border border-line px-3 py-1 text-xs font-semibold text-accent hover:bg-ink/5">Fix →</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       ) : staffFilter === 'ALL' ? (
         /* Summary table */
         <div className="overflow-x-auto rounded-lg border border-line">
