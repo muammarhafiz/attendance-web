@@ -491,6 +491,9 @@ export default function RequestsPage() {
                       <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-line pt-2">
                         {actMode === 'reject' && r.kind === 'mc' ? (
                           <span className="w-full text-xs text-ink-2">Reject this MC request?</span>
+                        ) : (actMode === 'approve' && r.status === 'awaiting_proof' && r.kind === 'mc') ? (
+                          // approve_mc takes no note on the awaiting-proof path — don't show a field that gets discarded.
+                          <span className="w-full text-xs text-ink-2">Approve this MC (proof received)?</span>
                         ) : (
                           <label className="w-full text-xs text-ink-2">
                             {actMode === 'reject' ? 'Reason for rejecting' : 'Note for the staff'}
@@ -499,7 +502,7 @@ export default function RequestsPage() {
                           </label>
                         )}
                         {actMode === 'approve' ? (
-                          (r.kind === 'offday' && (recAs[r.id] ?? 'ANNUAL') === 'ANNUAL' && over.has(r.staff_email.toLowerCase())) ? (
+                          ((r.kind === 'offday' || r.kind === 'mc') && (recAs[r.id] ?? (r.kind === 'offday' ? 'ANNUAL' : 'SICK')) === 'ANNUAL' && over.has(r.staff_email.toLowerCase())) ? (
                             <>
                               <span className="w-full text-[11px] font-medium text-bad">No annual leave left — record this day as:</span>
                               <button onClick={() => confirmApprove(r, true)} disabled={busy === r.id} className="rounded-lg bg-good px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">{busy === r.id ? '…' : 'Approve · pay anyway'}</button>
