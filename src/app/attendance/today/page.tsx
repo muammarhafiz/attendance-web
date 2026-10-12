@@ -118,6 +118,9 @@ export default function AttendanceTodayPage() {
     return { present, absent, late, off, notYet };
   }, [rows, cutoffFor]);
 
+  // Conflict: marked Off-day / MC for today but they actually checked in — needs the admin to fix the day.
+  const conflicts = useMemo(() => rows.filter((r) => (r.status === 'OFFDAY' || r.status === 'MC') && !!r.check_in_kl), [rows]);
+
   if (authed === null || isAdmin === null) return <div className="text-sm text-ink-3">Checking…</div>;
   if (!authed) return <div className="text-sm text-ink-2">Please sign in.</div>;
   if (!isAdmin) return <div className="text-sm text-ink-2">You don&apos;t have access to this page.</div>;
@@ -139,6 +142,21 @@ export default function AttendanceTodayPage() {
           </div>
         ))}
       </div>
+
+      {conflicts.length > 0 && (
+        <div className="mb-3 rounded-card bg-warn-soft p-3 shadow-card">
+          <div className="text-sm font-semibold text-warn">⚠ {conflicts.length} marked off/MC but checked in</div>
+          <p className="mt-0.5 text-[11px] text-warn/80">They have a check-in today but their day is set to Off-day/MC. Tap Fix to correct the day on the report.</p>
+          <ul className="mt-2 space-y-1">
+            {conflicts.map((c) => (
+              <li key={c.staff_email} className="flex items-center justify-between gap-2 rounded-md bg-card px-2.5 py-1.5">
+                <span className="min-w-0 truncate text-sm text-ink">{c.display_name ?? c.staff_email} <span className="text-xs text-ink-3">· {c.status === 'OFFDAY' ? 'Off day' : 'MC'} · in {fmtTime(c.check_in_kl)}</span></span>
+                <a href={`/attendance/report?staff=${encodeURIComponent(c.staff_email)}`} className="shrink-0 rounded-lg border border-line bg-card px-3 py-1 text-xs font-semibold text-accent hover:bg-ink/5">Fix</a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="mb-2 flex items-center justify-between">
         <span className="text-xs text-ink-3">Updated {updated || '…'} · auto-refreshes</span>
@@ -179,6 +197,7 @@ export default function AttendanceTodayPage() {
                     {r.status === 'OFF' && <span className="rounded-full bg-ink/5 px-2 py-0.5 text-xs font-medium text-ink-2">Closed</span>}
                     {r.status === 'PH' && <span className="rounded-full bg-accent-weak px-2 py-0.5 text-xs font-medium text-accent">Public holiday</span>}
                     {(r.status === 'OFFDAY' || r.status === 'MC') && <span className="rounded-full bg-accent-weak px-2 py-0.5 text-xs font-medium text-accent">{r.status === 'OFFDAY' ? 'Off day' : 'MC'}</span>}
+                    {(r.status === 'OFFDAY' || r.status === 'MC') && r.check_in_kl && <span className="ml-1 rounded-full bg-warn-soft px-2 py-0.5 text-xs font-medium text-warn" title="Checked in despite being marked off — fix the day on the report">⚠ checked in</span>}
                     {showAbsent && <span className="rounded-full bg-bad-soft px-2 py-0.5 text-xs font-medium text-bad">Absent</span>}
                     {showNotYet && <span className="rounded-full bg-ink/5 px-2 py-0.5 text-xs font-medium text-ink-2">Not in yet</span>}
                     {halfLabel && <span className="ml-1 rounded-full bg-accent-weak px-2 py-0.5 text-xs font-medium text-accent" title={halfLabel}>½ {r.half}</span>}
