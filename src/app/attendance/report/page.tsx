@@ -174,6 +174,16 @@ export default function AttendanceReportPage() {
     [rows, staffFilter]
   );
 
+  // Paternity days the viewed staff has this month (treating the day being edited as its current
+  // selection) — to softly warn past the statutory 7 (EA s.60FA). Month-scoped; a birth block that
+  // spans two months would need year counting, but a shop's block is normally within one month.
+  const paternityThisMonth = useMemo(() => {
+    let n = 0;
+    kindMap.forEach((k, day) => { if (k === 'PATERNITY' && day !== editDay) n++; });
+    if (editDay && eStatus === 'OFFDAY' && eKind === 'PATERNITY') n++;
+    return n;
+  }, [kindMap, editDay, eStatus, eKind]);
+
   // "Needs fixing" worklist across all staff: elapsed unexplained absents + days marked off/MC
   // where the person actually checked in (a conflict to resolve).
   const fixList = useMemo(() => {
@@ -527,6 +537,11 @@ export default function AttendanceReportPage() {
                           </button>
                           <button onClick={() => setEditDay(null)} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">Cancel</button>
                         </div>
+                        {eStatus === 'OFFDAY' && eKind === 'PATERNITY' && paternityThisMonth > 7 && (
+                          <div className="mt-2 rounded-lg bg-warn-soft px-3 py-2 text-xs font-medium text-warn">
+                            ⚠ {paternityThisMonth} paternity days this month — statutory paternity is 7 days (EA s.60FA). Extra days are fully-paid goodwill, not deducted from any balance. Leave as-is if that&rsquo;s intended, or set the extra day(s) to Annual / Unpaid.
+                          </div>
+                        )}
                         <div className="mt-2 text-xs text-ink-3">
                           &quot;Working day&quot; clears any off-day/MC and uses real check-ins (with your time edits, if any).
                         </div>

@@ -501,6 +501,11 @@ export default function RequestsPage() {
                             <input value={actNote} onChange={(e) => setActNote(e.target.value)} placeholder={actMode === 'reject' ? 'e.g. clashes with the roster' : 'e.g. OK, approved'} className="mt-0.5 block w-full rounded-lg border border-line px-2 py-1 text-sm" />
                           </label>
                         )}
+                        {actMode === 'approve' && (recAs[r.id] === 'PATERNITY' || recAs[r.id] === 'MATERNITY') && (
+                          <span className="w-full text-[11px] text-warn">
+                            ⚠ Statutory {recAs[r.id] === 'PATERNITY' ? 'paternity is 7 days' : 'maternity is 98 days'} — extra days are fully-paid goodwill, not deducted from any balance.
+                          </span>
+                        )}
                         {actMode === 'approve' ? (
                           ((r.kind === 'offday' || r.kind === 'mc') && (recAs[r.id] ?? (r.kind === 'offday' ? 'ANNUAL' : 'SICK')) === 'ANNUAL' && over.has(r.staff_email.toLowerCase())) ? (
                             <>
