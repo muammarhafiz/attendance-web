@@ -121,7 +121,7 @@ export default function LeaveBalancesPage() {
       </div>
 
       <div className="overflow-x-auto rounded-card bg-card shadow-card">
-        <table className="w-full text-sm">
+        <table className="card-table w-full text-sm">
           <thead>
             <tr className="border-b border-line text-left text-xs text-ink-3">
               <th className="px-3 py-2 font-medium">Staff</th>
@@ -134,9 +134,9 @@ export default function LeaveBalancesPage() {
           </thead>
           <tbody className="divide-y divide-line">
             {loading ? (
-              <tr><td colSpan={6} className="px-3 py-4 text-ink-3">Loading…</td></tr>
+              <tr><td colSpan={6} className="cell-full px-3 py-4 text-ink-3">Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={6} className="px-3 py-4 text-ink-3">No staff.</td></tr>
+              <tr><td colSpan={6} className="cell-full px-3 py-4 text-ink-3">No staff.</td></tr>
             ) : rows.map((r) => {
               const open = expanded === r.email;
               return (
@@ -151,25 +151,25 @@ export default function LeaveBalancesPage() {
                     </div>
                     {!r.start_date && <div className="pl-5 text-[11px] text-warn">no start date</div>}
                   </td>
-                  <td className="px-3 py-2.5 text-ink-2 tabular-nums">{r.start_date ? `${r.years} yr${r.years === 1 ? '' : 's'}` : '—'}</td>
-                  <td className="px-3 py-2.5">
+                  <td data-label="Service" className="px-3 py-2.5 text-ink-2 tabular-nums">{r.start_date ? `${r.years} yr${r.years === 1 ? '' : 's'}` : '—'}</td>
+                  <td data-label="Annual leave" className="px-3 py-2.5">
                     <span className="tabular-nums text-ink">{r.annual_used}</span>
                     <span className="text-ink-3"> / {r.annual_ent}</span>
                     <span className={`ml-2 text-xs ${r.annual_left === 0 ? 'text-bad' : 'text-good'}`}>{r.annual_left} left</span>
                   </td>
-                  <td className="px-3 py-2.5">
+                  <td data-label="Sick / MC" className="px-3 py-2.5">
                     <span className="tabular-nums text-ink">{r.mc_used}</span>
                     <span className="text-ink-3"> / {r.mc_ent}</span>
                     <span className={`ml-2 text-xs ${r.mc_left === 0 ? 'text-bad' : 'text-good'}`}>{r.mc_left} left</span>
                   </td>
-                  <td className="px-3 py-2.5 tabular-nums text-ink-2">{r.emergency_used}</td>
-                  <td className="px-3 py-2.5 tabular-nums">
+                  <td data-label="Emergency" className="px-3 py-2.5 tabular-nums text-ink-2">{r.emergency_used}</td>
+                  <td data-label="Unpaid" className="px-3 py-2.5 tabular-nums">
                     {r.unpaid > 0 ? <span className="rounded-full bg-bad-soft px-2 py-0.5 text-xs font-medium text-bad">{r.unpaid}</span> : <span className="text-ink-3">0</span>}
                   </td>
                 </tr>
                 {open && (
                   <tr className="bg-ink/[0.02]">
-                    <td colSpan={6} className="px-3 pb-3 pt-0">
+                    <td colSpan={6} className="cell-full px-3 pb-3 pt-0">
                       {ledgerBusy === r.email ? (
                         <div className="py-3 text-xs text-ink-3">Loading {r.name}&rsquo;s leave days…</div>
                       ) : ledgerErr[r.email] ? (

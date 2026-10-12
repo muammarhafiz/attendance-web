@@ -338,7 +338,7 @@ export default function AttendanceReportPage() {
           {fixList.length === 0 ? (
             <div className="p-4 text-center text-sm text-ink-3">Nothing needs fixing this month 🎉</div>
           ) : (
-            <table className="w-full border-collapse text-sm">
+            <table className="card-table w-full border-collapse text-sm">
               <thead>
                 <tr className="bg-ink/[0.03] text-left">
                   <th className="px-3 py-2 font-medium text-ink-2">Date</th>
@@ -351,8 +351,8 @@ export default function AttendanceReportPage() {
                 {fixList.map((r) => (
                   <tr key={`${r.staff_email}-${r.day}`} className="border-t border-line">
                     <td className="px-3 py-2 text-ink-2">{fmtDay(r.day)}</td>
-                    <td className="px-3 py-2 text-ink">{r.staff_name ?? r.staff_email}</td>
-                    <td className="px-3 py-2">
+                    <td data-label="Staff" className="px-3 py-2 text-ink">{r.staff_name ?? r.staff_email}</td>
+                    <td data-label="Issue" className="px-3 py-2">
                       {r.status === 'ABSENT'
                         ? <span className="rounded-full bg-bad-soft px-2 py-0.5 text-xs font-medium text-bad">Absent — unexplained</span>
                         : <span className="rounded-full bg-warn-soft px-2 py-0.5 text-xs font-medium text-warn">{r.status === 'OFFDAY' ? 'Off day' : 'MC'} but checked in {fmt12(r.check_in_kl)}</span>}
@@ -369,7 +369,7 @@ export default function AttendanceReportPage() {
       ) : staffFilter === 'ALL' ? (
         /* Summary table */
         <div className="overflow-x-auto rounded-lg border border-line">
-          <table className="w-full border-collapse text-sm">
+          <table className="card-table w-full border-collapse text-sm">
             <thead>
               <tr className="bg-ink/[0.03] text-left">
                 <th className="px-3 py-2 font-medium text-ink-2">Staff</th>
@@ -388,13 +388,13 @@ export default function AttendanceReportPage() {
                   <td className="px-3 py-2">
                     <button onClick={() => setStaffFilter(s.email)} className="text-left text-ink hover:text-accent hover:underline">{s.name}</button>
                   </td>
-                  <td className="px-3 py-2 text-right text-good">{s.present}</td>
-                  <td className="px-3 py-2 text-right text-bad">{s.absent || '—'}</td>
-                  <td className="px-3 py-2 text-right text-warn">{s.lateDays || '—'}</td>
-                  <td className="px-3 py-2 text-right text-warn">{s.lateMin ? `${s.lateMin} min` : '—'}</td>
-                  <td className="px-3 py-2 text-right text-accent">{s.mc || '—'}</td>
-                  <td className="px-3 py-2 text-right text-accent">{s.offday || '—'}</td>
-                  <td className="px-3 py-2 text-right text-accent">{s.ph || '—'}</td>
+                  <td data-label="Present" className="px-3 py-2 text-right text-good">{s.present}</td>
+                  <td data-label="Absent" className="px-3 py-2 text-right text-bad">{s.absent || '—'}</td>
+                  <td data-label="Late days" className="px-3 py-2 text-right text-warn">{s.lateDays || '—'}</td>
+                  <td data-label="Total late" className="px-3 py-2 text-right text-warn">{s.lateMin ? `${s.lateMin} min` : '—'}</td>
+                  <td data-label="MC" className="px-3 py-2 text-right text-accent">{s.mc || '—'}</td>
+                  <td data-label="Off day" className="px-3 py-2 text-right text-accent">{s.offday || '—'}</td>
+                  <td data-label="Public holiday" className="px-3 py-2 text-right text-accent">{s.ph || '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -414,7 +414,7 @@ export default function AttendanceReportPage() {
           </div>
         )}
         <div className="overflow-x-auto rounded-lg border border-line">
-          <table className="w-full border-collapse text-sm">
+          <table className="card-table w-full border-collapse text-sm">
             <thead>
               <tr className="bg-ink/[0.03] text-left">
                 <th className="px-3 py-2 font-medium text-ink-2">Date</th>
@@ -432,7 +432,7 @@ export default function AttendanceReportPage() {
                 <Fragment key={r.day}>
                   <tr className="border-t border-line">
                     <td className="px-3 py-2 text-ink-2">{fmtDay(r.day)}</td>
-                    <td className="px-3 py-2">
+                    <td data-label="Status" className="px-3 py-2">
                       {r.status === 'PRESENT' && <span className="text-good">Present</span>}
                       {r.status === 'HOME' && <span className="text-good">Home (WFH)</span>}
                       {r.status === 'ABSENT' && <span className="text-bad">Absent</span>}
@@ -447,9 +447,9 @@ export default function AttendanceReportPage() {
                         ? <button onClick={() => viewDoc(docByDay.get(r.day)!.doc_path)} className="ml-1 rounded-full bg-good-soft px-1.5 py-0.5 text-xs font-medium text-good hover:opacity-80 print:hidden">proof ✓</button>
                         : <span className="ml-1 rounded-full bg-warn-soft px-1.5 py-0.5 text-xs font-medium text-warn print:hidden">proof pending</span>)}
                     </td>
-                    <td className="px-3 py-2 text-ink-2">{fmt12(r.check_in_kl)}</td>
-                    <td className="px-3 py-2 text-ink-2">{fmt12(r.check_out_kl)}</td>
-                    <td className={`px-3 py-2 text-right ${(r.late_min ?? 0) > 0 ? 'font-semibold text-bad' : 'text-ink-3'}`}>
+                    <td data-label="In" className="px-3 py-2 text-ink-2">{fmt12(r.check_in_kl)}</td>
+                    <td data-label="Out" className="px-3 py-2 text-ink-2">{fmt12(r.check_out_kl)}</td>
+                    <td data-label="Late" className={`px-3 py-2 text-right ${(r.late_min ?? 0) > 0 ? 'font-semibold text-bad' : 'text-ink-3'}`}>
                       {(r.late_min ?? 0) > 0 ? `${r.late_min} min` : '—'}
                     </td>
                     <td className="px-3 py-2 text-right print:hidden">
@@ -469,7 +469,7 @@ export default function AttendanceReportPage() {
                   </tr>
                   {editDay === r.day && (
                     <tr className="border-t border-line bg-ink/[0.03] print:hidden">
-                      <td colSpan={6} className="px-3 py-3">
+                      <td colSpan={6} className="cell-full px-3 py-3">
                         <div className="flex flex-wrap items-end gap-3">
                           <label className="text-xs text-ink-2">Status
                             <select value={eStatus} onChange={(e) => setEStatus(e.target.value)} className="mt-0.5 block rounded-lg border border-line px-2 py-1 text-sm">
