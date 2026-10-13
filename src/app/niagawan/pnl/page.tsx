@@ -47,6 +47,7 @@ export default function PnlPage() {
   const [staffSales, setStaffSales] = useState<StaffSales[]>([]); // per-staff sales (admin RPC, matches each staff's "My sales")
   const [staffOptions, setStaffOptions] = useState<{ email: string; label: string }[]>([]); // active staff, for the "assign unmapped name" picker
   const [pick, setPick] = useState<Record<string, string>>({}); // per-nickname chosen staff email (defaults to the suggestion)
+  const [unmapped, setUnmapped] = useState<{ niagawan_name: string; invoices: number; total: number; suggest: string | null }[]>([]); // all-time unlinked names (any month) — always actionable
   const [zeroByDay, setZeroByDay] = useState<Record<string, number>>({}); // day -> count of un-priced parts (Sales-page finality)
   const [paidPnl, setPaidPnl] = useState<PaidPnl | null>(null); // paid-only P&L row (July 2026+)
   const [targetNet, setTargetNet] = useState(50000);
@@ -68,7 +69,7 @@ export default function PnlPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [d, s, t, b, p, st, g, ml, ss, zc, so, pp] = await Promise.all([
+    const [d, s, t, b, p, st, g, ml, ss, zc, so, pp, um] = await Promise.all([
       supabase.from('niagawan_daily').select('day,invoices,sales,cogs,profit,unpaid_count').gte('day', firstDay).lte('day', lastDay).order('day'),
       supabase.from('niagawan_sale_inv').select('inv,day,customer,amount,status,staff').gte('day', firstDay).lte('day', lastDay),
       supabase.from('trade_customers').select('*').order('match'),
@@ -81,6 +82,7 @@ export default function PnlPage() {
       supabase.rpc('cogs_zero_day_counts'), // days with un-priced parts -> Sales-page day finality
       supabase.rpc('sales_staff_options'), // active staff for the "assign unmapped name" picker
       supabase.rpc('niagawan_pnl_month', { p_year: year, p_month: month }), // paid-only P&L (used July 2026+)
+      supabase.rpc('sales_unmapped_list'), // all-time unlinked salesperson names (any month)
     ]);
     const loadErr = d.error || ss.error; // surface a Staff-sales RPC failure, don't mask it as empty
     if (loadErr) setErr(loadErr.message); else setErr(null);
@@ -97,6 +99,7 @@ export default function PnlPage() {
     for (const row of (zc.data ?? []) as ZeroCount[]) zmap[row.audit_date] = Number(row.n) || 0;
     setZeroByDay(zmap);
     setPaidPnl((((pp.data ?? []) as PaidPnl[])[0]) ?? null);
+    setUnmapped((um.data ?? []) as { niagawan_name: string; invoices: number; total: number; suggest: string | null }[]);
     for (const row of (st.data ?? []) as Array<{ key: string; value: unknown }>) {
       if (row.key === 'target_net') setTargetNet(n(row.value) || 50000);
       if (row.key === 'putrajaya_pct') setPtjPct(n(row.value));
@@ -299,6 +302,38 @@ export default function PnlPage() {
       {err && <div className="mb-3 rounded-md border border-rose-200 bg-bad-soft p-2 text-sm text-bad">{err}</div>}
       {loading ? <div className="text-sm text-ink-3">Loading…</div> : (
         <>
+          {/* Unlinked salesperson names — always actionable, any month (matches the "who is this?" alert). */}
+          {unmapped.length > 0 && (
+            <div className="mb-4 rounded-card bg-warn-soft p-4 shadow-card">
+              <div className="text-sm font-semibold text-warn">👤 {unmapped.length} unlinked salesperson name{unmapped.length === 1 ? '' : 's'} — who is this?</div>
+              <p className="mt-0.5 mb-2 text-[11px] text-warn/80">A Niagawan name not yet linked to a staff member (from any month). <b>Assign</b> a staff to credit all their sales, or <b>Ignore</b> a temp / typo so it stops asking. Either way their sales still count in the shop total.</p>
+              <ul className="space-y-2">
+                {unmapped.map((u) => {
+                  const chosen = pick[u.niagawan_name] ?? suggestFor(u.niagawan_name);
+                  return (
+                    <li key={u.niagawan_name} className="rounded-lg bg-card p-2.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium text-ink">{u.niagawan_name}</span>
+                        <span className="text-xs text-ink-3">{n(u.invoices)} invoice{n(u.invoices) === 1 ? '' : 's'} · {rm(n(u.total))}{u.suggest ? ` · looks like ${u.suggest}` : ' · no obvious match'}</span>
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                        <select value={chosen} onChange={(e) => setPick((p) => ({ ...p, [u.niagawan_name]: e.target.value }))}
+                          className="max-w-[12rem] rounded-lg border border-line bg-card px-2 py-1 text-xs text-ink-2">
+                          <option value="">Assign to…</option>
+                          {staffOptions.map((o) => (<option key={o.email} value={o.email}>{o.label}</option>))}
+                        </select>
+                        <button onClick={() => assignName(u.niagawan_name, chosen)} disabled={!chosen}
+                          className="rounded-lg bg-btn px-2.5 py-1 text-xs font-semibold text-btn-ink hover:opacity-90 disabled:opacity-40">Assign</button>
+                        <button onClick={() => ignoreName(u.niagawan_name)}
+                          className="rounded-lg border border-line bg-card px-2.5 py-1 text-xs text-ink-3 hover:bg-ink/5">Ignore</button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+
           {/* Tabs */}
           <div className="mb-4 flex gap-1 border-b border-line">
             {([['overview', 'Overview'], ['costs', 'Operating costs'], ['staff', 'Staff sales']] as const).map(([k, label]) => (
