@@ -25,6 +25,20 @@ const viscKey = (v: string): number => { const m = v.match(/^(\d+)W-?(\d+)$/i); 
 // Hyphen/space/case-insensitive so a staff typing "5w30" matches a catalogue "5W-30" and vice versa.
 const norm = (s: string) => s.toLowerCase().replace(/[\s-]/g, '');
 
+// Search: EVERY whitespace token must match (so "gulf 5w30" works). A full viscosity-grade token
+// (e.g. "5w30") matches the oil's viscosity exactly — so "5w40" doesn't falsely match a 15W-40;
+// other tokens are substring-matched against name + viscosity + capacity + type.
+const matchesSearch = (o: Oil, query: string): boolean => {
+  const toks = query.trim().split(/\s+/).filter(Boolean);
+  if (!toks.length) return true;
+  const hay = norm(`${o.name} ${o.viscosity ?? ''} ${o.capacity ?? ''} ${o.oil_type}`);
+  return toks.every((t) => {
+    const nt = norm(t);
+    if (/^\d{1,2}w\d{2}$/.test(nt)) return norm(o.viscosity ?? '') === nt;
+    return hay.includes(nt);
+  });
+};
+
 const Chip = ({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) => (
   <button
     type="button"
@@ -65,21 +79,24 @@ export default function OilFinder() {
     (!type || o.oil_type === type) &&
     (!cap || o.capacity === cap) &&
     (!hideOut || !o.tracked || o.stock > 0) &&
-    (!q || norm(o.name).includes(norm(q)))
+    matchesSearch(o, q)
   ), [oils, visc, type, cap, hideOut, q]);
 
   const nInStock = useMemo(() => filtered.filter((o) => o.tracked && o.stock > 0).length, [filtered]);
   const nOrder = useMemo(() => filtered.filter((o) => !o.tracked).length, [filtered]);
+  const nSoldOut = useMemo(() => filtered.filter((o) => o.tracked && o.stock <= 0).length, [filtered]);
 
   const changeType = useCallback(async (sku: string, newType: string) => {
     setOils((prev) => prev?.map((o) => (o.sku === sku ? { ...o, oil_type: newType } : o)) ?? null);
-    await supabase.rpc('set_oil_type', { p_sku: sku, p_type: newType }); // capacity omitted -> preserved
-  }, []);
+    const { error } = await supabase.rpc('set_oil_type', { p_sku: sku, p_type: newType }); // capacity omitted -> preserved
+    if (error) await load(); // save failed -> resync from the DB so the UI doesn't lie
+  }, [load]);
   const changeCap = useCallback(async (sku: string, newCap: string, curType: string) => {
     if (!newCap) return;
     setOils((prev) => prev?.map((o) => (o.sku === sku ? { ...o, capacity: newCap } : o)) ?? null);
-    await supabase.rpc('set_oil_type', { p_sku: sku, p_type: curType, p_capacity: newCap });
-  }, []);
+    const { error } = await supabase.rpc('set_oil_type', { p_sku: sku, p_type: curType, p_capacity: newCap });
+    if (error) await load();
+  }, [load]);
 
   if (oils === null) return <div className="py-6 text-sm text-ink-3">Loading oils…</div>;
 
@@ -118,7 +135,7 @@ export default function OilFinder() {
         <button onClick={() => setEdit((v) => !v)} className="text-xs text-ink-3 hover:text-ink-2">{edit ? 'Done fixing' : 'Fix type / size ✎'}</button>
       </div>
 
-      <div className="mb-2 text-xs text-ink-3">{filtered.length} oil{filtered.length !== 1 ? 's' : ''} · {nInStock} in stock{nOrder ? ` · ${nOrder} order item${nOrder !== 1 ? 's' : ''}` : ''}</div>
+      <div className="mb-2 text-xs text-ink-3">{filtered.length} oil{filtered.length !== 1 ? 's' : ''} · {nInStock} in stock{nOrder ? ` · ${nOrder} order item${nOrder !== 1 ? 's' : ''}` : ''}{nSoldOut ? ` · ${nSoldOut} sold out` : ''}</div>
 
       <div className="divide-y divide-line rounded-xl border border-line bg-card">
         {filtered.length === 0 && <div className="px-3 py-6 text-center text-sm text-ink-3">No oils match — try widening the filters.</div>}
@@ -144,9 +161,9 @@ export default function OilFinder() {
                   <select value={o.oil_type} onChange={(e) => changeType(o.sku, e.target.value)} className="rounded border border-line px-1 py-0.5 text-xs">
                     {TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
                   </select>
-                  <select value={CAP_ORDER.includes(o.capacity ?? '') ? (o.capacity ?? '') : ''} onChange={(e) => changeCap(o.sku, e.target.value, o.oil_type)} title="Set size" className="rounded border border-line px-1 py-0.5 text-xs">
+                  <select value={o.capacity ?? ''} onChange={(e) => changeCap(o.sku, e.target.value, o.oil_type)} title="Set size" className="rounded border border-line px-1 py-0.5 text-xs">
                     <option value="">size?</option>
-                    {CAP_ORDER.map((c) => <option key={c} value={c}>{c}</option>)}
+                    {(o.capacity && !CAP_ORDER.includes(o.capacity) ? [o.capacity, ...CAP_ORDER] : CAP_ORDER).map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
               )}
