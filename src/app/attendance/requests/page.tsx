@@ -94,7 +94,7 @@ export default function RequestsPage() {
       const { data } = await supabase.auth.getSession();
       setAuthed(!!data.session);
       setMe(data.session?.user?.email ?? '');
-      if (data.session) { const { data: ok } = await supabase.rpc('can_access', { p_feature: 'attendance' }); setIsAdmin(ok === true); }
+      if (data.session) { const { data: ok } = await supabase.rpc('can_access', { p_feature: 'attendance_manage' }); setIsAdmin(ok === true); }
       else setIsAdmin(false);
     })();
   }, []);

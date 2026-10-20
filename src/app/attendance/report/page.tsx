@@ -43,7 +43,8 @@ function fmtDay(d: string): string {
 export default function AttendanceReportPage() {
   const today = useMemo(() => new Date(), []);
   const [authed, setAuthed] = useState<boolean | null>(null);
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null); // can VIEW attendance (page access)
+  const [canManage, setCanManage] = useState(false); // can EDIT days (attendance_manage) — gates the editor
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1);
   const [staffFilter, setStaffFilter] = useState<string>('ALL');
@@ -73,9 +74,13 @@ export default function AttendanceReportPage() {
       setAuthed(!!data.session);
       setMe(data.session?.user?.email ?? '');
       if (data.session) {
-        const { data: ok } = await supabase.rpc('can_access', { p_feature: 'attendance' });
+        const [{ data: ok }, { data: mg }] = await Promise.all([
+          supabase.rpc('can_access', { p_feature: 'attendance' }),
+          supabase.rpc('can_access', { p_feature: 'attendance_manage' }),
+        ]);
         setIsAdmin(ok === true);
-      } else setIsAdmin(false);
+        setCanManage(mg === true);
+      } else { setIsAdmin(false); setCanManage(false); }
     })();
   }, []);
 
@@ -463,7 +468,7 @@ export default function AttendanceReportPage() {
                       {(r.late_min ?? 0) > 0 ? `${r.late_min} min` : '—'}
                     </td>
                     <td className="px-3 py-2 text-right print:hidden">
-                      {r.status === 'PH' && editDay !== r.day ? (
+                      {!canManage ? null : r.status === 'PH' && editDay !== r.day ? (
                         <span className="text-xs text-ink-3" title="Public holiday — manage it on the Holidays page, not per staff.">Holiday 🔒</span>
                       ) : (
                         <button
