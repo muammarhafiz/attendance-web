@@ -192,11 +192,11 @@ export default function NavBar() {
 
   // Count of NEW emergency-absence reports → badge on the Attendance area. Attendance approvers only.
   const loadEmergencyNew = useCallback(async () => {
-    if (!access.attendance) { setEmergencyNew(0); return; }
+    if (!access.attendance_manage) { setEmergencyNew(0); return; }
     if (typeof document !== 'undefined' && document.hidden) return;
     const { count } = await supabase.from('emergency_absences').select('id', { count: 'exact', head: true }).eq('status', 'new');
     setEmergencyNew(count || 0);
-  }, [access.attendance]);
+  }, [access.attendance_manage]);
   useEffect(() => {
     loadEmergencyNew();
     const onVis = () => { if (typeof document === 'undefined' || !document.hidden) loadEmergencyNew(); };
@@ -316,7 +316,7 @@ export default function NavBar() {
           { href: '/attendance/today', label: 'Today' },
           { href: '/attendance/report', label: 'Report' },
           { href: '/attendance/balances', label: 'Leave balances' },
-          { href: '/attendance/requests', label: 'Requests', badge: counts.offday + counts.halfday + counts.advance + counts.mc + emergencyNew },
+          ...(access.attendance_manage ? [{ href: '/attendance/requests', label: 'Requests', badge: counts.offday + counts.halfday + counts.advance + counts.mc + emergencyNew }] : []),
           ...(access.owner ? [
             { href: '/attendance/holidays', label: 'Holidays' },
             { href: '/attendance/preview', label: 'Preview as staff' },
