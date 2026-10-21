@@ -57,6 +57,7 @@ export default function OilFinder() {
   const [q, setQ] = useState('');
   const [hideOut, setHideOut] = useState(true); // hide only sold-out tracked oils; in-stock + order items always show
   const [edit, setEdit] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
     const { data } = await supabase.rpc('oil_list');
@@ -98,6 +99,38 @@ export default function OilFinder() {
     if (error) await load();
   }, [load]);
 
+  // Build a WhatsApp-ready list of the currently-filtered oils to send a customer.
+  // Available only (skip sold-out), de-duped (collapse duplicate Niagawan entries).
+  const buildList = useCallback(() => {
+    const seen = new Set<string>();
+    const lines: string[] = [];
+    for (const o of filtered) {
+      if (o.tracked && o.stock <= 0) continue; // don't quote a sold-out oil to a customer
+      const key = `${o.name}|${o.capacity ?? ''}|${o.price}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      lines.push(`• ${o.name} — RM${o.price.toLocaleString('en-MY')} (${o.tracked ? 'in stock' : 'order'})`);
+    }
+    if (!lines.length) return '';
+    const bits = [visc, cap, type && TYPE_LABEL[type]].filter(Boolean).join(' · ');
+    return `${bits ? `Engine oil available (${bits}):` : 'Engine oil available:'}\n\n${lines.join('\n')}`;
+  }, [filtered, visc, cap, type]);
+
+  const sendWhatsApp = useCallback(() => {
+    const msg = buildList();
+    if (!msg) return;
+    // Mobile: native share sheet (pick WhatsApp + the customer's chat). Else: wa.me deep link.
+    const nav = navigator as Navigator & { share?: (d: { text: string }) => Promise<void> };
+    if (nav.share) nav.share({ text: msg }).catch(() => {});
+    else window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+  }, [buildList]);
+
+  const copyList = useCallback(async () => {
+    const msg = buildList();
+    if (!msg) return;
+    try { await navigator.clipboard.writeText(msg); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* clipboard blocked */ }
+  }, [buildList]);
+
   if (oils === null) return <div className="py-6 text-sm text-ink-3">Loading oils…</div>;
 
   return (
@@ -137,12 +170,31 @@ export default function OilFinder() {
 
       <div className="mb-2 text-xs text-ink-3">{filtered.length} oil{filtered.length !== 1 ? 's' : ''} · {nInStock} in stock{nOrder ? ` · ${nOrder} order item${nOrder !== 1 ? 's' : ''}` : ''}{nSoldOut ? ` · ${nSoldOut} sold out` : ''}</div>
 
+      {(nInStock + nOrder) > 0 && (
+        <div className="mb-3 flex gap-2">
+          <button
+            type="button"
+            onClick={sendWhatsApp}
+            className="flex-1 rounded-lg bg-[#25D366] px-3 py-2 text-sm font-semibold text-white hover:opacity-90"
+          >
+            Send on WhatsApp
+          </button>
+          <button
+            type="button"
+            onClick={copyList}
+            className="rounded-lg border border-line px-3 py-2 text-sm font-medium text-ink-2 hover:bg-ink/5"
+          >
+            {copied ? 'Copied ✓' : 'Copy'}
+          </button>
+        </div>
+      )}
+
       <div className="divide-y divide-line rounded-xl border border-line bg-card">
         {filtered.length === 0 && <div className="px-3 py-6 text-center text-sm text-ink-3">No oils match — try widening the filters.</div>}
         {filtered.map((o) => (
-          <div key={o.sku} className="flex items-center justify-between gap-3 px-3 py-2.5">
+          <div key={o.sku} className="flex items-start justify-between gap-3 px-3 py-2.5">
             <div className="min-w-0">
-              <div className="truncate text-sm font-medium text-ink-2" title={o.name}>{o.name}</div>
+              <div className="break-words text-sm font-medium text-ink-2" title={o.name}>{o.name}</div>
               <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
                 {o.viscosity && <span className="rounded bg-ink/5 px-1.5 py-0.5 font-medium text-ink-2">{o.viscosity}</span>}
                 <span className={`rounded px-1.5 py-0.5 font-medium ${TYPE_CLASS[o.oil_type] ?? TYPE_CLASS.other}`}>{TYPE_LABEL[o.oil_type] ?? o.oil_type}</span>
