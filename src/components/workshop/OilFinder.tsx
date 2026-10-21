@@ -57,6 +57,8 @@ export default function OilFinder() {
   const [q, setQ] = useState('');
   const [hideOut, setHideOut] = useState(true); // hide only sold-out tracked oils; in-stock + order items always show
   const [edit, setEdit] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [hiddenOils, setHiddenOils] = useState<{ sku: string; name: string; price: number }[]>([]);
 
   const load = useCallback(async () => {
     const { data } = await supabase.rpc('oil_list');
@@ -98,6 +100,57 @@ export default function OilFinder() {
     if (error) await load();
   }, [load]);
 
+  // Build a WhatsApp-ready list of the currently-filtered oils to send a customer.
+  // Available only (skip sold-out), de-duped (collapse duplicate Niagawan entries).
+  const buildList = useCallback(() => {
+    const seen = new Set<string>();
+    const lines: string[] = [];
+    for (const o of filtered) {
+      if (o.tracked && o.stock <= 0) continue; // don't quote a sold-out oil to a customer
+      const key = `${o.name}|${o.capacity ?? ''}|${o.price}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      lines.push(`• ${o.name} — RM${o.price.toLocaleString('en-MY')} (${o.tracked ? 'in stock' : 'order'})`);
+    }
+    if (!lines.length) return '';
+    const bits = [visc, cap, type && TYPE_LABEL[type]].filter(Boolean).join(' · ');
+    return `${bits ? `Engine oil available (${bits}):` : 'Engine oil available:'}\n\n${lines.join('\n')}`;
+  }, [filtered, visc, cap, type]);
+
+  const sendWhatsApp = useCallback(() => {
+    const msg = buildList();
+    if (!msg) return;
+    // Mobile: native share sheet (pick WhatsApp + the customer's chat). Else: wa.me deep link.
+    const nav = navigator as Navigator & { share?: (d: { text: string }) => Promise<void> };
+    if (nav.share) nav.share({ text: msg }).catch(() => {});
+    else window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+  }, [buildList]);
+
+  const copyList = useCallback(async () => {
+    const msg = buildList();
+    if (!msg) return;
+    try { await navigator.clipboard.writeText(msg); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* clipboard blocked */ }
+  }, [buildList]);
+
+  // Hidden oils (duplicates / junk the staff removed). Niagawan still scans them; they're just not shown.
+  const loadHidden = useCallback(async () => {
+    const { data } = await supabase.rpc('oil_list_hidden');
+    setHiddenOils((data ?? []).map((h: { sku: string; name: string; price: number }) => ({ ...h, price: Number(h.price) })));
+  }, []);
+  useEffect(() => { if (edit) loadHidden(); }, [edit, loadHidden]);
+
+  const hideOil = useCallback(async (sku: string) => {
+    setOils((prev) => prev?.filter((o) => o.sku !== sku) ?? null); // optimistic remove
+    const { error } = await supabase.rpc('set_oil_hidden', { p_sku: sku, p_hidden: true });
+    if (error) await load(); else await loadHidden();
+  }, [load, loadHidden]);
+  const unhideOil = useCallback(async (sku: string) => {
+    setHiddenOils((prev) => prev.filter((h) => h.sku !== sku)); // optimistic remove from the hidden list
+    const { error } = await supabase.rpc('set_oil_hidden', { p_sku: sku, p_hidden: false });
+    if (error) await loadHidden();
+    await load(); // bring it back into the main list
+  }, [load, loadHidden]);
+
   if (oils === null) return <div className="py-6 text-sm text-ink-3">Loading oils…</div>;
 
   return (
@@ -137,12 +190,31 @@ export default function OilFinder() {
 
       <div className="mb-2 text-xs text-ink-3">{filtered.length} oil{filtered.length !== 1 ? 's' : ''} · {nInStock} in stock{nOrder ? ` · ${nOrder} order item${nOrder !== 1 ? 's' : ''}` : ''}{nSoldOut ? ` · ${nSoldOut} sold out` : ''}</div>
 
+      {(nInStock + nOrder) > 0 && (
+        <div className="mb-3 flex gap-2">
+          <button
+            type="button"
+            onClick={sendWhatsApp}
+            className="flex-1 rounded-lg bg-[#25D366] px-3 py-2 text-sm font-semibold text-white hover:opacity-90"
+          >
+            Send on WhatsApp
+          </button>
+          <button
+            type="button"
+            onClick={copyList}
+            className="rounded-lg border border-line px-3 py-2 text-sm font-medium text-ink-2 hover:bg-ink/5"
+          >
+            {copied ? 'Copied ✓' : 'Copy'}
+          </button>
+        </div>
+      )}
+
       <div className="divide-y divide-line rounded-xl border border-line bg-card">
         {filtered.length === 0 && <div className="px-3 py-6 text-center text-sm text-ink-3">No oils match — try widening the filters.</div>}
         {filtered.map((o) => (
-          <div key={o.sku} className="flex items-center justify-between gap-3 px-3 py-2.5">
+          <div key={o.sku} className="flex items-start justify-between gap-3 px-3 py-2.5">
             <div className="min-w-0">
-              <div className="truncate text-sm font-medium text-ink-2" title={o.name}>{o.name}</div>
+              <div className="break-words text-sm font-medium text-ink-2" title={o.name}>{o.name}</div>
               <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
                 {o.viscosity && <span className="rounded bg-ink/5 px-1.5 py-0.5 font-medium text-ink-2">{o.viscosity}</span>}
                 <span className={`rounded px-1.5 py-0.5 font-medium ${TYPE_CLASS[o.oil_type] ?? TYPE_CLASS.other}`}>{TYPE_LABEL[o.oil_type] ?? o.oil_type}</span>
@@ -157,7 +229,7 @@ export default function OilFinder() {
             <div className="shrink-0 text-right">
               <div className="text-sm font-semibold text-ink">RM {o.price.toLocaleString('en-MY')}</div>
               {edit && (
-                <div className="mt-1 flex items-center justify-end gap-1">
+                <div className="mt-1 flex flex-wrap items-center justify-end gap-1">
                   <select value={o.oil_type} onChange={(e) => changeType(o.sku, e.target.value)} className="rounded border border-line px-1 py-0.5 text-xs">
                     {TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
                   </select>
@@ -165,12 +237,27 @@ export default function OilFinder() {
                     <option value="">size?</option>
                     {(o.capacity && !CAP_ORDER.includes(o.capacity) ? [o.capacity, ...CAP_ORDER] : CAP_ORDER).map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
+                  <button type="button" onClick={() => hideOil(o.sku)} title="Hide this oil from the finder" className="rounded border border-line px-1.5 py-0.5 text-xs font-medium text-bad hover:bg-bad-soft">Hide</button>
                 </div>
               )}
             </div>
           </div>
         ))}
       </div>
+
+      {edit && hiddenOils.length > 0 && (
+        <div className="mt-4">
+          <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-ink-3">Hidden ({hiddenOils.length}) — tap Unhide to restore</div>
+          <div className="divide-y divide-line rounded-xl border border-line bg-card">
+            {hiddenOils.map((h) => (
+              <div key={h.sku} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                <span className="min-w-0 break-words text-ink-3 line-through" title={h.name}>{h.name}</span>
+                <button type="button" onClick={() => unhideOil(h.sku)} className="shrink-0 rounded border border-line px-2 py-0.5 text-xs font-medium text-accent hover:bg-ink/5">Unhide</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
