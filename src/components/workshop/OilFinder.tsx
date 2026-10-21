@@ -100,22 +100,36 @@ export default function OilFinder() {
     if (error) await load();
   }, [load]);
 
-  // Build a WhatsApp-ready list of the currently-filtered oils to send a customer.
-  // Available only (skip sold-out), de-duped (collapse duplicate Niagawan entries).
+  // Build a WhatsApp-ready list for a customer: available only, de-duped, SORTED BY VISCOSITY,
+  // and — when the search is a single brand every oil shares — brand named ONCE in the header, not every line.
   const buildList = useCallback(() => {
     const seen = new Set<string>();
-    const lines: string[] = [];
+    const avail: Oil[] = [];
     for (const o of filtered) {
       if (o.tracked && o.stock <= 0) continue; // don't quote a sold-out oil to a customer
       const key = `${o.name}|${o.capacity ?? ''}|${o.price}`;
-      if (seen.has(key)) continue;
+      if (seen.has(key)) continue; // collapse duplicate Niagawan entries
       seen.add(key);
-      lines.push(`• ${o.name} — RM${o.price.toLocaleString('en-MY')} (${o.tracked ? 'in stock' : 'order'})`);
+      avail.push(o);
     }
-    if (!lines.length) return '';
-    const bits = [visc, cap, type && TYPE_LABEL[type]].filter(Boolean).join(' · ');
-    return `${bits ? `Engine oil available (${bits}):` : 'Engine oil available:'}\n\n${lines.join('\n')}`;
-  }, [filtered, visc, cap, type]);
+    if (!avail.length) return '';
+    avail.sort((a, b) => (viscKey(a.viscosity ?? '') - viscKey(b.viscosity ?? '')) || a.name.localeCompare(b.name));
+    // How many leading words of a name form the searched brand (0 = name doesn't start with the brand).
+    const qn = norm(q);
+    const brandWords = (name: string): number => {
+      const w = name.split(/\s+/); let acc = '', i = 0;
+      while (i < w.length && qn.startsWith(acc + norm(w[i]))) { acc += norm(w[i]); i++; }
+      return acc === qn && i < w.length ? i : 0;
+    };
+    const strip = !!qn && avail.every((o) => brandWords(o.name) > 0); // every oil shares the brand -> safe to drop it
+    const titlecase = (s: string) => s.trim().replace(/\s+/g, ' ').split(' ').map((w) => (w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w)).join(' ');
+    const lines = avail.map((o) => {
+      const nm = strip ? o.name.split(/\s+/).slice(brandWords(o.name)).join(' ') : o.name;
+      return `• ${nm} — RM${o.price.toLocaleString('en-MY')} (${o.tracked ? 'in stock' : 'order'})`;
+    });
+    const bits = [strip ? titlecase(q) : '', visc, cap, type && TYPE_LABEL[type]].filter(Boolean).join(' · ');
+    return `*Engine oil available${bits ? ` (${bits})` : ''}:*\n\n${lines.join('\n')}`;
+  }, [filtered, visc, cap, type, q]);
 
   const sendWhatsApp = useCallback(() => {
     const msg = buildList();
