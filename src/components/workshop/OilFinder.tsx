@@ -58,6 +58,7 @@ export default function OilFinder() {
   const [hideOut, setHideOut] = useState(true); // hide only sold-out tracked oils; in-stock + order items always show
   const [edit, setEdit] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [hiddenOils, setHiddenOils] = useState<{ sku: string; name: string; price: number }[]>([]);
 
   const load = useCallback(async () => {
     const { data } = await supabase.rpc('oil_list');
@@ -130,6 +131,25 @@ export default function OilFinder() {
     if (!msg) return;
     try { await navigator.clipboard.writeText(msg); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* clipboard blocked */ }
   }, [buildList]);
+
+  // Hidden oils (duplicates / junk the staff removed). Niagawan still scans them; they're just not shown.
+  const loadHidden = useCallback(async () => {
+    const { data } = await supabase.rpc('oil_list_hidden');
+    setHiddenOils((data ?? []).map((h: { sku: string; name: string; price: number }) => ({ ...h, price: Number(h.price) })));
+  }, []);
+  useEffect(() => { if (edit) loadHidden(); }, [edit, loadHidden]);
+
+  const hideOil = useCallback(async (sku: string) => {
+    setOils((prev) => prev?.filter((o) => o.sku !== sku) ?? null); // optimistic remove
+    const { error } = await supabase.rpc('set_oil_hidden', { p_sku: sku, p_hidden: true });
+    if (error) await load(); else await loadHidden();
+  }, [load, loadHidden]);
+  const unhideOil = useCallback(async (sku: string) => {
+    setHiddenOils((prev) => prev.filter((h) => h.sku !== sku)); // optimistic remove from the hidden list
+    const { error } = await supabase.rpc('set_oil_hidden', { p_sku: sku, p_hidden: false });
+    if (error) await loadHidden();
+    await load(); // bring it back into the main list
+  }, [load, loadHidden]);
 
   if (oils === null) return <div className="py-6 text-sm text-ink-3">Loading oils…</div>;
 
@@ -209,7 +229,7 @@ export default function OilFinder() {
             <div className="shrink-0 text-right">
               <div className="text-sm font-semibold text-ink">RM {o.price.toLocaleString('en-MY')}</div>
               {edit && (
-                <div className="mt-1 flex items-center justify-end gap-1">
+                <div className="mt-1 flex flex-wrap items-center justify-end gap-1">
                   <select value={o.oil_type} onChange={(e) => changeType(o.sku, e.target.value)} className="rounded border border-line px-1 py-0.5 text-xs">
                     {TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
                   </select>
@@ -217,12 +237,27 @@ export default function OilFinder() {
                     <option value="">size?</option>
                     {(o.capacity && !CAP_ORDER.includes(o.capacity) ? [o.capacity, ...CAP_ORDER] : CAP_ORDER).map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
+                  <button type="button" onClick={() => hideOil(o.sku)} title="Hide this oil from the finder" className="rounded border border-line px-1.5 py-0.5 text-xs font-medium text-bad hover:bg-bad-soft">Hide</button>
                 </div>
               )}
             </div>
           </div>
         ))}
       </div>
+
+      {edit && hiddenOils.length > 0 && (
+        <div className="mt-4">
+          <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-ink-3">Hidden ({hiddenOils.length}) — tap Unhide to restore</div>
+          <div className="divide-y divide-line rounded-xl border border-line bg-card">
+            {hiddenOils.map((h) => (
+              <div key={h.sku} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                <span className="min-w-0 break-words text-ink-3 line-through" title={h.name}>{h.name}</span>
+                <button type="button" onClick={() => unhideOil(h.sku)} className="shrink-0 rounded border border-line px-2 py-0.5 text-xs font-medium text-accent hover:bg-ink/5">Unhide</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
