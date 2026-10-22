@@ -19,6 +19,7 @@ export default function AssistantPage() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -66,6 +67,29 @@ export default function AssistantPage() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input); }
   };
 
+  // Copy the whole conversation as plain text (for pasting back as feedback).
+  const copyLog = useCallback(async () => {
+    if (!messages.length) return;
+    const text = 'ZORDAQ Assistant — chat log\n\n' +
+      messages.map((m) => `${m.role === 'user' ? 'You' : 'Assistant'}: ${m.content}`).join('\n\n');
+    const done = () => { setCopied(true); setTimeout(() => setCopied(false), 1500); };
+    try {
+      await navigator.clipboard.writeText(text);
+      done();
+    } catch {
+      // Fallback for app webviews without the async clipboard API.
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.focus(); ta.select();
+        document.execCommand('copy'); document.body.removeChild(ta);
+        done();
+      } catch { /* clipboard unavailable */ }
+    }
+  }, [messages]);
+
+  const clearChat = useCallback(() => { if (!busy) { setMessages([]); setInput(''); } }, [busy]);
+
   if (authed === null || canUse === null) {
     return <div className="py-16 text-center text-sm text-ink-3">Loading…</div>;
   }
@@ -92,6 +116,18 @@ export default function AssistantPage() {
           <h1 className="text-lg font-semibold leading-tight text-ink">Assistant</h1>
           <p className="text-xs text-ink-3">Ask about parts, prices, stock &amp; invoices — answers come from live data.</p>
         </div>
+        {messages.length > 0 && (
+          <div className="ml-auto flex items-center gap-1.5">
+            <button onClick={copyLog} aria-label="Copy chat log"
+              className="rounded-lg border border-line bg-card px-2.5 py-1.5 text-xs font-medium text-ink-2 shadow-sm transition hover:bg-ink/5 hover:text-ink">
+              {copied ? 'Copied ✓' : 'Copy chat'}
+            </button>
+            <button onClick={clearChat} aria-label="New chat"
+              className="rounded-lg border border-line bg-card px-2.5 py-1.5 text-xs font-medium text-ink-2 shadow-sm transition hover:bg-ink/5 hover:text-ink">
+              New
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Thread */}
