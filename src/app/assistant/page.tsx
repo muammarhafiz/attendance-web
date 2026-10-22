@@ -9,7 +9,7 @@ type Msg = { role: 'user' | 'assistant'; content: string };
 const EXAMPLES = [
   'Got X70 front brake pad? How much?',
   'Harga Perodua 5W30 4L',
-  'Myvi brake pad rear in stock?',
+  'Apa yang nak habis stock?',
   'Invoice for WYU6175',
 ];
 
