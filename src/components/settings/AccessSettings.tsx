@@ -13,6 +13,7 @@ const FEATURES: Feature[] = [
   { key: 'workshop', label: 'Workshop' },
   { key: 'add_part', label: 'Part arrived' },
   { key: 'intake', label: 'Customer check-in' },
+  { key: 'assistant', label: 'Assistant', note: 'AI chat' },
   { key: 'attendance', label: 'Attendance', note: 'view' },
   { key: 'attendance_manage', label: 'Attendance ✎', note: 'edit/approve' },
   { key: 'niagawan', label: 'Niagawan' },
