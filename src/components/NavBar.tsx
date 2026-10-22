@@ -46,7 +46,7 @@ function fmtWhen(iso: string): string {
 }
 
 // Monochrome line icons (currentColor) — one per nav item, keyed by IconName.
-type IconName = 'dashboard' | 'wrench' | 'sales' | 'box' | 'cart' | 'bars' | 'bank' | 'clock' | 'calendar' | 'users' | 'wallet' | 'office' | 'settings';
+type IconName = 'dashboard' | 'wrench' | 'sales' | 'box' | 'cart' | 'bars' | 'bank' | 'clock' | 'calendar' | 'users' | 'wallet' | 'office' | 'settings' | 'spark';
 function NavIcon({ name }: { name: IconName }) {
   const p: Record<IconName, React.ReactNode> = {
     dashboard: (<><rect x="3" y="3" width="8" height="8" rx="2" /><rect x="13" y="3" width="8" height="8" rx="2" /><rect x="3" y="13" width="8" height="8" rx="2" /><rect x="13" y="13" width="8" height="8" rx="2" /></>),
@@ -62,6 +62,7 @@ function NavIcon({ name }: { name: IconName }) {
     wallet: (<><rect x="2.5" y="6" width="19" height="13" rx="2.5" /><path d="M2.5 10h19" /><path d="M16 15h2" /></>),
     office: (<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />),
     settings: (<><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.5 1.5 0 0 0 .3 1.7l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.5 1.5 0 0 0-2.5 1V21a2 2 0 1 1-4 0v-.1a1.5 1.5 0 0 0-2.5-1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.5 1.5 0 0 0-1-2.5H3a2 2 0 1 1 0-4h.1a1.5 1.5 0 0 0 1-2.5l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.5 1.5 0 0 0 1.7.3H9a1.5 1.5 0 0 0 1-1.4V3a2 2 0 1 1 4 0v.1a1.5 1.5 0 0 0 2.5 1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.5 1.5 0 0 0 1 2.5H21a2 2 0 1 1 0 4h-.1a1.5 1.5 0 0 0-1.4 1Z" /></>),
+    spark: (<><path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9L12 3Z" /><path d="M19 14l.9 2.1 2.1.9-2.1.9L19 20l-.9-2.1-2.1-.9 2.1-.9L19 14Z" /></>),
   };
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">{p[name]}</svg>
@@ -295,6 +296,7 @@ export default function NavBar() {
     const groups: NavGroup[] = [
       { label: 'Overview', items: [
         ...(access.owner ? [{ label: 'Dashboard', href: '/dashboard', icon: 'dashboard' } as NavItem] : []),
+        ...(access.assistant ? [{ label: 'Assistant', href: '/assistant', icon: 'spark' } as NavItem] : []),
       ] },
       { label: 'Shop', items: [
         ...(canBoard ? [{ label: 'Workshop', href: '/workshop', icon: 'wrench' } as NavItem] : []),
