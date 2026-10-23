@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useVisibleInterval } from '@/lib/useVisibleInterval';
 import OilFinder from '@/components/workshop/OilFinder';
+import TyreFinder from '@/components/workshop/TyreFinder';
 import BnplCalc from '@/components/workshop/BnplCalc';
 
 type Card = {
@@ -301,7 +302,7 @@ export default function WorkshopBoardPage() {
     return { years, active, shown, total };
   }, [debts, debtYear]);
 
-  const [tab, setTab] = useState<'board' | 'oil' | 'bnpl'>('board');
+  const [tab, setTab] = useState<'board' | 'oil' | 'tyre' | 'bnpl'>('board');
 
   if (authed === null || (authed && canWrite === null)) return <div className="p-6 text-sm text-ink-3">Checking session…</div>;
   if (!authed) return <div className="p-6 text-sm text-ink-2">Please sign in to see the workshop board.</div>;
@@ -330,10 +331,12 @@ export default function WorkshopBoardPage() {
       <div className="mb-4 flex gap-1 border-b border-line">
         <button onClick={() => setTab('board')} className={`-mb-px rounded-t-md px-3 py-2 text-sm font-medium ${tab === 'board' ? 'border-b-2 border-ink text-ink' : 'text-ink-2 hover:text-ink-2'}`}>Board</button>
         <button onClick={() => setTab('oil')} className={`-mb-px rounded-t-md px-3 py-2 text-sm font-medium ${tab === 'oil' ? 'border-b-2 border-ink text-ink' : 'text-ink-2 hover:text-ink-2'}`}>🛢️ Oil finder</button>
+        <button onClick={() => setTab('tyre')} className={`-mb-px rounded-t-md px-3 py-2 text-sm font-medium ${tab === 'tyre' ? 'border-b-2 border-ink text-ink' : 'text-ink-2 hover:text-ink-2'}`}>🛞 Tyre quote</button>
         <button onClick={() => setTab('bnpl')} className={`-mb-px rounded-t-md px-3 py-2 text-sm font-medium ${tab === 'bnpl' ? 'border-b-2 border-ink text-ink' : 'text-ink-2 hover:text-ink-2'}`}>🧮 BNPL fee</button>
       </div>
 
       {tab === 'oil' && <OilFinder />}
+      {tab === 'tyre' && <TyreFinder />}
       {tab === 'bnpl' && <BnplCalc />}
 
       {tab === 'board' && (<>
