@@ -52,6 +52,16 @@ const SKILLS: Record<string, Skill> = {
       parameters: { type: 'OBJECT', properties: { query: { type: 'STRING', description: 'invoice number, plate, or customer name' } }, required: ['query'] },
     },
   },
+  car_history: {
+    rpc: 'assistant_car_history', feature: 'assistant',
+    params: (a) => ({ plate: String(a.plate ?? '').slice(0, 20) }),
+    decl: {
+      name: 'car_history',
+      description:
+        "Look up a car's past visits by its number plate — the engine oil it used and how many items, each visit, newest first. Use for \"what oil did this car take last time\", \"what oil for plate X\", or a car's service history. (Older visits may show no oil until history is fully captured.)",
+      parameters: { type: 'OBJECT', properties: { plate: { type: 'STRING', description: 'the car number plate, e.g. WXM7689' } }, required: ['plate'] },
+    },
+  },
   low_stock: {
     rpc: 'assistant_low_stock', feature: 'assistant',
     params: (a) => ({ limit_n: clampInt(a.limit, 20, 40) }),
@@ -87,7 +97,7 @@ function systemPrompt(): string {
   return `You are ZORDAQ Auto Service's in-app assistant for workshop staff. ZORDAQ is a Malaysian car workshop (servicing, parts, engine oils). Today is ${today}. Reply briefly and practically, in the SAME language the person writes (Malay, English, or a mix).
 
 You have tools that read the shop's REAL live data. Follow these rules strictly:
-- Parts, products, oil, price or stock -> product_search. "What's running low / need to reorder" -> low_stock. A sales invoice -> invoice_lookup. Sales / profit / revenue / margin for a day or month -> sales_summary. Who owes money / debtors / receivables -> debtors.
+- Parts, products, oil, price or stock -> product_search. "What's running low / need to reorder" -> low_stock. A car's past oil / service history by plate ("what oil did this car take last time") -> car_history. A sales invoice -> invoice_lookup. Sales / profit / revenue / margin for a day or month -> sales_summary. Who owes money / debtors / receivables -> debtors.
 - NEVER recall or guess a price, SKU, stock level or figure — only state values a tool actually returned in this conversation. If a tool returns nothing, say you couldn't find it; do not invent an answer.
 - For sales_summary, convert the person's words into "today", "yesterday", "this month", "last month", a "YYYY-MM" month, or a "YYYY-MM-DD" day, using today's date above.
 - When you list products, show each option with its price and whether it is in stock (stock > 0) or an "order item" (stock 0 / not tracked). Keep it short; the staff will pick. Money is Malaysian Ringgit (RM).
