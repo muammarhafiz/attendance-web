@@ -85,6 +85,7 @@ function fillWa(tpl: string, name: string, car: string): string {
 export default function WorkshopBoardPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [canWrite, setCanWrite] = useState<boolean | null>(null); // null = still checking; supervisors/admins only
+  const [isAdmin, setIsAdmin] = useState(false); // owner/admin — can reach Manage Tyres
   const [cards, setCards] = useState<Card[]>([]);
   const [contacts, setContacts] = useState<Record<string, Contact>>({}); // sale_id -> customer phone/name, for the "car ready" WhatsApp button
   const [memos, setMemos] = useState<Memo[]>([]);
@@ -115,6 +116,8 @@ export default function WorkshopBoardPage() {
         if (w === true) {
           const { data: names } = await supabase.rpc('board_staff_names');
           setStaffNames((names ?? []) as StaffName[]);
+          const { data: adm } = await supabase.rpc('is_admin');
+          setIsAdmin(adm === true);
         }
       } else setCanWrite(false);
     })();
@@ -336,7 +339,14 @@ export default function WorkshopBoardPage() {
       </div>
 
       {tab === 'oil' && <OilFinder />}
-      {tab === 'tyre' && <TyreFinder />}
+      {tab === 'tyre' && (<>
+        {isAdmin && (
+          <div className="mb-3">
+            <a href="/tyres-admin" className="inline-flex items-center gap-1 rounded-lg border border-line bg-card px-3 py-1.5 text-sm font-medium text-ink-2 hover:bg-ink/5">⚙️ Manage tyres <span className="text-ink-3">— import price list, rates</span></a>
+          </div>
+        )}
+        <TyreFinder />
+      </>)}
       {tab === 'bnpl' && <BnplCalc />}
 
       {tab === 'board' && (<>
