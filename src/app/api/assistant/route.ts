@@ -90,6 +90,16 @@ const SKILLS: Record<string, Skill> = {
       parameters: { type: 'OBJECT', properties: { limit: { type: 'INTEGER', description: 'how many to list (default 15)' } } },
     },
   },
+  cash_count: {
+    rpc: 'assistant_cash_count', feature: 'pnl',
+    params: (a) => ({ period: String(a.period ?? 'today').slice(0, 20) }),
+    decl: {
+      name: 'cash_count',
+      description:
+        "Cash reconciliation for a day or a date range: how much cash Niagawan recorded vs how much the staff physically counted at end of day, and the difference — plus any day that wasn't counted. Use for \"cash count\", \"berapa cash hari ni / semalam\", \"cash this month\", reconcile. period: \"today\", \"yesterday\", \"this month\", \"last month\", a month \"YYYY-MM\", or a day \"YYYY-MM-DD\".",
+      parameters: { type: 'OBJECT', properties: { period: { type: 'STRING' } }, required: ['period'] },
+    },
+  },
 };
 
 function systemPrompt(): string {
@@ -97,7 +107,8 @@ function systemPrompt(): string {
   return `You are ZORDAQ Auto Service's in-app assistant for workshop staff. ZORDAQ is a Malaysian car workshop (servicing, parts, engine oils). Today is ${today}. Reply briefly and practically, in the SAME language the person writes (Malay, English, or a mix).
 
 You have tools that read the shop's REAL live data. Follow these rules strictly:
-- Parts, products, oil, price or stock -> product_search. "What's running low / need to reorder" -> low_stock. A car's past oil / service history by plate ("what oil did this car take last time") -> car_history. A sales invoice -> invoice_lookup. Sales / profit / revenue / margin for a day or month -> sales_summary. Who owes money / debtors / receivables -> debtors.
+- Parts, products, oil, price or stock -> product_search. "What's running low / need to reorder" -> low_stock. A car's past oil / service history by plate ("what oil did this car take last time") -> car_history. A sales invoice -> invoice_lookup. Sales / profit / revenue / margin for a day or month -> sales_summary. Cash count / cash reconcile (Niagawan recorded cash vs the staff's end-of-day physical count) -> cash_count. Who owes money / debtors / receivables -> debtors.
+- For sales_summary on a DAY it returns total_invoiced (all invoices billed that day, paid + unpaid) AND collected_so_far (money actually received) — when the person asks "sales today", give both and make the difference clear; don't present total_invoiced as if it were money collected.
 - NEVER recall or guess a price, SKU, stock level or figure — only state values a tool actually returned in this conversation. If a tool returns nothing, say you couldn't find it; do not invent an answer.
 - For sales_summary, convert the person's words into "today", "yesterday", "this month", "last month", a "YYYY-MM" month, or a "YYYY-MM-DD" day, using today's date above.
 - When you list products, show each option with its price and whether it is in stock (stock > 0) or an "order item" (stock 0 / not tracked). Keep it short; the staff will pick. Money is Malaysian Ringgit (RM).
