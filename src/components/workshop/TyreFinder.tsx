@@ -13,6 +13,14 @@ type Tyre = {
   // only — null/absent for everyone else, so supervisors and customers never see sourcing or cost.
   dealer?: string | null; dealer_phone?: string | null;
   cost?: number | null; margin?: number | null; margin_pct?: number | null;
+  price_list_date?: string | null;
+};
+
+// Format a YYYY-MM-DD list date as "23 Oct 2026" without timezone drift (parse the parts).
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const fmtDate = (d?: string | null): string => {
+  const m = String(d ?? '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1] ?? ''} ${m[1]}` : '';
 };
 type Config = { valve_rate: number; balancing_rate: number; alignment_sedan: number; alignment_suv: number };
 
@@ -172,7 +180,7 @@ export default function TyreFinder() {
                       {t.cost != null && (
                         <div className="text-[11px] text-ink-3" title="Admin only — supplier cost / your margin">cost {rm(t.cost)}<span className="text-good"> · +{rm(t.margin ?? 0)}{t.margin_pct != null ? ` (${t.margin_pct}%)` : ''}</span></div>
                       )}
-                      {t.dealer && <div className="text-[11px] text-ink-3" title="Admin only — supplier">{t.dealer}</div>}
+                      {(t.dealer || t.price_list_date) && <div className="text-[11px] text-ink-3" title="Admin only — supplier & price-list date">{[t.dealer, t.price_list_date ? `list ${fmtDate(t.price_list_date)}` : ''].filter(Boolean).join(' · ')}</div>}
                     </div>
                   </button>
 
@@ -219,6 +227,7 @@ export default function TyreFinder() {
                               )}
                             </>
                           ) : <span className="text-ink-3">(no phone on file)</span>}
+                          {t.price_list_date && <span className="text-ink-3">· price list {fmtDate(t.price_list_date)}</span>}
                         </div>
                       )}
                       <div className="flex gap-2">
