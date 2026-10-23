@@ -8,9 +8,10 @@ import { supabase } from '@/lib/supabaseClient';
 
 type Tyre = {
   brand: string; pattern: string | null; origin: string | null; size: string;
-  rim: number | null; load_speed: string | null; retail: number; dealer: string;
-  // Only returned by tyre_search() to admins — the supplier nett cost and the per-tyre margin.
-  // Null / absent for everyone else, so supervisors and customers never see cost.
+  rim: number | null; load_speed: string | null; retail: number;
+  // Supplier (dealer) name + phone and the cost/margin are returned by tyre_search() to ADMINS
+  // only — null/absent for everyone else, so supervisors and customers never see sourcing or cost.
+  dealer?: string | null; dealer_phone?: string | null;
   cost?: number | null; margin?: number | null; margin_pct?: number | null;
 };
 type Config = { valve_rate: number; balancing_rate: number; alignment_sedan: number; alignment_suv: number };
@@ -23,6 +24,15 @@ const QUICK_SIZES = ['185/55R15', '185/60R15', '195/55R15', '205/55R16', '215/55
 const roundNice = (n: number) => Math.ceil(n / 10) * 10;
 const rm = (n: number) => `RM${Math.round(n).toLocaleString('en-MY')}`;
 const tyreLabel = (t: Tyre) => [t.brand, t.pattern].filter(Boolean).join(' ');
+
+// Malaysian phone -> wa.me number (digits only, international, no leading 0/+) for a reorder chat.
+const waNumber = (raw: string | null | undefined): string | null => {
+  if (!raw) return null;
+  let d = raw.replace(/\D/g, '');
+  if (!d) return null;
+  if (!d.startsWith('60')) d = '60' + d.replace(/^0/, '');
+  return d.length >= 10 && d.length <= 15 ? d : null;
+};
 
 export default function TyreFinder() {
   const [cfg, setCfg] = useState<Config | null>(null);
@@ -162,6 +172,7 @@ export default function TyreFinder() {
                       {t.cost != null && (
                         <div className="text-[11px] text-ink-3" title="Admin only — supplier cost / your margin">cost {rm(t.cost)}<span className="text-good"> · +{rm(t.margin ?? 0)}{t.margin_pct != null ? ` (${t.margin_pct}%)` : ''}</span></div>
                       )}
+                      {t.dealer && <div className="text-[11px] text-ink-3" title="Admin only — supplier">{t.dealer}</div>}
                     </div>
                   </button>
 
@@ -196,6 +207,20 @@ export default function TyreFinder() {
                         )}
                       </div>
 
+                      {t.dealer && (
+                        <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-card p-2.5 text-xs ring-1 ring-line" title="Admin only — where to reorder this tyre">
+                          <span className="font-medium text-ink-2">Supplier:</span>
+                          <span className="text-ink-2">{t.dealer}</span>
+                          {t.dealer_phone ? (
+                            <>
+                              <a href={`tel:${t.dealer_phone.replace(/\s/g, '')}`} className="font-medium text-accent hover:underline">{t.dealer_phone}</a>
+                              {waNumber(t.dealer_phone) && (
+                                <a href={`https://wa.me/${waNumber(t.dealer_phone)}`} target="_blank" rel="noopener noreferrer" className="rounded-md bg-[#25D366] px-2 py-0.5 font-semibold text-white hover:opacity-90">Order 💬</a>
+                              )}
+                            </>
+                          ) : <span className="text-ink-3">(no phone on file)</span>}
+                        </div>
+                      )}
                       <div className="flex gap-2">
                         <button type="button" onClick={() => sendWhatsApp(t)} className="flex-1 rounded-lg bg-[#25D366] px-3 py-2 text-sm font-semibold text-white hover:opacity-90">Send quote on WhatsApp</button>
                         <button type="button" onClick={() => copyMsg(t)} className="rounded-lg border border-line px-3 py-2 text-sm font-medium text-ink-2 hover:bg-ink/5">{copied ? 'Copied ✓' : 'Copy'}</button>
