@@ -9,6 +9,9 @@ import { supabase } from '@/lib/supabaseClient';
 type Tyre = {
   brand: string; pattern: string | null; origin: string | null; size: string;
   rim: number | null; load_speed: string | null; retail: number; dealer: string;
+  // Only returned by tyre_search() to admins — the supplier nett cost and the per-tyre margin.
+  // Null / absent for everyone else, so supervisors and customers never see cost.
+  cost?: number | null; margin?: number | null; margin_pct?: number | null;
 };
 type Config = { valve_rate: number; balancing_rate: number; alignment_sedan: number; alignment_suv: number };
 
@@ -54,7 +57,8 @@ export default function TyreFinder() {
     setLoading(true);
     const { data } = await supabase.rpc('tyre_search', { q: trimmed });
     if (id !== reqId.current) return; // a newer search superseded this one
-    setResults(((data ?? []) as Tyre[]).map((t) => ({ ...t, retail: Number(t.retail) })));
+    const n = (v: unknown) => (v == null ? null : Number(v));
+    setResults(((data ?? []) as Tyre[]).map((t) => ({ ...t, retail: Number(t.retail), cost: n(t.cost), margin: n(t.margin), margin_pct: n(t.margin_pct) })));
     setLoading(false);
   }, []);
   useEffect(() => {
@@ -155,6 +159,9 @@ export default function TyreFinder() {
                     <div className="shrink-0 text-right">
                       <div className="text-sm font-semibold text-ink">{rm(t.retail)}<span className="text-xs font-normal text-ink-3">/pc</span></div>
                       <div className="text-[11px] text-ink-3">set of 4 ≈ {rm(quote(t).total)}</div>
+                      {t.cost != null && (
+                        <div className="text-[11px] text-ink-3" title="Admin only — supplier cost / your margin">cost {rm(t.cost)}<span className="text-good"> · +{rm(t.margin ?? 0)}{t.margin_pct != null ? ` (${t.margin_pct}%)` : ''}</span></div>
+                      )}
                     </div>
                   </button>
 
@@ -184,6 +191,9 @@ export default function TyreFinder() {
                         {balancing && <div className="flex justify-between"><span>Balancing {rm(cfg?.balancing_rate ?? 0)} × {qty}</span><span className="tabular-nums">{rm(Q.balAmt)}</span></div>}
                         {alignment && <div className="flex justify-between"><span>Alignment ({suv ? 'SUV' : 'sedan'})</span><span className="tabular-nums">{rm(Q.alignAmt)}</span></div>}
                         <div className="mt-1 flex justify-between border-t border-line pt-1 text-sm font-semibold text-ink"><span>All-in</span><span className="tabular-nums">{rm(Q.total)}</span></div>
+                        {t.cost != null && (
+                          <div className="mt-1 flex justify-between border-t border-line pt-1 text-[11px] text-ink-3" title="Admin only — not shown to the customer"><span>Tyre cost {rm(t.cost)} × {qty}</span><span className="tabular-nums text-good">margin +{rm((t.margin ?? 0) * qty)}</span></div>
+                        )}
                       </div>
 
                       <div className="flex gap-2">
