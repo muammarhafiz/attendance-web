@@ -53,6 +53,12 @@ const CLASSIFY = [
 ];
 
 const fmtD = (d: string | null) => { if (!d) return ''; const [y, m, dd] = d.split('-'); return `${dd}/${m}/${y}`; };
+// When the staff submitted the request — date + time in KL (Asia/Kuala_Lumpur), e.g. "23 Oct 2026, 2:15 PM".
+const fmtDT = (iso: string | null) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? '' : d.toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+};
 const rm = (n: number | null) => `RM${Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const halfLabel = (h: string | null) => (h === 'PM' ? 'PM (1:30–6:00)' : 'AM (9:30–1:30)');
 // "Needs action" — fresh requests (pending / new) plus anything waiting on proof.
@@ -396,6 +402,7 @@ export default function RequestsPage() {
                             </span>
                           )}
                         </div>
+                        <div className="text-[11px] text-ink-3">Requested {fmtDT(r.ts)}</div>
                         {r.reason && <div className="text-xs text-ink-2">{r.reason}</div>}
                         {r.informed_supervisor && <div className="text-xs text-ink-3">Informed: {r.informed_supervisor}</div>}
                         {r.review_note && <div className="mt-0.5 text-xs text-ink-3">{r.review_note}</div>}
