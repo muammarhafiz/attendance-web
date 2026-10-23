@@ -45,6 +45,8 @@ const waNumber = (raw: string | null | undefined): string | null => {
 export default function TyreFinder() {
   const [cfg, setCfg] = useState<Config | null>(null);
   const [q, setQ] = useState('');
+  const [brand, setBrand] = useState(''); // selected brand chip ('' = any)
+  const [brands, setBrands] = useState<string[]>([]);
   const [results, setResults] = useState<Tyre[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [sel, setSel] = useState<string | null>(null); // key of the expanded tyre
@@ -61,28 +63,35 @@ export default function TyreFinder() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.rpc('tyre_config_get');
-      if (data) setCfg(data as Config);
+      const [{ data: c }, { data: b }] = await Promise.all([
+        supabase.rpc('tyre_config_get'),
+        supabase.rpc('tyre_brands'),
+      ]);
+      if (c) setCfg(c as Config);
+      if (Array.isArray(b)) setBrands(b as string[]);
     })();
   }, []);
 
   // Debounced search — the RPC matches size tokens on digits only (so "225/55R19", "225 55 19",
-  // "225/55 r19" all hit) and brand/pattern/origin words, cheapest first.
-  const runSearch = useCallback(async (query: string) => {
-    const trimmed = query.trim();
-    if (trimmed.length < 2) { setResults(null); setLoading(false); return; }
+  // "225/55 r19" all hit) and brand/pattern/origin words, cheapest first. A selected brand is
+  // folded into the query (so brand-only browsing works) and then exact-matched client-side.
+  const runSearch = useCallback(async (query: string, brandSel: string) => {
+    const effective = [query.trim(), brandSel].filter(Boolean).join(' ');
+    if (effective.length < 2) { setResults(null); setLoading(false); return; }
     const id = ++reqId.current;
     setLoading(true);
-    const { data } = await supabase.rpc('tyre_search', { q: trimmed });
+    const { data } = await supabase.rpc('tyre_search', { q: effective });
     if (id !== reqId.current) return; // a newer search superseded this one
     const n = (v: unknown) => (v == null ? null : Number(v));
-    setResults(((data ?? []) as Tyre[]).map((t) => ({ ...t, retail: Number(t.retail), cost: n(t.cost), margin: n(t.margin), margin_pct: n(t.margin_pct) })));
+    let rows = ((data ?? []) as Tyre[]).map((t) => ({ ...t, retail: Number(t.retail), cost: n(t.cost), margin: n(t.margin), margin_pct: n(t.margin_pct) }));
+    if (brandSel) rows = rows.filter((t) => t.brand === brandSel);
+    setResults(rows);
     setLoading(false);
   }, []);
   useEffect(() => {
-    const h = setTimeout(() => runSearch(q), 250);
+    const h = setTimeout(() => runSearch(q, brand), 250);
     return () => clearTimeout(h);
-  }, [q, runSearch]);
+  }, [q, brand, runSearch]);
 
   const key = (t: Tyre, i: number) => `${t.brand}|${t.pattern}|${t.size}|${t.retail}|${i}`;
 
@@ -146,9 +155,23 @@ export default function TyreFinder() {
         ))}
       </div>
 
-      {q.trim().length < 2 && (
+      {brands.length > 0 && (
+        <>
+          <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-ink-3">Brand</div>
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            <button type="button" onClick={() => { setBrand(''); setSel(null); }}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition ${brand === '' ? 'bg-btn text-btn-ink' : 'bg-card text-ink-2 ring-1 ring-line hover:bg-ink/5'}`}>Any</button>
+            {brands.map((b) => (
+              <button key={b} type="button" onClick={() => { setBrand((cur) => (cur === b ? '' : b)); setSel(null); }}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition ${brand === b ? 'bg-btn text-btn-ink' : 'bg-card text-ink-2 ring-1 ring-line hover:bg-ink/5'}`}>{b}</button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {q.trim().length < 2 && !brand && (
         <div className="rounded-xl border border-dashed border-line bg-card px-3 py-8 text-center text-sm text-ink-3">
-          Type a tyre size (or tap one above) to see every brand we carry, cheapest first — then tap one for an all-in quote.
+          Type a tyre size (or tap one above), or pick a brand, to see what we carry — cheapest first. Then tap one for an all-in quote.
         </div>
       )}
 
