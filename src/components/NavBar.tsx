@@ -46,11 +46,12 @@ function fmtWhen(iso: string): string {
 }
 
 // Monochrome line icons (currentColor) — one per nav item, keyed by IconName.
-type IconName = 'dashboard' | 'wrench' | 'sales' | 'box' | 'cart' | 'bars' | 'bank' | 'clock' | 'calendar' | 'users' | 'wallet' | 'office' | 'settings' | 'spark';
+type IconName = 'dashboard' | 'wrench' | 'sales' | 'box' | 'cart' | 'bars' | 'bank' | 'clock' | 'calendar' | 'users' | 'wallet' | 'office' | 'settings' | 'spark' | 'tyre';
 function NavIcon({ name }: { name: IconName }) {
   const p: Record<IconName, React.ReactNode> = {
     dashboard: (<><rect x="3" y="3" width="8" height="8" rx="2" /><rect x="13" y="3" width="8" height="8" rx="2" /><rect x="3" y="13" width="8" height="8" rx="2" /><rect x="13" y="13" width="8" height="8" rx="2" /></>),
     wrench: (<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76Z" />),
+    tyre: (<><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3.2" /></>),
     sales: (<><path d="M22 7 13.5 15.5 8.5 10.5 2 17" /><path d="M16 7h6v6" /></>),
     box: (<><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /><path d="M3.3 7 12 12l8.7-5M12 22V12" /></>),
     cart: (<><circle cx="9" cy="20" r="1.4" /><circle cx="18" cy="20" r="1.4" /><path d="M2 3h2l2.4 12.4a1.5 1.5 0 0 0 1.5 1.2h9.2a1.5 1.5 0 0 0 1.5-1.2L21 7H5.2" /></>),
@@ -92,6 +93,7 @@ export default function NavBar() {
   const [salesPending, setSalesPending] = useState(0); // count of not-final sales days (Sales badge)
   const [emergencyNew, setEmergencyNew] = useState(0); // count of new emergency-absence reports (Attendance badge)
   const [needsMech, setNeedsMech] = useState(0); // count of >RM50 sales with no mechanic (Needs mechanic badge)
+  const [tyreNew, setTyreNew] = useState(0); // count of new customer tyre enquiries (Tyre enquiries badge)
   useEffect(() => { setSeenAt(localStorage.getItem('notif_seen_at') || ''); }, []);
   // The <html> class is applied pre-paint by an inline script in layout.tsx (no flash on reload);
   // mirror it into state so the toggle button reflects the current mode.
@@ -221,6 +223,21 @@ export default function NavBar() {
     return () => { window.removeEventListener('focus', onVis); document.removeEventListener('visibilitychange', onVis); };
   }, [loadNeedsMech]);
 
+  // Count of NEW customer tyre enquiries → badge on the Tyre area. Tyre/workshop staff + owner.
+  const loadTyreNew = useCallback(async () => {
+    if (!(access.tyre || access.workshop)) { setTyreNew(0); return; }
+    if (typeof document !== 'undefined' && document.hidden) return;
+    const { data } = await supabase.rpc('tyre_enquiry_new_count');
+    setTyreNew(Number(data) || 0);
+  }, [access.tyre, access.workshop]);
+  useEffect(() => {
+    loadTyreNew();
+    const onVis = () => { if (typeof document === 'undefined' || !document.hidden) loadTyreNew(); };
+    window.addEventListener('focus', onVis);
+    document.addEventListener('visibilitychange', onVis);
+    return () => { window.removeEventListener('focus', onVis); document.removeEventListener('visibilitychange', onVis); };
+  }, [loadTyreNew]);
+
   // Approve / reject a staff request right from the bell (same RPCs the pages use).
   const act = useCallback(async (item: NotifItem, action: 'approve' | 'reject') => {
     let params: Record<string, unknown>;
@@ -300,6 +317,10 @@ export default function NavBar() {
       ] },
       { label: 'Shop', items: [
         ...(canBoard ? [{ label: 'Workshop', href: '/workshop', icon: 'wrench' } as NavItem] : []),
+        ...((access.tyre || access.workshop) ? [{ label: 'Tyre', icon: 'tyre', badge: tyreNew, children: [
+          { href: '/tyre', label: 'Tyre finder' },
+          { href: '/tyre/enquiries', label: 'Enquiries', badge: tyreNew },
+        ] } as NavItem] : []),
         ...((access.workshop || access.owner) ? [{ label: 'Needs mechanic', href: '/workshop/needs-mechanic', match: '/workshop/needs-mechanic', icon: 'users', badge: needsMech } as NavItem] : []),
         ...(niagawanChildren.length ? [{ label: 'Niagawan', icon: 'box', badge: counts.po + counts.pinv + salesPending, children: niagawanChildren } as NavItem] : []),
       ] },
@@ -339,7 +360,7 @@ export default function NavBar() {
       ] },
     ];
     return groups.filter((g) => g.items.length > 0);
-  }, [access, canBoard, counts, salesPending, emergencyNew, needsMech]);
+  }, [access, canBoard, counts, salesPending, emergencyNew, needsMech, tyreNew]);
 
   // Auto-open the area that contains the current route (so you always see where you are).
   useEffect(() => {
@@ -366,6 +387,9 @@ export default function NavBar() {
       {unseen > 0 && <span className="absolute right-1 top-1 inline-flex min-w-[16px] items-center justify-center rounded-full bg-bad px-1 text-[10px] font-semibold leading-4 text-white">{unseen}</span>}
     </button>
   );
+
+  // The public customer tyre page (/tayar) is a standalone, no-login page — never show staff chrome there.
+  if (pathname === '/tayar' || pathname?.startsWith('/tayar/')) return null;
 
   return (
     <>

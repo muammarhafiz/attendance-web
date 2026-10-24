@@ -3,7 +3,7 @@
 // staff type the size, get every brand carried (cheapest first, with OUR retail), tap one, and get a
 // ready-to-send out-the-door quote: tyre + upah pasang (included) + valve + balancing + alignment,
 // rounded, in the owner's WhatsApp format. Prices come from tyre_search(); rates from tyre_config_get().
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 type Tyre = {
@@ -77,7 +77,7 @@ export default function TyreFinder() {
   // folded into the query (so brand-only browsing works) and then exact-matched client-side.
   const runSearch = useCallback(async (query: string, brandSel: string) => {
     const effective = [query.trim(), brandSel].filter(Boolean).join(' ');
-    if (effective.length < 2) { setResults(null); setLoading(false); return; }
+    if (effective.length < 2) { ++reqId.current; setResults(null); setLoading(false); return; }
     const id = ++reqId.current;
     setLoading(true);
     const { data } = await supabase.rpc('tyre_search', { q: effective });
