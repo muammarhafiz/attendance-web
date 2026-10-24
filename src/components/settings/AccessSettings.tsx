@@ -11,6 +11,7 @@ type Feature = { key: string; label: string; ownerOnly?: boolean; note?: string 
 const FEATURES: Feature[] = [
   { key: 'checkin', label: 'Check-in' },
   { key: 'workshop', label: 'Workshop' },
+  { key: 'tyre', label: 'Tyre', note: 'tyre page only' },
   { key: 'add_part', label: 'Part arrived' },
   { key: 'intake', label: 'Customer check-in' },
   { key: 'assistant', label: 'Assistant', note: 'AI chat' },
