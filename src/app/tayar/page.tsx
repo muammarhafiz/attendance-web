@@ -37,6 +37,7 @@ export default function PublicTyrePage() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [plate, setPlate] = useState('');
+  const [carModel, setCarModel] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState('');
   const [done, setDone] = useState<{ total: number; name: string } | null>(null);
@@ -85,13 +86,13 @@ export default function PublicTyrePage() {
     if (phone.replace(/\D/g, '').length < 8) { setErr('Please enter a valid phone number.'); return; }
     setSubmitting(true); setErr('');
     const { data, error } = await supabase.rpc('tyre_enquiry_submit', {
-      p_name: name.trim(), p_phone: phone.trim(), p_tyre_id: selected.id, p_qty: qty, p_vehicle: suv ? 'suv' : 'sedan', p_car_plate: plate.trim() || null,
+      p_name: name.trim(), p_phone: phone.trim(), p_tyre_id: selected.id, p_qty: qty, p_vehicle: suv ? 'suv' : 'sedan', p_car_plate: plate.trim() || null, p_car_model: carModel.trim() || null,
     });
     setSubmitting(false);
     if (error) { setErr(error.message || 'Could not send — please try again.'); return; }
     const total = (data as { quote_total?: number } | null)?.quote_total ?? quote(selected);
     setDone({ total, name: name.trim() });
-  }, [selected, name, phone, plate, qty, suv, quote]);
+  }, [selected, name, phone, plate, carModel, qty, suv, quote]);
 
   // Gold pill (active) vs light pill — matches the store's filter chips.
   const Pill = ({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) => (
@@ -171,7 +172,7 @@ export default function PublicTyrePage() {
               <div className="text-xs font-semibold uppercase tracking-wide text-[#C48A1E]">Your all-in price</div>
               <div className="text-3xl font-extrabold" style={{ color: DARK }}>{rm(done.total)}</div>
             </div>
-            <button onClick={() => { setDone(null); setSel(null); setName(''); setPhone(''); setPlate(''); setQ(''); setBrand(''); setResults(null); }} className="mt-5 text-sm font-semibold text-[#C48A1E] hover:underline">Request another tyre</button>
+            <button onClick={() => { setDone(null); setSel(null); setName(''); setPhone(''); setPlate(''); setCarModel(''); setQ(''); setBrand(''); setResults(null); }} className="mt-5 text-sm font-semibold text-[#C48A1E] hover:underline">Request another tyre</button>
           </div>
         ) : (
           <>
@@ -232,7 +233,8 @@ export default function PublicTyrePage() {
                             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                               <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name *" className={field} />
                               <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone (WhatsApp) *" inputMode="tel" className={field} />
-                              <input value={plate} onChange={(e) => setPlate(e.target.value)} placeholder="Car plate (optional)" className={`${field} font-mono uppercase sm:col-span-2`} />
+                              <input value={carModel} onChange={(e) => setCarModel(e.target.value)} placeholder="Car model (e.g. Myvi, X50)" className={field} />
+                              <input value={plate} onChange={(e) => setPlate(e.target.value)} placeholder="Car plate (optional)" className={`${field} font-mono uppercase`} />
                             </div>
                             {err && <div className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-2 py-1.5 text-xs text-rose-700">{err}</div>}
                             <div className="mt-3 flex gap-2">
