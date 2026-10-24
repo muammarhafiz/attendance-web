@@ -225,11 +225,11 @@ export default function NavBar() {
 
   // Count of NEW customer tyre enquiries → badge on the Tyre area. Tyre/workshop staff + owner.
   const loadTyreNew = useCallback(async () => {
-    if (!(access.tyre || access.workshop)) { setTyreNew(0); return; }
+    if (!access.workshop) { setTyreNew(0); return; } // enquiries inbox is shop-staff only
     if (typeof document !== 'undefined' && document.hidden) return;
     const { data } = await supabase.rpc('tyre_enquiry_new_count');
     setTyreNew(Number(data) || 0);
-  }, [access.tyre, access.workshop]);
+  }, [access.workshop]);
   useEffect(() => {
     loadTyreNew();
     const onVis = () => { if (typeof document === 'undefined' || !document.hidden) loadTyreNew(); };
@@ -317,9 +317,9 @@ export default function NavBar() {
       ] },
       { label: 'Shop', items: [
         ...(canBoard ? [{ label: 'Workshop', href: '/workshop', icon: 'wrench' } as NavItem] : []),
-        ...((access.tyre || access.workshop) ? [{ label: 'Tyre', icon: 'tyre', badge: tyreNew, children: [
+        ...((access.tyre || access.workshop) ? [{ label: 'Tyre', icon: 'tyre', badge: access.workshop ? tyreNew : 0, children: [
           { href: '/tyre', label: 'Tyre finder' },
-          { href: '/tyre/enquiries', label: 'Enquiries', badge: tyreNew },
+          ...(access.workshop ? [{ href: '/tyre/enquiries', label: 'Enquiries', badge: tyreNew }] : []),
         ] } as NavItem] : []),
         ...((access.workshop || access.owner) ? [{ label: 'Needs mechanic', href: '/workshop/needs-mechanic', match: '/workshop/needs-mechanic', icon: 'users', badge: needsMech } as NavItem] : []),
         ...(niagawanChildren.length ? [{ label: 'Niagawan', icon: 'box', badge: counts.po + counts.pinv + salesPending, children: niagawanChildren } as NavItem] : []),
