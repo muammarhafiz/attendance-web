@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 type Enq = {
-  id: number; created_at: string; customer_name: string; customer_phone: string; car_plate: string | null;
+  id: number; created_at: string; customer_name: string; customer_phone: string; car_plate: string | null; car_model: string | null;
   brand: string | null; pattern: string | null; size: string | null; qty: number; vehicle: string;
   unit_retail: number | null; quote_total: number | null; status: string; handled_by: string | null; note: string | null;
 };
@@ -100,7 +100,7 @@ export default function TyreEnquiriesPage() {
                       <span className="ml-2 font-semibold text-ink">{rm(e.quote_total)} all-in</span>
                     </div>
                     <div className="mt-0.5 text-xs text-ink-3">
-                      {e.customer_phone}{e.car_plate ? ` · ${e.car_plate}` : ''} · {fmtDT(e.created_at)}
+                      {e.customer_phone}{e.car_model ? ` · ${e.car_model}` : ''}{e.car_plate ? ` · ${e.car_plate}` : ''} · {fmtDT(e.created_at)}
                       {e.handled_by ? ` · by ${e.handled_by}` : ''}
                     </div>
                   </div>
