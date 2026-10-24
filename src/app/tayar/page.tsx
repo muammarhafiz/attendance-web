@@ -1,8 +1,10 @@
 'use client';
-// PUBLIC customer tyre page (no login). Reached by a shareable link. Customer browses by size/brand,
-// picks a tyre + qty + Sedan/SUV, sees the ALL-IN out-the-door price, and submits name + phone — which
-// lands in the staff "Tyre enquiries" inbox. All data comes from anon, retail-only RPCs: the customer
-// never sees cost, supplier or margin. The quote is recomputed server-side on submit (can't be tampered).
+// PUBLIC customer tyre page (no login) — reached by a shareable link / tayar.zordaq.com. Browse by
+// size/brand, pick a tyre + qty + Sedan/SUV, see the ALL-IN price, submit name + phone → staff inbox.
+// Styled to match the ZORDAQ STORE brand (dark navy #0D1628 + gold #E9A93A, Inter, "ZORDAQ" wordmark)
+// so shop.zordaq.com and tayar.zordaq.com feel like one shop. Deliberately a single dark theme (not the
+// staff app's light tokens) — this is a customer-facing branded page. Data is anon + retail-only; the
+// quote is recomputed server-side on submit, so customers never see cost/supplier/margin.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -13,6 +15,10 @@ const QUICK_SIZES = ['185/55R15', '185/60R15', '195/55R15', '205/55R16', '215/55
 const roundNice = (n: number) => Math.ceil(n / 10) * 10;
 const rm = (n: number) => `RM${Math.round(n).toLocaleString('en-MY')}`;
 const tyreLabel = (t: Tyre) => [t.brand, t.pattern].filter(Boolean).join(' ');
+
+// ZORDAQ STORE brand tokens (from shop.zordaq.com's live theme).
+const GOLD = '#E9A93A';
+const NAVY = '#0D1628';
 
 export default function PublicTyrePage() {
   const [cfg, setCfg] = useState<Config | null>(null);
@@ -87,51 +93,59 @@ export default function PublicTyrePage() {
 
   const Chip = ({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) => (
     <button type="button" onClick={onClick}
-      className={`rounded-full px-3 py-1 text-sm font-medium transition ${on ? 'bg-btn text-btn-ink' : 'bg-card text-ink-2 ring-1 ring-line hover:bg-ink/5'}`}>{children}</button>
+      className={`rounded-full px-3 py-1 text-sm font-semibold transition ${on ? 'bg-[#E9A93A] text-[#0D1628]' : 'bg-white/5 text-slate-300 ring-1 ring-white/10 hover:bg-white/10'}`}>{children}</button>
   );
 
+  const inputCls = 'rounded-lg border border-white/10 bg-[#0b1324] px-3 py-2.5 text-sm text-white placeholder:text-slate-500 focus:border-[#E9A93A]/60 focus:outline-none';
+
   return (
-    <div className="fixed inset-0 z-[60] overflow-y-auto" style={{ background: 'var(--background)' }}>
-      <div className="mx-auto max-w-xl px-4 py-6" style={{ paddingBottom: 'calc(2rem + env(safe-area-inset-bottom))', paddingTop: 'calc(1rem + env(safe-area-inset-top))' }}>
-        <header className="mb-4">
-          <div className="text-xs font-semibold uppercase tracking-wide text-accent">ZORDAQ Auto Services</div>
-          <h1 className="text-2xl font-bold tracking-tight text-ink">Tyre price — all-in</h1>
-          <p className="mt-1 text-sm text-ink-2">Pilih tayar anda, dapatkan harga termasuk upah pasang, valve, balancing &amp; alignment. Kami akan WhatsApp anda untuk sahkan stok.</p>
+    <div className="fixed inset-0 z-[60] overflow-y-auto" style={{ background: NAVY, colorScheme: 'dark' }}>
+      <div className="mx-auto max-w-xl px-4 py-6" style={{ paddingBottom: 'calc(2rem + env(safe-area-inset-bottom))', paddingTop: 'calc(1.25rem + env(safe-area-inset-top))' }}>
+        <header className="mb-5 text-center">
+          <div className="mb-3 inline-flex items-center gap-2.5">
+            <span className="grid h-9 w-9 place-items-center rounded-lg text-lg font-black text-[#0D1628]" style={{ background: GOLD }}>z</span>
+            <span className="text-left leading-none">
+              <span className="block text-[15px] font-bold tracking-[0.2em] text-white">ZORDAQ</span>
+              <span className="block text-[10px] font-semibold tracking-[0.3em] text-[#F0BB53]">TYRE</span>
+            </span>
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-white">Tyre price — all-in</h1>
+          <p className="mx-auto mt-1 max-w-sm text-sm text-slate-400">Pilih tayar anda, dapatkan harga termasuk upah pasang, valve, balancing &amp; alignment. Kami WhatsApp anda untuk sahkan stok.</p>
         </header>
 
         {done ? (
-          <div className="rounded-card bg-card p-5 text-center shadow-card">
-            <div className="text-4xl">✅</div>
-            <h2 className="mt-2 text-lg font-semibold text-ink">Thank you, {done.name}!</h2>
-            <p className="mt-1 text-sm text-ink-2">Your tyre request is in. We&apos;ll WhatsApp you shortly to confirm stock and arrange fitting.</p>
-            <div className="mx-auto mt-4 w-fit rounded-xl bg-good-soft px-5 py-3">
-              <div className="text-xs font-medium uppercase tracking-wide text-good">Your all-in price</div>
-              <div className="text-3xl font-bold text-good">{rm(done.total)}</div>
+          <div className="rounded-xl border border-white/10 bg-[#17213b] p-6 text-center">
+            <div className="mx-auto grid h-14 w-14 place-items-center rounded-full text-3xl" style={{ background: 'rgba(233,169,58,0.15)' }}>✅</div>
+            <h2 className="mt-3 text-lg font-semibold text-white">Thank you, {done.name}!</h2>
+            <p className="mt-1 text-sm text-slate-400">Your tyre request is in. We&apos;ll WhatsApp you shortly to confirm stock and arrange fitting.</p>
+            <div className="mx-auto mt-4 w-fit rounded-xl px-6 py-3 ring-1" style={{ background: 'rgba(233,169,58,0.1)', borderColor: 'rgba(233,169,58,0.25)' }}>
+              <div className="text-xs font-medium uppercase tracking-wide text-[#F0BB53]">Your all-in price</div>
+              <div className="text-3xl font-bold" style={{ color: GOLD }}>{rm(done.total)}</div>
             </div>
-            <button onClick={() => { setDone(null); setSel(null); setName(''); setPhone(''); setPlate(''); setQ(''); setBrand(''); setResults(null); }} className="mt-5 text-sm text-accent hover:underline">Request another tyre</button>
+            <button onClick={() => { setDone(null); setSel(null); setName(''); setPhone(''); setPlate(''); setQ(''); setBrand(''); setResults(null); }} className="mt-5 text-sm text-[#F0BB53] hover:underline">Request another tyre</button>
           </div>
         ) : (
           <>
             {/* qty + vehicle */}
-            <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-card bg-card p-3 shadow-card">
+            <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-white/10 bg-[#17213b] p-3">
               <div className="flex items-center gap-1.5">
-                <span className="text-xs font-medium uppercase tracking-wide text-ink-3">How many</span>
+                <span className="text-xs font-medium uppercase tracking-wide text-slate-400">How many</span>
                 <Chip on={qty === 4} onClick={() => setQty(4)}>Set of 4</Chip>
                 <Chip on={qty === 2} onClick={() => setQty(2)}>2</Chip>
                 <Chip on={qty === 1} onClick={() => setQty(1)}>1</Chip>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="text-xs font-medium uppercase tracking-wide text-ink-3">Car</span>
+                <span className="text-xs font-medium uppercase tracking-wide text-slate-400">Car</span>
                 <Chip on={!suv} onClick={() => setSuv(false)}>Sedan</Chip>
                 <Chip on={suv} onClick={() => setSuv(true)}>SUV</Chip>
               </div>
             </div>
 
             <input value={q} onChange={(e) => { setQ(e.target.value); setSel(null); }} placeholder="Search your tyre size — e.g. 185/55R15"
-              className="mb-2 w-full rounded-lg border border-line bg-card px-3 py-2.5 text-sm" inputMode="text" />
+              className={`mb-2 w-full ${inputCls}`} inputMode="text" />
             <div className="mb-3 flex flex-wrap gap-1.5">
               {QUICK_SIZES.map((s) => (
-                <button key={s} type="button" onClick={() => { setQ(s); setSel(null); }} className="rounded-full bg-card px-2.5 py-1 text-xs font-medium text-ink-2 ring-1 ring-line hover:bg-ink/5">{s}</button>
+                <button key={s} type="button" onClick={() => { setQ(s); setSel(null); }} className="rounded-full bg-white/5 px-2.5 py-1 text-xs font-medium text-slate-300 ring-1 ring-white/10 hover:bg-white/10">{s}</button>
               ))}
             </div>
             {brands.length > 0 && (
@@ -142,49 +156,49 @@ export default function PublicTyrePage() {
             )}
 
             {q.trim().length < 2 && !brand && (
-              <div className="rounded-xl border border-dashed border-line bg-card px-3 py-8 text-center text-sm text-ink-3">Type your tyre size (on the tyre wall, e.g. 185/55R15) or pick a brand to see prices.</div>
+              <div className="rounded-xl border border-dashed border-white/15 bg-white/[0.03] px-3 py-8 text-center text-sm text-slate-400">Type your tyre size (on the tyre wall, e.g. 185/55R15) or pick a brand to see prices.</div>
             )}
-            {loading && <div className="py-6 text-center text-sm text-ink-3">Searching…</div>}
-            {cfgErr && <div className="mb-2 rounded-md border border-rose-200 bg-bad-soft px-3 py-2 text-sm text-bad">Couldn&apos;t load prices right now — please WhatsApp us directly.</div>}
-            {!loading && results !== null && !cfg && !cfgErr && <div className="py-6 text-center text-sm text-ink-3">Getting prices…</div>}
+            {loading && <div className="py-6 text-center text-sm text-slate-400">Searching…</div>}
+            {cfgErr && <div className="mb-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">Couldn&apos;t load prices right now — please WhatsApp us directly.</div>}
+            {!loading && results !== null && !cfg && !cfgErr && <div className="py-6 text-center text-sm text-slate-400">Getting prices…</div>}
 
             {!loading && results !== null && cfg && (
               <div className="space-y-2">
-                {results.length === 0 && <div className="rounded-xl border border-dashed border-line bg-card px-3 py-6 text-center text-sm text-ink-3">No match — try just the numbers, e.g. 205 55 16.</div>}
+                {results.length === 0 && <div className="rounded-xl border border-dashed border-white/15 bg-white/[0.03] px-3 py-6 text-center text-sm text-slate-400">No match — try just the numbers, e.g. 205 55 16.</div>}
                 {results.map((t) => {
                   const open = sel === t.id;
                   return (
-                    <div key={t.id} className={`rounded-card shadow-card ${open ? 'ring-2 ring-accent' : ''} bg-card`}>
+                    <div key={t.id} className={`rounded-xl border bg-[#17213b] ${open ? 'border-[#E9A93A]/60' : 'border-white/10'}`}>
                       <button type="button" onClick={() => { setSel(open ? null : t.id); setErr(''); }} className="flex w-full items-center justify-between gap-3 p-3 text-left">
                         <div className="min-w-0">
-                          <div className="text-sm font-semibold text-ink">{tyreLabel(t)}</div>
+                          <div className="text-sm font-semibold text-white">{tyreLabel(t)}</div>
                           <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
-                            <span className="rounded bg-ink/5 px-1.5 py-0.5 font-medium text-ink-2">{t.size}</span>
-                            {t.origin && <span className="rounded bg-ink/5 px-1.5 py-0.5 text-ink-2">{t.origin}</span>}
+                            <span className="rounded bg-white/5 px-1.5 py-0.5 font-medium text-slate-300">{t.size}</span>
+                            {t.origin && <span className="rounded bg-white/5 px-1.5 py-0.5 text-slate-400">{t.origin}</span>}
                           </div>
                         </div>
                         <div className="shrink-0 text-right">
-                          <div className="text-lg font-bold text-ink">{rm(quote(t))}</div>
-                          <div className="text-[11px] text-ink-3">all-in · {qty === 4 ? 'set of 4' : `${qty} pc${qty > 1 ? 's' : ''}`}</div>
+                          <div className="text-lg font-bold" style={{ color: GOLD }}>{rm(quote(t))}</div>
+                          <div className="text-[11px] text-slate-500">all-in · {qty === 4 ? 'set of 4' : `${qty} pc${qty > 1 ? 's' : ''}`}</div>
                         </div>
                       </button>
 
                       {open && (
-                        <div className="border-t border-line p-3">
-                          <div className="mb-3 rounded-lg bg-good-soft px-3 py-2 text-xs text-good">
+                        <div className="border-t border-white/10 p-3">
+                          <div className="mb-3 rounded-lg px-3 py-2 text-xs ring-1" style={{ background: 'rgba(233,169,58,0.08)', borderColor: 'rgba(233,169,58,0.2)', color: '#F0BB53' }}>
                             <div className="font-semibold">Included in {rm(quote(t))}:</div>
                             <div className="mt-0.5">✅ {qty === 4 ? '4 tyres' : qty === 2 ? '2 tyres' : '1 tyre'} &nbsp; ✅ Upah pasang &nbsp; ✅ Valve &nbsp; ✅ Balancing &nbsp; ✅ Alignment</div>
                           </div>
                           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name *" className="rounded-lg border border-line bg-card px-3 py-2 text-sm" />
-                            <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone (WhatsApp) *" inputMode="tel" className="rounded-lg border border-line bg-card px-3 py-2 text-sm" />
-                            <input value={plate} onChange={(e) => setPlate(e.target.value)} placeholder="Car plate (optional)" className="rounded-lg border border-line bg-card px-3 py-2 text-sm font-mono uppercase sm:col-span-2" />
+                            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name *" className={inputCls} />
+                            <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone (WhatsApp) *" inputMode="tel" className={inputCls} />
+                            <input value={plate} onChange={(e) => setPlate(e.target.value)} placeholder="Car plate (optional)" className={`${inputCls} font-mono uppercase sm:col-span-2`} />
                           </div>
-                          {err && <div className="mt-2 rounded-md border border-rose-200 bg-bad-soft px-2 py-1.5 text-xs text-bad">{err}</div>}
-                          <button onClick={submit} disabled={submitting} className="mt-3 w-full rounded-lg bg-[#25D366] px-3 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+                          {err && <div className="mt-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-1.5 text-xs text-rose-300">{err}</div>}
+                          <button onClick={submit} disabled={submitting} className="mt-3 w-full rounded-lg px-3 py-2.5 text-sm font-semibold text-[#0D1628] transition hover:brightness-105 disabled:opacity-50" style={{ background: GOLD }}>
                             {submitting ? 'Sending…' : `Request this price (${rm(quote(t))})`}
                           </button>
-                          <p className="mt-2 text-[11px] text-ink-3">We&apos;ll WhatsApp you to confirm stock &amp; fitting time. No payment now.</p>
+                          <p className="mt-2 text-[11px] text-slate-500">We&apos;ll WhatsApp you to confirm stock &amp; fitting time. No payment now.</p>
                         </div>
                       )}
                     </div>
@@ -195,7 +209,7 @@ export default function PublicTyrePage() {
           </>
         )}
 
-        <p className="mt-6 text-center text-[11px] text-ink-3">ZORDAQ Auto Services · prices include fitting, valve, balancing &amp; alignment</p>
+        <p className="mt-6 text-center text-[11px] text-slate-500">ZORDAQ Auto Services · Putrajaya · prices include fitting, valve, balancing &amp; alignment</p>
       </div>
     </div>
   );
