@@ -5,13 +5,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
-const POSITIONS = ['Owner', 'Manager', 'Office', 'Supervisor', 'Mechanic', 'Mechanic 2', 'Mechanic 3', 'Part-time', 'Temporary', 'Trainer'];
+const POSITIONS = ['Owner', 'Manager', 'Office', 'Supervisor', 'Mechanic', 'Mechanic 2', 'Mechanic 3', 'Part-time', 'Temporary', 'Trainer', 'Other branch'];
 
 type Feature = { key: string; label: string; ownerOnly?: boolean; note?: string };
 const FEATURES: Feature[] = [
   { key: 'checkin', label: 'Check-in' },
   { key: 'workshop', label: 'Workshop' },
-  { key: 'tyre', label: 'Tyre', note: 'tyre page only' },
+  { key: 'tyre', label: 'Tyre', note: 'finder only' },
+  { key: 'tyre_cost', label: 'Tyre cost', note: 'see cost/supplier' },
   { key: 'add_part', label: 'Part arrived' },
   { key: 'intake', label: 'Customer check-in' },
   { key: 'assistant', label: 'Assistant', note: 'AI chat' },
