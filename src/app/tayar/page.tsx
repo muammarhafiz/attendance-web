@@ -124,14 +124,14 @@ export default function PublicTyrePage() {
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
           <Wordmark />
-          <span className="text-xs font-medium text-slate-500">📍 Putrajaya workshop</span>
+          <span className="text-xs font-medium text-slate-500">🔧 Fitting included</span>
         </div>
       </header>
 
       {/* Trust strip */}
       <div className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-center gap-x-5 gap-y-1 px-4 py-2 text-[11px] font-medium text-slate-500">
-          <span>✅ Genuine tyres</span><span>🔧 Workshop fitting</span><span>📍 Pickup in Putrajaya</span>
+          <span>✅ Genuine tyres</span><span>🔧 Workshop fitting</span><span>💰 All-in price</span>
         </div>
       </div>
 
@@ -253,7 +253,7 @@ export default function PublicTyrePage() {
           </>
         )}
 
-        <p className="mt-8 text-center text-[11px] text-slate-400">ZORDAQ Auto Services · Putrajaya · prices include fitting, valve, balancing &amp; alignment</p>
+        <p className="mt-8 text-center text-[11px] text-slate-400">ZORDAQ Auto Services · prices include fitting, valve, balancing &amp; alignment</p>
       </main>
     </div>
   );
