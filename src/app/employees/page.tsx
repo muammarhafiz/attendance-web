@@ -768,13 +768,15 @@ export default function EmployeesPage() {
               {/* Attendance */}
               <Section title="Attendance">
                 <div className="flex items-center gap-2">
-                  <input id="track-att" type="checkbox" checked={editTrackAttendance} onChange={(e) => setEditTrackAttendance(e.target.checked)} />
+                  <input id="track-att" type="checkbox" checked={model?.position === 'Other branch' ? false : editTrackAttendance} disabled={model?.position === 'Other branch'} onChange={(e) => setEditTrackAttendance(e.target.checked)} />
                   <label htmlFor="track-att" className="text-sm">
                     Track attendance (show in Today / Report, expected to check in)
                   </label>
                 </div>
                 <div className="mt-1 text-xs text-ink-2">
-                  Turn this OFF for the owner / managers who don&apos;t clock in — they won&apos;t appear on the attendance board or in reports.
+                  {model?.position === 'Other branch'
+                    ? '“Other branch” staff work off-site and don’t clock in here, so attendance tracking is always off for them — they never appear on the board or in reports.'
+                    : 'Turn this OFF for the owner / managers who don’t clock in — they won’t appear on the attendance board or in reports.'}
                 </div>
               </Section>
 
@@ -797,7 +799,8 @@ export default function EmployeesPage() {
                     <input
                       id="salary-att"
                       type="checkbox"
-                      checked={editSalaryBasedOnAttendance}
+                      checked={model?.position === 'Other branch' ? false : editSalaryBasedOnAttendance}
+                      disabled={model?.position === 'Other branch'}
                       onChange={(e) => setEditSalaryBasedOnAttendance(e.target.checked)}
                     />
                     <label htmlFor="salary-att" className="text-sm">
@@ -915,7 +918,7 @@ export default function EmployeesPage() {
                 <Grid2>
                   <Text label="Email" value={newEmp.email} onChange={(v) => setNewEmp((e) => ({ ...e, email: v.toLowerCase() }))} />
                   <Text label="Full name" value={newEmp.full_name} onChange={(v) => setNewEmp((e) => ({ ...e, full_name: v }))} />
-                  <Select label="Position" value={newEmp.position} onChange={(v) => setNewEmp((e) => ({ ...e, position: v }))} options={POSITION_OPTIONS} />
+                  <Select label="Position" value={newEmp.position} onChange={(v) => setNewEmp((e) => ({ ...e, position: v, ...(v === 'Other branch' ? { salary_based_on_attendance: false, include_in_payroll: false, epf_enabled: false, socso_enabled: false, eis_enabled: false } : {}) }))} options={POSITION_OPTIONS} />
                   <DateInput label="Start date" value={newEmp.start_date} onChange={(v) => setNewEmp((e) => ({ ...e, start_date: v }))} />
                   <Money label="Basic salary" value={Number(newEmp.basic_salary)} onChange={(v) => setNewEmp((e) => ({ ...e, basic_salary: String(v) }))} />
 
@@ -942,7 +945,8 @@ export default function EmployeesPage() {
                     <input
                       id="new-salary-att"
                       type="checkbox"
-                      checked={newEmp.salary_based_on_attendance}
+                      checked={newEmp.position === 'Other branch' ? false : newEmp.salary_based_on_attendance}
+                      disabled={newEmp.position === 'Other branch'}
                       onChange={(e) => setNewEmp((s) => ({ ...s, salary_based_on_attendance: e.target.checked }))}
                     />
                     <label htmlFor="new-salary-att" className="text-sm">
@@ -976,6 +980,12 @@ export default function EmployeesPage() {
                       EIS enabled
                     </label>
                   </div>
+
+                  {newEmp.position === 'Other branch' && (
+                    <div className="md:col-span-2 rounded-lg border border-line p-2 text-xs text-ink-2">
+                      <b>Other branch</b> staff work off-site — they don&apos;t clock in here, so they&apos;re automatically left out of attendance tracking and absence-based salary. Payroll &amp; statutory are switched off by default; turn them back on only if you pay this person from this branch.
+                    </div>
+                  )}
                 </Grid2>
               </Section>
 
