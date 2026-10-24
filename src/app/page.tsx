@@ -15,7 +15,10 @@ export default function HomePage() {
     (async () => {
       const { data } = await supabase.rpc('my_access');
       if (!alive) return;
-      if (data && (data as { owner?: boolean }).owner) { router.replace('/dashboard'); return; }
+      const a = (data ?? {}) as { owner?: boolean; checkin?: boolean; tyre?: boolean };
+      if (a.owner) { router.replace('/dashboard'); return; }
+      // Tyre-only staff (e.g. "Other branch") don't clock in — send them straight to the finder.
+      if (a.tyre && !a.checkin) { router.replace('/tyre'); return; }
       setReady(true);
     })();
     return () => { alive = false; };

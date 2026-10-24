@@ -334,7 +334,8 @@ export default function NavBar() {
       ] },
       { label: 'People', items: [
         // Owners' Check-in points at /checkin so it isn't bounced to the dashboard like "/".
-        { label: 'Check-in', href: access.owner ? '/checkin' : '/', match: access.owner ? '/checkin' : undefined, icon: 'clock' } as NavItem,
+        // Hidden for staff without check-in access (e.g. the tyre-only "Other branch" position).
+        ...(access.checkin ? [{ label: 'Check-in', href: access.owner ? '/checkin' : '/', match: access.owner ? '/checkin' : undefined, icon: 'clock' } as NavItem] : []),
         ...(access.attendance ? [{ label: 'Attendance', icon: 'calendar', badge: reqBadge, children: [
           { href: '/attendance/today', label: 'Today' },
           { href: '/attendance/report', label: 'Report' },
