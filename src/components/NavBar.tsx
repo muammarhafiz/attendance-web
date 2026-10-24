@@ -388,8 +388,10 @@ export default function NavBar() {
     </button>
   );
 
-  // The public customer tyre page (/tayar) is a standalone, no-login page — never show staff chrome there.
+  // The public customer tyre page is a standalone, no-login page — never show staff chrome there.
+  // It's served at /tayar AND at the root of tayar.zordaq.com (a host rewrite), so hide on both.
   if (pathname === '/tayar' || pathname?.startsWith('/tayar/')) return null;
+  if (typeof window !== 'undefined' && window.location.hostname === 'tayar.zordaq.com') return null;
 
   return (
     <>

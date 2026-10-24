@@ -119,7 +119,7 @@ export default function PublicTyrePage() {
   );
 
   return (
-    <div className="fixed inset-0 overflow-y-auto bg-[#F5F6F8]" style={{ colorScheme: 'light' }}>
+    <div className="fixed inset-0 z-[60] overflow-y-auto bg-[#F5F6F8]" style={{ colorScheme: 'light' }}>
       {/* Header */}
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
