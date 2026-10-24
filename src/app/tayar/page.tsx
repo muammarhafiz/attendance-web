@@ -21,6 +21,7 @@ const tyreLabel = (t: Tyre) => [t.brand, t.pattern].filter(Boolean).join(' ');
 const GOLD = '#E9A93A';
 const NAVY = '#0D1628';
 const DARK = '#223440'; // text on gold / dark slate ink
+const SHOP_WA = '60179333995'; // TEMPORARY: tyre requests go straight to the owner's WhatsApp
 
 export default function PublicTyrePage() {
   const [cfg, setCfg] = useState<Config | null>(null);
@@ -84,13 +85,28 @@ export default function PublicTyrePage() {
     if (!selected) return;
     if (name.trim().length < 2) { setErr('Please enter your name.'); return; }
     if (phone.replace(/\D/g, '').length < 8) { setErr('Please enter a valid phone number.'); return; }
-    setSubmitting(true); setErr('');
-    const { data, error } = await supabase.rpc('tyre_enquiry_submit', {
+    setErr('');
+    const total = quote(selected);
+    // TEMPORARY: send the request straight to the shop's WhatsApp, with the full details prefilled.
+    const lines = [
+      'Hi ZORDAQ Tyre 👋 Saya nak tempah tayar:',
+      `*${tyreLabel(selected)}*`,
+      `${selected.size}${selected.origin ? ` · ${selected.origin}` : ''}`,
+      `${qty === 4 ? 'Set of 4' : `${qty} pc`} · ${suv ? 'SUV' : 'Sedan'}`,
+      `Harga all-in: *${rm(total)}* (incl. upah pasang, valve, balancing, alignment)`,
+      '',
+      `Nama: ${name.trim()}`,
+      `Phone: ${phone.trim()}`,
+    ];
+    if (carModel.trim()) lines.push(`Kereta: ${carModel.trim()}`);
+    if (plate.trim()) lines.push(`No. plat: ${plate.trim()}`);
+    window.open(`https://wa.me/${SHOP_WA}?text=${encodeURIComponent(lines.join('\n'))}`, '_blank');
+    // Still record it (best-effort) so the request also lands in the staff inbox.
+    setSubmitting(true);
+    await supabase.rpc('tyre_enquiry_submit', {
       p_name: name.trim(), p_phone: phone.trim(), p_tyre_id: selected.id, p_qty: qty, p_vehicle: suv ? 'suv' : 'sedan', p_car_plate: plate.trim() || null, p_car_model: carModel.trim() || null,
     });
     setSubmitting(false);
-    if (error) { setErr(error.message || 'Could not send — please try again.'); return; }
-    const total = (data as { quote_total?: number } | null)?.quote_total ?? quote(selected);
     setDone({ total, name: name.trim() });
   }, [selected, name, phone, plate, carModel, qty, suv, quote]);
 
@@ -167,7 +183,7 @@ export default function PublicTyrePage() {
           <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
             <div className="mx-auto grid h-14 w-14 place-items-center rounded-full text-3xl" style={{ background: 'rgba(233,169,58,0.15)' }}>✅</div>
             <h2 className="mt-3 text-lg font-bold text-slate-900">Thank you, {done.name}!</h2>
-            <p className="mt-1 text-sm text-slate-500">Your tyre request is in. We&apos;ll WhatsApp you shortly to confirm stock and arrange fitting.</p>
+            <p className="mt-1 text-sm text-slate-500">WhatsApp should have opened — just tap <span className="font-semibold">Send</span> to finish your request. We&apos;ll reply with stock &amp; fitting time.</p>
             <div className="mx-auto mt-4 w-fit rounded-xl px-6 py-3 ring-1" style={{ background: 'rgba(233,169,58,0.1)', borderColor: 'rgba(233,169,58,0.3)' }}>
               <div className="text-xs font-semibold uppercase tracking-wide text-[#C48A1E]">Your all-in price</div>
               <div className="text-3xl font-extrabold" style={{ color: DARK }}>{rm(done.total)}</div>
@@ -239,7 +255,7 @@ export default function PublicTyrePage() {
                             {err && <div className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-2 py-1.5 text-xs text-rose-700">{err}</div>}
                             <div className="mt-3 flex gap-2">
                               <button onClick={submit} disabled={submitting} className="flex-1 rounded-lg py-2.5 text-sm font-bold text-[#223440] transition hover:brightness-105 disabled:opacity-50" style={{ background: GOLD }}>
-                                {submitting ? 'Sending…' : `Send request · ${rm(quote(t))}`}
+                                {submitting ? 'Opening…' : `Send on WhatsApp · ${rm(quote(t))}`}
                               </button>
                               <button type="button" onClick={() => { setSel(null); setErr(''); }} className="rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50">Back</button>
                             </div>
