@@ -88,9 +88,9 @@ async function gemini(parts: Record<string, unknown>[], key: string, overallMs: 
 }
 
 // Pull the real text layer of a (digital) PDF, one string per page. '' pages are dropped.
-async function extractPageTexts(buf: ArrayBuffer): Promise<string[]> {
+async function extractPageTexts(buf: Uint8Array): Promise<string[]> {
   try {
-    const pdf = await getDocumentProxy(new Uint8Array(buf));
+    const pdf = await getDocumentProxy(buf);
     const { text } = await extractText(pdf, { mergePages: false });
     const pages = Array.isArray(text) ? text : [String(text ?? '')];
     return pages.map((t) => String(t ?? '').trim()).filter((t) => t.length > 20);
