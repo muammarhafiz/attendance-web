@@ -11,7 +11,12 @@ const USD_PER_1M: Record<string, { in: number; out: number }> = {
   'gemini-3.8-flash': { in: 0.30, out: 2.50 },
 };
 const DEFAULT_USD = { in: 0.30, out: 2.50 };
-const MYR_PER_USD = 4.4; // calibrate against AI Studio's billed RM
+// Calibrated to Google's ACTUAL billing (Cloud Console cost table, Sep 2026 invoice 5710794300):
+//  - USD→MYR conversion rate = 4.0327 (Google sets this monthly; ~stable ±1%)
+//  - Malaysia SST = 8% that Google adds on usage and draws from the prepaid balance
+// So the effective rate the credit actually depletes at ≈ 4.0327 × 1.08 ≈ 4.355.
+const MYR_PER_USD = 4.0327;
+const SST_RATE = 0.08;
 
 type Usage = {
   promptTokenCount?: number;
@@ -35,7 +40,7 @@ export async function logAiUsage(
     const total = Number(u.totalTokenCount) || inTok + outTok;
     if (inTok === 0 && outTok === 0) return; // nothing to record
     const p = USD_PER_1M[opts.model] || DEFAULT_USD;
-    const costMyr = ((inTok / 1e6) * p.in + (outTok / 1e6) * p.out) * MYR_PER_USD;
+    const costMyr = ((inTok / 1e6) * p.in + (outTok / 1e6) * p.out) * MYR_PER_USD * (1 + SST_RATE);
     await admin.from('ai_usage').insert({
       feature: opts.feature,
       model: opts.model,
