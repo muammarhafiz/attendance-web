@@ -18,6 +18,19 @@ type Row = {
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+// Sortable columns for the "All staff" summary table. num columns default to biggest-first.
+type SortKey = 'name' | 'present' | 'absent' | 'lateDays' | 'lateMin' | 'mc' | 'offday' | 'ph';
+const SUMMARY_COLS: { key: SortKey; label: string; num: boolean }[] = [
+  { key: 'name', label: 'Staff', num: false },
+  { key: 'present', label: 'Present', num: true },
+  { key: 'absent', label: 'Absent', num: true },
+  { key: 'lateDays', label: 'Late days', num: true },
+  { key: 'lateMin', label: 'Total late', num: true },
+  { key: 'mc', label: 'MC', num: true },
+  { key: 'offday', label: 'Off day', num: true },
+  { key: 'ph', label: 'Public holiday', num: true },
+];
+
 // Leave kinds the editor can tag a day with (mirrors the Requests "Record as" list + the
 // day_status normalize trigger). OFFDAY carries an annual-leave-side kind; MC a sick-side one.
 const OFFDAY_KINDS = ['ANNUAL', 'UNPAID', 'PATERNITY', 'MATERNITY', 'HOLIDAY'];
@@ -51,6 +64,8 @@ export default function AttendanceReportPage() {
   const [needsFix, setNeedsFix] = useState(false); // show only days that need the admin's attention
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [editDay, setEditDay] = useState<string | null>(null);
   const [eStatus, setEStatus] = useState('WORKING');
   const [eIn, setEIn] = useState('');
@@ -173,6 +188,20 @@ export default function AttendanceReportPage() {
     }
     return [...by.entries()].map(([email, v]) => ({ email, ...v })).sort((a, b) => a.name.localeCompare(b.name));
   }, [rows]);
+
+  // click a header to sort; numeric columns start biggest-first, name starts A→Z, re-click flips.
+  const sortedSummary = useMemo(() => {
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return [...summary].sort((a, b) =>
+      sortKey === 'name'
+        ? a.name.localeCompare(b.name) * dir
+        : (Number(a[sortKey]) - Number(b[sortKey])) * dir
+    );
+  }, [summary, sortKey, sortDir]);
+  const onSort = (key: SortKey) => {
+    if (key === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortKey(key); setSortDir(key === 'name' ? 'asc' : 'desc'); }
+  };
 
   const detail = useMemo(
     () => rows.filter((r) => r.staff_email === staffFilter).sort((a, b) => a.day.localeCompare(b.day)),
@@ -387,18 +416,23 @@ export default function AttendanceReportPage() {
           <table className="card-table w-full border-collapse text-sm">
             <thead>
               <tr className="bg-ink/[0.03] text-left">
-                <th className="px-3 py-2 font-medium text-ink-2">Staff</th>
-                <th className="px-3 py-2 text-right font-medium text-ink-2">Present</th>
-                <th className="px-3 py-2 text-right font-medium text-ink-2">Absent</th>
-                <th className="px-3 py-2 text-right font-medium text-ink-2">Late days</th>
-                <th className="px-3 py-2 text-right font-medium text-ink-2">Total late</th>
-                <th className="px-3 py-2 text-right font-medium text-ink-2">MC</th>
-                <th className="px-3 py-2 text-right font-medium text-ink-2">Off day</th>
-                <th className="px-3 py-2 text-right font-medium text-ink-2">Public holiday</th>
+                {SUMMARY_COLS.map((c) => (
+                  <th key={c.key} className={`px-3 py-2 font-medium text-ink-2 ${c.num ? 'text-right' : ''}`}>
+                    <button
+                      type="button"
+                      onClick={() => onSort(c.key)}
+                      title={`Sort by ${c.label}`}
+                      className="inline-flex items-center gap-1 font-medium text-ink-2 hover:text-ink"
+                    >
+                      <span>{c.label}</span>
+                      <span className={`text-[10px] print:hidden ${sortKey === c.key ? 'text-accent' : 'text-ink-3'}`}>{sortKey === c.key ? (sortDir === 'asc' ? '▲' : '▼') : '↕'}</span>
+                    </button>
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {summary.map((s) => (
+              {sortedSummary.map((s) => (
                 <tr key={s.email} className="border-t border-line hover:bg-ink/[0.03]">
                   <td className="px-3 py-2">
                     <button onClick={() => setStaffFilter(s.email)} className="text-left text-ink hover:text-accent hover:underline">{s.name}</button>
