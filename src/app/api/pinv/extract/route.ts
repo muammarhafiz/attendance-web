@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { createClientServer } from '@/lib/supabaseServer';
 import { extractText, getDocumentProxy } from 'unpdf';
+import { logAiUsage } from '@/lib/aiUsage';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -105,7 +106,7 @@ async function geminiExtract(base64: string, key: string, prompt: string): Promi
         if (r.ok) {
           const j = await r.json();
           const text = j?.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (text) return { text, model: tier.name };
+          if (text) { await logAiUsage(admin, { feature: 'pinv', model: tier.name, usage: j?.usageMetadata }); return { text, model: tier.name }; }
           lastErr = `${tier.name} empty response`;
           transient = true;
         } else if (r.status === 503 || r.status === 429 || r.status === 500) {
