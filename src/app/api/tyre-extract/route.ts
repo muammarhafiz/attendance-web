@@ -39,10 +39,13 @@ const VISION_PROMPT = 'Read this TYRE supplier price list (a PDF or photo) and e
 // is the live successor to the now-deprecated gemini-3.5-flash; gemini-2.5-flash is a known-good last
 // resort on this key. The window/attempt are scaled per call so the per-page text calls (small output)
 // run fast and the single vision call gets a long slot.
+// Primary gets the LION'S SHARE of the window: a real page extraction takes ~10-15s (measured), so
+// a too-small primary window would abort and fall through to the slow last resort. The fallbacks are
+// thin insurance for a transient 503 on the primary.
 const READ_TIERS = [
-  { name: 'gemini-3.8-flash', frac: 0.3 }, // latest (GA Sep 2026) — accurate primary
-  { name: 'gemini-3.6-flash', frac: 0.6 }, // current prod successor to the deprecated 3.5-flash
-  { name: 'gemini-2.5-flash', frac: 1.0 }, // known-good last resort on this key
+  { name: 'gemini-3.8-flash', frac: 0.85 }, // latest (GA Sep 2026) — accurate primary, big window
+  { name: 'gemini-3.6-flash', frac: 0.95 }, // current prod successor to the deprecated 3.5-flash
+  { name: 'gemini-2.5-flash', frac: 1.0 },  // known-good last resort on this key
 ];
 
 async function gemini(parts: Record<string, unknown>[], key: string, overallMs: number, attemptMs: number): Promise<string> {
@@ -147,8 +150,11 @@ export async function POST(req: Request) {
     if (pageTexts.length > 0 && pageTexts.reduce((n, t) => n + t.length, 0) > 300) {
       // run all pages in parallel; each call reads one page's text only. If ANY page fails after its
       // retries, the whole read fails (better than silently importing a partial price list).
+      // 48s overall / 44s per attempt: with the tiers above, the primary (3.8-flash) gets a ~41s
+      // window — ample for a ~10-15s page call even under Vercel load, so it no longer tips over
+      // into the slow fallback. Pages run in parallel, so wall-clock stays ~one page (measured ~11s).
       responses = await Promise.all(
-        pageTexts.map((pt) => gemini([{ text: `${TEXT_PROMPT}\n\n<<<PAGE_TEXT>>>\n${pt.slice(0, 18000)}\n<<<END_PAGE_TEXT>>>` }], key, 45000, 28000))
+        pageTexts.map((pt) => gemini([{ text: `${TEXT_PROMPT}\n\n<<<PAGE_TEXT>>>\n${pt.slice(0, 18000)}\n<<<END_PAGE_TEXT>>>` }], key, 48000, 44000))
       );
     } else {
       // VISION FALLBACK — a photo, or a scanned PDF with no readable text layer: one long call that
