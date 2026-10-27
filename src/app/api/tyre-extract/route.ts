@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { createClientServer } from '@/lib/supabaseServer';
 import { extractText, getDocumentProxy } from 'unpdf';
+import { logAiUsage } from '@/lib/aiUsage';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -85,7 +86,7 @@ async function gemini(parts: Record<string, unknown>[], key: string): Promise<st
         if (r.ok) {
           const j = await r.json();
           const text = j?.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (text) return text as string;
+          if (text) { await logAiUsage(admin, { feature: 'tyre', model: tier.name, usage: j?.usageMetadata }); return text as string; }
           lastErr = `${tier.name} empty response`; transient = true;
         } else if (r.status === 503 || r.status === 429 || r.status === 500) {
           lastErr = `${tier.name} HTTP ${r.status} — overloaded`; transient = true;

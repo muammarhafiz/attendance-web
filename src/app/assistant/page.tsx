@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import AiCostPanel from './AiCostPanel';
 
 type Msg = { role: 'user' | 'assistant'; content: string };
 
@@ -16,6 +17,7 @@ const EXAMPLES = [
 export default function AssistantPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [canUse, setCanUse] = useState<boolean | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -29,6 +31,8 @@ export default function AssistantPage() {
       if (data.session) {
         const { data: ok } = await supabase.rpc('can_access', { p_feature: 'assistant' });
         setCanUse(ok === true);
+        const { data: adm } = await supabase.rpc('is_admin');
+        setIsAdmin(adm === true);
       } else setCanUse(false);
     })();
   }, []);
@@ -129,6 +133,8 @@ export default function AssistantPage() {
           </div>
         )}
       </div>
+
+      {isAdmin && <AiCostPanel />}
 
       {/* Thread */}
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto rounded-card border border-line bg-card/40 p-3">

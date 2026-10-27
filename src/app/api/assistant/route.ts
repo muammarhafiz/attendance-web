@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { createClientServer } from '@/lib/supabaseServer';
+import { logAiUsage } from '@/lib/aiUsage';
 
 export const runtime = 'nodejs';
 export const maxDuration = 45;
@@ -125,7 +126,7 @@ type GeminiPart = {
 };
 type GeminiContent = { role: string; parts: GeminiPart[] };
 
-async function callGemini(key: string, contents: GeminiContent[], decls: Record<string, unknown>[]): Promise<GeminiContent | null> {
+async function callGemini(key: string, contents: GeminiContent[], decls: Record<string, unknown>[], caller?: string | null): Promise<GeminiContent | null> {
   const body = JSON.stringify({
     system_instruction: { parts: [{ text: systemPrompt() }] },
     contents,
@@ -143,7 +144,7 @@ async function callGemini(key: string, contents: GeminiContent[], decls: Record<
       if (!r.ok) continue;
       const j = await r.json();
       const c = j?.candidates?.[0]?.content;
-      if (c?.parts) return c as GeminiContent;
+      if (c?.parts) { await logAiUsage(admin, { feature: 'assistant', model, usage: j?.usageMetadata, caller }); return c as GeminiContent; }
     } catch {
       // timeout / network — fall through to next tier
     } finally {
@@ -160,6 +161,7 @@ export async function POST(req: Request) {
     const sb = createClientServer(req);
     const { data: auth, error: aErr } = await sb.auth.getUser(token);
     if (aErr || !auth?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const caller = auth.user.email ?? auth.user.id;
 
     const { data: accessData } = await sb.rpc('my_access');
     const access = (accessData ?? {}) as Record<string, boolean>;
@@ -184,7 +186,7 @@ export async function POST(req: Request) {
 
     const used: string[] = [];
     for (let i = 0; i < MAX_TOOL_CALLS; i++) {
-      const content = await callGemini(key, contents, decls);
+      const content = await callGemini(key, contents, decls, caller);
       if (!content) return NextResponse.json({ error: 'The assistant is busy right now — please try again.' }, { status: 503 });
 
       const fcParts = content.parts.filter((p) => p.functionCall);
