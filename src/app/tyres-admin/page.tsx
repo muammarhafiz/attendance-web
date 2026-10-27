@@ -62,6 +62,7 @@ export default function TyresAdminPage() {
   const [listDate, setListDate] = useState(today());
   const [replace, setReplace] = useState(false);
   const [extracting, setExtracting] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [importErr, setImportErr] = useState('');
   const [rows, setRows] = useState<EditRow[] | null>(null);
   const [saving, setSaving] = useState(false);
@@ -103,32 +104,97 @@ export default function TyresAdminPage() {
     setRatesMsg('Saved ✓'); setTimeout(() => setRatesMsg(''), 2000);
   }, [rates]);
 
+  // Reading a supplier list can't be done in one server request: a long price list takes longer than
+  // Vercel's 60s function cap. So the page LOOP lives HERE in the browser (no time limit) — exactly the
+  // invoice reader's "one small bounded AI call per request" principle, repeated once per page:
+  //   1) one 'split' request pulls the per-page text (no AI, fast),
+  //   2) one 'page' request reads EACH page (~15s each, always under 60s), run a few at a time,
+  //   3) merge + dedupe the rows. A photo / scanned PDF (no text layer) → one 'vision' request instead.
   const onFile = useCallback(async (file: File | null) => {
     if (!file) return;
-    setImportErr(''); setSaveMsg(''); setRows(null); setExtracting(true);
+    setImportErr(''); setSaveMsg(''); setRows(null); setProgress(null); setExtracting(true);
     try {
       const data = await fileToBase64(file);
-      const r = await fetch('/api/tyre-extract', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await token()}` },
-        body: JSON.stringify({ data, mimeType: file.type || 'application/pdf' }),
-      });
-      const text = await r.text();
-      let j: { rows?: unknown; error?: string };
-      try { j = JSON.parse(text); } catch { throw new Error(r.ok ? 'Unexpected response from the reader — try a smaller/clearer file.' : `Read failed (${r.status}) — the file may be too large or the reader timed out.`); }
-      if (!r.ok) throw new Error(j?.error || `Read failed (${r.status})`);
-      const ex: Extracted[] = Array.isArray(j.rows) ? j.rows : [];
-      if (!ex.length) { setImportErr('No tyres found in that file. Try a clearer PDF/photo.'); return; }
+      const mimeType = file.type || 'application/pdf';
+      const authHeaders = { 'Content-Type': 'application/json', Authorization: `Bearer ${await token()}` };
+      const call = async (payload: Record<string, unknown>) => {
+        const r = await fetch('/api/tyre-extract', { method: 'POST', headers: authHeaders, body: JSON.stringify(payload) });
+        const t = await r.text();
+        let j: { pages?: unknown; rows?: unknown; error?: string };
+        try { j = JSON.parse(t); } catch { throw new Error(r.ok ? 'Unexpected response from the reader.' : `Read failed (${r.status}).`); }
+        if (!r.ok) throw new Error(j?.error || `Read failed (${r.status})`);
+        return j;
+      };
+
+      // 1) per-page text (photos / scanned PDFs come back with no pages → vision fallback below)
+      let pages: string[] = [];
+      if (mimeType === 'application/pdf') {
+        const split = await call({ mode: 'split', data, mimeType });
+        pages = Array.isArray(split.pages) ? (split.pages as string[]) : [];
+      }
+
+      let gathered: Extracted[] = [];
+      const failedPages: number[] = [];
+      if (pages.length > 0) {
+        // 2) read every page in its own request; limited concurrency so Google doesn't throttle many
+        // calls on one key, with a couple of retries per page before it's counted as failed.
+        setProgress({ done: 0, total: pages.length });
+        const results: Extracted[][] = Array.from({ length: pages.length }, () => []);
+        let nextIdx = 0, done = 0;
+        const worker = async () => {
+          for (;;) {
+            const i = nextIdx++;
+            if (i >= pages.length) return;
+            let ok = false;
+            for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+              try {
+                const j = await call({ mode: 'page', pageText: pages[i] });
+                results[i] = Array.isArray(j.rows) ? (j.rows as Extracted[]) : [];
+                ok = true;
+              } catch { /* transient — retry */ }
+            }
+            if (!ok) failedPages.push(i + 1);
+            setProgress({ done: ++done, total: pages.length });
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(3, pages.length) }, worker));
+        gathered = results.flat();
+      } else {
+        setProgress({ done: 0, total: 1 });
+        const j = await call({ mode: 'vision', data, mimeType });
+        gathered = Array.isArray(j.rows) ? (j.rows as Extracted[]) : [];
+        setProgress({ done: 1, total: 1 });
+      }
+
+      // 3) merge + dedupe across pages (a tyre repeated at a page break)
+      const seen = new Set<string>();
+      const ex: Extracted[] = [];
+      for (const e of gathered) {
+        if (!e || !e.brand || !e.size || e.cost == null) continue;
+        const k = `${e.brand}|${e.size}|${e.model}|${e.cost}`.toLowerCase();
+        if (seen.has(k)) continue;
+        seen.add(k); ex.push(e);
+      }
+
+      if (!ex.length) {
+        setImportErr(failedPages.length
+          ? `Couldn't read any pages (${failedPages.length} failed). Try again, or send a clearer PDF/photo.`
+          : 'No tyres found in that file. Try a clearer PDF/photo.');
+        return;
+      }
       setRows(ex.map((e) => ({
         brand: e.brand, model: e.model, size: e.size,
         cost: e.cost != null ? String(e.cost) : '',
         retail: String(suggestedRetail(e.cost, e.retail)),
         origin: e.origin, load_speed: e.load_speed,
       })));
+      if (failedPages.length) {
+        setImportErr(`Read ${ex.length} tyres, but ${failedPages.length} page${failedPages.length === 1 ? '' : 's'} couldn't be read (page ${failedPages.sort((a, b) => a - b).join(', ')}). Review & Save below, then re-import the same file to pick up the missed pages.`);
+      }
     } catch (e) {
       setImportErr(e instanceof Error ? e.message : String(e));
     } finally {
-      setExtracting(false);
+      setExtracting(false); setProgress(null);
     }
   }, [token]);
 
