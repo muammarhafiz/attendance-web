@@ -34,7 +34,7 @@ const admin = createClient(
 const RULES =
   'Return ONLY JSON of this shape: {"rows":[{"brand":string,"model":string,"size":string,"cost":number,"retail":number,"origin":string,"load_speed":string}]}. ' +
   'One object per tyre line. Rules: ' +
-  'brand = the tyre brand (e.g. Kumho, Goodyear, Kinto, Leao, Rovelo). ' +
+  'brand = the tyre brand (e.g. Kumho, Goodyear, Kinto, Leao, Rovelo). If the whole list is for ONE brand named only in its header/title and not repeated on each line, use that brand for every row; if no brand is shown anywhere, use "". ' +
   'model = the pattern / model name or code (e.g. "HP71", "Ecsta PS31", "RHP-A68"); use "" if the line shows only a brand with no model. ' +
   'size = the tyre size as WIDTH/PROFILE R RIM joined like "225/55R19" (normalise "225/55/19", "225 55 19", "155 / 70 R 12" all to e.g. "155/70R12"). ' +
   'cost = the DEALER / NETT / INVOICE price for ONE piece in Malaysian Ringgit, as a plain number. If both a 4-piece and a 1-piece price are shown, use the 1-piece; if ONLY a set-of-4 price is shown, divide it by 4; if both a nett/cost and a retail are shown, cost is the lower nett/dealer/invoice price. ' +
@@ -152,7 +152,7 @@ function normalizeRows(resp: string): OutRow[] {
       origin: String(r.origin ?? '').trim(),
       load_speed: String(r.load_speed ?? r.loadSpeed ?? '').trim(),
     };
-    if (!row.brand || !row.size || !row.cost) continue; // keep only usable, priced rows
+    if (!row.size || !row.cost) continue; // keep priced rows; brand may be blank on single-brand lists (filled in the UI)
     const k = `${row.brand}|${row.size}|${row.model}|${row.cost}`.toLowerCase();
     if (seen.has(k)) continue;
     seen.add(k);

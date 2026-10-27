@@ -58,6 +58,7 @@ export default function TyresAdminPage() {
 
   // import
   const [dealer, setDealer] = useState('');
+  const [brand, setBrand] = useState(''); // single-brand lists (e.g. Rovelo) have no per-row brand — fills blanks
   const [phone, setPhone] = useState('');
   const [listDate, setListDate] = useState(today());
   const [replace, setReplace] = useState(false);
@@ -113,6 +114,14 @@ export default function TyresAdminPage() {
   const onFile = useCallback(async (file: File | null) => {
     if (!file) return;
     setImportErr(''); setSaveMsg(''); setRows(null); setProgress(null); setExtracting(true);
+    // Single-brand lists (e.g. Rovelo) print the brand only in the header/filename, not on each row.
+    // Best-effort pre-fill the Brand field from the filename if it's empty, so blank rows get a brand.
+    setBrand((cur) => {
+      if (cur.trim()) return cur;
+      return file.name.replace(/\.[^.]+$/, '')
+        .replace(/price\s*list|pricelist|updated|revised|\b\d{1,2}(st|nd|rd|th)?\b|jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|jun(e)?|jul(y)?|aug(ust)?|sep(t|tember)?|oct(ober)?|nov(ember)?|dec(ember)?|\b\d{4}\b|[-_()]/gi, ' ')
+        .replace(/\s+/g, ' ').trim();
+    });
     try {
       const data = await fileToBase64(file);
       const mimeType = file.type || 'application/pdf';
@@ -170,7 +179,7 @@ export default function TyresAdminPage() {
       const seen = new Set<string>();
       const ex: Extracted[] = [];
       for (const e of gathered) {
-        if (!e || !e.brand || !e.size || e.cost == null) continue;
+        if (!e || !e.size || e.cost == null) continue; // brand may be blank on single-brand lists
         const k = `${e.brand}|${e.size}|${e.model}|${e.cost}`.toLowerCase();
         if (seen.has(k)) continue;
         seen.add(k); ex.push(e);
@@ -205,12 +214,17 @@ export default function TyresAdminPage() {
   const saveImport = useCallback(async () => {
     if (!rows || !rows.length) return;
     if (!dealer.trim()) { setImportErr('Pick or type the supplier name first.'); return; }
+    // Blank per-row brands fall back to the "Tyre brand" field (single-brand lists like Rovelo).
+    const fb = brand.trim();
+    if (!fb && rows.every((r) => !r.brand.trim())) {
+      setImportErr('This list has no brand per row — type the tyre brand (e.g. Rovelo) in the Tyre brand field above.'); return;
+    }
     setSaving(true); setImportErr(''); setSaveMsg('');
     const payload = rows
       .map((r) => ({ r, retail: cleanNum(r.retail), cost: cleanNum(r.cost) }))
-      .filter((x) => x.r.brand.trim() && x.r.size.trim() && x.retail != null)
+      .filter((x) => (x.r.brand.trim() || fb) && x.r.size.trim() && x.retail != null)
       .map(({ r, retail, cost }) => ({
-        brand: r.brand.trim(), pattern: r.model.trim(), size: r.size.trim(),
+        brand: r.brand.trim() || fb, pattern: r.model.trim(), size: r.size.trim(),
         cost, retail, origin: r.origin.trim(), load_speed: r.load_speed.trim(),
       }));
     const { data, error } = await supabase.rpc('tyre_admin_save_import', {
@@ -220,7 +234,7 @@ export default function TyresAdminPage() {
     if (error) { setImportErr(error.message); return; }
     setSaveMsg(`Saved ${data} tyre${data === 1 ? '' : 's'} for ${dealer.trim()}${replace ? ' (replaced the old list)' : ''}.`);
     setRows(null); setReplace(false);
-  }, [rows, dealer, phone, listDate, replace]);
+  }, [rows, dealer, brand, phone, listDate, replace]);
 
   const loadList = useCallback(async () => {
     setLoadingList(true);
@@ -252,7 +266,7 @@ export default function TyresAdminPage() {
     if (error) await loadList();
   }, [loadList]);
 
-  const importTotal = useMemo(() => rows?.filter((r) => r.brand.trim() && r.size.trim() && cleanNum(r.retail) != null).length ?? 0, [rows]);
+  const importTotal = useMemo(() => rows?.filter((r) => (r.brand.trim() || brand.trim()) && r.size.trim() && cleanNum(r.retail) != null).length ?? 0, [rows, brand]);
 
   if (isAdmin === null) return <div className="p-6 text-sm text-ink-3">Checking…</div>;
   if (!isAdmin) return <div className="p-6 text-sm text-ink-2">Manage Tyres is for the owner/admin only.</div>;
@@ -306,6 +320,10 @@ export default function TyresAdminPage() {
             <datalist id="dealers">{DEALERS.map((d) => <option key={d} value={d} />)}</datalist>
           </label>
           <label className="text-xs text-ink-2">
+            <span className="mb-1 block">Tyre brand</span>
+            <input value={brand} onChange={(e) => setBrand(e.target.value)} placeholder="e.g. Rovelo" className={`${inp} w-full`} />
+          </label>
+          <label className="text-xs text-ink-2">
             <span className="mb-1 block">Supplier phone</span>
             <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="0123456789" className={`${inp} w-full`} />
           </label>
@@ -332,6 +350,11 @@ export default function TyresAdminPage() {
         {rows && (
           <div className="mt-4">
             <div className="mb-2 text-xs text-ink-3">{importTotal} tyre{importTotal === 1 ? '' : 's'} read — check & edit, then Save. Retail is the house markup; change any if you want.</div>
+            {rows.some((r) => !r.brand.trim()) && (
+              <div className="mb-2 rounded-md border border-amber-200 bg-warn-soft p-2 text-xs text-warn">
+                This list shows no brand on each row — blank rows will be saved as “<b>{brand.trim() || '…'}</b>”. Set the <b>Tyre brand</b> field above if that’s not right.
+              </div>
+            )}
             <div className="overflow-x-auto rounded-lg border border-line">
               <table className="w-full min-w-[640px] text-sm">
                 <thead className="bg-ink/5 text-left text-xs text-ink-3">
@@ -339,8 +362,8 @@ export default function TyresAdminPage() {
                 </thead>
                 <tbody className="divide-y divide-line">
                   {rows.map((r, i) => (
-                    <tr key={i} className={!r.brand.trim() || !r.size.trim() || !r.retail.trim() ? 'bg-bad-soft/40' : ''}>
-                      <td className="p-1"><input value={r.brand} onChange={(e) => setRow(i, { brand: e.target.value })} className={`${inp} w-24`} /></td>
+                    <tr key={i} className={(!r.brand.trim() && !brand.trim()) || !r.size.trim() || !r.retail.trim() ? 'bg-bad-soft/40' : ''}>
+                      <td className="p-1"><input value={r.brand} onChange={(e) => setRow(i, { brand: e.target.value })} placeholder={brand.trim() || 'brand'} className={`${inp} w-24`} /></td>
                       <td className="p-1"><input value={r.model} onChange={(e) => setRow(i, { model: e.target.value })} placeholder="—" className={`${inp} w-28`} /></td>
                       <td className="p-1"><input value={r.size} onChange={(e) => setRow(i, { size: e.target.value })} className={`${inp} w-24 font-mono`} /></td>
                       <td className="p-1"><input value={r.cost} onChange={(e) => setRow(i, { cost: e.target.value })} inputMode="decimal" className={`${inp} w-16`} /></td>
