@@ -317,7 +317,7 @@ export default function TyresAdminPage() {
 
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-accent px-4 py-1.5 text-sm font-semibold text-white hover:opacity-90">
-            {extracting ? 'Reading…' : '📄 Choose PDF / photo'}
+            {extracting ? (progress ? `Reading… ${progress.done}/${progress.total}` : 'Reading…') : '📄 Choose PDF / photo'}
             <input type="file" accept="application/pdf,image/*" className="hidden" disabled={extracting} onChange={(e) => { const f = e.target.files?.[0] ?? null; e.target.value = ''; onFile(f); }} />
           </label>
           <label className="flex items-center gap-2 text-xs text-ink-2">

@@ -106,9 +106,12 @@ async function gemini(parts: Record<string, unknown>[], key: string): Promise<st
 }
 
 // Pull the real text layer of a (digital) PDF, one string per page. '' / near-empty pages are dropped.
+// NOTE: unpdf/pdf.js THROWS "Please provide binary data as `Uint8Array`, rather than `Buffer`" if given
+// a Node Buffer, so always hand it a plain Uint8Array (a Buffer is a Uint8Array subclass but is rejected).
+// This exact bug made split return 0 pages -> the client fell back to a whole-PDF vision call that timed out.
 async function extractPageTexts(buf: Uint8Array): Promise<string[]> {
   try {
-    const pdf = await getDocumentProxy(buf);
+    const pdf = await getDocumentProxy(new Uint8Array(buf));
     const { text } = await extractText(pdf, { mergePages: false });
     const pages = Array.isArray(text) ? text : [String(text ?? '')];
     return pages.map((t) => String(t ?? '').trim()).filter((t) => t.length > 20);
