@@ -48,7 +48,6 @@ export default function MonthEndPage() {
   const [newBillLabel, setNewBillLabel] = useState('');
   const [newBillAmount, setNewBillAmount] = useState('');
   const [copying, setCopying] = useState(false); // "Copy last month" for the Bills card
-  const [billRows, setBillRows] = useState<Dash['bills']>([]);
   const [draggingId, setDraggingId] = useState<number | null>(null);
   const dragIdRef = useRef<number | null>(null);
   const rowEls = useRef<Record<number, HTMLDivElement | null>>({});
@@ -67,10 +66,8 @@ export default function MonthEndPage() {
   const monthKey = `${year}-${String(month).padStart(2, '0')}`;
   const todayIso = today.toISOString().slice(0, 10);
 
-  // Bills are drag-reorderable; the saved order (opex_bills.sort_order) is applied by month_end_status.
-  // Keep a local copy synced from the server so a drag reorders instantly. The drag handlers live
-  // below load() because the persist helper reloads on error.
-  useEffect(() => { setBillRows(d?.bills ?? []); }, [d?.bills]);
+  // Bills: every bill action (tick / edit / rename / delete / drag) updates d.bills OPTIMISTICALLY
+  // (no full reload), so the page never flashes. Drag handlers live below load() (used only on error).
 
   useEffect(() => {
     (async () => {
@@ -97,8 +94,9 @@ export default function MonthEndPage() {
     })();
   }, [allowed, year, month]);
 
-  const load = useCallback(async () => {
-    setLoading(true); setErr(null);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    setErr(null);
     const { data } = await supabase.rpc('month_end_status', { p_month: monthKey });
     setD((data ?? null) as Dash);
     if (canPay) {
@@ -110,7 +108,7 @@ export default function MonthEndPage() {
 
   const persistBillOrder = useCallback(async (ids: number[]) => {
     const { error } = await supabase.rpc('month_end_reorder_bills', { p_ids: ids });
-    if (error) { setErr('Could not save the new bill order — ' + error.message); await load(); }
+    if (error) { await load(true); setErr('Could not save the new bill order — ' + error.message); }
   }, [load]);
   const billDragStart = (e: RPointerEvent<HTMLElement>, id: number) => {
     e.preventDefault(); dragIdRef.current = id; setDraggingId(id);
@@ -119,23 +117,26 @@ export default function MonthEndPage() {
   const billDragMove = (e: RPointerEvent<HTMLElement>) => {
     const dragId = dragIdRef.current; if (dragId == null) return;
     const y = e.clientY; let targetId: number | null = null;
-    for (const b of billRows) {
+    for (const b of (d?.bills ?? [])) {
       const el = rowEls.current[b.id]; if (!el) continue;
       const r = el.getBoundingClientRect();
       if (y >= r.top && y <= r.bottom) { targetId = b.id; break; }
     }
     if (targetId == null || targetId === dragId) return;
-    setBillRows((rows) => {
+    setD((prev) => {
+      if (!prev) return prev;
+      const rows = prev.bills;
       const from = rows.findIndex((r) => r.id === dragId), to = rows.findIndex((r) => r.id === targetId);
-      if (from < 0 || to < 0 || from === to) return rows;
-      const next = rows.slice(); const [m] = next.splice(from, 1); next.splice(to, 0, m); return next;
+      if (from < 0 || to < 0 || from === to) return prev;
+      const next = rows.slice(); const [m] = next.splice(from, 1); next.splice(to, 0, m);
+      return { ...prev, bills: next };
     });
   };
   const billDragEnd = (e: RPointerEvent<HTMLElement>) => {
     if (dragIdRef.current == null) return;
     try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
     dragIdRef.current = null; setDraggingId(null);
-    setBillRows((rows) => { void persistBillOrder(rows.map((r) => r.id)); return rows; });
+    setD((prev) => { if (prev) void persistBillOrder(prev.bills.map((b) => b.id)); return prev; });
   };
 
   useEffect(() => { if (allowed) load(); }, [allowed, load]);
@@ -169,27 +170,27 @@ export default function MonthEndPage() {
     if (!label) return;
     const { error } = await supabase.rpc('month_end_add_bill', { p_month: monthKey, p_label: label, p_amount: Number(newBillAmount) || 0 });
     if (error) { setErr(error.message); return; }
-    setNewBillLabel(''); setNewBillAmount(''); await load();
+    setNewBillLabel(''); setNewBillAmount(''); await load(true); // add needs the new id -> silent refetch (no flash)
   }, [newBillLabel, newBillAmount, monthKey, load]);
   const billSetPaid = useCallback(async (id: number, paid: boolean) => {
+    setD((prev) => prev ? { ...prev, bills: prev.bills.map((b) => b.id === id ? { ...b, paid, paid_date: paid ? todayIso : null } : b) } : prev);
     const { error } = await supabase.rpc('month_end_set_bill_paid', { p_id: id, p_paid: paid, p_date: paid ? todayIso : null });
-    if (error) setErr(error.message);
-    await load();
+    if (error) { await load(true); setErr(error.message); }
   }, [todayIso, load]);
   const billSetAmount = useCallback(async (id: number, amount: number) => {
+    setD((prev) => prev ? { ...prev, bills: prev.bills.map((b) => b.id === id ? { ...b, amount } : b) } : prev);
     const { error } = await supabase.rpc('month_end_update_bill', { p_id: id, p_amount: amount });
-    if (error) setErr(error.message);
-    await load();
+    if (error) { await load(true); setErr(error.message); }
   }, [load]);
   const billSetLabel = useCallback(async (id: number, label: string) => {
+    setD((prev) => prev ? { ...prev, bills: prev.bills.map((b) => b.id === id ? { ...b, label } : b) } : prev);
     const { error } = await supabase.rpc('month_end_rename_bill', { p_id: id, p_label: label });
-    if (error) setErr(error.message);
-    await load();
+    if (error) { await load(true); setErr(error.message); }
   }, [load]);
   const billDelete = useCallback(async (id: number) => {
+    setD((prev) => prev ? { ...prev, bills: prev.bills.filter((b) => b.id !== id) } : prev);
     const { error } = await supabase.rpc('month_end_delete_bill', { p_id: id });
-    if (error) setErr(error.message);
-    await load();
+    if (error) { await load(true); setErr(error.message); }
   }, [load]);
   // Copy the previous month's bills into this month (same as the P&L page's button) — via the gated RPCs.
   const copyLastMonth = useCallback(async () => {
@@ -204,7 +205,7 @@ export default function MonthEndPage() {
       if (error) { setErr(error.message); break; }
     }
     setCopying(false);
-    await load();
+    await load(true);
   }, [year, month, monthKey, load]);
 
   // --- Inline fix a single absent day (Present / Off day / MC) — mirrors the Attendance report editor ---
@@ -272,7 +273,7 @@ export default function MonthEndPage() {
           <button onClick={prevMonth} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">◀</button>
           <span className="min-w-[120px] text-center text-sm font-semibold">{MONTHS[month - 1]} {year}</span>
           <button onClick={nextMonth} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">▶</button>
-          <button onClick={load} disabled={loading} title="Reload the latest — tap after fixing attendance"
+          <button onClick={() => load()} disabled={loading} title="Reload the latest — tap after fixing attendance"
             className="ml-1 rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">{loading ? '…' : '↻'}</button>
         </div>
       </div>
@@ -330,7 +331,7 @@ export default function MonthEndPage() {
                     {s.key === 'fix_absent' && (
                       <div className="mt-2">
                         <div className="mb-1.5 flex justify-end">
-                          <button onClick={load} disabled={loading} title="Reload the latest after fixing attendance"
+                          <button onClick={() => load()} disabled={loading} title="Reload the latest after fixing attendance"
                             className="rounded-lg border border-amber-300 bg-card px-2 py-0.5 text-xs font-medium text-warn hover:bg-warn-soft disabled:opacity-50">{loading ? '…' : '↻ Refresh'}</button>
                         </div>
                         {d.absents.count > 0 ? (
@@ -454,7 +455,7 @@ export default function MonthEndPage() {
                 <button onClick={copyLastMonth} disabled={copying} className="shrink-0 rounded-lg border border-line px-2.5 py-1 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">{copying ? 'Copying…' : 'Copy last month'}</button>
               </div>
             ) : (
-              (billRows.length ? billRows : d.bills).map((b) => (
+              d.bills.map((b) => (
                 <div key={b.id} ref={(el) => { rowEls.current[b.id] = el; }}
                   className={`flex items-center gap-2 py-0.5 text-sm ${draggingId === b.id ? 'rounded bg-ink/5 opacity-70' : ''}`}>
                   <span onPointerDown={(e) => billDragStart(e, b.id)} onPointerMove={billDragMove} onPointerUp={billDragEnd} onPointerCancel={billDragEnd}
