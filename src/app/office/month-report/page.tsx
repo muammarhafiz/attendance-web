@@ -20,10 +20,12 @@ const n = (x: unknown) => { const v = Number(x); return Number.isFinite(v) ? v :
 const rm = (x: number) => `RM ${x.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-function Delta({ v }: { v: number }) {
-  if (!v) return <span className="text-ink-3">— vs last month</span>;
+function Delta({ v, base, period }: { v: number; base?: number; period?: string }) {
+  const label = period || 'last month';
+  if (!v) return <span className="text-ink-3">— vs {label}</span>;
   const up = v > 0;
-  return <span className={up ? 'text-good' : 'text-bad'}>{up ? '▲' : '▼'} {rm(Math.abs(v))} vs last month</span>;
+  const pct = base && base !== 0 ? Math.abs(v / base) * 100 : null;
+  return <span className={up ? 'text-good' : 'text-bad'}>{up ? '▲' : '▼'} {rm(Math.abs(v))}{pct != null ? ` · ${pct.toFixed(0)}%` : ''} vs {label}</span>;
 }
 
 export default function MonthReportPage() {
@@ -51,6 +53,11 @@ export default function MonthReportPage() {
   const coverage = n(r?.cost_coverage_pct);
   const prevCoverage = n(r?.prev?.cost_coverage_pct);
   const f = r?.financials;
+  const overhead = n(f?.payroll) + n(f?.employer) + n(f?.bills) + n(f?.meals);
+  const overheadPct = n(f?.sales) > 0 ? (overhead / n(f?.sales)) * 100 : 0;
+  const shortPrev = (r?.prev?.label || 'last month').split(' ')[0]; // e.g. "September"
+  const cy = today.getFullYear(); const cm = today.getMonth() + 1;
+  const atCurrentMonth = year > cy || (year === cy && month >= cm); // no data for future months
   const netClass = useMemo(() => (n(f?.net_profit) < 0 ? 'text-bad' : 'text-good'), [f?.net_profit]);
 
   if (allowed === null) return <div className="mx-auto max-w-4xl px-4 py-6 text-sm text-ink-3">Checking…</div>;
@@ -62,8 +69,8 @@ export default function MonthReportPage() {
         <h1 className="text-xl font-semibold tracking-tight text-ink">Monthly report</h1>
         <div className="ml-auto flex items-center gap-2">
           <button onClick={prevMonth} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">◀</button>
-          <span className="min-w-[130px] text-center text-sm font-semibold">{MONTHS[month - 1]} {year}</span>
-          <button onClick={nextMonth} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">▶</button>
+          <span className="min-w-[130px] text-center text-sm font-semibold">{r?.label ?? `${MONTHS[month - 1]} ${year}`}</span>
+          <button onClick={nextMonth} disabled={atCurrentMonth} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-40 disabled:hover:bg-transparent">▶</button>
         </div>
       </div>
 
@@ -80,18 +87,18 @@ export default function MonthReportPage() {
           <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-card bg-card shadow-card p-4">
               <div className="text-xs font-medium text-ink-2">Net profit</div>
-              <div className={`mt-1 text-2xl font-semibold ${netClass}`}>{rm(n(f.net_profit))}</div>
-              <div className="mt-1 text-[11px]"><Delta v={n(r.delta.net_profit)} /></div>
+              <div className={`mt-1 text-2xl font-semibold tabular-nums ${netClass}`}>{rm(n(f.net_profit))}</div>
+              <div className="mt-1 text-[11px]"><Delta v={n(r.delta.net_profit)} base={n(r.prev.net_profit)} period={shortPrev} /></div>
             </div>
             <div className="rounded-card bg-card shadow-card p-4">
               <div className="text-xs font-medium text-ink-2">Sales (paid)</div>
-              <div className="mt-1 text-2xl font-semibold text-ink">{rm(n(f.sales))}</div>
-              <div className="mt-1 text-[11px]"><Delta v={n(r.delta.sales)} /></div>
+              <div className="mt-1 text-2xl font-semibold tabular-nums text-ink">{rm(n(f.sales))}</div>
+              <div className="mt-1 text-[11px]"><Delta v={n(r.delta.sales)} base={n(r.prev.sales)} period={shortPrev} /></div>
             </div>
             <div className="rounded-card bg-card shadow-card p-4">
               <div className="text-xs font-medium text-ink-2">Gross profit</div>
-              <div className="mt-1 text-2xl font-semibold text-ink">{rm(n(f.gross_profit))}</div>
-              <div className="mt-1 text-[11px]"><Delta v={n(r.delta.gross_profit)} /></div>
+              <div className="mt-1 text-2xl font-semibold tabular-nums text-ink">{rm(n(f.gross_profit))}</div>
+              <div className="mt-1 text-[11px]"><Delta v={n(r.delta.gross_profit)} base={n(r.prev.gross_profit)} period={shortPrev} /></div>
             </div>
           </div>
 
@@ -110,8 +117,12 @@ export default function MonthReportPage() {
               <Line label="Employer EPF / SOCSO / EIS" value={rm(n(f.employer))} />
               <Line label="Bills & others" value={rm(n(f.bills))} />
               <Line label="Staff meals" value={rm(n(f.meals))} />
-              <div className={`mt-2 flex items-center justify-between border-t border-line pt-2 text-sm font-semibold ${netClass}`}>
-                <span>Net profit</span><span>{rm(n(f.net_profit))}</span>
+              <div className="mt-2 flex items-center justify-between border-t border-line pt-2 text-sm font-semibold text-ink-2">
+                <span>Total overhead{overheadPct > 0 ? ` · ${overheadPct.toFixed(0)}% of sales` : ''}</span>
+                <span className="tabular-nums">{rm(overhead)}</span>
+              </div>
+              <div className={`mt-1 flex items-center justify-between text-sm font-semibold ${netClass}`}>
+                <span>Net profit</span><span className="tabular-nums">{rm(n(f.net_profit))}</span>
               </div>
             </div>
           </div>
@@ -128,14 +139,30 @@ export default function MonthReportPage() {
               <Row label="Outstanding (unpaid)" value={rm(n(r.sales.receivable))} />
             </div>
             <div className="mt-3 border-t border-line pt-3">
-              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-3">Top sellers</div>
-              <div className="space-y-1">
-                {(r.sales.top ?? []).map((t, i) => (
-                  <div key={i} className="flex items-center justify-between text-sm">
-                    <span className="text-ink-2">{i + 1}. {t.name}</span>
-                    <span className="tabular-nums font-medium">{rm(n(t.sales))} <span className="text-ink-3">({t.invoices})</span></span>
-                  </div>
-                ))}
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-3">Staff sales</div>
+              <div className="space-y-2">
+                {(() => {
+                  const list = r.sales.top ?? [];
+                  const max = list.reduce((mx, t) => Math.max(mx, n(t.sales)), 0) || 1;
+                  return list.map((t, i) => {
+                    const sales = n(t.sales);
+                    const inv = t.invoices || 0;
+                    const avg = inv > 0 ? sales / inv : 0;
+                    const pct = Math.max(3, Math.round((sales / max) * 100));
+                    return (
+                      <div key={i}>
+                        <div className="flex items-baseline justify-between gap-2 text-sm">
+                          <span className="truncate text-ink-2">{i + 1}. {t.name}</span>
+                          <span className="shrink-0 tabular-nums font-medium">{rm(sales)} <span className="font-normal text-ink-3">· {inv} inv · {rm(avg)}/inv</span></span>
+                        </div>
+                        <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-line/60">
+                          <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+                {(r.sales.top ?? []).length === 0 && <div className="text-sm text-ink-3">No sales this month.</div>}
               </div>
             </div>
           </div>
