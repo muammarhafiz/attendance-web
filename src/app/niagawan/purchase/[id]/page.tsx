@@ -20,6 +20,11 @@ type Pinv = {
   resolve_status: string | null;
   read_model: string | null;
   dup_pi_no: string | null;
+  drive_status: string | null;
+  drive_url: string | null;
+  drive_filename: string | null;
+  drive_note: string | null;
+  drive_saved_at: string | null;
 };
 
 type NiagawanMatch = { sku: string; code: string; descp: string; price: string; bal: string };
@@ -70,6 +75,11 @@ export default function ReviewInvoicePage() {
   const [candsLoaded, setCandsLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  // "Save copy to Drive" (supplier's shared folder): queue a job the NAS picks up, then poll the result.
+  const [driveName, setDriveName] = useState<string | null>(null);
+  const [driveBusy, setDriveBusy] = useState(false);
+  const drivePoll = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => () => { if (drivePoll.current) clearInterval(drivePoll.current); }, []);
   // Per-line product picker: search the full catalog (niagawan_products) to link an existing
   // product to a line — for code-less invoices (e.g. Tat Seng) the owner picks from the list
   // instead of creating duplicates. `picked` caches the chosen products for display.
@@ -409,6 +419,30 @@ export default function ReviewInvoicePage() {
     return () => clearInterval(t);
   }, [head?.resolve_status, load]);
 
+  // Default Drive filename = the supplier's invoice ref# with filesystem-illegal chars (e.g. "/") → space.
+  const driveFilenameOf = useCallback((h: Pinv | null) => {
+    const raw = String((h?.drive_filename || h?.ref_no || h?.niagawan_pi_no || '') ?? '');
+    return raw.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
+  }, []);
+  const saveToDrive = useCallback(async () => {
+    if (!id || !head) return;
+    const fname = ((driveName ?? driveFilenameOf(head)).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim()) || driveFilenameOf(head) || 'invoice';
+    setDriveBusy(true); setMsg(null);
+    const { error } = await supabase.from('pinv').update({ drive_status: 'queued', drive_filename: fname, drive_url: null, drive_note: null, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) { setDriveBusy(false); setMsg({ kind: 'err', text: error.message }); return; }
+    await supabase.from('sync_requests').insert({ which: 'pinv-drive', source: 'website' });
+    setHead((h) => (h ? { ...h, drive_status: 'queued', drive_url: null, drive_note: null } : h));
+    if (drivePoll.current) clearInterval(drivePoll.current);
+    const started = Date.now();
+    drivePoll.current = setInterval(async () => {
+      const { data } = await supabase.from('pinv').select('drive_status,drive_url,drive_note').eq('id', id).maybeSingle();
+      const d = data as { drive_status: string | null; drive_url: string | null; drive_note: string | null } | null;
+      if (d) setHead((h) => (h ? { ...h, drive_status: d.drive_status, drive_url: d.drive_url, drive_note: d.drive_note } : h));
+      if (d?.drive_status === 'done' || d?.drive_status === 'error') { if (drivePoll.current) clearInterval(drivePoll.current); setDriveBusy(false); }
+      else if (Date.now() - started > 150000) { if (drivePoll.current) clearInterval(drivePoll.current); setDriveBusy(false); }
+    }, 3000);
+  }, [id, head, driveName, driveFilenameOf]);
+
   const viewPdf = useCallback(() => openSignedFile('pinv', head?.file_path ?? null), [head]);
 
   // Dismiss = hide this invoice from the list (e.g. it's already keyed into Niagawan manually).
@@ -434,6 +468,9 @@ export default function ReviewInvoicePage() {
   if (!head) return <div className="text-sm text-ink-2">Invoice not found. <button onClick={() => router.push('/niagawan/purchase')} className="text-accent underline">Back</button></div>;
 
   const locked = head.status === 'approved' || head.status === 'creating' || head.status === 'created' || head.status === 'dismissed';
+  const driveNameVal = driveName ?? driveFilenameOf(head);
+  const driveReady = /grand auto/i.test(head.supplier_name || ''); // suppliers with a Drive folder mapped on the NAS
+  const driveWorking = driveBusy || head.drive_status === 'queued' || head.drive_status === 'saving';
   const showBilled = head.check_status === 'checked';
   const resolving = head.resolve_status === 'queued' || head.resolve_status === 'resolving';
 
@@ -543,6 +580,42 @@ export default function ReviewInvoicePage() {
             : <span className="rounded bg-good-soft px-1.5 py-0.5 font-medium text-good">✓ matches PDF total</span>}
         </div>
       </div>
+
+      {/* Send a copy of the Niagawan-keyed invoice to the supplier's shared Drive folder */}
+      {head.status === 'created' && (
+        <div className="mb-4 rounded-card bg-card shadow-card p-4">
+          {!driveReady ? (
+            <div className="text-xs text-ink-3">Drive auto-save isn&rsquo;t set up for this supplier yet.</div>
+          ) : head.drive_status === 'done' ? (
+            <div>
+              <div className="flex items-center gap-2 text-sm font-semibold text-good">✓ Saved to Drive</div>
+              <div className="mt-1 text-xs text-ink-2">Filed to the shared Grand Auto folder{head.drive_note ? ` · ${head.drive_note}` : ''}.</div>
+              <div className="mt-2 flex items-center gap-3">
+                {head.drive_url && <a href={head.drive_url} target="_blank" rel="noreferrer" className="text-sm font-medium text-accent underline">Open in Drive →</a>}
+                <button onClick={saveToDrive} disabled={driveBusy} className="text-xs text-ink-3 underline hover:text-ink-2">re-save</button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div className="text-sm font-semibold text-ink">Send copy to Grand Auto (Google Drive)</div>
+              <p className="mt-1 text-xs text-ink-2">Saves this invoice <b>as keyed in Niagawan</b> as a PDF into the shared folder — the right <b>year ▸ week</b> automatically.</p>
+              <label className="mt-3 block">
+                <span className="text-xs font-medium text-ink-2">File name</span>
+                <div className="mt-1 flex items-center gap-2">
+                  <input value={driveNameVal} onChange={(e) => setDriveName(e.target.value)} disabled={driveWorking}
+                    className="w-full max-w-sm rounded-lg border border-line px-2 py-1 text-sm disabled:bg-ink/[0.03]" />
+                  <span className="text-xs text-ink-3">.pdf</span>
+                </div>
+              </label>
+              <button onClick={saveToDrive} disabled={driveWorking}
+                className="mt-3 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+                {driveWorking ? 'Saving… (~1 min)' : 'Save PDF to Drive'}
+              </button>
+              {head.drive_status === 'error' && <div className="mt-2 text-xs text-bad">Couldn&rsquo;t save: {head.drive_note || 'unknown error'}</div>}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Sales-check result banner (3-way: billed / check / not billed) */}
       {head.check_status === 'checked' && (() => {
