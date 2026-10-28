@@ -58,6 +58,7 @@ export default function PayrollV3Page() {
   const [period, setPeriod] = useState<Period | null>(null);
   const [rows, setRows] = useState<Summary[]>([]);
   const [absent, setAbsent] = useState<Record<string, number>>({});
+  const [statWage, setStatWage] = useState<Record<string, number>>({}); // EPF/SOCSO/EIS wage = salary − unpaid leave
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<string>('');
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
@@ -77,16 +78,20 @@ export default function PayrollV3Page() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: per }, { data: sum }, { data: abs }] = await Promise.all([
+      const [{ data: per }, { data: sum }, { data: abs }, { data: sw }] = await Promise.all([
         supabase.from('v_periods_min').select('id,year,month,status').eq('year', year).eq('month', month).maybeSingle(),
         supabase.from('v_payslip_admin_summary_v2').select('*').eq('year', year).eq('month', month).order('staff_name'),
         supabase.rpc('payroll_absent_days_v2', { p_year: year, p_month: month }),
+        supabase.rpc('payroll_stat_wages', { p_year: year, p_month: month }),
       ]);
       setPeriod((per as Period) ?? null);
       setRows((sum as Summary[]) ?? []);
       const m: Record<string, number> = {};
       (abs as { staff_email: string; days_absent: number }[] | null)?.forEach((r) => { m[(r.staff_email || '').toLowerCase()] = r.days_absent ?? 0; });
       setAbsent(m);
+      const wm: Record<string, number> = {};
+      (sw as { staff_email: string; stat_wage: number }[] | null)?.forEach((r) => { wm[(r.staff_email || '').toLowerCase()] = n(r.stat_wage); });
+      setStatWage(wm);
     } finally { setLoading(false); }
   }, [year, month]);
 
@@ -392,6 +397,7 @@ export default function PayrollV3Page() {
               <th className="px-3 py-2 text-right font-medium text-ink-2">Commission</th>
               <th className="px-3 py-2 text-right font-medium text-ink-2">Gross</th>
               <th className="px-3 py-2 text-right font-medium text-ink-2">Unpaid</th>
+              <th className="px-3 py-2 text-right font-medium text-ink-2" title="Wage for EPF/SOCSO/EIS = salary − unpaid leave. Enter this figure in PERKESO ASSIST & KWSP.">Actual wage</th>
               <th className="px-3 py-2 text-right font-medium text-ink-2">Deductions</th>
               <th className="px-3 py-2 text-right font-medium text-ink-2">Net pay</th>
               <th className="px-3 py-2 text-center font-medium text-ink-2">Absent</th>
@@ -400,22 +406,29 @@ export default function PayrollV3Page() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} className="px-3 py-6 text-center text-ink-2">Loading…</td></tr>
+              <tr><td colSpan={10} className="px-3 py-6 text-center text-ink-2">Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={9} className="px-3 py-6 text-center text-ink-2">Nothing yet — tap &quot;Generate payroll from attendance&quot;.</td></tr>
-            ) : rows.map((r) => (
-              <tr key={r.staff_email} className="border-t border-line">
-                <td className="px-3 py-2"><div className="font-medium text-ink">{r.staff_name ?? r.staff_email}</div><div className="text-xs text-ink-3">{r.staff_email}</div></td>
-                <td className="px-3 py-2 text-right tabular-nums">{rm(r.base_wage)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{commissionOf(r) ? rm(commissionOf(r)) : '—'}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{rm(r.total_earn)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-bad">{n(r.unpaid_auto) ? rm(r.unpaid_auto) : '—'}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{rm(r.total_deduct)}</td>
-                <td className="px-3 py-2 text-right font-semibold tabular-nums">{rm(r.net_pay)}</td>
-                <td className="px-3 py-2 text-center">{absent[(r.staff_email || '').toLowerCase()] || 0}</td>
-                <td className="px-3 py-2 text-right"><button onClick={() => openDetails(r)} className="rounded-lg border px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">Details</button></td>
-              </tr>
-            ))}
+              <tr><td colSpan={10} className="px-3 py-6 text-center text-ink-2">Nothing yet — tap &quot;Generate payroll from attendance&quot;.</td></tr>
+            ) : rows.map((r) => {
+              const base = n(r.base_wage);
+              const actual = statWage[(r.staff_email || '').toLowerCase()] ?? base;
+              const reduced = actual < base - 0.005; // salary cut by unpaid leave this month
+              return (
+                <tr key={r.staff_email} className="border-t border-line">
+                  <td className="px-3 py-2"><div className="font-medium text-ink">{r.staff_name ?? r.staff_email}</div><div className="text-xs text-ink-3">{r.staff_email}</div></td>
+                  <td className="px-3 py-2 text-right tabular-nums">{rm(r.base_wage)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{commissionOf(r) ? rm(commissionOf(r)) : '—'}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{rm(r.total_earn)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-bad">{n(r.unpaid_auto) ? rm(r.unpaid_auto) : '—'}</td>
+                  <td className={`px-3 py-2 text-right tabular-nums ${reduced ? 'font-semibold text-warn' : 'text-ink-2'}`}
+                      title={reduced ? 'Reduced by unpaid leave — enter THIS figure in PERKESO & KWSP' : undefined}>{rm(actual)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{rm(r.total_deduct)}</td>
+                  <td className="px-3 py-2 text-right font-semibold tabular-nums">{rm(r.net_pay)}</td>
+                  <td className="px-3 py-2 text-center">{absent[(r.staff_email || '').toLowerCase()] || 0}</td>
+                  <td className="px-3 py-2 text-right"><button onClick={() => openDetails(r)} className="rounded-lg border px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">Details</button></td>
+                </tr>
+              );
+            })}
           </tbody>
           {rows.length > 0 && (
             <tfoot>
@@ -424,7 +437,9 @@ export default function PayrollV3Page() {
                 <td className="px-3 py-2 text-right tabular-nums">{rm(totals.base)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{rm(totals.commission)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{rm(totals.gross)}</td>
-                <td colSpan={2}></td>
+                <td></td>
+                <td className="px-3 py-2 text-right tabular-nums">{rm(rows.reduce((a, r) => a + (statWage[(r.staff_email || '').toLowerCase()] ?? n(r.base_wage)), 0))}</td>
+                <td></td>
                 <td className="px-3 py-2 text-right tabular-nums">{rm(totals.net)}</td>
                 <td colSpan={2}></td>
               </tr>
@@ -432,6 +447,12 @@ export default function PayrollV3Page() {
           )}
         </table>
       </div>
+
+      {rows.length > 0 && (
+        <p className="mt-2 text-xs text-ink-3">
+          <b className="text-ink-2">Actual wage</b> = salary − unpaid leave. Enter this figure in <b>PERKESO ASSIST</b> and <b>KWSP</b> so the statutory contributions match the payslip. <span className="text-warn">Amber</span> rows were reduced by unpaid leave this month.
+        </p>
+      )}
 
       {/* Payment summary */}
       {rows.length > 0 && (
