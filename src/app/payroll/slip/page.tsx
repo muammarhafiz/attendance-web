@@ -68,6 +68,17 @@ function ymText(y: number, m: number) {
 
 const MONTHS_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
+// Part-time helpers
+function fmtDays(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+// "2026-09-29" -> "29 September 2026" (no Date() to avoid timezone shifts)
+function fmtISODate(iso: string): string {
+  const [y, m, d] = (iso || '').split('-').map(Number);
+  if (!y || !m || !d) return '';
+  return `${d} ${MONTHS_FULL[m - 1] || ''} ${y}`;
+}
+
 function netInWords(amount: number): string {
   const ones = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
   const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
@@ -169,6 +180,9 @@ export default function PayslipPage() {
 
   const [manualEarn, setManualEarn] = useState<ManualItem[]>([]);
   const [manualDeduct, setManualDeduct] = useState<ManualItem[]>([]);
+
+  // Part-time days-worked detail (from the BASE item's meta); null for monthly staff
+  const [ptBase, setPtBase] = useState<{ days: number; dailyRate: number; label: string; winStart: string; winEnd: string } | null>(null);
 
   // plumbing amounts
   const [unpaidAdj, setUnpaidAdj] = useState<number>(0); // EARN/UNPAID_ADJ
@@ -310,27 +324,39 @@ export default function PayslipPage() {
           const { data: plumb, error: pErr } = await supabase
             .schema('pay_v2')
             .from('items')
-            .select('kind, code, amount')
+            .select('kind, code, amount, label, meta')
             .eq('period_id', per.id)
             .eq('staff_email', email)
-            .in('code', ['UNPAID_ADJ', 'UNPAID_EXTRA']);
+            .in('code', ['UNPAID_ADJ', 'UNPAID_EXTRA', 'BASE']);
 
           if (pErr) throw pErr;
 
           let adj = 0;
           let extra = 0;
+          let ptb: { days: number; dailyRate: number; label: string; winStart: string; winEnd: string } | null = null;
 
           (plumb ?? []).forEach((r: any) => {
             const c = safeUpper(r.code);
             if (c === 'UNPAID_ADJ') adj = asNum(r.amount);
             if (c === 'UNPAID_EXTRA') extra = asNum(r.amount);
+            if (c === 'BASE' && r.meta && r.meta.source === 'parttime_daily') {
+              ptb = {
+                days: asNum(r.meta.pt_days),
+                dailyRate: asNum(r.meta.daily_rate),
+                label: r.label || '',
+                winStart: String(r.meta.window_start || ''),
+                winEnd: String(r.meta.window_end || ''),
+              };
+            }
           });
 
           setUnpaidAdj(adj);
           setUnpaidExtra(extra);
+          setPtBase(ptb);
         } else {
           setUnpaidAdj(0);
           setUnpaidExtra(0);
+          setPtBase(null);
         }
       } catch (e: any) {
         setErr(e?.message ?? String(e));
@@ -350,8 +376,14 @@ export default function PayslipPage() {
   const socsoNo = staff?.socso_no || '—';
   const monthYear = `${MONTHS_FULL[month - 1] || ''} ${year}`.trim();
   const lastDayOfMonth = new Date(year, month, 0).getDate();
-  const payPeriod = `1–${lastDayOfMonth} ${MONTHS_FULL[month - 1] || ''} ${year}`;
-  const paymentDate = `${lastDayOfMonth} ${MONTHS_FULL[month - 1] || ''} ${year}`;
+  // Part-timers are paid by days worked over a 29th-of-prev-month..28th window, not the calendar month.
+  const isPartTime = pos === 'Part-time';
+  const payPeriod = isPartTime && ptBase?.winStart && ptBase?.winEnd
+    ? `${fmtISODate(ptBase.winStart)} – ${fmtISODate(ptBase.winEnd)}`
+    : `1–${lastDayOfMonth} ${MONTHS_FULL[month - 1] || ''} ${year}`;
+  const paymentDate = isPartTime && ptBase?.winEnd
+    ? fmtISODate(ptBase.winEnd)
+    : `${lastDayOfMonth} ${MONTHS_FULL[month - 1] || ''} ${year}`;
 
   const base = asNum(sum?.base_wage);
   const dailyRate = base > 0 ? base / 26 : 0;
@@ -622,7 +654,7 @@ export default function PayslipPage() {
 
             {/* Employee details */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px 22px' }}>
-              {([['Employee', staffName], ['Position', pos], ['NRIC', nric], ['EPF no.', epfNo], ['SOCSO no.', socsoNo], ['Pay period', payPeriod], ['Payment date', paymentDate], ['Days unpaid', String(daysUnpaid)]] as [string, string][]).map(([k, v]) => (
+              {([['Employee', staffName], ['Position', pos], ['NRIC', nric], ['EPF no.', epfNo], ['SOCSO no.', socsoNo], ['Pay period', payPeriod], ['Payment date', paymentDate], (isPartTime ? ['Days worked', ptBase ? fmtDays(ptBase.days) : '—'] : ['Days unpaid', String(daysUnpaid)]) as [string, string]] as [string, string][]).map(([k, v]) => (
                 <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 11.5, padding: '1px 0' }}>
                   <span style={{ color: '#64748b' }}>{k}</span>
                   <span style={{ color: '#0f172a', fontWeight: 500, textAlign: 'right' }}>{v || '—'}</span>
@@ -636,7 +668,7 @@ export default function PayslipPage() {
               <div>
                 <div className="h2">Earnings</div>
                 <MoneyTable>
-                  <TRow label="Basic salary" amount={cur(base)} />
+                  <TRow label={isPartTime ? (ptBase?.label || 'Basic salary') : 'Basic salary'} amount={cur(base)} />
                   {manualEarn.map((it) => (
                     <TRow key={it.id} label={it.label || it.code || '—'} amount={cur(it.amount)} />
                   ))}

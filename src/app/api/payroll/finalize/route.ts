@@ -62,7 +62,7 @@ async function fetchItems(period_id: string) {
   const { data, error } = await supabaseAdmin
     .schema('pay_v2')
     .from('items')
-    .select('staff_email, kind, code, label, amount')
+    .select('staff_email, kind, code, label, amount, meta')
     .eq('period_id', period_id);
   if (error) throw new Error(error.message);
   return data ?? [];
@@ -190,8 +190,6 @@ function payslipPdf(year: number, month: number, staff: any, summaryRow: Row, li
     const navy = '#1e3a8a';
     const monthLabel = `${MONTH_NAMES[month - 1] || ''} ${year}`.trim();
     const lastDay = new Date(year, month, 0).getDate();
-    const payPeriod = `1–${lastDay} ${monthLabel}`;
-    const paymentDate = `${lastDay} ${monthLabel}`;
     const left = doc.page.margins.left;
     const rightEdge = doc.page.width - doc.page.margins.right;
     const fullW = rightEdge - left;
@@ -199,6 +197,20 @@ function payslipPdf(year: number, month: number, staff: any, summaryRow: Row, li
     const baseWage = toNum(summaryRow.base_wage);
     const unpaidLine = lines.find((l: any) => l.kind === 'DEDUCT' && String(l.code || '').toUpperCase() === 'UNPAID');
     const daysUnpaid = baseWage > 0 && unpaidLine ? Math.round(toNum(unpaidLine.amount) / (baseWage / 26)) : 0;
+
+    // Part-time staff are paid by days worked over a 29th-of-prev-month..28th window (meta on the BASE item).
+    const isPartTime = String(staff?.position || '') === 'Part-time';
+    const baseLine = lines.find((l: any) => String(l.code || '').toUpperCase() === 'BASE');
+    const ptMeta: any = (baseLine && baseLine.meta && baseLine.meta.source === 'parttime_daily') ? baseLine.meta : null;
+    const fmtISO = (iso: string) => { const [y, m, d] = String(iso || '').split('-').map(Number); return (y && m && d) ? `${d} ${MONTH_NAMES[m - 1] || ''} ${y}` : ''; };
+    const payPeriod = isPartTime && ptMeta?.window_start && ptMeta?.window_end
+      ? `${fmtISO(ptMeta.window_start)} – ${fmtISO(ptMeta.window_end)}`
+      : `1–${lastDay} ${monthLabel}`;
+    const paymentDate = isPartTime && ptMeta?.window_end
+      ? fmtISO(ptMeta.window_end)
+      : `${lastDay} ${monthLabel}`;
+    const ptDays: number | null = ptMeta ? Number(ptMeta.pt_days) : null;
+    const fmtDays = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(1);
 
     const row = (label: string, amount: string, opts: { bold?: boolean; size?: number; color?: string } = {}) => {
       doc.font(opts.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(opts.size ?? 10).fillColor(opts.color ?? '#0f172a');
@@ -242,7 +254,8 @@ function payslipPdf(year: number, month: number, staff: any, summaryRow: Row, li
     doc.font('Helvetica').fontSize(9.5).fillColor('#0f172a').text(`Employee: ${name}${staff?.position ? '     Position: ' + staff.position : ''}`, left, doc.y);
     const ids = [staff?.nric ? `NRIC: ${staff.nric}` : '', staff?.epf_no ? `EPF no.: ${staff.epf_no}` : '', staff?.socso_no ? `SOCSO no.: ${staff.socso_no}` : ''].filter(Boolean).join('     ');
     if (ids) doc.fillColor('#64748b').text(ids, left, doc.y);
-    doc.fillColor('#64748b').text(`Pay period: ${payPeriod}     Payment date: ${paymentDate}     Days unpaid: ${daysUnpaid}`, left, doc.y);
+    const daysBit = isPartTime ? `Days worked: ${ptDays != null ? fmtDays(ptDays) : '—'}` : `Days unpaid: ${daysUnpaid}`;
+    doc.fillColor('#64748b').text(`Pay period: ${payPeriod}     Payment date: ${paymentDate}     ${daysBit}`, left, doc.y);
     doc.fillColor('#000000');
     rule();
 
@@ -251,7 +264,11 @@ function payslipPdf(year: number, month: number, staff: any, summaryRow: Row, li
     doc.font('Helvetica-Bold').fontSize(11).fillColor('#0f172a').text('Earnings');
     doc.moveDown(0.15);
     let earnSum = 0;
-    earnLines.forEach((l: any) => { earnSum += toNum(l.amount); row(proLabel(l), money(l.amount)); });
+    earnLines.forEach((l: any) => {
+      earnSum += toNum(l.amount);
+      const lbl = (isPartTime && String(l.code || '').toUpperCase() === 'BASE' && l.label) ? l.label : proLabel(l);
+      row(lbl, money(l.amount));
+    });
     if (!earnLines.length) row('—', money(0));
     rule();
     row('Gross earnings', money(earnSum), { bold: true });
