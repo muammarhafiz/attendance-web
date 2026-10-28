@@ -86,17 +86,17 @@ export default function MonthReportPage() {
           {/* Headline tiles */}
           <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-card bg-card shadow-card p-4">
-              <div className="text-xs font-medium text-ink-2">Net profit</div>
+              <div className="text-[13px] font-medium text-ink-2">Net profit</div>
               <div className={`mt-1 text-2xl font-semibold tabular-nums ${netClass}`}>{rm(n(f.net_profit))}</div>
               <div className="mt-1 text-xs"><Delta v={n(r.delta.net_profit)} base={n(r.prev.net_profit)} period={shortPrev} /></div>
             </div>
             <div className="rounded-card bg-card shadow-card p-4">
-              <div className="text-xs font-medium text-ink-2">Sales (paid)</div>
+              <div className="text-[13px] font-medium text-ink-2">Sales (paid)</div>
               <div className="mt-1 text-2xl font-semibold tabular-nums text-ink">{rm(n(f.sales))}</div>
               <div className="mt-1 text-xs"><Delta v={n(r.delta.sales)} base={n(r.prev.sales)} period={shortPrev} /></div>
             </div>
             <div className="rounded-card bg-card shadow-card p-4">
-              <div className="text-xs font-medium text-ink-2">Gross profit</div>
+              <div className="text-[13px] font-medium text-ink-2">Gross profit</div>
               <div className="mt-1 text-2xl font-semibold tabular-nums text-ink">{rm(n(f.gross_profit))}</div>
               <div className="mt-1 text-xs"><Delta v={n(r.delta.gross_profit)} base={n(r.prev.gross_profit)} period={shortPrev} /></div>
             </div>
@@ -104,7 +104,7 @@ export default function MonthReportPage() {
 
           {/* Financials */}
           <div className="mb-4 rounded-card bg-card shadow-card p-4">
-            <div className="mb-2 text-sm font-semibold text-ink-2">Money</div>
+            <div className="mb-2 text-[15px] font-semibold text-ink-2">Money</div>
             <div className="grid grid-cols-2 gap-y-1.5 text-sm sm:grid-cols-4">
               <Row label="Sales (paid)" value={rm(n(f.sales))} />
               <Row label="Parts cost" value={rm(n(f.cogs))} />
@@ -112,16 +112,16 @@ export default function MonthReportPage() {
               <Row label="Margin" value={`${n(f.margin_pct).toFixed(0)}%`} />
             </div>
             <div className="mt-3 border-t border-line pt-3">
-              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-3">Costs</div>
+              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-2">Costs</div>
               <Line label={`Payroll (${r.attendance.staff_count} staff)`} value={rm(n(f.payroll))} />
               <Line label="Employer EPF / SOCSO / EIS" value={rm(n(f.employer))} />
               <Line label="Bills & others" value={rm(n(f.bills))} />
               <Line label="Staff meals" value={rm(n(f.meals))} />
-              <div className="mt-2 flex items-center justify-between border-t border-line pt-2 text-sm font-semibold text-ink-2">
+              <div className="mt-2 flex items-center justify-between border-t border-line pt-2 text-[15px] font-semibold text-ink-2">
                 <span>Total overhead{overheadPct > 0 ? ` · ${overheadPct.toFixed(0)}% of sales` : ''}</span>
                 <span className="tabular-nums">{rm(overhead)}</span>
               </div>
-              <div className={`mt-1 flex items-center justify-between text-sm font-semibold ${netClass}`}>
+              <div className={`mt-1 flex items-center justify-between text-[15px] font-semibold ${netClass}`}>
                 <span>Net profit</span><span className="tabular-nums">{rm(n(f.net_profit))}</span>
               </div>
             </div>
@@ -130,7 +130,7 @@ export default function MonthReportPage() {
           {/* Sales highlights */}
           <div className="mb-4 rounded-card bg-card shadow-card p-4">
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm font-semibold text-ink-2">Sales highlights</span>
+              <span className="text-[15px] font-semibold text-ink-2">Sales highlights</span>
               <Link href="/niagawan/pnl" className="text-xs font-medium text-accent hover:underline">full P&amp;L ↗</Link>
             </div>
             <div className="grid grid-cols-2 gap-y-1.5 text-sm sm:grid-cols-3">
@@ -174,7 +174,7 @@ export default function MonthReportPage() {
 
           {/* Attendance */}
           <div className="mb-4 rounded-card bg-card shadow-card p-4">
-            <div className="mb-2 text-sm font-semibold text-ink-2">Attendance</div>
+            <div className="mb-2 text-[15px] font-semibold text-ink-2">Attendance</div>
             <div className="grid grid-cols-2 gap-y-1.5 text-sm sm:grid-cols-4">
               <Row label="Present days" value={String(r.attendance.present_days)} />
               <Row label="Late days" value={String(r.attendance.late_days)} />
@@ -183,7 +183,7 @@ export default function MonthReportPage() {
             </div>
           </div>
 
-          <p className="text-xs text-ink-3">Compared with {r.prev.label}: sales {rm(n(r.prev.sales))}, gross profit {rm(n(r.prev.gross_profit))}, net {rm(n(r.prev.net_profit))}{prevCoverage > 0 && prevCoverage < 100 ? ' (last month’s cost was still provisional)' : ''}. All sales figures count paid invoices only.</p>
+          <p className="text-[13px] text-ink-2">Compared with {r.prev.label}: sales {rm(n(r.prev.sales))}, gross profit {rm(n(r.prev.gross_profit))}, net {rm(n(r.prev.net_profit))}{prevCoverage > 0 && prevCoverage < 100 ? ' (last month’s cost was still provisional)' : ''}. All sales figures count paid invoices only.</p>
         </>
       )}
     </div>
@@ -191,8 +191,8 @@ export default function MonthReportPage() {
 }
 
 function Row({ label, value }: { label: string; value: string }) {
-  return <div><div className="text-xs text-ink-2">{label}</div><div className="font-semibold tabular-nums">{value}</div></div>;
+  return <div><div className="text-[13px] text-ink-2">{label}</div><div className="text-[15px] font-semibold tabular-nums text-ink">{value}</div></div>;
 }
 function Line({ label, value }: { label: string; value: string }) {
-  return <div className="flex items-center justify-between text-sm"><span className="text-ink-2">{label}</span><span className="tabular-nums font-medium">{value}</span></div>;
+  return <div className="flex items-center justify-between text-[15px]"><span className="text-ink-2">{label}</span><span className="tabular-nums font-medium text-ink">{value}</span></div>;
 }
