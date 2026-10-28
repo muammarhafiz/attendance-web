@@ -4,7 +4,8 @@
 //   By 28th  — fix any staff left as ABSENT (MC/off-days) so payroll is right
 //   28–31    — payroll: transfer salaries + send payslips
 // Clerk-safe except the salary detail, which is gated behind can_access('pay_salaries').
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { PointerEvent as RPointerEvent } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import { useToast } from '@/components/Toast';
@@ -47,7 +48,10 @@ export default function MonthEndPage() {
   const [newBillLabel, setNewBillLabel] = useState('');
   const [newBillAmount, setNewBillAmount] = useState('');
   const [copying, setCopying] = useState(false); // "Copy last month" for the Bills card
-  const [billSort, setBillSort] = useState<{ key: 'added' | 'label' | 'amount' | 'unpaid'; dir: 'asc' | 'desc' }>({ key: 'added', dir: 'asc' });
+  const [billRows, setBillRows] = useState<Dash['bills']>([]);
+  const [draggingId, setDraggingId] = useState<number | null>(null);
+  const dragIdRef = useRef<number | null>(null);
+  const rowEls = useRef<Record<number, HTMLDivElement | null>>({});
   // Inline "fix a day" on the absent card (admin-only, mirrors the Attendance report editor).
   const [canFix, setCanFix] = useState(false);
   const [me, setMe] = useState('');
@@ -63,21 +67,10 @@ export default function MonthEndPage() {
   const monthKey = `${year}-${String(month).padStart(2, '0')}`;
   const todayIso = today.toISOString().slice(0, 10);
 
-  // Bills sorting (display only). Default 'added' = original order; Amount/Name/Unpaid are toggleable.
-  const sortedBills = useMemo(() => {
-    const arr = [...(d?.bills ?? [])];
-    const { key, dir } = billSort;
-    if (key === 'added') return arr;
-    const s = dir === 'asc' ? 1 : -1;
-    arr.sort((a, b) => {
-      if (key === 'amount') return (Number(a.amount || 0) - Number(b.amount || 0)) * s;
-      if (key === 'unpaid') return ((a.paid ? 1 : 0) - (b.paid ? 1 : 0)) * s; // asc = unpaid first
-      return a.label.localeCompare(b.label) * s; // name
-    });
-    return arr;
-  }, [d?.bills, billSort]);
-  const onBillSort = (k: 'added' | 'label' | 'amount' | 'unpaid') =>
-    setBillSort((p) => (p.key === k ? { key: k, dir: p.dir === 'asc' ? 'desc' : 'asc' } : { key: k, dir: k === 'amount' ? 'desc' : 'asc' }));
+  // Bills are drag-reorderable; the saved order (opex_bills.sort_order) is applied by month_end_status.
+  // Keep a local copy synced from the server so a drag reorders instantly. The drag handlers live
+  // below load() because the persist helper reloads on error.
+  useEffect(() => { setBillRows(d?.bills ?? []); }, [d?.bills]);
 
   useEffect(() => {
     (async () => {
@@ -114,6 +107,36 @@ export default function MonthEndPage() {
     }
     setLoading(false);
   }, [monthKey, canPay]);
+
+  const persistBillOrder = useCallback(async (ids: number[]) => {
+    const { error } = await supabase.rpc('month_end_reorder_bills', { p_ids: ids });
+    if (error) { setErr('Could not save the new bill order — ' + error.message); await load(); }
+  }, [load]);
+  const billDragStart = (e: RPointerEvent<HTMLElement>, id: number) => {
+    e.preventDefault(); dragIdRef.current = id; setDraggingId(id);
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+  };
+  const billDragMove = (e: RPointerEvent<HTMLElement>) => {
+    const dragId = dragIdRef.current; if (dragId == null) return;
+    const y = e.clientY; let targetId: number | null = null;
+    for (const b of billRows) {
+      const el = rowEls.current[b.id]; if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (y >= r.top && y <= r.bottom) { targetId = b.id; break; }
+    }
+    if (targetId == null || targetId === dragId) return;
+    setBillRows((rows) => {
+      const from = rows.findIndex((r) => r.id === dragId), to = rows.findIndex((r) => r.id === targetId);
+      if (from < 0 || to < 0 || from === to) return rows;
+      const next = rows.slice(); const [m] = next.splice(from, 1); next.splice(to, 0, m); return next;
+    });
+  };
+  const billDragEnd = (e: RPointerEvent<HTMLElement>) => {
+    if (dragIdRef.current == null) return;
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    dragIdRef.current = null; setDraggingId(null);
+    setBillRows((rows) => { void persistBillOrder(rows.map((r) => r.id)); return rows; });
+  };
 
   useEffect(() => { if (allowed) load(); }, [allowed, load]);
 
@@ -418,15 +441,7 @@ export default function MonthEndPage() {
               <span className="text-xs text-ink-3">operating cost · tick when paid</span>
             </div>
             {d.bills.length > 1 && (
-              <div className="mb-1.5 flex flex-wrap items-center gap-1 text-[11px]">
-                <span className="text-ink-3">Sort:</span>
-                {([['added', 'Added'], ['label', 'Name'], ['amount', 'Amount'], ['unpaid', 'Unpaid']] as const).map(([k, lbl]) => (
-                  <button key={k} onClick={() => onBillSort(k)}
-                    className={`rounded-full border px-2 py-0.5 ${billSort.key === k ? 'border-accent bg-accent-weak font-medium text-accent' : 'border-line text-ink-3 hover:bg-ink/5'}`}>
-                    {lbl}{billSort.key === k && k !== 'added' ? (billSort.dir === 'asc' ? ' ↑' : ' ↓') : ''}
-                  </button>
-                ))}
-              </div>
+              <p className="mb-1 text-[11px] text-ink-3">Drag <span className="font-mono">⠿</span> to reorder — the order is saved.</p>
             )}
             {d.bills.length === 0 ? (
               <div className="flex items-center justify-between gap-2">
@@ -434,8 +449,11 @@ export default function MonthEndPage() {
                 <button onClick={copyLastMonth} disabled={copying} className="shrink-0 rounded-lg border border-line px-2.5 py-1 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">{copying ? 'Copying…' : 'Copy last month'}</button>
               </div>
             ) : (
-              sortedBills.map((b) => (
-                <div key={b.id} className="flex items-center gap-2 py-0.5 text-sm">
+              (billRows.length ? billRows : d.bills).map((b) => (
+                <div key={b.id} ref={(el) => { rowEls.current[b.id] = el; }}
+                  className={`flex items-center gap-2 py-0.5 text-sm ${draggingId === b.id ? 'rounded bg-ink/5 opacity-70' : ''}`}>
+                  <span onPointerDown={(e) => billDragStart(e, b.id)} onPointerMove={billDragMove} onPointerUp={billDragEnd} onPointerCancel={billDragEnd}
+                    className="shrink-0 cursor-grab touch-none select-none px-0.5 leading-none text-ink-3 active:cursor-grabbing" title="Drag to reorder" aria-label="Drag to reorder">⠿</span>
                   <input type="checkbox" checked={!!b.paid} onChange={(e) => billSetPaid(b.id, e.target.checked)} title="Mark paid — stamps today's date" className="shrink-0 cursor-pointer" />
                   <span className={`min-w-0 flex-1 truncate ${b.paid ? 'text-ink-3 line-through' : 'text-ink-2'}`}>{b.label}</span>
                   {b.paid && b.paid_date && <span className="shrink-0 text-[11px] font-medium text-good">paid {fmtD(b.paid_date)}</span>}
