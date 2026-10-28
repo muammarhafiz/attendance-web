@@ -181,6 +181,11 @@ export default function MonthEndPage() {
     if (error) setErr(error.message);
     await load();
   }, [load]);
+  const billSetLabel = useCallback(async (id: number, label: string) => {
+    const { error } = await supabase.rpc('month_end_rename_bill', { p_id: id, p_label: label });
+    if (error) setErr(error.message);
+    await load();
+  }, [load]);
   const billDelete = useCallback(async (id: number) => {
     const { error } = await supabase.rpc('month_end_delete_bill', { p_id: id });
     if (error) setErr(error.message);
@@ -455,7 +460,10 @@ export default function MonthEndPage() {
                   <span onPointerDown={(e) => billDragStart(e, b.id)} onPointerMove={billDragMove} onPointerUp={billDragEnd} onPointerCancel={billDragEnd}
                     className="shrink-0 cursor-grab touch-none select-none px-0.5 leading-none text-ink-3 active:cursor-grabbing" title="Drag to reorder" aria-label="Drag to reorder">⠿</span>
                   <input type="checkbox" checked={!!b.paid} onChange={(e) => billSetPaid(b.id, e.target.checked)} title="Mark paid — stamps today's date" className="shrink-0 cursor-pointer" />
-                  <span className={`min-w-0 flex-1 truncate ${b.paid ? 'text-ink-3 line-through' : 'text-ink-2'}`}>{b.label}</span>
+                  <input defaultValue={b.label}
+                    onBlur={(e) => { const v = e.target.value.trim(); if (!v) { e.target.value = b.label; return; } if (v !== b.label) billSetLabel(b.id, v); }}
+                    title="Edit the bill name" aria-label="Bill name"
+                    className={`min-w-0 flex-1 rounded-lg border border-line bg-transparent px-1.5 py-0.5 text-sm ${b.paid ? 'text-ink-3 line-through' : 'text-ink-2'}`} />
                   {b.paid && b.paid_date && <span className="shrink-0 text-[11px] font-medium text-good">paid {fmtD(b.paid_date)}</span>}
                   <input type="number" step="0.01" defaultValue={Number(b.amount)} onBlur={(e) => { const v = Number(e.target.value) || 0; if (v !== Number(b.amount)) billSetAmount(b.id, v); }}
                     className="w-24 rounded-lg border border-line px-1.5 py-0.5 text-right text-sm" />
