@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 
-type Top = { name: string; sales: number | string; invoices: number };
+type Top = { name: string; sales: number | string; profit?: number | string; invoices: number };
 type Report = {
   year: number; month: number; label: string; cost_coverage_pct: number | string | null;
   financials: { sales: number|string; cogs: number|string; gross_profit: number|string; margin_pct: number|string|null;
@@ -139,24 +139,29 @@ export default function MonthReportPage() {
               <Row label="Outstanding (unpaid)" value={rm(n(r.sales.receivable))} />
             </div>
             <div className="mt-3 border-t border-line pt-3">
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-3">Staff sales</div>
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-3">Staff sales &amp; profit</div>
               <div className="space-y-2">
                 {(() => {
                   const list = r.sales.top ?? [];
-                  const max = list.reduce((mx, t) => Math.max(mx, n(t.sales)), 0) || 1;
+                  const max = list.reduce((mx, t) => Math.max(mx, n(t.profit)), 0) || 1;
                   return list.map((t, i) => {
                     const sales = n(t.sales);
+                    const profit = n(t.profit);
                     const inv = t.invoices || 0;
-                    const avg = inv > 0 ? sales / inv : 0;
-                    const pct = Math.max(3, Math.round((sales / max) * 100));
+                    const margin = sales > 0 ? Math.round((profit / sales) * 100) : 0;
+                    const pct = Math.max(3, Math.round((profit / max) * 100));
                     return (
                       <div key={i}>
                         <div className="flex items-baseline justify-between gap-2 text-sm">
                           <span className="truncate text-ink-2">{i + 1}. {t.name}</span>
-                          <span className="shrink-0 tabular-nums font-medium">{rm(sales)} <span className="font-normal text-ink-3">· {inv} inv · {rm(avg)}/inv</span></span>
+                          <span className="shrink-0 tabular-nums font-medium">{rm(profit)} <span className="font-normal text-ink-3">profit</span></span>
+                        </div>
+                        <div className="mt-0.5 flex items-baseline justify-between gap-2 text-[11px] text-ink-3">
+                          <span>{margin}% margin · {inv} inv</span>
+                          <span className="tabular-nums">{rm(sales)} sales</span>
                         </div>
                         <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-line/60">
-                          <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
+                          <div className="h-full rounded-full bg-good" style={{ width: `${pct}%` }} />
                         </div>
                       </div>
                     );
