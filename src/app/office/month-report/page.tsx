@@ -88,17 +88,17 @@ export default function MonthReportPage() {
             <div className="rounded-card bg-card shadow-card p-4">
               <div className="text-xs font-medium text-ink-2">Net profit</div>
               <div className={`mt-1 text-2xl font-semibold tabular-nums ${netClass}`}>{rm(n(f.net_profit))}</div>
-              <div className="mt-1 text-[11px]"><Delta v={n(r.delta.net_profit)} base={n(r.prev.net_profit)} period={shortPrev} /></div>
+              <div className="mt-1 text-xs"><Delta v={n(r.delta.net_profit)} base={n(r.prev.net_profit)} period={shortPrev} /></div>
             </div>
             <div className="rounded-card bg-card shadow-card p-4">
               <div className="text-xs font-medium text-ink-2">Sales (paid)</div>
               <div className="mt-1 text-2xl font-semibold tabular-nums text-ink">{rm(n(f.sales))}</div>
-              <div className="mt-1 text-[11px]"><Delta v={n(r.delta.sales)} base={n(r.prev.sales)} period={shortPrev} /></div>
+              <div className="mt-1 text-xs"><Delta v={n(r.delta.sales)} base={n(r.prev.sales)} period={shortPrev} /></div>
             </div>
             <div className="rounded-card bg-card shadow-card p-4">
               <div className="text-xs font-medium text-ink-2">Gross profit</div>
               <div className="mt-1 text-2xl font-semibold tabular-nums text-ink">{rm(n(f.gross_profit))}</div>
-              <div className="mt-1 text-[11px]"><Delta v={n(r.delta.gross_profit)} base={n(r.prev.gross_profit)} period={shortPrev} /></div>
+              <div className="mt-1 text-xs"><Delta v={n(r.delta.gross_profit)} base={n(r.prev.gross_profit)} period={shortPrev} /></div>
             </div>
           </div>
 
@@ -139,8 +139,8 @@ export default function MonthReportPage() {
               <Row label="Outstanding (unpaid)" value={rm(n(r.sales.receivable))} />
             </div>
             <div className="mt-3 border-t border-line pt-3">
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-3">Staff sales &amp; profit</div>
-              <div className="space-y-2">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-2">Staff sales &amp; profit</div>
+              <div className="space-y-3">
                 {(() => {
                   const list = r.sales.top ?? [];
                   const max = list.reduce((mx, t) => Math.max(mx, n(t.profit)), 0) || 1;
@@ -152,15 +152,15 @@ export default function MonthReportPage() {
                     const pct = Math.max(3, Math.round((profit / max) * 100));
                     return (
                       <div key={i}>
-                        <div className="flex items-baseline justify-between gap-2 text-sm">
-                          <span className="truncate text-ink-2">{i + 1}. {t.name}</span>
-                          <span className="shrink-0 tabular-nums font-medium">{rm(profit)} <span className="font-normal text-ink-3">profit</span></span>
+                        <div className="flex items-baseline justify-between gap-2 text-[15px]">
+                          <span className="truncate font-medium text-ink">{i + 1}. {t.name}</span>
+                          <span className="shrink-0 tabular-nums font-semibold text-ink">{rm(profit)} <span className="font-normal text-ink-2">profit</span></span>
                         </div>
-                        <div className="mt-0.5 flex items-baseline justify-between gap-2 text-[11px] text-ink-3">
+                        <div className="mt-1 flex items-baseline justify-between gap-2 text-[13px] text-ink-2">
                           <span>{margin}% margin · {inv} inv</span>
                           <span className="tabular-nums">{rm(sales)} sales</span>
                         </div>
-                        <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-line/60">
+                        <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-line/60">
                           <div className="h-full rounded-full bg-good" style={{ width: `${pct}%` }} />
                         </div>
                       </div>
