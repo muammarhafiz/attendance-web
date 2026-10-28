@@ -4,7 +4,7 @@
 //   By 28th  — fix any staff left as ABSENT (MC/off-days) so payroll is right
 //   28–31    — payroll: transfer salaries + send payslips
 // Clerk-safe except the salary detail, which is gated behind can_access('pay_salaries').
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import { useToast } from '@/components/Toast';
@@ -47,6 +47,7 @@ export default function MonthEndPage() {
   const [newBillLabel, setNewBillLabel] = useState('');
   const [newBillAmount, setNewBillAmount] = useState('');
   const [copying, setCopying] = useState(false); // "Copy last month" for the Bills card
+  const [billSort, setBillSort] = useState<{ key: 'added' | 'label' | 'amount' | 'unpaid'; dir: 'asc' | 'desc' }>({ key: 'added', dir: 'asc' });
   // Inline "fix a day" on the absent card (admin-only, mirrors the Attendance report editor).
   const [canFix, setCanFix] = useState(false);
   const [me, setMe] = useState('');
@@ -61,6 +62,22 @@ export default function MonthEndPage() {
 
   const monthKey = `${year}-${String(month).padStart(2, '0')}`;
   const todayIso = today.toISOString().slice(0, 10);
+
+  // Bills sorting (display only). Default 'added' = original order; Amount/Name/Unpaid are toggleable.
+  const sortedBills = useMemo(() => {
+    const arr = [...(d?.bills ?? [])];
+    const { key, dir } = billSort;
+    if (key === 'added') return arr;
+    const s = dir === 'asc' ? 1 : -1;
+    arr.sort((a, b) => {
+      if (key === 'amount') return (Number(a.amount || 0) - Number(b.amount || 0)) * s;
+      if (key === 'unpaid') return ((a.paid ? 1 : 0) - (b.paid ? 1 : 0)) * s; // asc = unpaid first
+      return a.label.localeCompare(b.label) * s; // name
+    });
+    return arr;
+  }, [d?.bills, billSort]);
+  const onBillSort = (k: 'added' | 'label' | 'amount' | 'unpaid') =>
+    setBillSort((p) => (p.key === k ? { key: k, dir: p.dir === 'asc' ? 'desc' : 'asc' } : { key: k, dir: k === 'amount' ? 'desc' : 'asc' }));
 
   useEffect(() => {
     (async () => {
@@ -400,13 +417,24 @@ export default function MonthEndPage() {
               <h2 className="text-base font-semibold text-ink">Bills</h2>
               <span className="text-xs text-ink-3">operating cost · tick when paid</span>
             </div>
+            {d.bills.length > 1 && (
+              <div className="mb-1.5 flex flex-wrap items-center gap-1 text-[11px]">
+                <span className="text-ink-3">Sort:</span>
+                {([['added', 'Added'], ['label', 'Name'], ['amount', 'Amount'], ['unpaid', 'Unpaid']] as const).map(([k, lbl]) => (
+                  <button key={k} onClick={() => onBillSort(k)}
+                    className={`rounded-full border px-2 py-0.5 ${billSort.key === k ? 'border-accent bg-accent-weak font-medium text-accent' : 'border-line text-ink-3 hover:bg-ink/5'}`}>
+                    {lbl}{billSort.key === k && k !== 'added' ? (billSort.dir === 'asc' ? ' ↑' : ' ↓') : ''}
+                  </button>
+                ))}
+              </div>
+            )}
             {d.bills.length === 0 ? (
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm text-ink-3">No bills added for this month yet.</p>
                 <button onClick={copyLastMonth} disabled={copying} className="shrink-0 rounded-lg border border-line px-2.5 py-1 text-sm text-ink-2 hover:bg-ink/5 disabled:opacity-50">{copying ? 'Copying…' : 'Copy last month'}</button>
               </div>
             ) : (
-              d.bills.map((b) => (
+              sortedBills.map((b) => (
                 <div key={b.id} className="flex items-center gap-2 py-0.5 text-sm">
                   <input type="checkbox" checked={!!b.paid} onChange={(e) => billSetPaid(b.id, e.target.checked)} title="Mark paid — stamps today's date" className="shrink-0 cursor-pointer" />
                   <span className={`min-w-0 flex-1 truncate ${b.paid ? 'text-ink-3 line-through' : 'text-ink-2'}`}>{b.label}</span>
