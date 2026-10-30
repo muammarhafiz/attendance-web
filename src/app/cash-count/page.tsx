@@ -141,16 +141,16 @@ export default function CashCountPage() {
     loadStatus();
   }, [counts, today, loadHistory, loadStatus, cardActual, qrActual, transferActual]);
 
-  // Record "cash taken to the bank" — resets the cash-to-bank running total from today onward.
-  const markCollected = useCallback(async () => {
-    if (!window.confirm(`Reset the cash-to-bank total? This marks all cash counted so far${onHand ? ` (${rm(onHand)})` : ''} as taken to the bank.`)) return;
+  // Record "cash taken to the bank" up to a chosen date — resets the cash-to-bank total
+  // from the day AFTER that date onward (so cash taken earlier can be logged after the fact).
+  const markCollected = useCallback(async (day: string) => {
     setCollecting(true);
-    const { error } = await supabase.rpc('mark_cash_collected');
+    const { error } = await supabase.rpc('mark_cash_collected', { p_collected_on: day });
     setCollecting(false);
     if (error) { setErr(error.message); return; }
     await loadStatus();
     await loadHistory();
-  }, [onHand, loadStatus, loadHistory]);
+  }, [loadStatus, loadHistory]);
 
   if (authed === null || (authed && allowed === null)) return <div className="p-6 text-sm text-ink-3">Checking…</div>;
   if (!authed) return <div className="p-6 text-sm text-ink-2">Please sign in first.</div>;
@@ -302,8 +302,27 @@ export default function CashCountPage() {
 
 function RecentCounts({ rows, today, onHand, lastCollectedOn, onCollect, collecting, isAdmin }: {
   rows: HistRow[]; today: string; onHand: number | null; lastCollectedOn: string | null;
-  onCollect: () => void; collecting: boolean; isAdmin: boolean;
+  onCollect: (day: string) => void; collecting: boolean; isAdmin: boolean;
 }) {
+  // Date the cash was taken to the bank — defaults to today, but can be backdated if the
+  // reset was forgotten on the day. Can't be in the future or on/before the last reset.
+  const [bankDate, setBankDate] = useState(today);
+  const minDate = lastCollectedOn
+    ? new Date(new Date(lastCollectedOn).getTime() + 86400e3).toISOString().slice(0, 10)
+    : undefined;
+  // Amount being banked = counts from after the last reset, up to and including the chosen date.
+  const bankedUpTo = rows
+    .filter((r) => (!lastCollectedOn || r.day > lastCollectedOn) && r.day <= bankDate)
+    .reduce((s, r) => s + r.counted, 0);
+  // When banking right up to today, the RPC's on-hand figure is authoritative (covers >30 days).
+  const amount = bankDate === today ? (onHand ?? bankedUpTo) : bankedUpTo;
+  const fmt = (d: string) => new Date(d).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' });
+
+  const doReset = () => {
+    if (!window.confirm(`Mark ${rm(amount)} as taken to the bank on ${fmt(bankDate)}?\n\nAny cash counted after ${fmt(bankDate)} stays in the safe.`)) return;
+    onCollect(bankDate);
+  };
+
   return (
     <div className="mt-8">
       {/* Cash to bank = counted cash accumulated in the safe since the last reset */}
@@ -315,14 +334,26 @@ function RecentCounts({ rows, today, onHand, lastCollectedOn, onCollect, collect
         </div>
         <p className="mt-1 text-xs text-ink-2">
           {lastCollectedOn
-            ? <>start count {new Date(lastCollectedOn).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}</>
+            ? <>start count {fmt(lastCollectedOn)}</>
             : <>all counted cash — not reset yet</>}
         </p>
         {isAdmin && (
-          <button onClick={onCollect} disabled={collecting || !onHand}
-            className="mt-3 w-full rounded-lg border border-emerald-300 bg-card px-3 py-2.5 text-sm font-bold text-good hover:bg-good-soft disabled:opacity-50">
-            {collecting ? 'Saving…' : 'RESET CASH COUNT'}
-          </button>
+          <div className="mt-3 border-t border-emerald-200/70 pt-3">
+            <label className="flex items-center justify-between gap-2 text-xs font-medium text-ink-2">
+              <span>Date taken to bank</span>
+              <input type="date" value={bankDate} min={minDate} max={today}
+                onChange={(e) => setBankDate(e.target.value || today)}
+                className="rounded-lg border border-emerald-300 bg-card px-2 py-1 text-sm font-semibold text-ink" />
+            </label>
+            <p className="mt-1.5 text-xs text-ink-2">
+              Banking <span className="font-bold text-ink">{rm(amount)}</span> counted up to {fmt(bankDate)}
+              {bankDate !== today && <span className="text-ink-3"> · later counts stay in the safe</span>}
+            </p>
+            <button onClick={doReset} disabled={collecting || amount <= 0}
+              className="mt-2 w-full rounded-lg border border-emerald-300 bg-card px-3 py-2.5 text-sm font-bold text-good hover:bg-good-soft disabled:opacity-50">
+              {collecting ? 'Saving…' : 'RESET CASH COUNT'}
+            </button>
+          </div>
         )}
       </div>
       <div className="mb-2 flex items-baseline justify-between">
