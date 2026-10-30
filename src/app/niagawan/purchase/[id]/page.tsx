@@ -77,6 +77,8 @@ export default function ReviewInvoicePage() {
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   // "Save copy to Drive" (supplier's shared folder): queue a job the NAS picks up, then poll the result.
   const [driveName, setDriveName] = useState<string | null>(null);
+  // Resolved Drive folder for this invoice's supplier, from the shared mail_suppliers mapping (null = none mapped).
+  const [driveFolder, setDriveFolder] = useState<{ folder_id: string; folder_name: string } | null>(null);
   const [driveBusy, setDriveBusy] = useState(false);
   const drivePoll = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(() => () => { if (drivePoll.current) clearInterval(drivePoll.current); }, []);
@@ -151,6 +153,20 @@ export default function ReviewInvoicePage() {
   }, [id]);
 
   useEffect(() => { if (isAdmin) load(); }, [isAdmin, load]);
+
+  // Resolve this supplier's Drive folder from the shared mail_suppliers mapping (same table the
+  // email-intake robot uses) — one source of truth, so any mapped supplier gets the Save-to-Drive button.
+  useEffect(() => {
+    const sup = head?.supplier_name || '';
+    if (!sup) { setDriveFolder(null); return; }
+    let off = false;
+    (async () => {
+      const { data } = await supabase.rpc('pinv_drive_folder', { p_supplier_name: sup });
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!off) setDriveFolder(row && row.folder_id ? { folder_id: String(row.folder_id), folder_name: String(row.folder_name || '') } : null);
+    })();
+    return () => { off = true; };
+  }, [head?.supplier_name]);
 
   // Every distinct raw code across all lines (the typed code + any alternate codes).
   const allCodes = useMemo(() => {
@@ -469,7 +485,8 @@ export default function ReviewInvoicePage() {
 
   const locked = head.status === 'approved' || head.status === 'creating' || head.status === 'created' || head.status === 'dismissed';
   const driveNameVal = driveName ?? driveFilenameOf(head);
-  const driveReady = /grand auto/i.test(head.supplier_name || ''); // suppliers with a Drive folder mapped on the NAS
+  const driveReady = !!driveFolder; // any supplier with a Drive folder mapped in mail_suppliers
+  const driveFolderLabel = driveFolder?.folder_name || head.supplier_name || 'supplier';
   const driveWorking = driveBusy || head.drive_status === 'queued' || head.drive_status === 'saving';
   const showBilled = head.check_status === 'checked';
   const resolving = head.resolve_status === 'queued' || head.resolve_status === 'resolving';
@@ -589,7 +606,7 @@ export default function ReviewInvoicePage() {
           ) : head.drive_status === 'done' ? (
             <div>
               <div className="flex items-center gap-2 text-sm font-semibold text-good">✓ Saved to Drive</div>
-              <div className="mt-1 text-xs text-ink-2">Filed to the shared Grand Auto folder{head.drive_note ? ` · ${head.drive_note}` : ''}.</div>
+              <div className="mt-1 text-xs text-ink-2">Filed to the {driveFolderLabel} folder{head.drive_note ? ` · ${head.drive_note}` : ''}.</div>
               <div className="mt-2 flex items-center gap-3">
                 {head.drive_url && <a href={head.drive_url} target="_blank" rel="noreferrer" className="text-sm font-medium text-accent underline">Open in Drive →</a>}
                 <button onClick={saveToDrive} disabled={driveBusy} className="text-xs text-ink-3 underline hover:text-ink-2">re-save</button>
@@ -597,7 +614,7 @@ export default function ReviewInvoicePage() {
             </div>
           ) : (
             <div>
-              <div className="text-sm font-semibold text-ink">Send copy to Grand Auto (Google Drive)</div>
+              <div className="text-sm font-semibold text-ink">Send copy to {driveFolderLabel} (Google Drive)</div>
               <p className="mt-1 text-xs text-ink-2">Saves this invoice <b>as keyed in Niagawan</b> as a PDF into the shared folder — the right <b>year ▸ week</b> automatically.</p>
               <label className="mt-3 block">
                 <span className="text-xs font-medium text-ink-2">File name</span>
