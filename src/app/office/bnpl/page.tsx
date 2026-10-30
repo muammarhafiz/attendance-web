@@ -58,6 +58,12 @@ export default function BnplHubPage() {
         see its payouts to tick against the bank. Every BNPL sale, across all services, is listed below.
       </p>
 
+      <div className="mb-4">
+        <Link href="/office/bnpl/providers" className="inline-flex items-center gap-1 rounded-lg border border-line bg-card px-3 py-1.5 text-sm font-medium text-ink-2 hover:text-ink">
+          ⚙ Manage services
+        </Link>
+      </div>
+
       {items === null ? (
         <div className="py-6 text-center text-sm text-ink-3">Loading…</div>
       ) : (
