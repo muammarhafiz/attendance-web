@@ -25,6 +25,7 @@ const TYPE_LABEL: Record<string, string> = {
   po_created: 'Purchase order created in Niagawan',
   robot_health: 'ATOME import health',
   sales_unmapped: 'New salesperson to identify',
+  invdrift: 'Inventory item out of sync with Niagawan',
 };
 
 function Switch({ on, onChange, disabled }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
