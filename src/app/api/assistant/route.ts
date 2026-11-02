@@ -73,6 +73,16 @@ const SKILLS: Record<string, Skill> = {
       parameters: { type: 'OBJECT', properties: { model: { type: 'STRING', description: 'Proton model, e.g. X50, X70 CKD, X70 CBU, X70 1.5, S70' }, mileage: { type: 'INTEGER', description: 'mileage in km, e.g. 80000' } }, required: ['model', 'mileage'] },
     },
   },
+  query_database: {
+    rpc: 'assistant_query', feature: 'assistant',
+    params: (a) => ({ p_sql: String(a.sql ?? '').slice(0, 4000) }),
+    decl: {
+      name: 'query_database',
+      description:
+        'Answer ANY data question the other tools do not cover by running a single READ-ONLY SQL SELECT on the shop database (Postgres / Supabase). Use for stock, sales, attendance, suppliers, "what needs reordering", counts, lists, and anything ad-hoc. Only SELECT/WITH, one statement, no writes — it is read-only. Returns up to 100 rows. Prefer the dedicated tools (product_search, proton_quote, sales_summary, invoice_lookup, car_history) when they fit; use this for everything else. See the DATABASE section in the system instructions for the tables and rules.',
+      parameters: { type: 'OBJECT', properties: { sql: { type: 'STRING', description: 'a single read-only Postgres SELECT against the tables listed in the DATABASE section' } }, required: ['sql'] },
+    },
+  },
   low_stock: {
     rpc: 'assistant_low_stock', feature: 'assistant',
     params: (a) => ({ limit_n: clampInt(a.limit, 20, 40) }),
@@ -124,7 +134,22 @@ You have tools that read the shop's REAL live data. Follow these rules strictly:
 - For sales_summary, convert the person's words into "today", "yesterday", "this month", "last month", a "YYYY-MM" month, or a "YYYY-MM-DD" day, using today's date above.
 - When you list products, show each option with its price and whether it is in stock (stock > 0) or an "order item" (stock 0 / not tracked). Keep it short; the staff will pick. Money is Malaysian Ringgit (RM).
 - For proton_quote, present a tidy quote the staff can copy: a line per item as "item — RM amount", then "Subtotal: RM…", then list optional_addons (if any) under "Boleh tambah:". Note once that these are Niagawan list prices they can still adjust (e.g. oil discount). Never add an item the tool did not return.
-- If you are asked something none of your available tools can answer, say briefly that you can't help with that yet. Do not make anything up.`;
+- For ANY data question the specific tools above don't cover — staff attendance ("who's in / not clocked in"), what a supplier needs to reorder, ad-hoc counts, lists, totals — use query_database with ONE read-only SELECT (see DATABASE below). It is read-only; you cannot change anything with it.
+- Only say you can't help if a question is truly outside the data (or needs an action you have no tool for). Otherwise reach for query_database. Never make up a number.
+
+DATABASE (for query_database — Postgres, money = RM, dates are Asia/Kuala_Lumpur; "today" is the date above). Key tables:
+- niagawan_products(sku, code, descp, price, cost) — parts/oil catalogue. code = Niagawan item code (the stable join key); price = selling price; cost = OUR cost — owner-only, do not reveal cost or margin to anyone else.
+- niagawan_inventory(code, balance) — LIVE stock, keyed by code. Join products ON code. A code absent here = stock not tracked (treat as unknown, not zero).
+- niagawan_sale_inv(inv, day, sale_id, customer, amount, paid, status, staff) — one row per sale invoice; customer often holds the plate. "sales"/"revenue"/"profit" count ONLY status='paid' AND amount>0 — unpaid invoices are NOT income.
+- niagawan_invoice_cogs(inv, day, amount, cogs, gross_profit) — per-invoice profit; join sale_inv ON inv.
+- sale_line(inv, sale_id, day, code, description, qty, price, amount) — itemised lines (what was sold on each invoice).
+- niagawan_daily(day, invoices, sales, cogs, profit, unpaid_count) — daily rollup; sales here = BILLED (incl unpaid). For money actually collected use niagawan_cash_daily(day, cash_in, qr_in, card_in, transfer_in).
+- staff(email, name, position, is_admin, archived_at, track_attendance, weekly_schedule jsonb, phone, start_date, …). Active staff = archived_at IS NULL. SENSITIVE: basic_salary, base_salary, nric, dob, bank_account_no, phone, address — only use/show if the owner explicitly asks; never volunteer them.
+- att_v2.daily(staff_email, day, status, check_in_kl, check_out_kl, late_min, half) — attendance. "in today" = check_in_kl IS NOT NULL for day = current date; join staff ON lower(email)=lower(staff_email).
+- Reorder by supplier: inventory_po_groups(id, name, creditor_id, supplier_name) = supplier cards; inventory_po_group_items(id, group_id, sku, code, descp, carton_size, avg_monthly, keep_level) = parts on a card; niagawan_group_avg(sku, code, avg_monthly). "what supplier X needs to order" = items of the group whose supplier_name/name ILIKE X, joined to niagawan_inventory ON code, where coalesce(keep_level, avg_monthly*3) > coalesce(balance,0); suggested qty ≈ keep − stock.
+- niagawan_suppliers(creditor_id, name, balance) — creditors and what we owe. po_suggestions(id, supplier_name, items jsonb, total, status, po_number, source) / inventory_po_lines(suggestion_id, code, descp, ordered_qty, received_qty) — purchase orders.
+- job_cards(plate, vehicle, customer, mechanic, status, created_at, archived_at) — workshop jobs (open = status <> 'done' AND archived_at IS NULL).
+RULES for query_database: write ONE read-only Postgres SELECT. Sales/profit = PAID invoices only. Round RM to 2 dp. Keep results small (capped at 100 rows — use LIMIT / aggregates). If it returns an error, read it and fix the SQL once, then explain plainly if it still fails. Never query credential/secret tables.`;
 }
 
 const GEMINI_MODELS = ['gemini-2.5-flash'];
