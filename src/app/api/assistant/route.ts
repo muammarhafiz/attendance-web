@@ -63,6 +63,16 @@ const SKILLS: Record<string, Skill> = {
       parameters: { type: 'OBJECT', properties: { plate: { type: 'STRING', description: 'the car number plate, e.g. WXM7689' } }, required: ['plate'] },
     },
   },
+  proton_quote: {
+    rpc: 'assistant_proton_quote', feature: 'assistant',
+    params: (a) => ({ p_model: String(a.model ?? '').slice(0, 40), p_km: clampInt(a.mileage, 0, 500000) }),
+    decl: {
+      name: 'proton_quote',
+      description:
+        'Build a Proton scheduled-service quote for a Geely-platform model at a given mileage. Covers X50, X70 (CBU / CKD / 1.5) and S70. Returns the service items DUE at that mileage, each with our live Niagawan price, a subtotal, and optional add-ons (e.g. brake fluid). Use for "service quote", "sebut harga service", "jadual service / servis" for a Proton X50 / X70 / S70. Pass the model (e.g. "X50", "X70 CKD", "X70 CBU", "X70 1.5", "S70") and the mileage in km (e.g. 80000).',
+      parameters: { type: 'OBJECT', properties: { model: { type: 'STRING', description: 'Proton model, e.g. X50, X70 CKD, X70 CBU, X70 1.5, S70' }, mileage: { type: 'INTEGER', description: 'mileage in km, e.g. 80000' } }, required: ['model', 'mileage'] },
+    },
+  },
   low_stock: {
     rpc: 'assistant_low_stock', feature: 'assistant',
     params: (a) => ({ limit_n: clampInt(a.limit, 20, 40) }),
@@ -108,11 +118,12 @@ function systemPrompt(): string {
   return `You are ZORDAQ Auto Service's in-app assistant for workshop staff. ZORDAQ is a Malaysian car workshop (servicing, parts, engine oils). Today is ${today}. Reply briefly and practically, in the SAME language the person writes (Malay, English, or a mix).
 
 You have tools that read the shop's REAL live data. Follow these rules strictly:
-- Parts, products, oil, price or stock -> product_search. "What's running low / need to reorder" -> low_stock. A car's past oil / service history by plate ("what oil did this car take last time") -> car_history. A sales invoice -> invoice_lookup. Sales / profit / revenue / margin for a day or month -> sales_summary. Cash count / cash reconcile (Niagawan recorded cash vs the staff's end-of-day physical count) -> cash_count. Who owes money / debtors / receivables -> debtors.
+- Parts, products, oil, price or stock -> product_search. "What's running low / need to reorder" -> low_stock. A car's past oil / service history by plate ("what oil did this car take last time") -> car_history. A Proton service quote / "sebut harga service" / service schedule for an X50, X70 (CBU/CKD/1.5) or S70 at a mileage -> proton_quote (pass the model and the mileage in km). A sales invoice -> invoice_lookup. Sales / profit / revenue / margin for a day or month -> sales_summary. Cash count / cash reconcile (Niagawan recorded cash vs the staff's end-of-day physical count) -> cash_count. Who owes money / debtors / receivables -> debtors.
 - For sales_summary on a DAY it returns total_invoiced (all invoices billed that day, paid + unpaid) AND collected_so_far (money actually received) — when the person asks "sales today", give both and make the difference clear; don't present total_invoiced as if it were money collected.
 - NEVER recall or guess a price, SKU, stock level or figure — only state values a tool actually returned in this conversation. If a tool returns nothing, say you couldn't find it; do not invent an answer.
 - For sales_summary, convert the person's words into "today", "yesterday", "this month", "last month", a "YYYY-MM" month, or a "YYYY-MM-DD" day, using today's date above.
 - When you list products, show each option with its price and whether it is in stock (stock > 0) or an "order item" (stock 0 / not tracked). Keep it short; the staff will pick. Money is Malaysian Ringgit (RM).
+- For proton_quote, present a tidy quote the staff can copy: a line per item as "item — RM amount", then "Subtotal: RM…", then list optional_addons (if any) under "Boleh tambah:". Note once that these are Niagawan list prices they can still adjust (e.g. oil discount). Never add an item the tool did not return.
 - If you are asked something none of your available tools can answer, say briefly that you can't help with that yet. Do not make anything up.`;
 }
 
