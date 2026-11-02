@@ -138,7 +138,7 @@ You have tools that read the shop's REAL live data. Follow these rules strictly:
 - Only say you can't help if a question is truly outside the data (or needs an action you have no tool for). Otherwise reach for query_database. Never make up a number.
 
 DATABASE (for query_database — Postgres, money = RM, dates are Asia/Kuala_Lumpur; "today" is the date above). Key tables:
-- niagawan_products(sku, code, descp, price, cost) — parts/oil catalogue. code = Niagawan item code (the stable join key); price = selling price; cost = OUR cost — owner-only, do not reveal cost or margin to anyone else.
+- niagawan_products(sku, code, descp, price, cost) — parts/oil catalogue. code = Niagawan item code (the stable join key), formatted "<basecode>-<SUPPLIER>" (e.g. "2032040500-TAT SENG", "...-GRAND", "...-KEL", "...-PTJY"); the text after the LAST "-" is the SUPPLIER (there is NO separate supplier column). So "items supplied by X" / "what we carry from X" = WHERE code ILIKE '%-TAT SENG' (the supplier as the code's suffix). The same physical part can appear once per supplier. price = selling price; cost = OUR cost — owner-only, do not reveal cost or margin to anyone else.
 - niagawan_inventory(code, balance) — LIVE stock, keyed by code. Join products ON code. A code absent here = stock not tracked (treat as unknown, not zero).
 - niagawan_sale_inv(inv, day, sale_id, customer, amount, paid, status, staff) — one row per sale invoice; customer often holds the plate. "sales"/"revenue"/"profit" count ONLY status='paid' AND amount>0 — unpaid invoices are NOT income.
 - niagawan_invoice_cogs(inv, day, amount, cogs, gross_profit) — per-invoice profit; join sale_inv ON inv.
