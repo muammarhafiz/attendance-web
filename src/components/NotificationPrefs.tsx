@@ -26,6 +26,7 @@ const TYPE_LABEL: Record<string, string> = {
   robot_health: 'ATOME import health',
   sales_unmapped: 'New salesperson to identify',
   invdrift: 'Inventory item out of sync with Niagawan',
+  bnpl_premature: 'BNPL marked paid without a cleared payout',
 };
 
 function Switch({ on, onChange, disabled }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
