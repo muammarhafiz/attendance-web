@@ -1,6 +1,9 @@
 'use client';
-// Cashier tool (Workshop → BNPL fee): type a customer's bill, see how much the BNPL service takes
-// and what the shop actually receives. Uses each service's own fee (from bnpl_fee_config).
+// Cashier tool (Workshop → BNPL fee): type the customer's bill and see how much to ADD when they
+// pay by a BNPL service, so that after the service takes its cut the shop still receives the full
+// bill. Gross-up per service (bnpl_fee_config): to net B you must charge
+//   G = (B + flat·(1+sst)) / (1 − mdr·(1+sst))
+// NOT B + fee(B) — the fee is charged on the grossed-up total, so a plain markup under-recovers.
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -27,20 +30,25 @@ export default function BnplCalc() {
   }, []);
 
   const p = provs.find((x) => x.provider === sel);
-  const g = Number(amt) || 0;
+  const bill = Number(amt) || 0;                     // what the shop wants to actually receive
+  const mdr = p ? Number(p.mdr_pct) / 100 : 0;
+  const sst = p ? Number(p.sst_pct) / 100 : 0;
   const flat = p ? Number(p.flat_fee) : 0;
-  const mdrAmt = p ? g * (Number(p.mdr_pct) / 100) : 0;
-  const mdrSst = p ? mdrAmt * (Number(p.sst_pct) / 100) : 0;
-  const flatSst = p ? flat * (Number(p.sst_pct) / 100) : 0;
-  const fee = mdrAmt + mdrSst + flat + flatSst;
-  const net = g - fee;
   const name = p?.display_name || 'BNPL';
+
+  // Gross-up so the shop nets the full bill: charge G where G − [G·mdr·(1+sst) + flat·(1+sst)] = bill.
+  const denom = 1 - mdr * (1 + sst);
+  const chargeExact = denom > 0 ? (bill + flat * (1 + sst)) / denom : 0;
+  const charge = Math.round(chargeExact * 100) / 100;         // to the cent
+  const fee = Math.round((charge * mdr * (1 + sst) + flat * (1 + sst)) * 100) / 100;
+  const add = Math.round((charge - bill) * 100) / 100;        // the surcharge to add to the bill
+  const net = Math.round((charge - fee) * 100) / 100;         // what the shop actually keeps (≈ bill)
 
   return (
     <div className="mx-auto max-w-md">
       <div className="rounded-card bg-card shadow-card p-4">
         <div className="mb-1 text-base font-semibold text-ink">BNPL fee calculator</div>
-        <p className="mb-3 text-[13px] text-ink-2">Type the customer&rsquo;s bill to see how much {name} takes and what the shop actually receives.</p>
+        <p className="mb-3 text-[13px] text-ink-2">Type the customer&rsquo;s bill to see how much to <b>add</b> when they pay by {name}, so that after {name}&rsquo;s cut the shop still receives the full bill.</p>
 
         {provs.length > 1 && (
           <div className="mb-3 flex items-center gap-2 text-sm">
@@ -60,19 +68,18 @@ export default function BnplCalc() {
           />
         </div>
 
-        {p && g > 0 && (
+        {p && bill > 0 && (
           <div className="mt-4 space-y-1.5 text-sm">
-            <Row k={`Commission (${p.mdr_pct}%)`} v={rm(mdrAmt)} />
-            <Row k={`SST on commission (${p.sst_pct}%)`} v={rm(mdrSst)} />
-            <Row k="Flat fee" v={rm(flat)} />
-            <Row k={`SST on flat (${p.sst_pct}%)`} v={rm(flatSst)} />
-            <div className="mt-1 flex justify-between border-t border-line pt-2 text-base font-semibold text-bad"><span>{name} takes</span><span>{rm(fee)}</span></div>
-            <div className="flex justify-between text-xl font-bold text-good"><span>Shop receives</span><span>{rm(net)}</span></div>
+            <Row k="Your bill" v={rm(bill)} />
+            <Row k={`Add for ${name}`} v={`+ ${rm(add)}`} />
+            <div className="mt-1 flex justify-between border-t border-line pt-2 text-xl font-bold text-ink"><span>Charge customer</span><span>{rm(charge)}</span></div>
+            <div className="mt-2 flex justify-between text-[13px]"><span className="text-ink-3">{name} takes</span><span className="text-bad">− {rm(fee)}</span></div>
+            <div className="flex justify-between text-base font-semibold text-good"><span>Shop receives</span><span>{rm(net)}</span></div>
           </div>
         )}
 
         {p && (
-          <p className="mt-3 text-[11px] text-ink-3">{name} fee: {p.mdr_pct}% + RM{flat} (+{p.sst_pct}% SST). An estimate — the exact fee is on {name}&rsquo;s settlement report.</p>
+          <p className="mt-3 text-[11px] text-ink-3">{name} fee: {p.mdr_pct}% + RM{flat} (+{p.sst_pct}% SST), charged on the total the customer pays. An estimate — the exact fee is on {name}&rsquo;s settlement report.</p>
         )}
       </div>
     </div>
