@@ -6,13 +6,14 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 type MonthRow = { month: string; jobs: number; revenue: number; est_cost: number; profit: number; margin_pct: number };
-type Issue = { inv: string; day: string; car: string; code: string; description: string; amount: number };
+type Issue = { inv: string; day: string; car: string; staff: string | null; code: string; description: string; amount: number };
 
 const rm = (n: number) => `RM${Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 const monthLabel = (m: string) => {
   const [y, mo] = m.split('-').map(Number);
   return new Date(y, mo - 1, 1).toLocaleDateString('en-MY', { month: 'long', year: 'numeric' });
 };
+const dateLabel = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' });
 
 export default function TyreTracker() {
   const [months, setMonths] = useState<MonthRow[]>([]);
@@ -107,8 +108,8 @@ export default function TyreTracker() {
                   <span className="font-medium text-ink">{x.inv}</span>
                   <span className="text-ink tabular-nums">{rm(x.amount)}</span>
                 </div>
-                <div className="text-[13px] text-ink-2">{x.car || '—'} · <span className="text-ink-3">{x.code}</span></div>
-                <div className="truncate text-[12px] text-ink-3">{x.description}</div>
+                <div className="text-[13px] text-ink-2">{dateLabel(x.day)} · {x.car || '—'}{x.staff ? ` · ${x.staff}` : ''}</div>
+                <div className="mt-0.5 text-[12px] text-ink-3"><span className="text-ink-2">{x.code}</span> — {x.description}</div>
               </div>
             ))}
           </div>
