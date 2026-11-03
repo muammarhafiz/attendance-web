@@ -12,7 +12,7 @@ type NavChild = { href: string; label: string; match?: string; badge?: number };
 type NavItem = { href?: string; label: string; match?: string; badge?: number; icon: IconName; children?: NavChild[] };
 type NavGroup = { label: string; items: NavItem[] };
 type NotifItem = { type: string; id: string; who: string; detail: string; when: string; href: string };
-const NOTIF_ICON: Record<string, string> = { offday: '🌴', halfday: '🕧', advance: '💵', mc: '📄', po: '📦', pinv: '📥', pinv_created: '✅', not_checkin: '⏰', stuckcar: '🚗', debt: '🧾', lowstock: '📉', bnpl_payout: '💳', probation_review: '🎓', job_done: '⚙️', po_created: '📦', owner_digest: '🌙', robot_health: '🤖', sales_unmapped: '👤', bnpl_premature: '⚠️',
+const NOTIF_ICON: Record<string, string> = { offday: '🌴', halfday: '🕧', advance: '💵', mc: '📄', po: '📦', pinv: '📥', pinv_created: '✅', not_checkin: '⏰', stuckcar: '🚗', debt: '🧾', lowstock: '📉', bnpl_payout: '💳', probation_review: '🎓', job_done: '⚙️', po_created: '📦', owner_digest: '🌙', robot_health: '🤖', sales_unmapped: '👤', bnpl_premature: '⚠️', tyre_miscoded: '🛞',
   // staff-facing outcomes (their own request was decided)
   offday_result: '🌴', halfday_result: '🕧', mc_result: '📄', advance_result: '💵',
   // holiday reminders (owner/office/manager)
@@ -21,7 +21,7 @@ const NOTIF_ICON: Record<string, string> = { offday: '🌴', halfday: '🕧', ad
   mc_cert: '📄', doc_needed: '📎',
   // owner: a staff member uploaded a document (MC cert / off-day proof / requested doc)
   proof_offday: '📎', proof_mc: '📎', proof_doc: '📎' };
-const NOTIF_LABEL: Record<string, string> = { offday: 'off-day request', halfday: 'half-day request', advance: 'advance request', mc: 'MC', po: 'purchase order', pinv: 'purchase invoice', pinv_created: 'created in Niagawan ✓', not_checkin: 'attendance', stuckcar: 'in shop > 3 days', debt: 'newly overdue', lowstock: 'to restock', bnpl_payout: 'new payout', probation_review: 'trial review', job_done: 'finished', po_created: 'purchase order', owner_digest: 'end-of-day summary', robot_health: 'import problem', sales_unmapped: 'new salesperson', bnpl_premature: 'paid, no payout',
+const NOTIF_LABEL: Record<string, string> = { offday: 'off-day request', halfday: 'half-day request', advance: 'advance request', mc: 'MC', po: 'purchase order', pinv: 'purchase invoice', pinv_created: 'created in Niagawan ✓', not_checkin: 'attendance', stuckcar: 'in shop > 3 days', debt: 'newly overdue', lowstock: 'to restock', bnpl_payout: 'new payout', probation_review: 'trial review', job_done: 'finished', po_created: 'purchase order', owner_digest: 'end-of-day summary', robot_health: 'import problem', sales_unmapped: 'new salesperson', bnpl_premature: 'paid, no payout', tyre_miscoded: 'tyre booked wrong',
   offday_result: 'off-day request', halfday_result: 'half-day request', mc_result: 'MC', advance_result: 'advance',
   holiday_decide: 'public holiday', holiday_load: 'to load',
   mc_cert: 'to upload', doc_needed: 'to upload',
