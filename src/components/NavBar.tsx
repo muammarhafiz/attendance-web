@@ -319,6 +319,7 @@ export default function NavBar() {
         ...(canBoard ? [{ label: 'Workshop', href: '/workshop', icon: 'wrench' } as NavItem] : []),
         ...((access.tyre || access.workshop) ? [{ label: 'Tyre', icon: 'tyre', badge: access.workshop ? tyreNew : 0, children: [
           { href: '/tyre', label: 'Tyre finder' },
+          ...(access.owner ? [{ href: '/tyre/sales', label: 'Sales & profit' }] : []),
           ...(access.workshop ? [{ href: '/tyre/enquiries', label: 'Enquiries', badge: tyreNew }] : []),
         ] } as NavItem] : []),
         ...((access.workshop || access.owner) ? [{ label: 'Needs mechanic', href: '/workshop/needs-mechanic', match: '/workshop/needs-mechanic', icon: 'users', badge: needsMech } as NavItem] : []),
