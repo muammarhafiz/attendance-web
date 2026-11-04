@@ -117,6 +117,15 @@ export default function TyreTracker() {
           <div className="text-sm text-ink-3">Nothing flagged. 👍</div>
         )}
       </div>
+
+      <div className="rounded-card bg-card shadow-card p-4">
+        <div className="mb-2 text-sm font-semibold text-ink">How this stays updated</div>
+        <ul className="list-disc space-y-1.5 pl-5 text-[13px] text-ink-2 marker:text-ink-3">
+          <li><b>Item list</b> &mdash; refreshed from your Niagawan <b>ALIGNMENT&nbsp;-ZP</b> category every night (2:30am). Add or remove an item there and it&rsquo;s picked up automatically.</li>
+          <li><b>Sales</b> &mdash; each day&rsquo;s invoices are pulled from Niagawan overnight, so new tyre jobs appear the next day.</li>
+          <li><b>&ldquo;Booked wrong&rdquo;</b> &mdash; checked every morning (9am); you get a bell + phone alert for any tyre work booked without a tyre code.</li>
+        </ul>
+      </div>
     </div>
   );
 }
