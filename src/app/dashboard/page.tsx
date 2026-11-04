@@ -21,6 +21,7 @@ const rm2 = (n: number) => 'RM ' + Number(n || 0).toLocaleString('en-MY', { mini
 const fmtDay = (iso: string) => new Date(iso + 'T00:00:00').toLocaleDateString('en-MY', { weekday: 'short', day: 'numeric', month: 'short' });
 // Drop the trailing SSM registration ("… (202001027469 (1383789-X))") for a clean supplier name.
 const cleanSupplier = (name: string) => name.replace(/\s*\(\d{6,}.*$/, '').trim() || name;
+const tyreMonthLabel = (m: string) => { const [y, mo] = m.split('-').map(Number); return new Date(y, mo - 1, 1).toLocaleDateString('en-MY', { month: 'long', year: 'numeric' }); };
 
 function Kpi({ label, value, sub, href }: { label: string; value: string; sub?: string; href?: string }) {
   const body = (
@@ -246,9 +247,35 @@ function OfficeWeeklyCard({ h }: { h: OfficeHome | null }) {
   );
 }
 
+// Owner-only tyre-services summary — self-contained (fetches its own RPCs like the clerk/chase cards).
+type TyreMonth = { month: string; jobs: number; revenue: number | string; profit: number | string; margin_pct: number };
+function TyreDashCard() {
+  const [rows, setRows] = useState<TyreMonth[] | null>(null);
+  const [issues, setIssues] = useState<number>(0);
+  useEffect(() => { (async () => {
+    const [a, b] = await Promise.all([supabase.rpc('tyre_services_by_month'), supabase.rpc('tyre_booking_issues')]);
+    setRows((a.data ?? []) as TyreMonth[]);
+    setIssues(((b.data ?? []) as unknown[]).length);
+  })(); }, []);
+  const cur = rows && rows.length ? rows[rows.length - 1] : null;
+  return (
+    <Card title="Tyre services" icon="tyre" href="/tyre/sales">
+      {rows == null ? <div className="text-sm text-ink-3">—</div> : cur ? (
+        <>
+          <div className="mb-2 text-xs text-ink-3">{tyreMonthLabel(cur.month)}</div>
+          <Row k="Sales" v={rm(Number(cur.revenue))} />
+          <Row k="Profit" v={rm(Number(cur.profit))} tone="ok" />
+          <Row k="Jobs" v={cur.jobs} />
+          {issues > 0 && <Row k="Booked wrong" v={issues} tone="warn" />}
+        </>
+      ) : <div className="text-sm text-ink-3">No tyre-service sales yet.</div>}
+    </Card>
+  );
+}
+
 // Reorderable-cards persistence: saved order lives in localStorage, merged with the default on load.
 const DASH_ORDER_KEY = 'dashboard_card_order_v1';
-const DEFAULT_ORDER = ['attendance', 'workshop', 'office-monthly', 'office-weekly', 'sales', 'attention', 'payables', 'clerk', 'chase'];
+const DEFAULT_ORDER = ['attendance', 'workshop', 'office-monthly', 'office-weekly', 'sales', 'tyre', 'attention', 'payables', 'clerk', 'chase'];
 
 export default function DashboardPage() {
   const [d, setD] = useState<Dash | null>(null);
@@ -325,6 +352,7 @@ export default function DashboardPage() {
         <SalesTrend series={d.sales.series} mtd={d.sales.mtd} today={d.sales.today} />
       </Card>
     ),
+    tyre: <TyreDashCard />,
     attention: (
       <Card title="Needs attention" icon="bell">
         <Link href="/attendance/checkin" className="block hover:opacity-80"><Row k="Requests to approve" v={d.attention.requests} tone={d.attention.requests > 0 ? 'warn' : undefined} /></Link>
