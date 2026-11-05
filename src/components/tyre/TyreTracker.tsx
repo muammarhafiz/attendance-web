@@ -22,6 +22,7 @@ export default function TyreTracker() {
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [open, setOpen] = useState<Set<string>>(new Set());
+  const [issuesOpen, setIssuesOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
 
@@ -164,29 +165,40 @@ export default function TyreTracker() {
       <p className="-mt-3 px-1 text-[12px] text-ink-3">Tap a month to see its invoices.</p>
 
       <div className="rounded-card bg-card shadow-card p-4">
-        <div className="mb-1 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setIssuesOpen((v) => !v)}
+          className="flex w-full items-center gap-2 text-left"
+          aria-expanded={issuesOpen}
+        >
+          <span className={`text-ink-3 transition-transform ${issuesOpen ? 'rotate-90' : ''}`}>▸</span>
           <span className="text-base font-semibold text-ink">⚠️ Booked wrong</span>
           <span className="rounded-full bg-ink/10 px-2 py-0.5 text-xs text-ink-2">{issues.length}</span>
-        </div>
-        <p className="mb-3 text-[13px] text-ink-2">
-          Tyre work that wasn&rsquo;t booked under a tyre code — bundled into another item, or typed free-hand.
-          Re-book these under the right <b>ALIGNMENT&nbsp;-ZP</b> code so they&rsquo;re counted.
-        </p>
-        {issues.length ? (
-          <div className="space-y-2">
-            {issues.map((x, k) => (
-              <div key={x.inv + ':' + k} className="rounded-lg border border-line p-2.5 text-sm">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium text-ink">{x.inv}</span>
-                  <span className="text-ink tabular-nums">{rm(x.amount)}</span>
-                </div>
-                <div className="text-[13px] text-ink-2">{dateLabel(x.day)} · {x.car || '—'}{x.staff ? ` · ${x.staff}` : ''}</div>
-                <div className="mt-0.5 text-[12px] text-ink-3"><span className="text-ink-2">{x.code}</span> — {x.description}</div>
+          <span className="ml-auto text-[12px] text-ink-3">{issuesOpen ? 'Hide' : 'Show'}</span>
+        </button>
+        {issuesOpen && (
+          <div className="mt-3">
+            <p className="mb-3 text-[13px] text-ink-2">
+              Tyre work that wasn&rsquo;t booked under a tyre code — bundled into another item, or typed free-hand.
+              Re-book these under the right <b>ALIGNMENT&nbsp;-ZP</b> code so they&rsquo;re counted.
+            </p>
+            {issues.length ? (
+              <div className="space-y-2">
+                {issues.map((x, k) => (
+                  <div key={x.inv + ':' + k} className="rounded-lg border border-line p-2.5 text-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-ink">{x.inv}</span>
+                      <span className="text-ink tabular-nums">{rm(x.amount)}</span>
+                    </div>
+                    <div className="text-[13px] text-ink-2">{dateLabel(x.day)} · {x.car || '—'}{x.staff ? ` · ${x.staff}` : ''}</div>
+                    <div className="mt-0.5 text-[12px] text-ink-3"><span className="text-ink-2">{x.code}</span> — {x.description}</div>
+                  </div>
+                ))}
               </div>
-            ))}
+            ) : (
+              <div className="text-sm text-ink-3">Nothing flagged. 👍</div>
+            )}
           </div>
-        ) : (
-          <div className="text-sm text-ink-3">Nothing flagged. 👍</div>
         )}
       </div>
 
