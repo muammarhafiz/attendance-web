@@ -40,7 +40,7 @@ function klToday() {
 }
 
 type SyncState = 'idle' | 'running' | 'done' | 'error';
-type Status = { kind: 'final' | 'pending' | 'unknown'; zc: number; up: number; pc: number };
+type Status = { kind: 'final' | 'pending' | 'unknown'; zc: number; up: number; pc: number; bc: number };
 
 export default function NiagawanSalesPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -57,6 +57,8 @@ export default function NiagawanSalesPage() {
   const [zeroByDay, setZeroByDay] = useState<Record<string, number>>({});
   const [zcError, setZcError] = useState(false);
   const [partialByDay, setPartialByDay] = useState<Record<string, number>>({});
+  // Per-day count of invoices unpaid ONLY because a BNPL payment is pending (verify receipt).
+  const [bnplByDay, setBnplByDay] = useState<Record<string, number>>({});
 
   // auth + role
   useEffect(() => {
@@ -82,7 +84,7 @@ export default function NiagawanSalesPage() {
     const bound = new Date();
     bound.setDate(bound.getDate() - 120);
     const boundISO = bound.toISOString().slice(0, 10);
-    const [{ data, error }, { data: zc, error: zcErr }, { data: parts, error: partErr }] = await Promise.all([
+    const [{ data, error }, { data: zc, error: zcErr }, { data: parts, error: partErr }, { data: bnpl, error: bnplErr }] = await Promise.all([
       supabase
         .from('niagawan_daily')
         .select('day,invoices,sales,cogs,profit,unpaid_count,updated_at')
@@ -90,6 +92,7 @@ export default function NiagawanSalesPage() {
         .limit(60),
       supabase.rpc('cogs_zero_day_counts'),
       supabase.from('niagawan_sale_inv').select('day').eq('status', 'partial').gte('day', boundISO),
+      supabase.rpc('niagawan_pending_bnpl_counts'),
     ]);
     if (error) setErr(error.message);
     else setRows((data ?? []) as Daily[]);
@@ -107,6 +110,9 @@ export default function NiagawanSalesPage() {
     const pmap: Record<string, number> = {};
     if (!partErr) for (const row of (parts ?? []) as { day: string }[]) pmap[row.day] = (pmap[row.day] ?? 0) + 1;
     setPartialByDay(pmap);
+    const bmap: Record<string, number> = {};
+    if (!bnplErr) for (const row of (bnpl ?? []) as { day: string; n: number }[]) bmap[row.day] = Number(row.n) || 0;
+    setBnplByDay(bmap);
     setLoading(false);
   }, []);
 
@@ -117,11 +123,12 @@ export default function NiagawanSalesPage() {
   const dayStatus = useCallback((r: Daily): Status => {
     const zc = zeroByDay[r.day] ?? 0;
     const pc = partialByDay[r.day] ?? 0;
+    const bc = bnplByDay[r.day] ?? 0;
     const up = r.unpaid_count;
-    if (up == null || zcError) return { kind: 'unknown', zc, up: up ?? 0, pc };
-    if (up === 0 && pc === 0 && zc === 0) return { kind: 'final', zc, up, pc };
-    return { kind: 'pending', zc, up, pc };
-  }, [zeroByDay, partialByDay, zcError]);
+    if (up == null || zcError) return { kind: 'unknown', zc, up: up ?? 0, pc, bc };
+    if (up === 0 && pc === 0 && zc === 0) return { kind: 'final', zc, up, pc, bc };
+    return { kind: 'pending', zc, up, pc, bc };
+  }, [zeroByDay, partialByDay, bnplByDay, zcError]);
 
   // data (only for admins; RLS would block others anyway)
   useEffect(() => {
@@ -187,12 +194,16 @@ export default function NiagawanSalesPage() {
     return new Date(max).toLocaleString('en-MY');
   }, [rows]);
 
-  const reasonFor = (s: Status) =>
-    [
+  const reasonFor = (s: Status) => {
+    const base = [
       s.zc > 0 ? `${s.zc} item${s.zc === 1 ? '' : 's'} no cost` : '',
       s.up > 0 ? `${s.up} unpaid` : '',
       s.pc > 0 ? `${s.pc} part-paid` : '',
     ].filter(Boolean).join(' · ');
+    // "Pending BNPL" = unpaid/part-paid only because a BNPL payout hasn't cleared yet (money
+    // coming, not owed). It's a subset of the unpaid/part-paid above, surfaced as a reassurance.
+    return s.bc > 0 ? `${base}${base ? ' · ' : ''}${s.bc} pending BNPL` : base;
+  };
 
   const badge = (s: Status) => {
     if (s.kind === 'final') return <span className="rounded-full bg-good-soft px-2 py-0.5 text-xs font-medium text-good">✓ final</span>;
