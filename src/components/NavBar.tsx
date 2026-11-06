@@ -559,6 +559,11 @@ export default function NavBar() {
                           <button onClick={() => act(i, 'reject')} disabled={acting === i.id} className="rounded-md border border-line bg-bad-soft px-2.5 py-1 text-xs font-semibold text-bad hover:bg-bad-soft disabled:opacity-50">✗ Reject</button>
                         </div>
                       )}
+                      {i.type === 'bnpl_premature' && (
+                        <div className="mt-1.5 flex gap-2 pl-6">
+                          <button onClick={() => act(i, 'approve')} disabled={acting === i.id} className="rounded-md bg-good px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">↩ Flip to Verify</button>
+                        </div>
+                      )}
                     </div>
                   );
                 })
