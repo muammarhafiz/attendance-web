@@ -40,7 +40,7 @@ function klToday() {
 }
 
 type SyncState = 'idle' | 'running' | 'done' | 'error';
-type Status = { kind: 'final' | 'pending' | 'unknown'; zc: number; up: number; pc: number; bc: number };
+type Status = { kind: 'final' | 'pending' | 'unknown'; zc: number; up: number; pc: number; bc: number; other: number; bnplOnly: boolean };
 
 export default function NiagawanSalesPage() {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -57,8 +57,11 @@ export default function NiagawanSalesPage() {
   const [zeroByDay, setZeroByDay] = useState<Record<string, number>>({});
   const [zcError, setZcError] = useState(false);
   const [partialByDay, setPartialByDay] = useState<Record<string, number>>({});
-  // Per-day count of invoices unpaid ONLY because a BNPL payment is pending (verify receipt).
+  // Per-day count of invoices unpaid ONLY because a BNPL payment is pending (verify receipt),
+  // and — from the same mirror — the count of open invoices that are NOT pending-BNPL (genuine
+  // unpaid/part-paid). A day whose only open item is pending-BNPL is treated as final (orange).
   const [bnplByDay, setBnplByDay] = useState<Record<string, number>>({});
+  const [otherOpenByDay, setOtherOpenByDay] = useState<Record<string, number>>({});
 
   // auth + role
   useEffect(() => {
@@ -111,8 +114,13 @@ export default function NiagawanSalesPage() {
     if (!partErr) for (const row of (parts ?? []) as { day: string }[]) pmap[row.day] = (pmap[row.day] ?? 0) + 1;
     setPartialByDay(pmap);
     const bmap: Record<string, number> = {};
-    if (!bnplErr) for (const row of (bnpl ?? []) as { day: string; n: number }[]) bmap[row.day] = Number(row.n) || 0;
+    const omap: Record<string, number> = {};
+    if (!bnplErr) for (const row of (bnpl ?? []) as { day: string; bnpl_pending: number; other_open: number }[]) {
+      bmap[row.day] = Number(row.bnpl_pending) || 0;
+      omap[row.day] = Number(row.other_open) || 0;
+    }
     setBnplByDay(bmap);
+    setOtherOpenByDay(omap);
     setLoading(false);
   }, []);
 
@@ -124,11 +132,17 @@ export default function NiagawanSalesPage() {
     const zc = zeroByDay[r.day] ?? 0;
     const pc = partialByDay[r.day] ?? 0;
     const bc = bnplByDay[r.day] ?? 0;
+    const other = otherOpenByDay[r.day] ?? 0;
     const up = r.unpaid_count;
-    if (up == null || zcError) return { kind: 'unknown', zc, up: up ?? 0, pc, bc };
-    if (up === 0 && pc === 0 && zc === 0) return { kind: 'final', zc, up, pc, bc };
-    return { kind: 'pending', zc, up, pc, bc };
-  }, [zeroByDay, partialByDay, bnplByDay, zcError]);
+    if (up == null || zcError) return { kind: 'unknown', zc, up: up ?? 0, pc, bc, other, bnplOnly: false };
+    if (up === 0 && pc === 0 && zc === 0) return { kind: 'final', zc, up, pc, bc, other, bnplOnly: false };
+    // The day has something open. If the ONLY open item is a pending BNPL payout (money confirmed,
+    // just in transit) — no genuine unpaid/part-paid (other === 0) and no missing cost (zc === 0) —
+    // the day's figures won't change, so treat it as FINAL. Keep it orange (bnplOnly) so the
+    // in-transit money stays visible until the payout clears and it flips to plain green.
+    if (zc === 0 && other === 0 && bc > 0) return { kind: 'final', zc, up, pc, bc, other, bnplOnly: true };
+    return { kind: 'pending', zc, up, pc, bc, other, bnplOnly: false };
+  }, [zeroByDay, partialByDay, bnplByDay, otherOpenByDay, zcError]);
 
   // data (only for admins; RLS would block others anyway)
   useEffect(() => {
@@ -206,6 +220,9 @@ export default function NiagawanSalesPage() {
   };
 
   const badge = (s: Status) => {
+    // Final, but a BNPL payout is still clearing — orange, not green (money confirmed, in transit).
+    if (s.kind === 'final' && s.bnplOnly)
+      return <span className="rounded-full bg-warn-soft px-2 py-0.5 text-xs font-medium text-warn">✓ final · {s.bc} pending BNPL</span>;
     if (s.kind === 'final') return <span className="rounded-full bg-good-soft px-2 py-0.5 text-xs font-medium text-good">✓ final</span>;
     if (s.kind === 'pending') return <span className="rounded-full bg-warn-soft px-2 py-0.5 text-xs font-medium text-warn">⏳ {reasonFor(s) || 'not final'}</span>;
     return <span className="rounded-full bg-ink/5 px-2 py-0.5 text-xs font-medium text-ink-3">not verified</span>;
@@ -311,6 +328,7 @@ export default function NiagawanSalesPage() {
       {!loading && rows.length > 0 && (
         <p className="mb-2 text-xs text-ink-3">
           <span className="font-medium text-good">✓ final</span> = settled and fully paid ·{' '}
+          <span className="font-medium text-warn">✓ final · pending BNPL</span> = done (figures won&apos;t change), but a BNPL payout is still clearing — money confirmed, in transit ·{' '}
           <span className="font-medium text-warn">⏳</span> = still changing (costs not entered yet, or unpaid/part-paid invoices carried to the next working day at 8pm)
         </p>
       )}
@@ -341,7 +359,7 @@ export default function NiagawanSalesPage() {
                 const pending = s.kind !== 'final';
                 const dim = pending ? 'text-ink-3' : 'text-ink';
                 return (
-                  <tr key={r.day} className={s.kind === 'pending' ? 'bg-warn-soft/40' : ''}>
+                  <tr key={r.day} className={s.kind === 'pending' || s.bnplOnly ? 'bg-warn-soft/40' : ''}>
                     <td className="px-3 py-2 text-ink">{fmtDay(r.day)}</td>
                     <td className="px-3 py-2">{badge(s)}</td>
                     <td className={`px-3 py-2 text-right ${dim}`}>{r.invoices ?? 0}</td>
