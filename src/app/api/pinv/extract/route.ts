@@ -166,6 +166,8 @@ function matchCodeByDescription(desc: string, prods: Array<{ code: string; descr
 export async function POST(req: Request) {
   let id: string | null = null;
   try {
+    // Parse the body once up front — the ingest on-demand path needs `force` before the gate check.
+    const body = await req.json().catch(() => ({} as Record<string, unknown>));
     // Two ways in: an admin's browser session (Bearer JWT), or the shared system token
     // (x-ingest-token) used by the automation (edge fn auto-read after an email upload).
     const ingest = (req.headers.get('x-ingest-token') || '').trim();
@@ -176,9 +178,15 @@ export async function POST(req: Request) {
       // and waits for the owner to tap "Read" on the purchase-invoice page (control over when/what gets
       // AI-read). A manual Read (admin Bearer, below) always proceeds. Flip app_secrets 'pinv_auto_read'
       // to 'on' to restore automatic reading on email import.
-      const { data: autoCfg } = await admin.from('app_secrets').select('value').eq('name', 'pinv_auto_read').maybeSingle();
-      if (String(autoCfg?.value ?? 'off').toLowerCase() !== 'on') {
-        return NextResponse.json({ ok: true, deferred: true });
+      // ON-DEMAND: an explicit {force:true} (owner-triggered via Alita's pinv-read.sh) reads THIS invoice
+      // now and bypasses the gate. The email-bot never sends force, so arrivals still defer when off —
+      // so this does NOT re-enable blanket auto-read; it only serves an explicit per-invoice request.
+      const force = body?.force === true;
+      if (!force) {
+        const { data: autoCfg } = await admin.from('app_secrets').select('value').eq('name', 'pinv_auto_read').maybeSingle();
+        if (String(autoCfg?.value ?? 'off').toLowerCase() !== 'on') {
+          return NextResponse.json({ ok: true, deferred: true });
+        }
       }
     } else {
       const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
@@ -190,8 +198,7 @@ export async function POST(req: Request) {
       if (isAdmin !== true) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const body = await req.json();
-    id = body?.id ?? null;
+    id = (body?.id as string | undefined) ?? null;
     if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
 
     await admin.from('pinv').update({ status: 'extracting', updated_at: new Date().toISOString() }).eq('id', id);
