@@ -59,6 +59,7 @@ export default function PayrollV3Page() {
   const [rows, setRows] = useState<Summary[]>([]);
   const [absent, setAbsent] = useState<Record<string, number>>({});
   const [statWage, setStatWage] = useState<Record<string, number>>({}); // EPF/SOCSO/EIS wage = salary − unpaid leave
+  const [present, setPresent] = useState<Record<string, number>>({}); // days worked this month (PRESENT, half-day = 0.5)
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<string>('');
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
@@ -78,11 +79,12 @@ export default function PayrollV3Page() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: per }, { data: sum }, { data: abs }, { data: sw }] = await Promise.all([
+      const [{ data: per }, { data: sum }, { data: abs }, { data: sw }, { data: pr }] = await Promise.all([
         supabase.from('v_periods_min').select('id,year,month,status').eq('year', year).eq('month', month).maybeSingle(),
         supabase.from('v_payslip_admin_summary_v2').select('*').eq('year', year).eq('month', month).order('staff_name'),
         supabase.rpc('payroll_absent_days_v2', { p_year: year, p_month: month }),
         supabase.rpc('payroll_stat_wages', { p_year: year, p_month: month }),
+        supabase.rpc('payroll_present_days', { p_year: year, p_month: month }),
       ]);
       setPeriod((per as Period) ?? null);
       setRows((sum as Summary[]) ?? []);
@@ -92,6 +94,9 @@ export default function PayrollV3Page() {
       const wm: Record<string, number> = {};
       (sw as { staff_email: string; stat_wage: number }[] | null)?.forEach((r) => { wm[(r.staff_email || '').toLowerCase()] = n(r.stat_wage); });
       setStatWage(wm);
+      const pmap: Record<string, number> = {};
+      (pr as { staff_email: string; days_present: number }[] | null)?.forEach((r) => { pmap[(r.staff_email || '').toLowerCase()] = n(r.days_present); });
+      setPresent(pmap);
     } finally { setLoading(false); }
   }, [year, month]);
 
@@ -389,7 +394,7 @@ export default function PayrollV3Page() {
 
       {/* Summary table */}
       <div className="overflow-x-auto rounded-card bg-card shadow-card">
-        <table className="w-full min-w-[900px] border-collapse text-sm">
+        <table className="w-full min-w-[1120px] border-collapse text-sm">
           <thead className="bg-ink/5 text-left">
             <tr>
               <th className="px-3 py-2 font-medium text-ink-2">Staff</th>
@@ -398,17 +403,21 @@ export default function PayrollV3Page() {
               <th className="px-3 py-2 text-right font-medium text-ink-2">Gross</th>
               <th className="px-3 py-2 text-right font-medium text-ink-2">Unpaid</th>
               <th className="px-3 py-2 text-right font-medium text-ink-2" title="Wage for EPF/SOCSO/EIS = salary − unpaid leave. Enter this figure in PERKESO ASSIST & KWSP.">Actual wage</th>
+              <th className="px-3 py-2 text-right font-medium text-ink-2" title="Employee EPF contribution">EPF</th>
+              <th className="px-3 py-2 text-right font-medium text-ink-2" title="Employee SOCSO contribution">SOCSO</th>
+              <th className="px-3 py-2 text-right font-medium text-ink-2" title="Employee EIS contribution">EIS</th>
               <th className="px-3 py-2 text-right font-medium text-ink-2">Deductions</th>
               <th className="px-3 py-2 text-right font-medium text-ink-2">Net pay</th>
+              <th className="px-3 py-2 text-center font-medium text-ink-2" title="Days present this month (half-day = 0.5); reconciles with Absent">Worked</th>
               <th className="px-3 py-2 text-center font-medium text-ink-2">Absent</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={10} className="px-3 py-6 text-center text-ink-2">Loading…</td></tr>
+              <tr><td colSpan={14} className="px-3 py-6 text-center text-ink-2">Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={10} className="px-3 py-6 text-center text-ink-2">Nothing yet — tap &quot;Generate payroll from attendance&quot;.</td></tr>
+              <tr><td colSpan={14} className="px-3 py-6 text-center text-ink-2">Nothing yet — tap &quot;Generate payroll from attendance&quot;.</td></tr>
             ) : rows.map((r) => {
               const base = n(r.base_wage);
               const actual = statWage[(r.staff_email || '').toLowerCase()] ?? base;
@@ -422,8 +431,12 @@ export default function PayrollV3Page() {
                   <td className="px-3 py-2 text-right tabular-nums text-bad">{n(r.unpaid_auto) ? rm(r.unpaid_auto) : '—'}</td>
                   <td className={`px-3 py-2 text-right tabular-nums ${reduced ? 'font-semibold text-warn' : 'text-ink-2'}`}
                       title={reduced ? 'Reduced by unpaid leave — enter THIS figure in PERKESO & KWSP' : undefined}>{rm(actual)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-ink-2">{n(r.epf_emp) ? rm(r.epf_emp) : '—'}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-ink-2">{n(r.socso_emp) ? rm(r.socso_emp) : '—'}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-ink-2">{n(r.eis_emp) ? rm(r.eis_emp) : '—'}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{rm(r.total_deduct)}</td>
                   <td className="px-3 py-2 text-right font-semibold tabular-nums">{rm(r.net_pay)}</td>
+                  <td className="px-3 py-2 text-center tabular-nums">{present[(r.staff_email || '').toLowerCase()] ?? 0}</td>
                   <td className="px-3 py-2 text-center">{absent[(r.staff_email || '').toLowerCase()] || 0}</td>
                   <td className="px-3 py-2 text-right"><button onClick={() => openDetails(r)} className="rounded-lg border px-3 py-1.5 text-sm text-ink-2 hover:bg-ink/5">Details</button></td>
                 </tr>
@@ -439,8 +452,12 @@ export default function PayrollV3Page() {
                 <td className="px-3 py-2 text-right tabular-nums">{rm(totals.gross)}</td>
                 <td></td>
                 <td className="px-3 py-2 text-right tabular-nums">{rm(rows.reduce((a, r) => a + (statWage[(r.staff_email || '').toLowerCase()] ?? n(r.base_wage)), 0))}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{rm(totals.epf.emp)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{rm(totals.socso.emp)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{rm(totals.eis.emp)}</td>
                 <td></td>
                 <td className="px-3 py-2 text-right tabular-nums">{rm(totals.net)}</td>
+                <td className="px-3 py-2 text-center tabular-nums">{rows.reduce((a, r) => a + (present[(r.staff_email || '').toLowerCase()] ?? 0), 0)}</td>
                 <td colSpan={2}></td>
               </tr>
             </tfoot>
