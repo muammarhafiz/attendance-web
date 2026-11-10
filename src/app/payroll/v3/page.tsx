@@ -36,6 +36,11 @@ const commissionOf = (r: { earn_breakdown?: { code?: string | null; amount?: num
   Array.isArray(r.earn_breakdown)
     ? r.earn_breakdown.filter((e) => (e.code || '').toUpperCase() === 'COMM').reduce((a, e) => a + n(e.amount), 0)
     : 0;
+// Public-holiday-work portion of a row, from the view's earn_breakdown (exact PH_WORK lines).
+const phWorkOf = (r: { earn_breakdown?: { code?: string | null; amount?: number | string }[] | null }) =>
+  Array.isArray(r.earn_breakdown)
+    ? r.earn_breakdown.filter((e) => (e.code || '').toUpperCase() === 'PH_WORK').reduce((a, e) => a + n(e.amount), 0)
+    : 0;
 
 // try pay_v2 schema first, then public
 async function payRpc(fn: string, args: Record<string, unknown>) {
@@ -215,7 +220,7 @@ export default function PayrollV3Page() {
     const net = s('net_pay');
     const erStat = s('epf_er') + s('socso_er') + s('eis_er');
     return {
-      base: s('base_wage'), gross: s('total_earn'), commission: rows.reduce((a, r) => a + commissionOf(r), 0), net,
+      base: s('base_wage'), gross: s('total_earn'), commission: rows.reduce((a, r) => a + commissionOf(r), 0), phwork: rows.reduce((a, r) => a + phWorkOf(r), 0), net,
       epf: { er: s('epf_er'), emp: s('epf_emp') }, socso: { er: s('socso_er'), emp: s('socso_emp') }, eis: { er: s('eis_er'), emp: s('eis_emp') },
       erStat, cost: net + erStat,
     };
@@ -394,12 +399,13 @@ export default function PayrollV3Page() {
 
       {/* Summary table */}
       <div className="overflow-x-auto rounded-card bg-card shadow-card">
-        <table className="w-full min-w-[1120px] border-collapse text-sm">
+        <table className="w-full min-w-[1200px] border-collapse text-sm">
           <thead className="bg-ink/5 text-left">
             <tr>
               <th className="px-3 py-2 font-medium text-ink-2">Staff</th>
               <th className="px-3 py-2 text-right font-medium text-ink-2">Base</th>
               <th className="px-3 py-2 text-right font-medium text-ink-2">Commission</th>
+              <th className="px-3 py-2 text-right font-medium text-ink-2" title="Public holiday work pay (2× daily rate for a full-timer on an open holiday)">PH work</th>
               <th className="px-3 py-2 text-right font-medium text-ink-2">Gross</th>
               <th className="px-3 py-2 text-right font-medium text-ink-2">Unpaid</th>
               <th className="px-3 py-2 text-right font-medium text-ink-2" title="Wage for EPF/SOCSO/EIS = salary − unpaid leave. Enter this figure in PERKESO ASSIST & KWSP.">Actual wage</th>
@@ -415,9 +421,9 @@ export default function PayrollV3Page() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={14} className="px-3 py-6 text-center text-ink-2">Loading…</td></tr>
+              <tr><td colSpan={15} className="px-3 py-6 text-center text-ink-2">Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={14} className="px-3 py-6 text-center text-ink-2">Nothing yet — tap &quot;Generate payroll from attendance&quot;.</td></tr>
+              <tr><td colSpan={15} className="px-3 py-6 text-center text-ink-2">Nothing yet — tap &quot;Generate payroll from attendance&quot;.</td></tr>
             ) : rows.map((r) => {
               const base = n(r.base_wage);
               const actual = statWage[(r.staff_email || '').toLowerCase()] ?? base;
@@ -427,6 +433,7 @@ export default function PayrollV3Page() {
                   <td className="px-3 py-2"><div className="font-medium text-ink">{r.staff_name ?? r.staff_email}</div><div className="text-xs text-ink-3">{r.staff_email}</div></td>
                   <td className="px-3 py-2 text-right tabular-nums">{rm(r.base_wage)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{commissionOf(r) ? rm(commissionOf(r)) : '—'}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-ink-2">{phWorkOf(r) ? rm(phWorkOf(r)) : '—'}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{rm(r.total_earn)}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-bad">{n(r.unpaid_auto) ? rm(r.unpaid_auto) : '—'}</td>
                   <td className={`px-3 py-2 text-right tabular-nums ${reduced ? 'font-semibold text-warn' : 'text-ink-2'}`}
@@ -449,6 +456,7 @@ export default function PayrollV3Page() {
                 <td className="px-3 py-2 text-right">Totals</td>
                 <td className="px-3 py-2 text-right tabular-nums">{rm(totals.base)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{rm(totals.commission)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{rm(totals.phwork)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{rm(totals.gross)}</td>
                 <td></td>
                 <td className="px-3 py-2 text-right tabular-nums">{rm(rows.reduce((a, r) => a + (statWage[(r.staff_email || '').toLowerCase()] ?? n(r.base_wage)), 0))}</td>
