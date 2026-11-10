@@ -65,7 +65,6 @@ export default function PayrollV3Page() {
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [divisor, setDivisor] = useState<string>('26'); // unpaid-leave daily-rate divisor (26 or 25)
   const [deductUnpaidLeave, setDeductUnpaidLeave] = useState(false); // master switch: dock over-quota AL/MC days
-  const [phWorkEnabled, setPhWorkEnabled] = useState(false); // master switch: pay the public-holiday-work premium
   const [itemTypes, setItemTypes] = useState<{ code: string; name: string; kind: 'EARN' | 'DEDUCT' }[]>([]);
 
   useEffect(() => {
@@ -107,14 +106,12 @@ export default function PayrollV3Page() {
   // pay) and the master switch for deducting over-quota annual-leave / MC days (default off).
   useEffect(() => {
     if (!isAdmin) return;
-    supabase.schema('pay_v2').from('payroll_settings').select('key,value').in('key', ['unpaid_divisor', 'deduct_unpaid_leave', 'ph_work_enabled'])
+    supabase.schema('pay_v2').from('payroll_settings').select('key,value').in('key', ['unpaid_divisor', 'deduct_unpaid_leave'])
       .then(({ data }) => {
         const rows = (data as { key: string; value: string }[] | null) ?? [];
         const div = rows.find((r) => r.key === 'unpaid_divisor')?.value; if (div) setDivisor(String(div));
         const dl = rows.find((r) => r.key === 'deduct_unpaid_leave')?.value;
         setDeductUnpaidLeave(['on', 'true', '1', 'yes'].includes(String(dl ?? '').toLowerCase()));
-        const ph = rows.find((r) => r.key === 'ph_work_enabled')?.value;
-        setPhWorkEnabled(['on', 'true', '1', 'yes'].includes(String(ph ?? '').toLowerCase()));
       });
   }, [isAdmin]);
 
@@ -159,19 +156,6 @@ export default function PayrollV3Page() {
     else setMsg({ kind: 'ok', text: next
       ? 'Over-quota leave WILL now be deducted. Re-Generate the month to apply it.'
       : 'Over-quota leave deduction turned off. Re-Generate the month to clear it.' });
-  };
-
-  // Master switch: whether payroll pays the public-holiday-work premium. When on, a full-timer present on
-  // a holiday marked "open" earns 2× the daily rate (÷divisor) for that day. Off by default; re-Generate to apply.
-  const togglePhWork = async () => {
-    const next = !phWorkEnabled;
-    setPhWorkEnabled(next);
-    const { error } = await supabase.schema('pay_v2').from('payroll_settings')
-      .update({ value: next ? 'on' : 'off', updated_at: new Date().toISOString() }).eq('key', 'ph_work_enabled');
-    if (error) { setPhWorkEnabled(!next); setMsg({ kind: 'err', text: `Couldn't save: ${error.message}` }); }
-    else setMsg({ kind: 'ok', text: next
-      ? 'Public-holiday work WILL now be paid (2× daily rate for full-timers on an open holiday). Re-Generate to apply.'
-      : 'Public-holiday work pay turned off. Re-Generate the month to clear it.' });
   };
 
   const finalize = async () => {
@@ -403,20 +387,6 @@ export default function PayrollV3Page() {
             {deductUnpaidLeave
               ? `ON — annual-leave / MC days beyond the yearly quota are docked (÷${divisor} per day). Re-Generate to apply.`
               : 'OFF — over-quota leave is shown on Balances but not docked. Turn on when ready for real payroll.'}
-          </span>
-        </div>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <span className="text-xs font-medium text-ink-2">Pay public-holiday work</span>
-          <button
-            role="switch" aria-checked={phWorkEnabled} disabled={!!busy}
-            onClick={togglePhWork}
-            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition disabled:opacity-50 ${phWorkEnabled ? 'bg-good' : 'bg-ink/15'}`}>
-            <span className={`inline-block h-5 w-5 transform rounded-full bg-card shadow transition ${phWorkEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
-          </button>
-          <span className="text-[11px] text-ink-3">
-            {phWorkEnabled
-              ? `ON — full-timers present on an "open" public holiday earn 2× daily rate (÷${divisor}) for that day. Re-Generate to apply.`
-              : 'OFF — staff who work a public holiday get no extra pay. Turn on to pay the holiday-work premium.'}
           </span>
         </div>
         {msg && <div className={`mt-2 rounded-md border p-2 text-sm ${msg.kind === 'ok' ? 'border-emerald-200 bg-good-soft text-good' : 'border-rose-200 bg-bad-soft text-bad'}`}>{msg.text}</div>}
