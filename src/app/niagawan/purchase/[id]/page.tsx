@@ -353,6 +353,8 @@ export default function ReviewInvoicePage() {
             amount: it.amount,
             category: it.category || 'SPARE PARTS ITEM',
             code_verified: it.code_verified, // keep the read-time flag (cleared to null when the code is edited)
+            sold_status: it.sold_status, // preserve the sales-check (billed) result across the delete+reinsert — approving used to blank the "Billed?" column to "—"
+            sold_on: it.sold_on,
             sku_id: res.kind === 'link' ? res.sku : null,
             will_create: res.kind === 'create',
           };
@@ -397,13 +399,14 @@ export default function ReviewInvoicePage() {
 
   // Re-sync the product catalog (niagawan_products) from Niagawan, then re-run the candidate lookup
   // so freshly-created Niagawan items link instead of defaulting to "create new". Mirrors the
-  // inventory page's sync lifecycle (insert sync_request -> poll every 4s -> reload, 5-min cap).
+  // inventory page's sync lifecycle (insert sync_request -> poll every 4s -> reload, 15-min cap —
+  // long enough to outlast the nightly all-sync that holds the Niagawan lock ~10 min).
   const refreshCatalog = useCallback(async () => {
     if (catSync !== 'idle') return; // also blocks the brief done/error cooldown window (no re-entrancy)
     if (catPollRef.current) clearInterval(catPollRef.current);
     if (catCooldownRef.current) clearTimeout(catCooldownRef.current);
     const cooldown = () => { catCooldownRef.current = setTimeout(() => { setCatSync('idle'); setCatSyncMsg(''); }, 6000); };
-    setCatSync('running'); setCatSyncMsg('Refreshing the product list from Niagawan… ~1–2 min. You can keep editing.');
+    setCatSync('running'); setCatSyncMsg('Refreshing the product list from Niagawan… usually ~1–2 min (longer if a big sync is already running). You can keep editing.');
     const { data, error } = await supabase.from('sync_requests').insert({ which: 'products', source: 'website-review-refresh' }).select('id').single();
     if (error || !data) { setCatSync('error'); setCatSyncMsg('Could not start the refresh: ' + (error?.message ?? 'unknown')); cooldown(); return; }
     const sid = data.id as number;
@@ -415,7 +418,7 @@ export default function ReviewInvoicePage() {
         if (r.status === 'done') { setRefreshNonce((n) => n + 1); setCatSync('done'); setCatSyncMsg('Product list updated ✓ — re-checking matches…'); }
         else { setCatSync('error'); setCatSyncMsg('Refresh ran but reported an error.'); }
         cooldown();
-      } else if (Date.now() - started > 5 * 60 * 1000) {
+      } else if (Date.now() - started > 15 * 60 * 1000) {
         if (catPollRef.current) clearInterval(catPollRef.current);
         setCatSync('idle'); setCatSyncMsg('Still running in the background — press Refresh again in a bit.');
         catCooldownRef.current = setTimeout(() => setCatSyncMsg(''), 10000);
@@ -693,10 +696,10 @@ export default function ReviewInvoicePage() {
                         // list (which is what the NAS matches/creates by). Leaving stale alt
                         // codes there made Niagawan ignore the owner's typed code (2026-06-12).
                         const v = e.target.value;
-                        // Editing the code invalidates the live-lookup signals tied to the OLD code:
-                        // clear in_niagawan/niagawan_matches so the stale-catalog warning can't make a
-                        // false claim about an unverified/changed code.
-                        setItem(idx, { item_code: v, codes: v.trim() ? [v.trim()] : [], code_verified: null, sku_id: null, will_create: false, in_niagawan: null, niagawan_matches: null });
+                        // Editing the code invalidates the signals tied to the OLD code: clear
+                        // in_niagawan/niagawan_matches (so the stale-catalog warning can't make a false
+                        // claim) and sold_status/sold_on (the billed-match was for the old code).
+                        setItem(idx, { item_code: v, codes: v.trim() ? [v.trim()] : [], code_verified: null, sku_id: null, will_create: false, in_niagawan: null, niagawan_matches: null, sold_status: null, sold_on: null });
                       }}
                       className={`w-36 rounded-lg border px-1.5 py-1 font-mono text-xs disabled:bg-transparent ${it.code_verified === false ? 'border-rose-400 bg-bad-soft' : 'border-line disabled:border-transparent'}`} />
                     {it.code_verified === false && (
