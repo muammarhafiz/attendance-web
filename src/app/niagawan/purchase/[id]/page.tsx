@@ -406,8 +406,21 @@ export default function ReviewInvoicePage() {
     if (catPollRef.current) clearInterval(catPollRef.current);
     if (catCooldownRef.current) clearTimeout(catCooldownRef.current);
     const cooldown = () => { catCooldownRef.current = setTimeout(() => { setCatSync('idle'); setCatSyncMsg(''); }, 6000); };
-    setCatSync('running'); setCatSyncMsg('Refreshing the product list from Niagawan… usually ~1–2 min (longer if a big sync is already running). You can keep editing.');
-    const { data, error } = await supabase.from('sync_requests').insert({ which: 'products', source: 'website-review-refresh' }).select('id').single();
+    setCatSync('running'); setCatSyncMsg('Refreshing the product list from Niagawan… usually a few seconds (longer if it falls back to a full re-sync). You can keep editing.');
+    // Targeted refresh: send just the codes of lines not yet linked to a product. The NAS looks each one
+    // up in Niagawan and lands it in the catalog mirror in seconds — jumping the nightly-lock queue instead
+    // of re-crawling all ~13.5k products. Falls back to a full catalog crawl when there are no such codes.
+    const wantCodes = Array.from(new Set(
+      items
+        .filter((it) => !it.sku_id)
+        .flatMap((it) => [it.item_code, ...it.codes])
+        .map((c) => String(c || '').trim())
+        .filter(Boolean)
+    )).slice(0, 50);
+    const reqRow = wantCodes.length
+      ? { which: 'product-one', payload: { codes: wantCodes }, source: 'website-review-refresh' }
+      : { which: 'products', source: 'website-review-refresh' };
+    const { data, error } = await supabase.from('sync_requests').insert(reqRow).select('id').single();
     if (error || !data) { setCatSync('error'); setCatSyncMsg('Could not start the refresh: ' + (error?.message ?? 'unknown')); cooldown(); return; }
     const sid = data.id as number;
     const started = Date.now();
@@ -424,7 +437,7 @@ export default function ReviewInvoicePage() {
         catCooldownRef.current = setTimeout(() => setCatSyncMsg(''), 10000);
       }
     }, 4000);
-  }, [catSync]);
+  }, [catSync, items]);
 
   // Auto-look-up Niagawan categories once if this invoice has never been resolved.
   useEffect(() => {
