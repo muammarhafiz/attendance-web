@@ -16,20 +16,23 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const target = (event.notification.data && event.notification.data.url) || '/';
-  const path = (() => { try { return new URL(target, self.location.origin).pathname; } catch (e) { return '/'; } })();
-  event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((wins) => {
-      // Focus an already-open Zordaq tab if we have one, otherwise open a new window.
-      for (const w of wins) {
-        if (w.url && w.url.indexOf(self.location.origin) === 0 && 'focus' in w) {
-          w.focus();
-          if ('navigate' in w) { try { w.navigate(target); } catch (e) {} }
-          return;
-        }
+  event.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const w of wins) {
+      if (w.url && w.url.indexOf(self.location.origin) === 0) {
+        try { await w.focus(); } catch (e) {}
+        // iOS Safari/PWA does NOT support WindowClient.navigate(), so focusing alone
+        // leaves the app where it was. postMessage the open app so it routes itself
+        // (PwaRegister listens). Desktop/Android honour both this and navigate().
+        try { w.postMessage({ type: 'notification-navigate', url: target }); } catch (e) {}
+        if ('navigate' in w) { try { await w.navigate(target); } catch (e) {} }
+        return;
       }
-      if (self.clients.openWindow) return self.clients.openWindow(path);
-    })
-  );
+    }
+    // No open window → open one at the target (desktop/Android land straight there;
+    // iOS may open the PWA at its start_url — an Apple cold-start limitation).
+    if (self.clients.openWindow) { try { return await self.clients.openWindow(target); } catch (e) {} }
+  })());
 });
 
 // Take control quickly so a freshly-registered SW can receive pushes without a reload.
