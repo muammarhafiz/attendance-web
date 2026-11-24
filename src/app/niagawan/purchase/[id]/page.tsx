@@ -27,7 +27,7 @@ type Pinv = {
   drive_saved_at: string | null;
 };
 
-type NiagawanMatch = { sku: string; code: string; descp: string; price: string; bal: string };
+type NiagawanMatch = { sku: string; code: string; descp: string; price: string; bal: string; cost?: string };
 
 type Item = {
   line_no: number;
@@ -47,6 +47,11 @@ type Item = {
   niagawan_category: string | null;
   niagawan_matches: NiagawanMatch[] | null;
   code_verified: boolean | null;
+  // Price-drift feature: the invoice's printed unit price (immutable baseline) and the owner's price
+  // choice. When price_source is 'previous'/'manual' the booked unit_price is deliberately below the
+  // invoice price (a corrected supplier over-charge), and that gap reconciles the PDF total.
+  invoice_unit_price: number;
+  price_source: string; // 'invoice' | 'kept' | 'previous' | 'manual'
 };
 
 // Same code normalisation the NAS uses — to tell whether the line's code already points at
@@ -58,6 +63,13 @@ const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
 // Net line total = qty x unit price, minus any per-line discount %. This is what reconciles
 // against the supplier's printed line amount (and against the invoice total).
 const lineAmount = (qty: number, unit: number, disc: number) => round2((Number(qty) || 0) * (Number(unit) || 0) * (1 - (Number(disc) || 0) / 100));
+// Net unit price after any per-line discount — what actually becomes the Niagawan cost.
+const netUnit = (unit: number, disc: number) => round2((Number(unit) || 0) * (1 - (Number(disc) || 0) / 100));
+// Price-drift alert thresholds (booked NET unit price vs the product's last Niagawan cost). Below
+// these it's normal supplier fluctuation / rounding, so we stay quiet.
+const PRICE_ALERT_MIN_ABS = 1;    // ignore sub-RM1 differences
+const PRICE_ALERT_MIN_PCT = 0.10; // ...and sub-10% drift
+const PRICE_BLOCK_RATIO = 2;      // a >=2x (or <=0.5x) gap must be acknowledged before approving
 
 export default function ReviewInvoicePage() {
   const router = useRouter();
@@ -89,6 +101,8 @@ export default function ReviewInvoicePage() {
   const [pq, setPq] = useState('');
   const [presults, setPresults] = useState<NiagawanMatch[]>([]);
   const [picked, setPicked] = useState<Record<string, NiagawanMatch>>({});
+  // Last purchase cost per Niagawan sku (from the catalog) — the baseline for the price-drift alert.
+  const [costBySku, setCostBySku] = useState<Record<string, number>>({});
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Product-catalog refresh: re-sync niagawan_products from Niagawan on demand (same sync_requests
   // mechanism the inventory/sales pages use; a products sync runs in ~1–2 min). Used when a line
@@ -137,17 +151,24 @@ export default function ReviewInvoicePage() {
         niagawan_category: (r.niagawan_category as string) ?? null,
         niagawan_matches: Array.isArray(r.niagawan_matches) ? (r.niagawan_matches as NiagawanMatch[]) : null,
         code_verified: (r.code_verified as boolean | null) ?? null,
+        invoice_unit_price: r.invoice_unit_price != null ? Number(r.invoice_unit_price) : (Number(r.unit_price) || 0),
+        price_source: String(r.price_source ?? 'invoice') || 'invoice',
       }))
     );
     // For lines already linked to a product, fetch its name so the Product column shows it
     // (instead of a bare sku) — covers products picked via search on a previous visit.
     const skuIds = [...new Set(((its ?? []) as Array<Record<string, unknown>>).map((r) => r.sku_id).filter(Boolean).map(String))];
     if (skuIds.length) {
-      const { data: prods } = await supabase.from('niagawan_products').select('sku,code,descp,price').in('sku', skuIds);
+      const { data: prods } = await supabase.from('niagawan_products').select('sku,code,descp,price,cost').in('sku', skuIds);
       const pmap: Record<string, NiagawanMatch> = {};
-      ((prods ?? []) as Array<{ sku: string; code: string | null; descp: string | null; price: number | string | null }>)
-        .forEach((p) => { pmap[String(p.sku)] = { sku: String(p.sku), code: String(p.code ?? ''), descp: String(p.descp ?? ''), price: String(p.price ?? ''), bal: '' }; });
+      const cmap: Record<string, number> = {};
+      ((prods ?? []) as Array<{ sku: string; code: string | null; descp: string | null; price: number | string | null; cost: number | string | null }>)
+        .forEach((p) => {
+          pmap[String(p.sku)] = { sku: String(p.sku), code: String(p.code ?? ''), descp: String(p.descp ?? ''), price: String(p.price ?? ''), bal: '', cost: p.cost != null ? String(p.cost) : undefined };
+          if (p.cost != null && Number(p.cost) > 0) cmap[String(p.sku)] = Number(p.cost);
+        });
       setPicked((prev) => ({ ...prev, ...pmap }));
+      setCostBySku((prev) => ({ ...prev, ...cmap }));
     }
     setLoading(false);
   }, [id]);
@@ -189,13 +210,15 @@ export default function ReviewInvoicePage() {
       const { data } = await supabase.rpc('pinv_candidates', { p_codes: allCodes });
       if (cancelled) return;
       const map: Record<string, NiagawanMatch[]> = {};
-      ((data ?? []) as Array<{ sku: string; code: string; descp: string | null; price: number | string | null; matched_code: string | null }>).forEach((p) => {
+      const cmap: Record<string, number> = {};
+      ((data ?? []) as Array<{ sku: string; code: string; descp: string | null; price: number | string | null; cost: number | string | null; matched_code: string | null }>).forEach((p) => {
         const key = String(p.matched_code ?? '');
         if (!key) return;
-        const m: NiagawanMatch = { sku: String(p.sku), code: String(p.code), descp: String(p.descp ?? ''), price: String(p.price ?? ''), bal: '' };
+        const m: NiagawanMatch = { sku: String(p.sku), code: String(p.code), descp: String(p.descp ?? ''), price: String(p.price ?? ''), bal: '', cost: p.cost != null ? String(p.cost) : undefined };
         (map[key] = map[key] || []).push(m);
+        if (p.cost != null && Number(p.cost) > 0) cmap[String(p.sku)] = Number(p.cost);
       });
-      setCatMatches(map); setCandsLoaded(true);
+      setCatMatches(map); setCostBySku((prev) => ({ ...prev, ...cmap })); setCandsLoaded(true);
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -219,6 +242,27 @@ export default function ReviewInvoicePage() {
     if (cands.length === 0) return { kind: 'create', auto: true };
     return { kind: 'unresolved' };
   }, [candsFor]);
+
+  // Last Niagawan cost for the product a line resolves to (null if create-new or unknown cost).
+  const costFor = useCallback((it: Item): number | null => {
+    const res = resolutionFor(it);
+    if (res.kind !== 'link') return null;
+    const c = costBySku[res.sku];
+    return c != null && c > 0 ? c : null;
+  }, [resolutionFor, costBySku]);
+
+  // Does this line's booked price differ enough from the last purchase cost to flag? Returns the
+  // comparison (or null when there's no linked cost, or the drift is within normal-fluctuation noise).
+  const priceDrift = useCallback((it: Item): { cost: number; booked: number; ratio: number; big: boolean } | null => {
+    const cost = costFor(it);
+    if (cost == null) return null;
+    const booked = netUnit(it.unit_price, it.discount);
+    const diff = Math.abs(booked - cost);
+    if (diff < PRICE_ALERT_MIN_ABS || diff / cost < PRICE_ALERT_MIN_PCT) return null;
+    const ratio = cost > 0 ? booked / cost : 0;
+    const big = ratio >= PRICE_BLOCK_RATIO || (ratio > 0 && ratio <= 1 / PRICE_BLOCK_RATIO);
+    return { cost, booked, ratio, big };
+  }, [costFor]);
 
   const unresolvedLines = useMemo(
     () => (candsLoaded ? items.filter((it) => resolutionFor(it).kind === 'unresolved').map((it) => it.line_no) : []),
@@ -247,7 +291,14 @@ export default function ReviewInvoicePage() {
     [items, candsFor, refreshLinkable, candsLoaded]);
 
   const computedTotal = useMemo(() => round2(items.reduce((s, it) => s + lineAmount(it.qty, it.unit_price, it.discount), 0)), [items]);
-  const totalMismatch = head?.total != null && Math.abs(round2(head.total) - computedTotal) > 0.01;
+  // When the owner books a line BELOW the invoice price (corrected supplier over-charge), that gap is a
+  // known, acknowledged variance — it's what lets the booked total reconcile back to the PDF total.
+  const acknowledgedVariance = useMemo(() => round2(items.reduce((s, it) =>
+    (it.price_source === 'previous' || it.price_source === 'manual')
+      ? s + (lineAmount(it.qty, it.invoice_unit_price, it.discount) - lineAmount(it.qty, it.unit_price, it.discount))
+      : s, 0)), [items]);
+  const reconciledTotal = round2(computedTotal + acknowledgedVariance);
+  const totalMismatch = head?.total != null && Math.abs(round2(head.total) - reconciledTotal) > 0.01;
 
   // Lines whose AI-returned code was NOT found in the PDF's own text (likely a misread). Editing the
   // code — or clicking "✓ checked" — sets code_verified back to null and clears the block.
@@ -259,6 +310,15 @@ export default function ReviewInvoicePage() {
       .filter((it) => resolutionFor(it).kind !== 'link' && !it.item_code.trim() && it.codes.length === 0)
       .map((it) => it.line_no) : []),
     [items, resolutionFor, candsLoaded]);
+  // Lines whose booked price drifts noticeably from the last purchase cost (advisory alert).
+  const priceAlertLines = useMemo(
+    () => (candsLoaded ? items.filter((it) => priceDrift(it) != null).map((it) => it.line_no) : []),
+    [items, priceDrift, candsLoaded]);
+  // A >=2x drift the owner hasn't acted on yet (still 'invoice') blocks approval — the guard against
+  // silently overwriting Niagawan's cost with a mistyped / over-charged price.
+  const unAckBigDriftLines = useMemo(
+    () => (candsLoaded ? items.filter((it) => { const d = priceDrift(it); return !!d?.big && it.price_source === 'invoice'; }).map((it) => it.line_no) : []),
+    [items, priceDrift, candsLoaded]);
   // Everything that must be ironed out before Approve. Approve stays blocked while this is non-empty.
   // Objective, always-fixable errors only — the possible-duplicate and stale-catalog notices stay
   // advisory (legitimately overridable, and both are backstopped by the NAS create step).
@@ -270,17 +330,18 @@ export default function ReviewInvoicePage() {
     if (!head?.ref_no?.trim()) b.push('Enter the supplier invoice ref# (the duplicate guard needs it).');
     if (!head?.invoice_date) b.push('Set the invoice date.');
     if (head?.total == null) b.push('Enter the invoice total (from the PDF) so the line items can be reconciled.');
-    else if (totalMismatch) b.push(`Line-items total ${rm(computedTotal)} doesn't match the PDF total ${rm(head.total)} — fix the quantity, price, or a missing/extra line until they match (or correct the total field if the PDF itself differs).`);
+    else if (totalMismatch) b.push(`Line items ${rm(reconciledTotal)}${acknowledgedVariance > 0.009 ? ' (incl. acknowledged price variance)' : ''} don't match the PDF total ${rm(head.total)} — fix a quantity, price, or a missing/extra line until they match (or correct the total field if the PDF itself differs).`);
+    if (candsLoaded && unAckBigDriftLines.length) b.push(`Line${unAckBigDriftLines.length === 1 ? '' : 's'} ${unAckBigDriftLines.join(', ')}: the price is very different from the last purchase — choose Keep invoice price / Use last cost / Set manually before approving (this is what updates Niagawan's cost).`);
     if (candsLoaded && unresolvedLines.length) b.push(`Line${unresolvedLines.length === 1 ? '' : 's'} ${unresolvedLines.join(', ')}: the code matches several products — pick the right one (or “create new”).`);
     if (codelessLines.length) b.push(`Line${codelessLines.length === 1 ? '' : 's'} ${codelessLines.join(', ')}: add a code or link an existing product.`);
     if (codeUnverifiedLines.length) b.push(`Line${codeUnverifiedLines.length === 1 ? '' : 's'} ${codeUnverifiedLines.join(', ')}: the code isn’t in the PDF text (possible AI misread) — check it against the PDF, then click “✓ checked” on the line (or fix the code).`);
     return b;
-  }, [items, head?.supplier_name, head?.ref_no, head?.invoice_date, head?.total, totalMismatch, computedTotal, candsLoaded, unresolvedLines, codelessLines, codeUnverifiedLines]);
+  }, [items, head?.supplier_name, head?.ref_no, head?.invoice_date, head?.total, totalMismatch, reconciledTotal, acknowledgedVariance, candsLoaded, unresolvedLines, unAckBigDriftLines, codelessLines, codeUnverifiedLines]);
 
   const setItem = (idx: number, patch: Partial<Item>) => {
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   };
-  const addRow = () => setItems((prev) => [...prev, { line_no: prev.length + 1, item_code: '', codes: [], description: '', qty: 1, unit_price: 0, discount: 0, amount: 0, category: 'SPARE PARTS ITEM', will_create: true, sku_id: null, sold_status: null, sold_on: null, in_niagawan: null, niagawan_category: null, niagawan_matches: null, code_verified: null }]);
+  const addRow = () => setItems((prev) => [...prev, { line_no: prev.length + 1, item_code: '', codes: [], description: '', qty: 1, unit_price: 0, discount: 0, amount: 0, category: 'SPARE PARTS ITEM', will_create: true, sku_id: null, sold_status: null, sold_on: null, in_niagawan: null, niagawan_category: null, niagawan_matches: null, code_verified: null, invoice_unit_price: 0, price_source: 'invoice' }]);
   const removeRow = (idx: number) => setItems((prev) => prev.filter((_, i) => i !== idx).map((it, i) => ({ ...it, line_no: i + 1 })));
 
   // Token-ranked search of the full catalog: split into words, fetch products matching any word,
@@ -349,6 +410,8 @@ export default function ReviewInvoicePage() {
             description: it.description.trim() || null,
             qty: it.qty,
             unit_price: it.unit_price,
+            invoice_unit_price: it.invoice_unit_price,
+            price_source: it.price_source || 'invoice',
             discount: it.discount,
             amount: it.amount,
             category: it.category || 'SPARE PARTS ITEM',
@@ -582,6 +645,13 @@ export default function ReviewInvoicePage() {
         );
       })()}
 
+      {/* Price-drift summary: lines booked very differently from the last purchase cost */}
+      {candsLoaded && priceAlertLines.length > 0 && (
+        <div className="mb-3 rounded-md border-2 border-amber-400 bg-warn-soft px-3 py-2 text-sm text-warn">
+          ⚠ <b>{priceAlertLines.length} line{priceAlertLines.length === 1 ? '' : 's'} priced differently from the last purchase</b> (line{priceAlertLines.length === 1 ? '' : 's'} {priceAlertLines.join(', ')}) — approving overwrites Niagawan&rsquo;s stored cost with the price here. Check each in the <b>Unit price</b> column: <b>keep</b> the invoice price, <b>use</b> the last cost, or set one <b>manually</b>.{unAckBigDriftLines.length > 0 && <> Line{unAckBigDriftLines.length === 1 ? '' : 's'} {unAckBigDriftLines.join(', ')} differ by 2× or more — you must choose before approving.</>}
+        </div>
+      )}
+
       {/* Header */}
       <div className="mb-4 rounded-card bg-card shadow-card p-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -610,8 +680,13 @@ export default function ReviewInvoicePage() {
           <span className="text-ink-2">Line items total: <b className="tabular-nums text-ink">{rm(computedTotal)}</b></span>
           {totalMismatch
             ? <span className="rounded bg-bad-soft px-1.5 py-0.5 font-medium text-bad">⚠ differs from PDF total {rm(head.total ?? 0)} — fix before approving</span>
-            : <span className="rounded bg-good-soft px-1.5 py-0.5 font-medium text-good">✓ matches PDF total</span>}
+            : acknowledgedVariance > 0.009
+              ? <span className="rounded bg-good-soft px-1.5 py-0.5 font-medium text-good">✓ reconciles with PDF {rm(head.total ?? 0)} ({rm(acknowledgedVariance)} corrected)</span>
+              : <span className="rounded bg-good-soft px-1.5 py-0.5 font-medium text-good">✓ matches PDF total</span>}
         </div>
+        {acknowledgedVariance > 0.009 && (
+          <div className="mt-1 text-xs text-warn">Supplier price variance acknowledged: <b>{rm(acknowledgedVariance)}</b> booked below the invoice (you corrected an over-charged line). Niagawan books <b>{rm(computedTotal)}</b>; the PDF shows {rm(head.total ?? 0)}.</div>
+        )}
       </div>
 
       {/* Send a copy of the Niagawan-keyed invoice to the supplier's shared Drive folder */}
@@ -735,9 +810,45 @@ export default function ReviewInvoicePage() {
                     <input disabled={locked} type="number" step="any" value={it.qty} onChange={(e) => setItem(idx, { qty: Number(e.target.value) })}
                       className="w-16 rounded-lg border border-line px-1.5 py-1 text-right text-xs disabled:bg-transparent disabled:border-transparent" />
                   </td>
-                  <td className="px-2 py-1.5 text-right">
+                  <td className="px-2 py-1.5 text-right align-top">
                     <input disabled={locked} type="number" step="0.01" value={it.unit_price} onChange={(e) => setItem(idx, { unit_price: Number(e.target.value) })}
                       className="w-20 rounded-lg border border-line px-1.5 py-1 text-right text-xs disabled:bg-transparent disabled:border-transparent" />
+                    {candsLoaded && (() => {
+                      const d = priceDrift(it);
+                      const cost = costFor(it);
+                      const overriding = it.price_source === 'previous' || it.price_source === 'manual';
+                      if (!d && !overriding) return null;
+                      return (
+                        <div className="mt-1 flex w-40 flex-col items-end gap-0.5 text-right">
+                          {d && (
+                            <span className={`rounded px-1 py-0.5 text-[10px] font-medium ${d.big ? 'bg-bad-soft text-bad' : 'bg-warn-soft text-warn'}`}
+                              title={`Last purchase cost in Niagawan was ${rm(d.cost)}. This line books at ${rm(d.booked)} (${d.ratio >= 1 ? d.ratio.toFixed(1) + '×' : (d.ratio * 100).toFixed(0) + '%'} of it). Approving overwrites the stored cost.`}>
+                              ⚠ last cost {rm(d.cost)}{d.ratio >= 2 ? ` · ${d.ratio.toFixed(1)}×` : ''}
+                            </span>
+                          )}
+                          {overriding && cost != null && !d && (
+                            <span className="rounded bg-good-soft px-1 py-0.5 text-[10px] font-medium text-good" title={`Invoice price ${rm(it.invoice_unit_price)}; booking ${rm(netUnit(it.unit_price, it.discount))}.`}>
+                              booking {rm(netUnit(it.unit_price, it.discount))} · was {rm(it.invoice_unit_price)}
+                            </span>
+                          )}
+                          {!locked && (
+                            <div className="flex flex-wrap justify-end gap-1">
+                              <button type="button" onClick={() => setItem(idx, { unit_price: it.invoice_unit_price, price_source: 'kept' })}
+                                className={`rounded border px-1 text-[10px] ${it.price_source === 'invoice' || it.price_source === 'kept' ? 'border-accent text-accent' : 'border-line text-ink-3'} hover:bg-ink/5`}
+                                title={`Keep the invoice's own price (${rm(it.invoice_unit_price)}) — this becomes Niagawan's cost.`}>keep {rm(it.invoice_unit_price)}</button>
+                              {cost != null && (
+                                <button type="button" onClick={() => setItem(idx, { unit_price: cost, price_source: 'previous', invoice_unit_price: it.price_source === 'invoice' ? it.unit_price : it.invoice_unit_price })}
+                                  className={`rounded border px-1 text-[10px] ${it.price_source === 'previous' ? 'border-accent text-accent' : 'border-line text-ink-3'} hover:bg-ink/5`}
+                                  title={`Use the last purchase cost (${rm(cost)}); the invoice price is treated as a supplier error.`}>use {rm(cost)}</button>
+                              )}
+                              <button type="button" onClick={() => setItem(idx, { price_source: 'manual', invoice_unit_price: it.price_source === 'invoice' ? it.unit_price : it.invoice_unit_price })}
+                                className={`rounded border px-1 text-[10px] ${it.price_source === 'manual' ? 'border-accent text-accent' : 'border-line text-ink-3'} hover:bg-ink/5`}
+                                title="Set the price yourself in the box above.">manual</button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td className="px-2 py-1.5 text-right">
                     <input disabled={locked} type="number" step="0.01" value={it.discount} onChange={(e) => setItem(idx, { discount: Number(e.target.value) })}
