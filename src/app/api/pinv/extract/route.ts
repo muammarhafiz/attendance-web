@@ -293,6 +293,8 @@ export async function POST(req: Request) {
           description: String(it.description ?? '').trim() || null,
           qty: qn,
           unit_price: un,
+          invoice_unit_price: un, // the invoice's own printed unit price — the baseline the price-drift alert compares against
+          price_source: 'invoice',
           discount,
           amount: am,
           category: cat && validCats.has(cat.toUpperCase()) ? cat : 'SPARE PARTS ITEM',
