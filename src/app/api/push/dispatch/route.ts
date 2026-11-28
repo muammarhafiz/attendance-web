@@ -1,5 +1,5 @@
 // src/app/api/push/dispatch/route.ts
-// Called every minute by pg_cron (net.http_post). Pushes any NEW bell alert to admin devices.
+// Called every minute by pg_cron (net.http_post). Pushes any NEW bell alert to the right audience.
 import { NextResponse } from 'next/server';
 import { pushAdmin, loadPushSecrets, configureVapid, sendToSubscription } from '@/lib/pushServer';
 
@@ -29,7 +29,17 @@ const LABEL: Record<string, string> = {
   sales_unmapped: '👤 New salesperson',
   bnpl_premature: '⚠️ BNPL paid, no payout',
   tyre_miscoded: '🛞 Tyre booked wrong',
+  // Approve/reject outcome of a staff request (goes to all staff).
+  offday_result: 'Off-day request',
+  halfday_result: 'Half-day request',
+  mc_result: 'MC request',
+  advance_result: 'Advance request',
 };
+
+// A staff REQUEST submit notifies the owner + all supervisors.
+const SUBMIT_TYPES = new Set(['offday', 'halfday', 'mc', 'advance']);
+// A staff request DECISION (approve/reject) notifies all active staff.
+const RESULT_TYPES = new Set(['offday_result', 'halfday_result', 'mc_result', 'advance_result']);
 
 type FeedItem = { type: string; id: string; who: string; detail: string; when: string; href: string };
 
@@ -50,27 +60,37 @@ export async function POST(req: Request) {
 
   configureVapid(s);
 
-  // Two audiences: most bell content is OWNER-ONLY; the "PI created" item also goes to the office team
-  // (Manager + Office — anyone with month_end access). Everything else stays owner-only.
+  // Audiences by item type:
+  //  - most bell content  → OWNER-ONLY (admins)
+  //  - pinv_created       → office team (admins + month_end positions)
+  //  - request submit     → admins + supervisors
+  //  - request decision   → all active staff
   const { data: staffRows } = await pushAdmin.from('staff').select('email, is_admin, position').is('archived_at', null);
   const { data: paRows } = await pushAdmin.from('position_access').select('position').eq('feature', 'month_end').eq('allowed', true);
   const officePositions = new Set((paRows ?? []).map((r) => String((r as { position: string }).position)));
   const adminEmails = new Set<string>();
-  const officeEmails = new Set<string>(); // Owner + Manager + Office (pinv_created audience)
+  const officeEmails = new Set<string>();      // Owner + Manager + Office (pinv_created audience)
+  const supervisorEmails = new Set<string>();  // position = 'Supervisor'
+  const allStaffEmails = new Set<string>();     // every active staff (decision audience)
   for (const r of (staffRows ?? []) as { email: string | null; is_admin: boolean | null; position: string | null }[]) {
     const e = String(r.email ?? '').toLowerCase();
     if (!e) continue;
+    allStaffEmails.add(e);
     if (r.is_admin) { adminEmails.add(e); officeEmails.add(e); }
     else if (r.position && officePositions.has(r.position)) officeEmails.add(e);
+    if (r.position === 'Supervisor') supervisorEmails.add(e);
   }
+  const reqEmails = new Set<string>([...adminEmails, ...supervisorEmails]); // owner + supervisors (deduped)
 
   const { data: allSubs } = await pushAdmin.from('push_subscriptions').select('endpoint, p256dh, auth, email');
   type Sub = import('@/lib/pushServer').SubRow & { email: string };
   const subsFor = (emails: Set<string>) => ((allSubs ?? []) as Sub[]).filter((x) => emails.has(String(x.email).toLowerCase()));
   const adminSubs = subsFor(adminEmails);
   const officeSubs = subsFor(officeEmails);
+  const reqSubs = subsFor(reqEmails);
+  const allStaffSubs = subsFor(allStaffEmails);
 
-  if (adminSubs.length === 0 && officeSubs.length === 0) return NextResponse.json({ sent: 0, items: items.length, devices: 0 });
+  if (allStaffSubs.length === 0) return NextResponse.json({ sent: 0, items: items.length, devices: 0 });
 
   // Per-user push preferences: skip a device whose owner turned that notification type off.
   const { data: prefRows } = await pushAdmin.from('push_prefs').select('email, ntype').eq('enabled', false);
@@ -87,7 +107,15 @@ export async function POST(req: Request) {
   const dead = new Set<string>();
 
   for (const it of items) {
-    const targetSubs = (it.type === 'pinv_created' ? officeSubs : adminSubs).filter((sub) => notMuted(sub, it.type));
+    // Pick the audience + the mute key for this item type.
+    let pool: Sub[];
+    let muteType = it.type;
+    if (it.type === 'pinv_created') pool = officeSubs;
+    else if (RESULT_TYPES.has(it.type)) { pool = allStaffSubs; muteType = 'request_result'; }
+    else if (SUBMIT_TYPES.has(it.type)) pool = reqSubs;
+    else pool = adminSubs;
+
+    const targetSubs = pool.filter((sub) => notMuted(sub, muteType));
     if (targetSubs.length === 0) continue;
     const payload = JSON.stringify({
       title: LABEL[it.type] ?? 'Zordaq alert',
@@ -105,5 +133,13 @@ export async function POST(req: Request) {
 
   if (dead.size) await pushAdmin.from('push_subscriptions').delete().in('endpoint', [...dead]);
 
-  return NextResponse.json({ sent, items: items.length, adminDevices: adminSubs.length, officeDevices: officeSubs.length, pruned: dead.size });
+  return NextResponse.json({
+    sent,
+    items: items.length,
+    adminDevices: adminSubs.length,
+    officeDevices: officeSubs.length,
+    supervisorAudience: reqSubs.length,
+    allStaffDevices: allStaffSubs.length,
+    pruned: dead.size,
+  });
 }
