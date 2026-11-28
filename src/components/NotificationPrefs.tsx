@@ -28,6 +28,7 @@ const TYPE_LABEL: Record<string, string> = {
   invdrift: 'Inventory item out of sync with Niagawan',
   bnpl_premature: 'BNPL marked paid without a cleared payout',
   tyre_miscoded: 'Tyre work booked without a tyre code',
+  request_result: 'Request approved / rejected',
 };
 
 function Switch({ on, onChange, disabled }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
@@ -75,3 +76,4 @@ export default function NotificationPrefs() {
     </div>
   );
 }
+
