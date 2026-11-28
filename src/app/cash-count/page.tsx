@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { openSignedFile } from '@/lib/openSignedFile';
 import BackLink from '@/components/BackLink';
+import MonthReportButton from './MonthReportButton';
 
 const DENOMS = [100, 50, 20, 10, 5, 1] as const;
 const rm = (n: number) => `RM ${n.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -293,6 +294,7 @@ export default function CashCountPage() {
       )}
 
       {history.length > 0 && <RecentCounts rows={history} today={today} onHand={onHand} lastCollectedOn={lastCollectedOn} onCollect={markCollected} collecting={collecting} isAdmin={isAdmin} />}
+      <div className="mt-4"><MonthReportButton /></div>
       </>)}
 
       {tab === 'petty' && <PettyCash isAdmin={isAdmin} />}
@@ -590,3 +592,4 @@ function SavedMethodRow({ label, actual, niagawan, variance }: {
     </div>
   );
 }
+
