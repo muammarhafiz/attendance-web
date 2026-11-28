@@ -414,7 +414,7 @@ export default function PayrollV3Page() {
               <th className="px-3 py-2 text-right font-medium text-ink-2" title="Employee EIS contribution">EIS</th>
               <th className="px-3 py-2 text-right font-medium text-ink-2">Deductions</th>
               <th className="px-3 py-2 text-right font-medium text-ink-2">Net pay</th>
-              <th className="px-3 py-2 text-center font-medium text-ink-2" title="Days present this month (half-day = 0.5); reconciles with Absent">Worked</th>
+              <th className="px-3 py-2 text-center font-medium text-ink-2" title="Worked days used for pay — part-timers: 29th–28th pay window (matches payslip); others: calendar month, reconciles with Absent (half-day = 0.5)">Worked</th>
               <th className="px-3 py-2 text-center font-medium text-ink-2">Absent</th>
               <th className="px-3 py-2"></th>
             </tr>
